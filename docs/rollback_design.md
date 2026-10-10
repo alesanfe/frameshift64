@@ -1,6 +1,6 @@
 # Rollback Snapshot/Restore Design
 
-Status: snapshot/restore implemented, and SyncTest passes full VS matches. No networking yet.
+Status: implemented. SyncTest passes 7-frame rollback on all stages. Online play (rollback, time sync, desync detection, room-code lobby with relay) works; see `docs/netplay_online.md`.
 
 This builds on `docs/netplay_architecture.md` (input boundary, debug P2P) and `docs/state_trace.md` (the verification oracle).
 
@@ -74,9 +74,12 @@ How a tick is tested:
 3. A gated-column mismatch is a FAIL.
 4. A raw byte compare of section and arena names the diverging symbol (DbgHelp) or arena object (`FTStruct[link3]+0x…`, `DObj`, `AObj`, …).
 
-## Next
+## Draw side effects
 
-1. Multi-frame rollback. Keep a ring of `SYNETROLLBACK_SLOT_NUM` snapshots, re-publish historic inputs from `netinput`, and resimulate N ticks per frame.
-2. Suppress audio during resimulation.
-3. Integrate GekkoNet over the `netpeer` transport.
-4. Lobby, room codes and NAT traversal.
+Draw passes produce state that the next tick's gameplay reads:
+- `gGMCameraMatrix`, used by Link's boomerang return check.
+- The magnifying-glass state.
+
+So:
+- `syNetRollbackResimulate` runs `syTaskmanShadowDraw` between resimulated ticks. This is the full scene draw into scratch display lists, which are then thrown away, with frame-interpolation recording suppressed.
+- Under rollback the taskman loop guarantees exactly one draw per simulated tick: a shadow draw when no render context is free, and none on a stalled frame. Every peer therefore applies the same draw side effects.

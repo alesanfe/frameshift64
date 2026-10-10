@@ -10,6 +10,7 @@
 #include "Compat.h"
 #include "../enhancements/enhancements.h"
 #include "../interpolation/frame_interpolation.h"
+#include "../net/netlobby.h"
 #ifdef PORT_HIRES_ENABLED
 #include "../hires/HiResPack.h"
 #endif
@@ -392,6 +393,134 @@ static char s_shaderPackFilter[128] = {};
 // Renders the "Get more shaders…" affordance immediately beneath the
 // picker. Click opens the modal; the modal handles the catalog fetch,
 // the user's selection, and the install in sequence.
+/* Online play: room-code lobby (port/net/netlobby.cpp). The host picks the
+ * rules and gets a 6-character code; the other player joins with it. */
+static const char* const kNetplayFighters[] = { "Mario", "Fox", "Donkey Kong", "Samus", "Luigi", "Link",
+                                                "Yoshi", "Captain Falcon", "Kirby", "Pikachu", "Jigglypuff", "Ness" };
+static const char* const kNetplayStages[] = { "Peach's Castle", "Sector Z", "Kongo Jungle", "Planet Zebes",
+                                              "Hyrule Castle", "Yoshi's Island", "Dream Land", "Saffron City",
+                                              "Mushroom Kingdom" };
+
+static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
+    static char serverBuf[128] = {};
+    static char codeBuf[8] = {};
+    static bool loaded = false;
+
+    if (!loaded) {
+        std::snprintf(serverBuf, sizeof(serverBuf), "%s", CVarGetString("gNetplay.Server", "127.0.0.1:7000"));
+        loaded = true;
+    }
+    int fighter = CVarGetInteger("gNetplay.Fighter", 0);
+    int stage = CVarGetInteger("gNetplay.Stage", 0);
+    int stocks = CVarGetInteger("gNetplay.Stocks", 3);
+    int items = CVarGetInteger("gNetplay.Items", 0);
+    int delay = CVarGetInteger("gNetplay.Delay", 2);
+    auto save = []() { Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame(); };
+
+    const int state = port_netlobby_state();
+    const bool idle = (state == PORT_NETLOBBY_IDLE || state == PORT_NETLOBBY_FAILED);
+
+    ImGui::TextWrapped("Play against someone online with rollback netcode. One player hosts and shares the "
+                       "room code; the other joins with it. Both need the lobby server address "
+                       "(run server/lobby-server.js on a reachable machine).");
+    ImGui::Spacing();
+
+    ImGui::BeginDisabled(!idle);
+    ImGui::TextUnformatted("Lobby server (host:port)");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::InputText("##NetplayServer", serverBuf, sizeof(serverBuf))) {
+        CVarSetString("gNetplay.Server", serverBuf);
+        save();
+    }
+    ImGui::EndDisabled();
+
+    ImGui::BeginDisabled(state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH);
+    ImGui::TextUnformatted("Your fighter");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::Combo("##NetplayFighter", &fighter, kNetplayFighters, IM_ARRAYSIZE(kNetplayFighters))) {
+        CVarSetInteger("gNetplay.Fighter", fighter);
+        port_netlobby_set_fkind(fighter);
+        save();
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Host a match");
+    ImGui::BeginDisabled(!idle);
+    ImGui::TextUnformatted("Stage");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::Combo("##NetplayStage", &stage, kNetplayStages, IM_ARRAYSIZE(kNetplayStages))) {
+        CVarSetInteger("gNetplay.Stage", stage);
+        save();
+    }
+    ImGui::TextUnformatted("Stocks");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::SliderInt("##NetplayStocks", &stocks, 1, 5)) {
+        CVarSetInteger("gNetplay.Stocks", stocks);
+        save();
+    }
+    bool itemsOn = items != 0;
+    if (ImGui::Checkbox("Items", &itemsOn)) {
+        CVarSetInteger("gNetplay.Items", itemsOn ? 1 : 0);
+        save();
+    }
+    ImGui::TextUnformatted("Input delay (frames)");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::SliderInt("##NetplayDelay", &delay, 0, 4)) {
+        CVarSetInteger("gNetplay.Delay", delay);
+        save();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Frames of input delay before rollback kicks in. 2 suits most connections;\n"
+                          "raise it on high-ping links to reduce visible rollbacks.");
+    }
+    if (UIWidgets::Button("Host", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+        port_netlobby_host(serverBuf, fighter, stage, stocks, itemsOn ? 1 : 0, delay);
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Join a match");
+    ImGui::BeginDisabled(!idle);
+    ImGui::TextUnformatted("Room code");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputText("##NetplayCode", codeBuf, sizeof(codeBuf), ImGuiInputTextFlags_CharsUppercase);
+    if (UIWidgets::Button("Join", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+        port_netlobby_join(serverBuf, codeBuf, fighter);
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Status");
+    ImGui::TextWrapped("%s", port_netlobby_status());
+
+    if (port_netlobby_code()[0] != '\0' && port_netlobby_is_host() && !idle) {
+        ImGui::Text("Room code: %s", port_netlobby_code());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Copy")) {
+            ImGui::SetClipboardText(port_netlobby_code());
+        }
+    }
+    if (state == PORT_NETLOBBY_CONNECTED || state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH) {
+        int peer = port_netlobby_peer_fkind();
+        ImGui::Text("Opponent: %s", (peer >= 0 && peer < IM_ARRAYSIZE(kNetplayFighters)) ? kNetplayFighters[peer]
+                                                                                         : "choosing...");
+        int ping = port_netlobby_ping_ms();
+        if (ping >= 0) {
+            ImGui::Text("Ping: %d ms%s", ping, port_netlobby_is_relay() ? " (relayed)" : "");
+        }
+    }
+    if (port_netlobby_is_host() && state == PORT_NETLOBBY_CONNECTED) {
+        ImGui::BeginDisabled(port_netlobby_peer_fkind() < 0);
+        if (UIWidgets::Button("Start match", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::Green))) {
+            port_netlobby_start_match();
+        }
+        ImGui::EndDisabled();
+    }
+    if (!idle && state != PORT_NETLOBBY_IN_MATCH) {
+        if (UIWidgets::Button("Leave", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::Red))) {
+            port_netlobby_cancel();
+        }
+    }
+}
+
 void RenderShaderPackDownloader(WidgetInfo& /*widget*/) {
     using namespace ssb64::enhancements;
 
@@ -1780,8 +1909,16 @@ void PortMenu::AddMenuAbout() {
 #endif // !__ANDROID__ (Updater)
 }
 
+void PortMenu::AddMenuOnline() {
+    AddMenuEntry("Online", CVAR_SETTING("Menu.OnlineSidebarSection"));
+    WidgetPath path = { "Online", "Netplay", SECTION_COLUMN_1 };
+    AddSidebarEntry("Online", "Netplay", 1);
+    AddWidget(path, "Netplay Lobby", WIDGET_CUSTOM).RaceDisable(false).CustomFunction(RenderNetplayLobby);
+}
+
 void PortMenu::AddMenuElements() {
     AddMenuSettings();
+    AddMenuOnline();
     AddMenuAssets();
 #ifndef DISABLE_SCRIPTING
     AddMenuMods();

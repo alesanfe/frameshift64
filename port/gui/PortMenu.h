@@ -33,6 +33,7 @@ class PortMenu : public Ship::Menu {
     void AddMenuSettings();
     void AddMenuAssets();
     void AddMenuAbout();
+    void AddMenuOnline();
 #ifndef DISABLE_SCRIPTING
     void AddMenuMods();
 #endif
