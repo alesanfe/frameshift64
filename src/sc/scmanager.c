@@ -1916,6 +1916,24 @@ void portSCManagerRequestReset(void)
 	syTaskmanSetLoadScene();
 }
 
+/* Runtime scene request from the port UI (e.g. the netplay lobby starting an
+ * online match): the same sticky, frame-boundary exit as the reset above,
+ * without the match-abort flag. */
+void portSCManagerRequestScene(s32 target)
+{
+	extern void func_800266A0_272A0(void);
+
+	sPortResetTarget = target;
+	sPortResetPending = TRUE;
+
+	func_800266A0_272A0();
+
+	gSCManagerSceneData.scene_prev = nSCKindVSMode;
+	gSCManagerSceneData.scene_curr = target;
+
+	syTaskmanSetLoadScene();
+}
+
 /* If a reset is pending: re-apply the target scene (undoing any scene_curr
  * writes a nested manager made since the request), clear the pending flag,
  * and return TRUE so nested managers know to unwind to scManagerRunLoop. */

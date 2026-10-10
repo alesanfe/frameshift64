@@ -30,6 +30,8 @@ extern void syNetRollbackFinishVSSession(void);
 extern void syNetRollbackNoteFileLoad(void *dst, size_t size, sb32 is_figatree);
 
 extern sb32 syNetRollbackIsTickTimer(void);
+extern void syNetRollbackSetTickTimer(sb32 is_tick_timer);
+extern void syNetRollbackRestoreTickTimer(void);
 extern sb32 syNetRollbackIsResimulating(void);
 extern sb32 syNetRollbackCheckCanSave(void);
 extern sb32 syNetRollbackSave(s32 slot);

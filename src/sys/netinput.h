@@ -97,5 +97,6 @@ extern void syNetInputSetLocalDelay(u32 delay);
 extern u32 syNetInputGetLocalDelay(void);
 extern sb32 syNetInputGetLocalScheduledFrame(s32 player, u32 tick, SYNetInputFrame *out_frame);
 extern void syNetInputSetFuzzSeed(u32 seed);
+extern void syNetInputSetLocalDevice(s32 player, s32 device);
 
 #endif /* _SYNETINPUT_H_ */

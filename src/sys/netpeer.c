@@ -124,6 +124,7 @@ u32 sSYNetPeerLockstepStallFrames;
 s32 sSYNetPeerRemoteAdvantage;
 u32 sSYNetPeerTimeSyncStallFrames;
 u32 sSYNetPeerFramesSinceTimeSync;
+sb32 sSYNetPeerIsSocketExternal;     // the lobby owns the UDP endpoint; don't close it
 
 #ifdef PORT
 const char *sSYNetPeerBindSpec;
@@ -820,6 +821,7 @@ void syNetPeerStartVSSession(void)
 	syNetInputSetLocalDelay(sSYNetPeerInputDelay);
 	syNetInputPreconfirmRemote(sSYNetPeerRemotePlayer, sSYNetPeerInputDelay);
 	syNetInputSetFuzzSeed(sSYNetPeerFuzzSeed);
+	syNetInputSetLocalDevice(sSYNetPeerLocalPlayer, (sSYNetPeerIsSocketExternal != FALSE) ? 0 : sSYNetPeerLocalPlayer);
 	sSYNetPeerFrameReady = FALSE;
 	sSYNetPeerStallFrames = 0;
 	sSYNetPeerLockstepStallFrames = 0;
@@ -1426,6 +1428,80 @@ void syNetPeerUpdate(void)
 	syNetPeerLogStats();
 }
 
+/* Online match from the lobby (port/net/netlobby.cpp). The UDP endpoint is
+ * already open with the peer (or relay) set; this configures the session the
+ * same way the env-driven bootstrap does, applies the agreed match and asks
+ * the scene manager to enter VS battle. Both peers call it with mirrored
+ * player slots and identical metadata; the in-battle start barrier then
+ * aligns tick 0. */
+void syNetPeerStartOnline(s32 local_player, s32 remote_player, u32 delay, sb32 is_host, const SYNetInputReplayMetadata *metadata)
+{
+#ifdef PORT
+	extern void portSCManagerRequestScene(s32 target);
+
+	sSYNetPeerIsEnabled = TRUE;
+	sSYNetPeerIsConfigured = TRUE;
+	sSYNetPeerIsSocketExternal = TRUE;
+	sSYNetPeerLocalPlayer = local_player;
+	sSYNetPeerRemotePlayer = remote_player;
+	sSYNetPeerInputDelay = delay;
+	sSYNetPeerSessionID = metadata->rng_seed;
+	sSYNetPeerIsRollback = TRUE;
+	sSYNetPeerFuzzSeed = (getenv("SSB64_NETPLAY_FUZZ") != NULL) ? (u32)atoi(getenv("SSB64_NETPLAY_FUZZ")) : 0;
+	sSYNetPeerBootstrapIsEnabled = TRUE;    // enables the in-battle start barrier
+	sSYNetPeerBootstrapIsHost = is_host;
+	sSYNetPeerBootstrapSeed = metadata->rng_seed;
+
+	syNetRollbackSetTickTimer(TRUE);
+	syNetPeerApplyBootstrapMetadata(metadata);
+	portSCManagerRequestScene(nSCKindVSBattle);
+
+	port_log("SSB64 NetPeer: online match local=%d remote=%d delay=%u host=%d stage=%u seed=%u\n",
+	         local_player, remote_player, delay, is_host, metadata->stage_kind, metadata->rng_seed);
+#endif
+}
+
+/* Online match rules: 2 humans, stock battle. */
+void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 stage, u32 stocks, sb32 is_items, u32 seed, const u8 *fighter_kinds, const u8 *costumes)
+{
+	s32 player;
+
+	syNetPeerMakeBootstrapMetadata(metadata);
+	metadata->stage_kind = stage;
+	metadata->stocks = stocks;
+	metadata->rng_seed = seed;
+
+	if (is_items != FALSE)
+	{
+		metadata->item_toggles = ~0;
+		metadata->item_switch = metadata->item_appearance_rate = nSCBattleItemSwitchMiddle;
+	}
+	for (player = 0; player < 2; player++)
+	{
+		metadata->player_kinds[player] = nFTPlayerKindMan;
+		metadata->fighter_kinds[player] = fighter_kinds[player];
+		metadata->costumes[player] = costumes[player];
+	}
+}
+
+/* Plain-int entry for the C++ lobby (keeps decomp headers out of port C++).
+ * The host plays slot 0, the client slot 1. */
+void syNetPeerStartOnlineMatch(s32 is_host, u32 delay, u32 stage, u32 stocks, s32 is_items, u32 seed,
+                               s32 host_fkind, s32 host_costume, s32 client_fkind, s32 client_costume)
+{
+	SYNetInputReplayMetadata metadata;
+	u8 fighter_kinds[2];
+	u8 costumes[2];
+
+	fighter_kinds[0] = host_fkind;
+	fighter_kinds[1] = client_fkind;
+	costumes[0] = host_costume;
+	costumes[1] = client_costume;
+
+	syNetPeerMakeOnlineMetadata(&metadata, stage, stocks, is_items, seed, fighter_kinds, costumes);
+	syNetPeerStartOnline((is_host != FALSE) ? 0 : 1, (is_host != FALSE) ? 1 : 0, delay, is_host, &metadata);
+}
+
 void syNetPeerStopVSSession(void)
 {
 #ifdef PORT
@@ -1436,7 +1512,20 @@ void syNetPeerStopVSSession(void)
 		         sSYNetPeerFramesStaged, sSYNetPeerLateFrames, sSYNetPeerStallFrames, sSYNetPeerLockstepStallFrames,
 		         sSYNetPeerTimeSyncStallFrames, sSYNetPeerInputChecksum);
 	}
-	syNetPeerCloseSocket();
+	if (sSYNetPeerIsSocketExternal != FALSE)
+	{
+		/* Online match over: keep the lobby's socket (rematch), and drop back
+		 * to offline so the next local VS match isn't netplay. */
+		extern void port_netlobby_on_match_end(void);
+
+		sSYNetPeerIsEnabled = FALSE;
+		sSYNetPeerIsConfigured = FALSE;
+		sSYNetPeerBootstrapIsEnabled = FALSE;
+		sSYNetPeerIsSocketExternal = FALSE;
+		syNetRollbackRestoreTickTimer();
+		port_netlobby_on_match_end();
+	}
+	else syNetPeerCloseSocket();
 #endif
 	sSYNetPeerIsActive = FALSE;
 }

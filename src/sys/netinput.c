@@ -49,6 +49,11 @@ sb32 sSYNetInputIsMispredicted;
 /* SSB64_NETPLAY_FUZZ=<seed>: local slots play seeded pseudo-random input
  * (test harness: real mispredictions without anyone at the controls). */
 u32 sSYNetInputFuzzSeed;
+/* Physical controller each local slot reads (online: the client plays fighter
+ * slot 1 from controller port 1). Hardware state is copied before the publish
+ * loop, which overwrites gSYControllerDevices slot by slot. */
+s32 sSYNetInputLocalDevice[MAXCONTROLLERS];
+SYController sSYNetInputHardware[MAXCONTROLLERS];
 
 u32 syNetInputGetTick(void)
 {
@@ -170,6 +175,7 @@ void syNetInputReset(void)
 			syNetInputClearFrame(&sSYNetInputLocalSchedule[player][i]);
 		}
 		sSYNetInputRemoteNextUnconfirmed[player] = 0;
+		sSYNetInputLocalDevice[player] = player;
 		for (i = 0; i < SYNETINPUT_REPLAY_MAX_FRAMES; i++)
 		{
 			syNetInputClearFrame(&sSYNetInputReplayFrames[player][i]);
@@ -281,6 +287,14 @@ sb32 syNetInputGetLocalScheduledFrame(s32 player, u32 tick, SYNetInputFrame *out
 	return syNetInputGetStoredFrame(sSYNetInputLocalSchedule, player, tick, out_frame);
 }
 
+void syNetInputSetLocalDevice(s32 player, s32 device)
+{
+	if ((syNetInputCheckPlayer(player) != FALSE) && (device >= 0) && (device < MAXCONTROLLERS))
+	{
+		sSYNetInputLocalDevice[player] = device;
+	}
+}
+
 void syNetInputSetFuzzSeed(u32 seed)
 {
 	sSYNetInputFuzzSeed = seed;
@@ -317,7 +331,7 @@ void syNetInputSetSavedInput(s32 player, u32 tick, u16 buttons, s8 stick_x, s8 s
 
 void syNetInputMakeLocalFrame(s32 player, u32 tick, SYNetInputFrame *out_frame)
 {
-	SYController *controller = &gSYControllerDevices[player];
+	SYController *controller = &sSYNetInputHardware[sSYNetInputLocalDevice[player]];
 	SYNetInputFrame scheduled;
 	u16 buttons = controller->button_hold;
 	s8 stick_x = controller->stick_range.x;
@@ -699,6 +713,11 @@ void syNetInputFuncRead(void)
 	s32 player;
 
 	syControllerFuncRead();
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		sSYNetInputHardware[player] = gSYControllerDevices[player];
+	}
 	syNetPeerBeginFrame();
 	tick = syNetInputGetTick();
 

@@ -105,6 +105,7 @@ static SYNetRollbackState sSYNetRollbackStates[SYNETROLLBACK_SLOT_NUM + 1];
 
 static sb32 sSYNetRollbackIsSyncTest;
 static sb32 sSYNetRollbackIsTickTimer;
+static sb32 sSYNetRollbackIsTickTimerDefault;
 static sb32 sSYNetRollbackIsSessionActive;
 static sb32 sSYNetRollbackIsResimulating;
 static sb32 sSYNetRollbackIsRigExit;
@@ -141,6 +142,7 @@ static u32 sSYNetRollbackFailedRollbacks;
 /* In-band desync detection: the confirmed full-state hash of recent ticks;
  * each input packet carries the newest one and the receiver compares. */
 #define SYNETROLLBACK_CONFIRMED_RING 128
+#define SYNETROLLBACK_SYNC_CHECK_LAG 16
 static u32 sSYNetRollbackConfirmedTicks[SYNETROLLBACK_CONFIRMED_RING];
 static u32 sSYNetRollbackConfirmedHashes[SYNETROLLBACK_CONFIRMED_RING];
 static sb32 sSYNetRollbackConfirmedValid[SYNETROLLBACK_CONFIRMED_RING];
@@ -273,6 +275,7 @@ void syNetRollbackInitDebugEnv(void)
 	 * ticks inside one VI, so any rollback-capable session counts sim ticks
 	 * instead. Offline play keeps the retrace-driven timer (1:1 with N64). */
 	sSYNetRollbackIsTickTimer = ((sSYNetRollbackIsSyncTest != FALSE) || ((netplay_env != NULL) && (atoi(netplay_env) != 0))) ? TRUE : FALSE;
+	sSYNetRollbackIsTickTimerDefault = sSYNetRollbackIsTickTimer;
 
 	sSYNetRollbackIsRigExit = (syNetRollbackGetEnvInt("SSB64_RIG_EXIT", 0) != 0) ? TRUE : FALSE;
 	sSYNetRollbackConfirmedTracePath = getenv("SSB64_NETPLAY_CONFIRMED_TRACE");
@@ -404,6 +407,18 @@ void syNetRollbackFinishVSSession(void)
 sb32 syNetRollbackIsTickTimer(void)
 {
 	return sSYNetRollbackIsTickTimer;
+}
+
+/* Online matches started from the lobby switch the timer to sim ticks for
+ * the match only; RestoreTickTimer returns to the env-derived default. */
+void syNetRollbackSetTickTimer(sb32 is_tick_timer)
+{
+	sSYNetRollbackIsTickTimer = is_tick_timer;
+}
+
+void syNetRollbackRestoreTickTimer(void)
+{
+	sSYNetRollbackIsTickTimer = sSYNetRollbackIsTickTimerDefault;
 }
 
 sb32 syNetRollbackIsResimulating(void)
@@ -1132,12 +1147,25 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
  * the tick is not a pure function of snapshot + published input. */
 sb32 syNetRollbackGetLatestConfirmedHash(u32 *out_tick, u32 *out_hash)
 {
-	if (sSYNetRollbackHasConfirmed == FALSE)
+	/* Report a tick a little behind our newest confirmed one: the peer
+	 * confirms ticks on its own schedule, and a hash for a tick it hasn't
+	 * confirmed yet can't be checked. Both keep 128 ticks of history. */
+	u32 tick;
+	s32 ring;
+
+	if ((sSYNetRollbackHasConfirmed == FALSE) || (sSYNetRollbackLatestConfirmedTick < SYNETROLLBACK_SYNC_CHECK_LAG))
 	{
 		return FALSE;
 	}
-	*out_tick = sSYNetRollbackLatestConfirmedTick;
-	*out_hash = sSYNetRollbackConfirmedHashes[sSYNetRollbackLatestConfirmedTick % SYNETROLLBACK_CONFIRMED_RING];
+	tick = sSYNetRollbackLatestConfirmedTick - SYNETROLLBACK_SYNC_CHECK_LAG;
+	ring = tick % SYNETROLLBACK_CONFIRMED_RING;
+
+	if ((sSYNetRollbackConfirmedValid[ring] == FALSE) || (sSYNetRollbackConfirmedTicks[ring] != tick))
+	{
+		return FALSE;
+	}
+	*out_tick = tick;
+	*out_hash = sSYNetRollbackConfirmedHashes[ring];
 
 	return TRUE;
 }
