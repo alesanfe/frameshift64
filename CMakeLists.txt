@@ -998,8 +998,8 @@ else()
     target_link_libraries(${PROJECT_NAME} PRIVATE libultraship discord-rpc)
 endif()
 if (WIN32)
-    # port_symbolize.cpp (rollback SyncTest diagnostics), port/net/port_udp.cpp
-    target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32)
+    # port_symbolize.cpp (SyncTest diagnostics), port/net/port_udp.cpp, port/net/port_ws.cpp
+    target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp)
 endif()
 
 # macOS: the port calls CFPreferences* directly (ApplePressAndHoldEnabled fix

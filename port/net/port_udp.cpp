@@ -51,10 +51,10 @@ PortSocket sSocket = kInvalidSocket;
 sockaddr_in sPeer;
 bool sHasPeer = false;
 
-/* Relay fallback (server/lobby-server.js "SSBX" frames). */
-bool sRelay = false;
-sockaddr_in sRelayServer;
-char sRelayCode[7];
+/* Relay fallback: game packets travel through the lobby server instead of
+ * UDP (port/net/netlobby.cpp installs WebSocket send/receive hooks). */
+port_udp_relay_send_fn sRelaySend = nullptr;
+port_udp_relay_recv_fn sRelayRecv = nullptr;
 
 /* Network simulator (send side). */
 unsigned int sSimLatencyMs = 0;
@@ -150,17 +150,13 @@ int raw_send_to(const sockaddr_in &to, const uint8_t *data, int size)
     return (sent == size) ? size : -1;
 }
 
-/* Game traffic to the peer: direct, or wrapped for the relay. */
+/* Game traffic to the peer: direct UDP, or through the relay hook. */
 int raw_send(const uint8_t *data, int size)
 {
-    if (!sRelay) {
-        return raw_send_to(sPeer, data, size);
+    if (sRelaySend != nullptr) {
+        return sRelaySend(data, size) ? size : -1;
     }
-    std::vector<uint8_t> frame(10 + size);
-    std::memcpy(frame.data(), "SSBX", 4);
-    std::memcpy(frame.data() + 4, sRelayCode, 6);
-    std::memcpy(frame.data() + 10, data, size);
-    return (raw_send_to(sRelayServer, frame.data(), static_cast<int>(frame.size())) > 0) ? size : -1;
+    return raw_send_to(sPeer, data, size);
 }
 
 bool same_endpoint(const sockaddr_in &a, const sockaddr_in &b)
@@ -168,18 +164,27 @@ bool same_endpoint(const sockaddr_in &a, const sockaddr_in &b)
     return a.sin_addr.s_addr == b.sin_addr.s_addr && a.sin_port == b.sin_port;
 }
 
-/* Receives one datagram; unwraps relay frames in place. kind: 0 peer/direct,
- * 1 relayed from the peer, 2 anyone else. Returns size, 0 none, -1 error. */
+/* Receives one datagram. kind: 0 peer/direct, 1 relayed from the peer,
+ * 2 anyone else. Returns size, 0 none, -1 error. Relayed packets come
+ * first so the relay can't be starved by stray UDP. */
 int raw_recv(void *buffer, int capacity, sockaddr_in *from, int *kind)
 {
+    if (sRelayRecv != nullptr) {
+        int relayed = sRelayRecv(buffer, capacity);
+        if (relayed > 0) {
+            std::memset(from, 0, sizeof(*from));
+            *kind = 1;
+            return relayed;
+        }
+    }
 #if defined(_WIN32)
     int from_len = sizeof(*from);
 #else
     socklen_t from_len = sizeof(*from);
 #endif
-    /* Receive into a full-size buffer: relay frames are 10 bytes longer than
-     * the payload, and on Windows a datagram larger than the caller's buffer
-     * fails recvfrom outright (WSAEMSGSIZE) instead of truncating. */
+    /* Receive into a full-size buffer: on Windows a datagram larger than the
+     * caller's buffer fails recvfrom outright (WSAEMSGSIZE) instead of
+     * truncating, which would wedge the socket on one stray packet. */
     uint8_t bytes[2048];
     int size = recvfrom(sSocket, reinterpret_cast<char *>(bytes), sizeof(bytes), 0,
                         reinterpret_cast<sockaddr *>(from), &from_len);
@@ -187,19 +192,11 @@ int raw_recv(void *buffer, int capacity, sockaddr_in *from, int *kind)
         int err = port_udp_last_error();
         return port_udp_would_block(err) ? 0 : -1;
     }
-    const uint8_t *payload = bytes;
-    if (sRelay && same_endpoint(*from, sRelayServer) && size >= 10 &&
-        std::memcmp(bytes, "SSBX", 4) == 0 && std::memcmp(bytes + 4, sRelayCode, 6) == 0) {
-        payload = bytes + 10;
-        size -= 10;
-        *kind = 1;
-    } else {
-        *kind = (sHasPeer && same_endpoint(*from, sPeer)) ? 0 : 2;
-    }
+    *kind = (sHasPeer && same_endpoint(*from, sPeer)) ? 0 : 2;
     if (size > capacity) {
         return -1;  /* not one of ours: every protocol datagram fits its caller's buffer */
     }
-    std::memcpy(buffer, payload, size);
+    std::memcpy(buffer, bytes, size);
     return size;
 }
 
@@ -281,7 +278,8 @@ extern "C" void port_udp_close(void)
         sSocket = kInvalidSocket;
     }
     sSimQueue.clear();
-    sRelay = false;
+    sRelaySend = nullptr;
+    sRelayRecv = nullptr;
     sHasPeer = false;
 }
 
@@ -292,7 +290,7 @@ extern "C" int port_udp_is_open(void)
 
 extern "C" int port_udp_send(const void *data, int size)
 {
-    if (sSocket == kInvalidSocket || !sHasPeer || data == nullptr || size <= 0) {
+    if (sSocket == kInvalidSocket || (!sHasPeer && sRelaySend == nullptr) || data == nullptr || size <= 0) {
         return -1;
     }
     const uint8_t *bytes = static_cast<const uint8_t *>(data);
@@ -371,24 +369,15 @@ extern "C" int port_udp_recv_from(void *buffer, int capacity, char *from_text, i
     return size;
 }
 
-extern "C" int port_udp_set_relay(const char *server_spec, const char *code)
+extern "C" void port_udp_set_relay_hooks(port_udp_relay_send_fn send, port_udp_relay_recv_fn recv)
 {
-    if (code == nullptr) {
-        sRelay = false;
-        return 1;
-    }
-    if (std::strlen(code) != 6 || !parse_address(server_spec, &sRelayServer)) {
-        return 0;
-    }
-    std::memcpy(sRelayCode, code, 6);
-    sRelayCode[6] = '\0';
-    sRelay = true;
-    return 1;
+    sRelaySend = send;
+    sRelayRecv = recv;
 }
 
 extern "C" int port_udp_is_relay(void)
 {
-    return sRelay ? 1 : 0;
+    return (sRelaySend != nullptr) ? 1 : 0;
 }
 
 extern "C" int port_udp_local_endpoint(char *out, int capacity)

@@ -1,10 +1,14 @@
-# End-to-end online test: starts the rendezvous server, then a host that
-# creates a room and a client that joins it by code. They hole-punch, pick
+# End-to-end online test against the Cloudflare lobby (server/cloudflare):
+# a host creates a room and a client joins it by code. They hole-punch, pick
 # fighters, start a rollback match with fuzzed inputs, and their
 # confirmed-state traces are compared. -LatencyMs/-LossPct simulate a bad
 # network on the game traffic (the lobby handshake uses the same socket).
 #
 #   .\scripts\netplay_lobbytest.ps1 -Seconds 60
+#   .\scripts\netplay_lobbytest.ps1 -Server wss://smash-netplay.jumpcircuit.workers.dev
+#
+# Without -Server it uses `wrangler dev` on ws://127.0.0.1:8799, starting it
+# if nothing answers there.
 #
 # Exit code: 0 in sync, 1 desync, 2 no match / no trace.
 param(
@@ -12,7 +16,7 @@ param(
     [int]$LatencyMs = 0,
     [int]$JitterMs = 0,
     [int]$LossPct = 0,
-    [int]$ServerPort = 7000,
+    [string]$Server = "",
     [int]$HostFighter = 0,
     [int]$ClientFighter = 1,
     [int]$Stage = 0,
@@ -26,9 +30,23 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 $out = Resolve-Path $OutDir
 Remove-Item "$out\*" -ErrorAction SilentlyContinue
 
-$server = Start-Process -FilePath node -ArgumentList "`"$PSScriptRoot\..\server\lobby-server.js`" $ServerPort" `
-    -RedirectStandardOutput "$out\server.log" -RedirectStandardError "$out\server.err" -PassThru -WindowStyle Hidden
-Start-Sleep -Seconds 1
+$wrangler = $null
+if (-not $Server) {
+    $Server = "ws://127.0.0.1:8799"
+    $up = $false
+    try { $up = (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8799/health" -TimeoutSec 3).StatusCode -eq 200 } catch {}
+    if (-not $up) {
+        $wrangler = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npx wrangler dev --port 8799 --ip 127.0.0.1" `
+            -WorkingDirectory "$PSScriptRoot\..\server\cloudflare" -RedirectStandardOutput "$out\server.log" `
+            -RedirectStandardError "$out\server.err" -PassThru -WindowStyle Hidden
+        for ($i = 0; $i -lt 30 -and -not $up; $i++) {
+            Start-Sleep -Seconds 1
+            try { $up = (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8799/health" -TimeoutSec 2).StatusCode -eq 200 } catch {}
+        }
+        if (-not $up) { Write-Output "wrangler dev did not start"; exit 2 }
+    }
+}
+Write-Output "lobby server: $Server"
 
 function Start-Peer([string]$role, [int]$fighter, [int]$fuzz) {
     $vars = @{
@@ -41,9 +59,9 @@ function Start-Peer([string]$role, [int]$fighter, [int]$fuzz) {
         SSB64_LOBBY_FORCE_RELAY = $(if ($ForceRelay) { "1" } else { "" })
     }
     if ($role -eq 'host') {
-        $vars['SSB64_LOBBY_HOST'] = "127.0.0.1:$ServerPort"; $vars['SSB64_LOBBY_AUTOSTART'] = '1'
+        $vars['SSB64_LOBBY_HOST'] = $Server; $vars['SSB64_LOBBY_AUTOSTART'] = '1'
     } else {
-        $vars['SSB64_LOBBY_JOIN'] = "127.0.0.1:$ServerPort"
+        $vars['SSB64_LOBBY_JOIN'] = $Server
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = Join-Path $build 'BattleShip.exe'
@@ -60,13 +78,10 @@ Start-Sleep -Seconds $Seconds
 foreach ($p in @($a, $b)) { if (-not $p.HasExited) { $p.CloseMainWindow() | Out-Null } }
 Start-Sleep -Seconds 3
 foreach ($p in @($a, $b)) { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force } }
-Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
-
-Write-Output "--- server"
-Get-Content "$out\server.log" -ErrorAction SilentlyContinue
+if ($wrangler) { & taskkill /PID $wrangler.Id /T /F | Out-Null }
 foreach ($f in @('host', 'client')) {
     Write-Output "--- $f"
-    Select-String -Path "$out\$f.log" -Pattern 'SSB64 Lobby:|online match|netplay tick|DESYNC|rollback FAILED' |
+    Select-String -Path "$out\$f.log" -Pattern 'SSB64 Lobby:|SSB64 WS:|online match|netplay tick|DESYNC|rollback FAILED' |
         Select-Object -Last 8 | ForEach-Object { $_.Line }
 }
 $ta = "$out\host.trace"; $tb = "$out\client.trace"

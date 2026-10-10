@@ -1,15 +1,26 @@
-/* See netlobby.h. Protocol with server/lobby-server.js uses "SSBR" lines;
- * peer-to-peer lobby messages use "SSBL" lines on the same UDP socket:
- *   SSBL HELLO | SSBL HELLOACK               punch / keepalive
- *   SSBL PICK <fkind> <time_ms>              character pick + RTT probe
+/* See netlobby.h.
+ *
+ * Lobby server: server/cloudflare (Cloudflare Worker + Durable Object),
+ * reached over WebSocket: wss://<worker>/ws?room=CODE&role=host|join.
+ * The game's UDP endpoint is learned from Cloudflare's public STUN server
+ * and exchanged through the Worker; the players then hole-punch a direct
+ * UDP path. If that fails the Worker relays game packets over the
+ * WebSocket.
+ *
+ * Peer-to-peer lobby messages ("SSBL" lines, over direct UDP or relay):
+ *   SSBL HELLO | SSBL HELLOACK                punch / keepalive
+ *   SSBL PICK <fkind> <time_ms>               character pick + RTT probe
  *   SSBL PONG <time_ms>                       immediate echo of a PICK's time
  *   SSBL START <stage> <stocks> <items> <seed> <delay> <hostfk> <hostcos> <clientfk> <clientcos>
  *   SSBL GO <seed>                            client accepted START */
 #include "netlobby.h"
 #include "port_udp.h"
+#include "port_ws.h"
 #include "port_log.h"
 
+#include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -23,28 +34,39 @@ extern "C" void syNetPeerStartOnlineMatch(int is_host, unsigned int delay, unsig
 
 namespace {
 
-constexpr unsigned int kCreateRetryMs = 500;
-constexpr unsigned int kPingMs = 2000;
+constexpr const char *kStunServer = "stun.cloudflare.com:3478";
+constexpr const char *kCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   // no 0/O/1/I
+constexpr unsigned int kStunRetryMs = 400;
+constexpr unsigned int kStunGiveUpMs = 2000;
+constexpr unsigned int kServerTimeoutMs = 12000;
+constexpr unsigned int kKeepaliveMs = 20000;
 constexpr unsigned int kHelloMs = 100;
 constexpr unsigned int kPunchTimeoutMs = 3000;
-constexpr unsigned int kRelayTimeoutMs = 5000;
+constexpr unsigned int kRelayTimeoutMs = 6000;
 constexpr unsigned int kPickMs = 250;
 constexpr unsigned int kStartRetryMs = 100;
 constexpr unsigned int kPeerTimeoutMs = 10000;
+constexpr int kMaxCodeRetries = 4;
 
 struct Lobby {
     PortNetLobbyState state = PORT_NETLOBBY_IDLE;
     bool is_host = false;
-    std::string server;
+    std::string server;                     // ws(s)://host[:port]
     std::string code;
-    std::string nonce;
     std::string status = "Not connected";
+    std::string stun_public = "-";          // our public UDP endpoint from STUN
+    bool stun_done = false;
+    uint8_t stun_txid[12] = {};
+    bool ws_welcomed = false;
+    bool endpoint_sent = false;
+    int code_retries = 0;
     std::vector<std::string> candidates;    // peer public + LAN endpoints
-    std::string peer;                       // chosen endpoint ("relay" when relayed)
+    std::string peer;                       // chosen endpoint, or "relay"
     bool relay_requested = false;
     unsigned int state_ms = 0;
+    unsigned int stun_ms = 0;
     unsigned int last_send_ms = 0;
-    unsigned int last_ping_ms = 0;
+    unsigned int last_keepalive_ms = 0;
     unsigned int last_heard_ms = 0;
     int my_fkind = 0;
     int peer_fkind = -1;
@@ -57,11 +79,13 @@ struct Lobby {
 };
 
 Lobby sLobby;
+std::mt19937 sRng{ std::random_device{}() };
 
 /* Unattended testing (scripts/netplay_lobbytest.ps1):
- *   SSB64_LOBBY_HOST=<server>  host a room; writes the code to SSB64_LOBBY_CODE_FILE
- *   SSB64_LOBBY_JOIN=<server>  join the code read from SSB64_LOBBY_CODE_FILE
- *   SSB64_LOBBY_FKIND / SSB64_LOBBY_STAGE / SSB64_LOBBY_AUTOSTART=1 */
+ *   SSB64_LOBBY_HOST=<server url>  host a room; writes the code to SSB64_LOBBY_CODE_FILE
+ *   SSB64_LOBBY_JOIN=<server url>  join the code read from SSB64_LOBBY_CODE_FILE
+ *   SSB64_LOBBY_FKIND / SSB64_LOBBY_STAGE / SSB64_LOBBY_AUTOSTART=1
+ *   SSB64_LOBBY_FORCE_RELAY=1      skip the direct path (tests the relay) */
 struct LobbyAuto {
     bool checked = false;
     bool host = false;
@@ -80,6 +104,11 @@ const char *env(const char *name)
     return (value != nullptr && value[0] != '\0') ? value : nullptr;
 }
 
+bool elapsed(unsigned int since, unsigned int ms)
+{
+    return static_cast<int>(port_udp_now_ms() - since) >= static_cast<int>(ms);
+}
+
 void set_state(PortNetLobbyState state, const std::string &status)
 {
     sLobby.state = state;
@@ -89,48 +118,82 @@ void set_state(PortNetLobbyState state, const std::string &status)
     port_log("SSB64 Lobby: %s\n", status.c_str());
 }
 
+void shutdown_net(void)
+{
+    port_udp_set_relay_hooks(nullptr, nullptr);
+    port_ws_close();
+    port_udp_close();
+}
+
 void fail(const std::string &why)
 {
+    shutdown_net();
     set_state(PORT_NETLOBBY_FAILED, why);
-    port_udp_close();
 }
 
-bool elapsed(unsigned int since, unsigned int ms)
+/* ---- relay over the lobby WebSocket ---- */
+
+int relay_send(const void *data, int size)
 {
-    return static_cast<int>(port_udp_now_ms() - since) >= static_cast<int>(ms);
+    return port_ws_send_binary(data, size);
 }
 
-void send_server(const std::string &text)
+int relay_recv(void *buffer, int capacity)
 {
-    port_udp_send_to(sLobby.server.c_str(), text.data(), static_cast<int>(text.size()));
+    return port_ws_poll_binary(buffer, capacity);
 }
 
-void send_peer(const std::string &text)
+/* ---- STUN (RFC 5389 binding request to stun.cloudflare.com) ---- */
+
+constexpr uint32_t kStunCookie = 0x2112A442;
+
+void send_stun(void)
 {
-    if (sLobby.peer == "relay" || (!sLobby.peer.empty() && sLobby.state >= PORT_NETLOBBY_CONNECTED)) {
-        port_udp_send(text.data(), static_cast<int>(text.size()));
-    } else if (!sLobby.peer.empty()) {
-        port_udp_send_to(sLobby.peer.c_str(), text.data(), static_cast<int>(text.size()));
-    }
+    uint8_t req[20] = { 0x00, 0x01, 0x00, 0x00, 0x21, 0x12, 0xA4, 0x42 };
+    std::memcpy(req + 8, sLobby.stun_txid, 12);
+    port_udp_send_to(kStunServer, req, sizeof(req));
 }
 
-bool open_socket(const std::string &server)
+bool parse_stun(const uint8_t *msg, int size)
 {
-    port_udp_close();
-    if (!port_udp_open("0.0.0.0:0")) {
-        fail("Couldn't open a UDP socket");
+    if (size < 20 || msg[0] != 0x01 || msg[1] != 0x01 ||
+        msg[4] != 0x21 || msg[5] != 0x12 || msg[6] != 0xA4 || msg[7] != 0x42 ||
+        std::memcmp(msg + 8, sLobby.stun_txid, 12) != 0) {
         return false;
     }
-    sLobby.server = server;
-    std::random_device rd;
-    sLobby.nonce = std::to_string(rd());
-    sLobby.peer.clear();
-    sLobby.candidates.clear();
-    sLobby.relay_requested = false;
-    sLobby.peer_fkind = -1;
-    sLobby.ping_ms = -1;
-    return true;
+    if (sLobby.stun_done) {
+        return true;    // answer to a retransmitted request
+    }
+    int length = (msg[2] << 8) | msg[3];
+    int end = (20 + length < size) ? 20 + length : size;
+    for (int at = 20; at + 4 <= end;) {
+        int type = (msg[at] << 8) | msg[at + 1];
+        int alen = (msg[at + 2] << 8) | msg[at + 3];
+        const uint8_t *v = msg + at + 4;
+        if (at + 4 + alen > end) {
+            break;
+        }
+        if ((type == 0x0020 || type == 0x0001) && alen >= 8 && v[1] == 0x01) {   // (XOR-)MAPPED-ADDRESS, IPv4
+            uint16_t port = static_cast<uint16_t>((v[2] << 8) | v[3]);
+            uint32_t addr = (static_cast<uint32_t>(v[4]) << 24) | (v[5] << 16) | (v[6] << 8) | v[7];
+            if (type == 0x0020) {
+                port ^= static_cast<uint16_t>(kStunCookie >> 16);
+                addr ^= kStunCookie;
+            }
+            char text[32];
+            std::snprintf(text, sizeof(text), "%u.%u.%u.%u:%u", addr >> 24, (addr >> 16) & 0xFF, (addr >> 8) & 0xFF,
+                          addr & 0xFF, port);
+            sLobby.stun_public = text;
+            sLobby.stun_done = true;
+            port_log("SSB64 Lobby: public UDP endpoint %s\n", text);
+            return true;
+        }
+        at += 4 + ((alen + 3) & ~3);
+    }
+    return false;
 }
+
+/* ---- server (WebSocket) ---- */
 
 std::string local_endpoint(void)
 {
@@ -138,10 +201,66 @@ std::string local_endpoint(void)
     return port_udp_local_endpoint(text, sizeof(text)) ? std::string(text) : std::string("-");
 }
 
+std::string json_field(const std::string &json, const char *key)
+{
+    std::string needle = std::string("\"") + key + "\":";
+    size_t at = json.find(needle);
+    if (at == std::string::npos) {
+        return std::string();
+    }
+    at += needle.size();
+    while (at < json.size() && json[at] == ' ') at++;
+    if (at < json.size() && json[at] == '"') {
+        size_t end = json.find('"', at + 1);
+        return (end == std::string::npos) ? std::string() : json.substr(at + 1, end - at - 1);
+    }
+    size_t end = json.find_first_of(",}", at);
+    return json.substr(at, end - at);
+}
+
+std::string new_code(void)
+{
+    std::string code;
+    for (int i = 0; i < 6; i++) {
+        code += kCodeAlphabet[sRng() % 32];
+    }
+    return code;
+}
+
+void connect_server(void)
+{
+    std::string url = sLobby.server;
+    while (!url.empty() && url.back() == '/') {
+        url.pop_back();
+    }
+    url += "/ws?room=" + sLobby.code + "&role=" + (sLobby.is_host ? "host" : "join");
+    sLobby.ws_welcomed = false;
+    sLobby.endpoint_sent = false;
+    port_ws_connect(url.c_str());
+}
+
+void send_endpoint_if_ready(void)
+{
+    if (!sLobby.ws_welcomed || sLobby.endpoint_sent || (!sLobby.stun_done && !elapsed(sLobby.stun_ms, kStunGiveUpMs))) {
+        return;
+    }
+    std::string msg = "{\"type\":\"endpoint\",\"public\":\"" + sLobby.stun_public + "\",\"local\":\"" + local_endpoint() + "\"}";
+    port_ws_send_text(msg.c_str());
+    sLobby.endpoint_sent = true;
+}
+
+/* ---- peer (SSBL over direct UDP or relay) ---- */
+
+void send_peer(const std::string &text)
+{
+    port_udp_send(text.data(), static_cast<int>(text.size()));
+}
+
 void connect_to(const std::string &endpoint)
 {
     sLobby.peer = endpoint;
     if (endpoint != "relay") {
+        port_udp_set_relay_hooks(nullptr, nullptr);     // a direct path beats the relay
         port_udp_set_peer(endpoint.c_str());
     }
     sLobby.last_heard_ms = port_udp_now_ms();
@@ -150,9 +269,17 @@ void connect_to(const std::string &endpoint)
               (sLobby.is_host ? " - press Start match" : " - waiting for host to start"));
 }
 
+std::string start_message(void)
+{
+    char text[160];
+    int client_costume = (sLobby.peer_fkind == sLobby.my_fkind) ? 1 : 0;   // same fighter: tell them apart
+    std::snprintf(text, sizeof(text), "SSBL START %d %d %d %u %d %d %d %d %d", sLobby.stage, sLobby.stocks,
+                  sLobby.items, sLobby.seed, sLobby.delay, sLobby.my_fkind, 0, sLobby.peer_fkind, client_costume);
+    return text;
+}
+
 void start_as_client(const std::vector<std::string> &args)
 {
-    /* START <stage> <stocks> <items> <seed> <delay> <hostfk> <hostcos> <clientfk> <clientcos> */
     if (args.size() < 11) {
         return;
     }
@@ -164,8 +291,8 @@ void start_as_client(const std::vector<std::string> &args)
     int hostfk = std::atoi(args[7].c_str()), hostcos = std::atoi(args[8].c_str());
     int clientfk = std::atoi(args[9].c_str()), clientcos = std::atoi(args[10].c_str());
 
-    /* netpeer owns the socket's receive side once the match starts, so
-     * acknowledge redundantly now (the host retransmits START until GO). */
+    /* netpeer owns the receive side once the match starts, so acknowledge
+     * redundantly now (the host retransmits START until it sees GO). */
     std::string go = "SSBL GO " + std::to_string(seed);
     for (int i = 0; i < 5; i++) {
         send_peer(go);
@@ -176,21 +303,11 @@ void start_as_client(const std::vector<std::string> &args)
 
 void start_as_host(void)
 {
-    int host_costume = 0;
-    int client_costume = (sLobby.peer_fkind == sLobby.my_fkind) ? 1 : 0;   // same fighter: tell them apart
+    int client_costume = (sLobby.peer_fkind == sLobby.my_fkind) ? 1 : 0;
 
     set_state(PORT_NETLOBBY_IN_MATCH, "In match");
     syNetPeerStartOnlineMatch(1, sLobby.delay, sLobby.stage, sLobby.stocks, sLobby.items, sLobby.seed,
-                              sLobby.my_fkind, host_costume, sLobby.peer_fkind, client_costume);
-}
-
-std::string start_message(void)
-{
-    char text[160];
-    int client_costume = (sLobby.peer_fkind == sLobby.my_fkind) ? 1 : 0;
-    std::snprintf(text, sizeof(text), "SSBL START %d %d %d %u %d %d %d %d %d", sLobby.stage, sLobby.stocks,
-                  sLobby.items, sLobby.seed, sLobby.delay, sLobby.my_fkind, 0, sLobby.peer_fkind, client_costume);
-    return text;
+                              sLobby.my_fkind, 0, sLobby.peer_fkind, client_costume);
 }
 
 std::vector<std::string> split(const char *text)
@@ -213,33 +330,6 @@ std::vector<std::string> split(const char *text)
     return parts;
 }
 
-void handle_server(const std::vector<std::string> &args)
-{
-    if (args.size() < 2) {
-        return;
-    }
-    if (args[1] == "ROOM" && args.size() >= 3 && sLobby.state == PORT_NETLOBBY_CREATING) {
-        sLobby.code = args[2];
-        set_state(PORT_NETLOBBY_WAITING, "Room " + sLobby.code + " - waiting for a player to join");
-    } else if (args[1] == "PEER" && args.size() >= 5 &&
-               (sLobby.state == PORT_NETLOBBY_WAITING || sLobby.state == PORT_NETLOBBY_JOINING)) {
-        sLobby.candidates = { args[3] };
-        if (args[4] != args[3] && args[4] != "-") {
-            sLobby.candidates.push_back(args[4]);
-        }
-        set_state(PORT_NETLOBBY_PUNCHING, "Connecting to opponent...");
-    } else if (args[1] == "RELAYING" && sLobby.state == PORT_NETLOBBY_PUNCHING) {
-        port_udp_set_relay(sLobby.server.c_str(), sLobby.code.c_str());
-        if (!sLobby.candidates.empty()) {
-            port_udp_set_peer(sLobby.candidates[0].c_str());   // relay ignores the address but needs a peer
-        }
-        sLobby.peer = "relay";
-        sLobby.status = "Connecting through relay...";
-    } else if (args[1] == "ERR") {
-        fail("Server: " + (args.size() >= 3 ? args[2] : std::string("error")));
-    }
-}
-
 void handle_peer(const std::vector<std::string> &args, const std::string &from)
 {
     if (args.size() < 2) {
@@ -248,9 +338,6 @@ void handle_peer(const std::vector<std::string> &args, const std::string &from)
     sLobby.last_heard_ms = port_udp_now_ms();
 
     if (sLobby.state == PORT_NETLOBBY_PUNCHING && (args[1] == "HELLO" || args[1] == "HELLOACK")) {
-        if (from != "relay") {
-            port_udp_set_relay(nullptr, nullptr);   // a direct path beats the relay
-        }
         connect_to(from);
         send_peer("SSBL HELLOACK");
         return;
@@ -271,33 +358,121 @@ void handle_peer(const std::vector<std::string> &args, const std::string &from)
     }
 }
 
+void handle_server(const std::string &msg)
+{
+    std::string type = json_field(msg, "type");
+
+    if (type == "welcome") {
+        sLobby.ws_welcomed = true;
+        if (sLobby.is_host) {
+            set_state(PORT_NETLOBBY_WAITING, "Room " + sLobby.code + " - waiting for a player to join");
+        } else {
+            sLobby.status = "Joined room " + sLobby.code + " - contacting host...";
+        }
+    } else if (type == "peer") {
+        if (sLobby.state == PORT_NETLOBBY_WAITING || sLobby.state == PORT_NETLOBBY_JOINING ||
+            sLobby.state == PORT_NETLOBBY_CREATING) {
+            sLobby.candidates.clear();
+            for (const char *key : { "public", "local" }) {
+                std::string endpoint = json_field(msg, key);
+                if (!endpoint.empty() && endpoint != "-" &&
+                    std::find(sLobby.candidates.begin(), sLobby.candidates.end(), endpoint) == sLobby.candidates.end()) {
+                    sLobby.candidates.push_back(endpoint);
+                }
+            }
+            sLobby.relay_requested = false;
+            set_state(PORT_NETLOBBY_PUNCHING, "Connecting to opponent...");
+        }
+    } else if (type == "relaying") {
+        port_udp_set_relay_hooks(relay_send, relay_recv);
+        sLobby.peer = "relay";
+        sLobby.status = "Connecting through relay...";
+    } else if (type == "peer_left") {
+        if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
+            if (sLobby.is_host) {
+                port_udp_set_relay_hooks(nullptr, nullptr);
+                sLobby.peer.clear();
+                sLobby.peer_fkind = -1;
+                set_state(PORT_NETLOBBY_WAITING, "Opponent left - room " + sLobby.code + " is open again");
+            } else {
+                fail("The host closed the room");
+            }
+        }
+    } else if (type == "error") {
+        std::string reason = json_field(msg, "reason");
+        if (reason == "room-in-use" && sLobby.is_host && sLobby.code_retries++ < kMaxCodeRetries) {
+            sLobby.code = new_code();
+            connect_server();
+        } else if (reason == "no-such-room") {
+            fail("No room with code " + sLobby.code);
+        } else if (reason == "room-full") {
+            fail("Room " + sLobby.code + " already has two players");
+        } else {
+            fail("Lobby server: " + reason);
+        }
+    }
+}
+
 void receive(void)
 {
-    char buffer[512];
+    char text[1024];
+    while (port_ws_poll_text(text, sizeof(text))) {
+        handle_server(text);
+        if (sLobby.state == PORT_NETLOBBY_FAILED) {
+            return;
+        }
+    }
+    if (sLobby.state == PORT_NETLOBBY_IN_MATCH) {
+        return;     // netpeer owns the UDP socket (and relay queue) now
+    }
+    uint8_t buffer[512];
     char from[64];
-
     for (;;) {
         int size = port_udp_recv_from(buffer, sizeof(buffer) - 1, from, sizeof(from));
         if (size <= 0) {
             return;
         }
+        if (parse_stun(buffer, size)) {
+            continue;
+        }
         buffer[size] = '\0';
-        if (size < 5) {
-            continue;
-        }
-        std::vector<std::string> args = split(buffer);
-        if (args.empty()) {
-            continue;
-        }
-        if (args[0] == "SSBR") {
-            handle_server(args);
-        } else if (args[0] == "SSBL") {
+        std::vector<std::string> args = split(reinterpret_cast<const char *>(buffer));
+        if (!args.empty() && args[0] == "SSBL") {
             handle_peer(args, from);
         }
         if (sLobby.state == PORT_NETLOBBY_IN_MATCH || sLobby.state == PORT_NETLOBBY_FAILED) {
-            return;     // netpeer owns the socket now
+            return;
         }
     }
+}
+
+void begin(bool is_host, const char *server)
+{
+    shutdown_net();
+    sLobby.is_host = is_host;
+    sLobby.server = server ? server : "";
+    sLobby.stun_public = "-";
+    sLobby.stun_done = false;
+    sLobby.code_retries = 0;
+    sLobby.peer.clear();
+    sLobby.candidates.clear();
+    sLobby.peer_fkind = -1;
+    sLobby.ping_ms = -1;
+    for (uint8_t &b : sLobby.stun_txid) {
+        b = static_cast<uint8_t>(sRng());
+    }
+    if (sLobby.server.rfind("ws://", 0) != 0 && sLobby.server.rfind("wss://", 0) != 0) {
+        fail("Lobby server must be a ws:// or wss:// address");
+        return;
+    }
+    if (!port_udp_open("0.0.0.0:0")) {
+        fail("Couldn't open a UDP socket");
+        return;
+    }
+    sLobby.stun_ms = port_udp_now_ms();
+    sLobby.last_keepalive_ms = port_udp_now_ms();
+    send_stun();
+    connect_server();
 }
 
 void update_auto(void)
@@ -322,7 +497,7 @@ void update_auto(void)
         }
         sLobby.my_fkind = fkind;
     }
-    if (sAuto.host && !sAuto.code_written && !sLobby.code.empty()) {
+    if (sAuto.host && !sAuto.code_written && sLobby.state == PORT_NETLOBBY_WAITING) {
         if (FILE *f = std::fopen(sAuto.code_file.c_str(), "w")) {
             std::fputs(sLobby.code.c_str(), f);
             std::fclose(f);
@@ -358,44 +533,44 @@ extern "C" void port_netlobby_update(void)
 
     update_auto();
 
-    if (l.state == PORT_NETLOBBY_IDLE || l.state == PORT_NETLOBBY_FAILED || l.state == PORT_NETLOBBY_IN_MATCH) {
+    if (l.state == PORT_NETLOBBY_IDLE || l.state == PORT_NETLOBBY_FAILED) {
+        return;
+    }
+    if (port_ws_state() == PORT_WS_FAILED) {
+        if (l.state == PORT_NETLOBBY_IN_MATCH && l.peer != "relay") {
+            return;     // direct match: losing the lobby server doesn't matter
+        }
+        fail(std::string("Lobby server: ") + port_ws_error());
         return;
     }
     receive();
+    if (l.state == PORT_NETLOBBY_FAILED) {
+        return;
+    }
+    if (elapsed(l.last_keepalive_ms, kKeepaliveMs)) {
+        port_ws_send_text("{\"type\":\"keepalive\"}");
+        l.last_keepalive_ms = port_udp_now_ms();
+    }
+    send_endpoint_if_ready();
 
     switch (l.state) {
     case PORT_NETLOBBY_CREATING:
-        if (elapsed(l.last_send_ms, kCreateRetryMs)) {
-            send_server("SSBR CREATE " + l.nonce + " " + local_endpoint());
-            l.last_send_ms = port_udp_now_ms();
-        }
-        if (elapsed(l.state_ms, kPeerTimeoutMs)) {
-            fail("No answer from server " + l.server);
-        }
-        break;
-
     case PORT_NETLOBBY_JOINING:
-        if (elapsed(l.last_send_ms, kCreateRetryMs)) {
-            send_server("SSBR JOIN " + l.code + " " + l.nonce + " " + local_endpoint());
+    case PORT_NETLOBBY_WAITING:
+        if (!l.stun_done && !elapsed(l.stun_ms, kStunGiveUpMs) && elapsed(l.last_send_ms, kStunRetryMs)) {
+            send_stun();
             l.last_send_ms = port_udp_now_ms();
         }
-        if (elapsed(l.state_ms, kPeerTimeoutMs)) {
-            fail("No answer from server " + l.server);
-        }
-        break;
-
-    case PORT_NETLOBBY_WAITING:
-        if (elapsed(l.last_ping_ms, kPingMs)) {
-            send_server("SSBR PING " + l.code);
-            l.last_ping_ms = port_udp_now_ms();
+        if (l.state != PORT_NETLOBBY_WAITING && !l.ws_welcomed && elapsed(l.state_ms, kServerTimeoutMs)) {
+            fail("No answer from the lobby server");
         }
         break;
 
     case PORT_NETLOBBY_PUNCHING:
-        /* SSB64_LOBBY_FORCE_RELAY: skip the direct attempt (tests the relay). */
-        if (!l.relay_requested && env("SSB64_LOBBY_FORCE_RELAY") != nullptr) {
-            send_server("SSBR RELAY " + l.code);
+        if (!l.relay_requested && (env("SSB64_LOBBY_FORCE_RELAY") != nullptr || elapsed(l.state_ms, kPunchTimeoutMs))) {
+            port_ws_send_text("{\"type\":\"relay\"}");
             l.relay_requested = true;
+            l.status = "Direct connection failed, trying relay...";
         }
         if (elapsed(l.last_send_ms, kHelloMs)) {
             if (l.peer == "relay") {
@@ -406,11 +581,6 @@ extern "C" void port_netlobby_update(void)
                 }
             }
             l.last_send_ms = port_udp_now_ms();
-        }
-        if (!l.relay_requested && elapsed(l.state_ms, kPunchTimeoutMs)) {
-            send_server("SSBR RELAY " + l.code);
-            l.relay_requested = true;
-            l.status = "Direct connection failed, trying relay...";
         }
         if (elapsed(l.state_ms, kPunchTimeoutMs + kRelayTimeoutMs)) {
             fail("Couldn't reach the other player");
@@ -426,10 +596,6 @@ extern "C" void port_netlobby_update(void)
             }
             l.last_send_ms = port_udp_now_ms();
         }
-        if (elapsed(l.last_ping_ms, kPingMs)) {
-            send_server("SSBR PING " + l.code);     // keeps the NAT mapping and relay room alive
-            l.last_ping_ms = port_udp_now_ms();
-        }
         if (elapsed(l.last_heard_ms, kPeerTimeoutMs)) {
             fail("Lost connection to the other player");
         }
@@ -442,21 +608,18 @@ extern "C" void port_netlobby_update(void)
 
 extern "C" void port_netlobby_host(const char *server, int fkind, int stage, int stocks, int items, int delay)
 {
-    sLobby.is_host = true;
     sLobby.my_fkind = fkind;
     sLobby.stage = stage;
     sLobby.stocks = stocks;
     sLobby.items = items;
     sLobby.delay = delay;
-    sLobby.code.clear();
-    if (open_socket(server ? server : "")) {
-        set_state(PORT_NETLOBBY_CREATING, "Creating room...");
-    }
+    sLobby.code = new_code();
+    set_state(PORT_NETLOBBY_CREATING, "Creating room...");
+    begin(true, server);
 }
 
 extern "C" void port_netlobby_join(const char *server, const char *code, int fkind)
 {
-    sLobby.is_host = false;
     sLobby.my_fkind = fkind;
     sLobby.code = code ? code : "";
     for (char &c : sLobby.code) {
@@ -466,14 +629,13 @@ extern "C" void port_netlobby_join(const char *server, const char *code, int fki
         fail("Room codes are 6 characters");
         return;
     }
-    if (open_socket(server ? server : "")) {
-        set_state(PORT_NETLOBBY_JOINING, "Joining room " + sLobby.code + "...");
-    }
+    set_state(PORT_NETLOBBY_JOINING, "Joining room " + sLobby.code + "...");
+    begin(false, server);
 }
 
 extern "C" void port_netlobby_cancel(void)
 {
-    port_udp_close();
+    shutdown_net();
     set_state(PORT_NETLOBBY_IDLE, "Not connected");
 }
 
@@ -482,8 +644,7 @@ extern "C" void port_netlobby_start_match(void)
     if (!sLobby.is_host || sLobby.state != PORT_NETLOBBY_CONNECTED || sLobby.peer_fkind < 0) {
         return;
     }
-    std::random_device rd;
-    sLobby.seed = (rd() & 0x7FFFFFFF) | 1;
+    sLobby.seed = (sRng() & 0x7FFFFFFF) | 1;
     set_state(PORT_NETLOBBY_STARTING, "Starting match...");
 }
 

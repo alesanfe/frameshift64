@@ -1,9 +1,17 @@
 #pragma once
 
-/* Online lobby: room codes through server/lobby-server.js, UDP hole punching
- * (public + LAN candidates) with relay fallback, character picks, and the
+/* Online lobby: room codes through server/cloudflare (Worker + Durable
+ * Object), UDP hole punching via Cloudflare STUN with WebSocket relay fallback, character picks, and the
  * hand-off into a rollback netplay match (sys/netpeer.c). Non-blocking;
  * port_netlobby_update() runs once per frame from PortPushFrame. */
+
+/* Lobby server (server/cloudflare). Release builds bake the deployed Worker
+ * in via -DSSB64_NETPLAY_SERVER=...; players can override it in the menu. */
+#ifdef SSB64_NETPLAY_SERVER
+#define PORT_NETLOBBY_DEFAULT_SERVER SSB64_NETPLAY_SERVER
+#else
+#define PORT_NETLOBBY_DEFAULT_SERVER "wss://smash-netplay.jumpcircuit.workers.dev"
+#endif
 
 #ifdef __cplusplus
 extern "C" {

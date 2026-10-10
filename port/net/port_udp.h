@@ -36,10 +36,12 @@ int port_udp_send_to(const char *spec, const void *data, int size);
  * "relay" for traffic unwrapped from the server relay) into `from`. */
 int port_udp_recv_from(void *buffer, int capacity, char *from, int from_capacity);
 
-/* Relay fallback: when `code` is non-NULL, port_udp_send wraps every payload
- * as "SSBX"+code and sends it to `server_spec`, and received relay frames are
- * unwrapped (see server/lobby-server.js). NULL code returns to direct mode. */
-int port_udp_set_relay(const char *server_spec, const char *code);
+/* Relay fallback: with hooks installed, port_udp_send hands every payload to
+ * `send` and receives poll `recv` first (the lobby routes both through its
+ * WebSocket to server/cloudflare). NULL hooks return to direct UDP. */
+typedef int (*port_udp_relay_send_fn)(const void *data, int size);   /* 1 = sent */
+typedef int (*port_udp_relay_recv_fn)(void *buffer, int capacity);  /* size, 0 = none */
+void port_udp_set_relay_hooks(port_udp_relay_send_fn send, port_udp_relay_recv_fn recv);
 int port_udp_is_relay(void);
 
 /* The primary local IPv4 of this machine plus the bound port ("ip:port"),

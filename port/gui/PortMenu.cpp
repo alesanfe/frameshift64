@@ -407,7 +407,7 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
     static bool loaded = false;
 
     if (!loaded) {
-        std::snprintf(serverBuf, sizeof(serverBuf), "%s", CVarGetString("gNetplay.Server", "127.0.0.1:7000"));
+        std::snprintf(serverBuf, sizeof(serverBuf), "%s", CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER));
         loaded = true;
     }
     int fighter = CVarGetInteger("gNetplay.Fighter", 0);
@@ -421,18 +421,8 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
     const bool idle = (state == PORT_NETLOBBY_IDLE || state == PORT_NETLOBBY_FAILED);
 
     ImGui::TextWrapped("Play against someone online with rollback netcode. One player hosts and shares the "
-                       "room code; the other joins with it. Both need the lobby server address "
-                       "(run server/lobby-server.js on a reachable machine).");
+                       "room code; the other joins with it. No port forwarding needed.");
     ImGui::Spacing();
-
-    ImGui::BeginDisabled(!idle);
-    ImGui::TextUnformatted("Lobby server (host:port)");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::InputText("##NetplayServer", serverBuf, sizeof(serverBuf))) {
-        CVarSetString("gNetplay.Server", serverBuf);
-        save();
-    }
-    ImGui::EndDisabled();
 
     ImGui::BeginDisabled(state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH);
     ImGui::TextUnformatted("Your fighter");
@@ -487,6 +477,22 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
         port_netlobby_join(serverBuf, codeBuf, fighter);
     }
     ImGui::EndDisabled();
+
+    if (ImGui::CollapsingHeader("Advanced")) {
+        ImGui::BeginDisabled(!idle);
+        ImGui::TextUnformatted("Lobby server");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::InputText("##NetplayServer", serverBuf, sizeof(serverBuf))) {
+            CVarSetString("gNetplay.Server", serverBuf);
+            save();
+        }
+        if (ImGui::SmallButton("Use default server")) {
+            std::snprintf(serverBuf, sizeof(serverBuf), "%s", PORT_NETLOBBY_DEFAULT_SERVER);
+            CVarClear("gNetplay.Server");
+            save();
+        }
+        ImGui::EndDisabled();
+    }
 
     ImGui::SeparatorText("Status");
     ImGui::TextWrapped("%s", port_netlobby_status());
