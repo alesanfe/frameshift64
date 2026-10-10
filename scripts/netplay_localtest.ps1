@@ -25,7 +25,7 @@ $out = Resolve-Path $OutDir
 
 function Start-Peer([int]$local, [int]$remote, [int]$bindPort, [int]$peerPort, [int]$isHost, [int]$fuzz, [string]$name) {
     $vars = @{
-        SSB64_NETPLAY = '1'; SSB64_NETPLAY_BOOTSTRAP = '1'; SSB64_NETPLAY_HOST = "$isHost"
+        SSB64_NETPLAY = '1'; SSB64_NETPLAY_BOOTSTRAP = '1'; SSB64_NETPLAY_HOST = "$isHost"; SSB64_MUTE = '1'
         SSB64_NETPLAY_LOCAL_PLAYER = "$local"; SSB64_NETPLAY_REMOTE_PLAYER = "$remote"
         SSB64_NETPLAY_BIND = "127.0.0.1:$bindPort"; SSB64_NETPLAY_PEER = "127.0.0.1:$peerPort"
         SSB64_NETPLAY_DELAY = "$Delay"; SSB64_NETPLAY_SEED = "$Seed"; SSB64_NETPLAY_FUZZ = "$fuzz"

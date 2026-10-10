@@ -51,7 +51,7 @@ Write-Output "lobby server: $Server"
 function Start-Peer([string]$role, [int]$fighter, [int]$fuzz) {
     $vars = @{
         SSB64_LOBBY_CODE_FILE = "$out\code.txt"; SSB64_LOBBY_FKIND = "$fighter"; SSB64_LOBBY_STAGE = "$Stage"
-        SSB64_NETPLAY_FUZZ = "$fuzz"
+        SSB64_NETPLAY_FUZZ = "$fuzz"; SSB64_MUTE = '1'
         SSB64_NETPLAY_SIM_LATENCY_MS = "$LatencyMs"; SSB64_NETPLAY_SIM_JITTER_MS = "$JitterMs"
         SSB64_NETPLAY_SIM_LOSS_PCT = "$LossPct"; SSB64_NETPLAY_SIM_SEED = "$fuzz"
         SSB64_NETPLAY_CONFIRMED_TRACE = "$out\$role.trace"; SSB64_LOG_PATH = "$out\$role.log"

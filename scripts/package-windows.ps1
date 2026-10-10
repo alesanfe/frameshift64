@@ -118,10 +118,12 @@ if ($LASTEXITCODE -ne 0) { Fail "build failed" }
 Write-Step "Packaging Fast3D shader archive"
 $F3DO2R = Join-Path $BuildDir "f3d.o2r"
 if (Test-Path $F3DO2R) { Remove-Item $F3DO2R -Force }
-$ShaderSrc = Join-Path $Root "libultraship\src\fast"
-Push-Location $ShaderSrc
-Compress-Archive -Path "shaders" -DestinationPath $F3DO2R -CompressionLevel Optimal
-Pop-Location
+$ShaderSrc = Join-Path $Root "libultraship\src\fast\shaders"
+# Entry names must use forward slashes ("shaders/directx/..."): libultraship
+# looks shaders up by those names. Windows PowerShell 5.1's Compress-Archive
+# writes backslashes (and rejects a .o2r destination), which ships a release
+# whose renderer can't find a single shader.
+& (Join-Path $PSScriptRoot "zip-portable.ps1") -Source $ShaderSrc -Destination $F3DO2R -Prefix "shaders/"
 if (-not (Test-Path $F3DO2R)) { Fail "f3d.o2r was not created" }
 
 # ── 3. Locate built artifacts ──
@@ -236,7 +238,7 @@ if ($EnableScripting) {
 # ── 5. Zip ──
 Write-Step "Compressing $ZipPath"
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-Compress-Archive -Path "$StageDir\*" -DestinationPath $ZipPath -CompressionLevel Optimal
+& (Join-Path $PSScriptRoot "zip-portable.ps1") -Source $StageDir -Destination $ZipPath
 if (-not (Test-Path $ZipPath)) { Fail "zip was not created" }
 
 $ZipKB = [int]((Get-Item $ZipPath).Length / 1024)
