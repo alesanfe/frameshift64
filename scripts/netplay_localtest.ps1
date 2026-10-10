@@ -14,6 +14,7 @@ param(
     [int]$LossPct = 0,
     [int]$Seed = 4242,
     [int]$BasePort = 7801,
+    [int]$InjectDesync = -1,
     [string]$BuildDir = "$PSScriptRoot\..\build\us\Release",
     [string]$OutDir = "$PSScriptRoot\..\build\us\netplay-test"
 )
@@ -32,6 +33,7 @@ function Start-Peer([int]$local, [int]$remote, [int]$bindPort, [int]$peerPort, [
         SSB64_NETPLAY_SIM_LOSS_PCT = "$LossPct"; SSB64_NETPLAY_SIM_SEED = "$fuzz"
         SSB64_NETPLAY_CONFIRMED_TRACE = "$out\$name.trace"; SSB64_LOG_PATH = "$out\$name.log"
         SSB64_SAVE_PATH = "$out\$name.sav"
+        SSB64_NETPLAY_TEST_DESYNC = $(if ($isHost -eq 1) { "$InjectDesync" } else { "-1" })
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = Join-Path $build 'BattleShip.exe'
@@ -55,7 +57,7 @@ $la = Get-Content $ta; $lb = Get-Content $tb
 $n = [Math]::Min($la.Count, $lb.Count)
 Write-Output "host traced=$($la.Count) client traced=$($lb.Count) compared=$n"
 foreach ($f in @('host', 'client')) {
-    Select-String -Path "$out\$f.log" -Pattern 'netplay session|netplay tick|session stop|rollback FAILED' | Select-Object -Last 3 | ForEach-Object { "$f> $($_.Line)" }
+    Select-String -Path "$out\$f.log" -Pattern 'netplay session|netplay tick|session stop|rollback FAILED|DESYNC|TEST injecting' | Select-Object -Last 3 | ForEach-Object { "$f> $($_.Line)" }
 }
 for ($i = 0; $i -lt $n; $i++) {
     if ($la[$i] -ne $lb[$i]) {
