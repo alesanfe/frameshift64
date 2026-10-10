@@ -6,7 +6,10 @@
 
 extern void syNetPeerInitDebugEnv(void);
 extern void syNetPeerStartVSSession(void);
+extern void syNetPeerBeginFrame(void);
 extern sb32 syNetPeerCheckBattleExecutionReady(void);
+extern sb32 syNetPeerIsRollbackActive(void);
+extern s32 syNetPeerGetRemotePlayer(void);
 extern sb32 syNetPeerCheckStartBarrierReleased(void);
 extern void syNetPeerUpdateBattleGate(void);
 extern void syNetPeerUpdate(void);

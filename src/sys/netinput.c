@@ -34,6 +34,22 @@ u32 sSYNetInputPublishedTickCount;
 u32 sSYNetInputPublishedChecksumLimit;
 u32 sSYNetInputPublishedChecksumAtLimit;
 
+/* Rollback netplay. Local input sampled on tick t is scheduled for tick
+ * t + delay (exactly once, so a frame already sent to the peer never
+ * changes); the peer receives the scheduled ticks and both sides apply the
+ * input on the same tick. */
+u32 sSYNetInputLocalDelay;
+SYNetInputFrame sSYNetInputLocalSchedule[MAXCONTROLLERS][SYNETINPUT_HISTORY_LENGTH];
+/* Every remote tick below this has a confirmed input (per player). */
+u32 sSYNetInputRemoteNextUnconfirmed[MAXCONTROLLERS];
+/* Earliest already-published tick whose confirmed remote input differs from
+ * the prediction that was simulated; consumed by the rollback driver. */
+u32 sSYNetInputMispredictTick;
+sb32 sSYNetInputIsMispredicted;
+/* SSB64_NETPLAY_FUZZ=<seed>: local slots play seeded pseudo-random input
+ * (test harness: real mispredictions without anyone at the controls). */
+u32 sSYNetInputFuzzSeed;
+
 u32 syNetInputGetTick(void)
 {
 	return sSYNetInputTick;
@@ -110,6 +126,8 @@ void syNetInputReset(void)
 	sSYNetInputPublishedTickCount = 0;
 	sSYNetInputPublishedChecksumLimit = 0;
 	sSYNetInputPublishedChecksumAtLimit = 0;
+	sSYNetInputIsMispredicted = FALSE;
+	sSYNetInputMispredictTick = 0;
 
 	sSYNetInputReplayMetadata.magic = SYNETINPUT_REPLAY_MAGIC;
 	sSYNetInputReplayMetadata.version = SYNETINPUT_REPLAY_VERSION;
@@ -149,7 +167,9 @@ void syNetInputReset(void)
 			syNetInputClearFrame(&sSYNetInputHistory[player][i]);
 			syNetInputClearFrame(&sSYNetInputRemoteHistory[player][i]);
 			syNetInputClearFrame(&sSYNetInputSavedHistory[player][i]);
+			syNetInputClearFrame(&sSYNetInputLocalSchedule[player][i]);
 		}
+		sSYNetInputRemoteNextUnconfirmed[player] = 0;
 		for (i = 0; i < SYNETINPUT_REPLAY_MAX_FRAMES; i++)
 		{
 			syNetInputClearFrame(&sSYNetInputReplayFrames[player][i]);
@@ -182,12 +202,106 @@ SYNetInputSource syNetInputGetSlotSource(s32 player)
 void syNetInputSetRemoteInput(s32 player, u32 tick, u16 buttons, s8 stick_x, s8 stick_y)
 {
 	SYNetInputFrame frame;
+	SYNetInputFrame published;
 
-	if (syNetInputCheckPlayer(player) != FALSE)
+	if (syNetInputCheckPlayer(player) == FALSE)
 	{
-		syNetInputMakeFrame(&frame, tick, buttons, stick_x, stick_y, nSYNetInputSourceRemoteConfirmed, FALSE);
-		syNetInputStoreFrame(sSYNetInputRemoteHistory, player, &frame);
+		return;
 	}
+	if (syNetInputGetStoredFrame(sSYNetInputRemoteHistory, player, tick, NULL) != FALSE)
+	{
+		return;     // redundant copy (every packet repeats recent frames)
+	}
+	syNetInputMakeFrame(&frame, tick, buttons, stick_x, stick_y, nSYNetInputSourceRemoteConfirmed, FALSE);
+	syNetInputStoreFrame(sSYNetInputRemoteHistory, player, &frame);
+
+	if ((sSYNetInputSlots[player].last_confirmed.is_valid == FALSE) || (tick >= sSYNetInputSlots[player].last_confirmed.tick))
+	{
+		sSYNetInputSlots[player].last_confirmed = frame;
+	}
+	while (syNetInputGetStoredFrame(sSYNetInputRemoteHistory, player, sSYNetInputRemoteNextUnconfirmed[player], NULL) != FALSE)
+	{
+		sSYNetInputRemoteNextUnconfirmed[player]++;
+	}
+	/* Already simulated with a guess? Flag a rollback if the guess was wrong. */
+	if ((tick < sSYNetInputTick) && (syNetInputGetStoredFrame(sSYNetInputHistory, player, tick, &published) != FALSE))
+	{
+		if ((published.buttons != buttons) || (published.stick_x != stick_x) || (published.stick_y != stick_y))
+		{
+			if ((sSYNetInputIsMispredicted == FALSE) || (tick < sSYNetInputMispredictTick))
+			{
+				sSYNetInputMispredictTick = tick;
+				sSYNetInputIsMispredicted = TRUE;
+			}
+		}
+	}
+}
+
+/* Ticks before the remote's input delay can never be sent (nothing was
+ * sampled that early); both sides treat them as neutral. */
+void syNetInputPreconfirmRemote(s32 player, u32 tick_count)
+{
+	u32 tick;
+
+	for (tick = 0; tick < tick_count; tick++)
+	{
+		syNetInputSetRemoteInput(player, tick, 0, 0, 0);
+	}
+}
+
+u32 syNetInputGetRemoteNextUnconfirmed(s32 player)
+{
+	return (syNetInputCheckPlayer(player) != FALSE) ? sSYNetInputRemoteNextUnconfirmed[player] : 0;
+}
+
+sb32 syNetInputTakeMispredictTick(u32 *out_tick)
+{
+	if (sSYNetInputIsMispredicted == FALSE)
+	{
+		return FALSE;
+	}
+	*out_tick = sSYNetInputMispredictTick;
+	sSYNetInputIsMispredicted = FALSE;
+
+	return TRUE;
+}
+
+void syNetInputSetLocalDelay(u32 delay)
+{
+	sSYNetInputLocalDelay = delay;
+}
+
+u32 syNetInputGetLocalDelay(void)
+{
+	return sSYNetInputLocalDelay;
+}
+
+sb32 syNetInputGetLocalScheduledFrame(s32 player, u32 tick, SYNetInputFrame *out_frame)
+{
+	return syNetInputGetStoredFrame(sSYNetInputLocalSchedule, player, tick, out_frame);
+}
+
+void syNetInputSetFuzzSeed(u32 seed)
+{
+	sSYNetInputFuzzSeed = seed;
+}
+
+/* Deterministic pseudo-random controller state, held ~12 ticks at a time.
+ * One button at most (never START, so no pause or A+B+R+Z reset). */
+static void syNetInputMakeFuzzState(s32 player, u32 tick, u16 *buttons, s8 *stick_x, s8 *stick_y)
+{
+	static const u16 fuzz_buttons[8] = { 0, 0, 0, A_BUTTON, B_BUTTON, Z_TRIG, R_TRIG, A_BUTTON };
+	u32 h = (sSYNetInputFuzzSeed * 2654435761U) ^ ((u32)player * 0x9E3779B9U) ^ ((tick / 12) * 0x85EBCA6BU);
+
+	h ^= h >> 15;
+	h *= 0x2C1B3C6DU;
+	h ^= h >> 12;
+	h *= 0x297A2D39U;
+	h ^= h >> 15;
+
+	*stick_x = (s8)((s32)((h >> 0) & 0xFF) % 161 - 80);
+	*stick_y = (s8)((s32)((h >> 8) & 0xFF) % 161 - 80);
+	*buttons = fuzz_buttons[(h >> 16) & 7];
 }
 
 void syNetInputSetSavedInput(s32 player, u32 tick, u16 buttons, s8 stick_x, s8 stick_y)
@@ -204,17 +318,31 @@ void syNetInputSetSavedInput(s32 player, u32 tick, u16 buttons, s8 stick_x, s8 s
 void syNetInputMakeLocalFrame(s32 player, u32 tick, SYNetInputFrame *out_frame)
 {
 	SYController *controller = &gSYControllerDevices[player];
+	SYNetInputFrame scheduled;
+	u16 buttons = controller->button_hold;
+	s8 stick_x = controller->stick_range.x;
+	s8 stick_y = controller->stick_range.y;
 
-	syNetInputMakeFrame
-	(
-		out_frame,
-		tick,
-		controller->button_hold,
-		controller->stick_range.x,
-		controller->stick_range.y,
-		nSYNetInputSourceLocal,
-		FALSE
-	);
+	if (sSYNetInputFuzzSeed != 0)
+	{
+		syNetInputMakeFuzzState(player, tick, &buttons, &stick_x, &stick_y);
+	}
+	if ((sSYNetInputLocalDelay == 0) && (sSYNetInputFuzzSeed == 0))
+	{
+		syNetInputMakeFrame(out_frame, tick, buttons, stick_x, stick_y, nSYNetInputSourceLocal, FALSE);
+		return;
+	}
+	/* Schedule this sample once; a stalled tick re-reads the controller but
+	 * must not rewrite a frame that may already be on the wire. */
+	if (syNetInputGetStoredFrame(sSYNetInputLocalSchedule, player, tick + sSYNetInputLocalDelay, NULL) == FALSE)
+	{
+		syNetInputMakeFrame(&scheduled, tick + sSYNetInputLocalDelay, buttons, stick_x, stick_y, nSYNetInputSourceLocal, FALSE);
+		syNetInputStoreFrame(sSYNetInputLocalSchedule, player, &scheduled);
+	}
+	if (syNetInputGetStoredFrame(sSYNetInputLocalSchedule, player, tick, out_frame) == FALSE)
+	{
+		syNetInputMakeFrame(out_frame, tick, 0, 0, 0, nSYNetInputSourceLocal, FALSE);
+	}
 }
 
 void syNetInputMakePredictedFrame(s32 player, u32 tick, SYNetInputFrame *out_frame)
@@ -285,6 +413,38 @@ void syNetInputPublishFrame(s32 player, SYNetInputFrame *frame)
 
 	sSYNetInputSlots[player].last_published = *frame;
 	syNetInputStoreFrame(sSYNetInputHistory, player, frame);
+}
+
+/* Rollback resimulation: re-publish the inputs of an already-simulated tick.
+ * Local slots replay what was sampled then (never the live controller);
+ * remote/saved slots re-resolve, so a confirmed remote input that arrived
+ * since the tick first ran replaces its prediction. Taps and releases are
+ * derived against the tick before, exactly as on the first run. */
+void syNetInputRepublishTick(u32 tick)
+{
+	SYNetInputFrame frame;
+	SYNetInputFrame prev;
+	s32 player;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		if (sSYNetInputSlots[player].source == nSYNetInputSourceLocal)
+		{
+			if (syNetInputGetStoredFrame(sSYNetInputHistory, player, tick, &frame) == FALSE)
+			{
+				syNetInputMakeFrame(&frame, tick, 0, 0, 0, nSYNetInputSourceLocal, FALSE);
+			}
+		}
+		else syNetInputResolveFrame(player, tick, &frame);
+
+		if ((tick == 0) || (syNetInputGetStoredFrame(sSYNetInputHistory, player, tick - 1, &prev) == FALSE))
+		{
+			syNetInputClearFrame(&prev);
+		}
+		sSYNetInputSlots[player].last_published = prev;
+		syNetInputPublishFrame(player, &frame);
+	}
+	syNetInputPublishMainController();
 }
 
 void syNetInputPublishMainController(void)
@@ -539,6 +699,7 @@ void syNetInputFuncRead(void)
 	s32 player;
 
 	syControllerFuncRead();
+	syNetPeerBeginFrame();
 	tick = syNetInputGetTick();
 
 	for (player = 0; player < MAXCONTROLLERS; player++)

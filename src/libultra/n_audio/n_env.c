@@ -5332,6 +5332,16 @@ ALWhatever8009EDD0_siz34* func_80026A10_27610(u16 id)
 
 ALWhatever8009EDD0_siz34* func_800269C0_275C0(u16 id)
 {
+#ifdef PORT
+  /* Rollback resimulation re-runs ticks whose sounds already played; don't
+   * start them again. Every caller handles NULL (the voice pool can run dry
+   * on hardware too), and gameplay never branches on the handle. */
+  extern s32 syNetRollbackIsResimulating(void);
+  if (syNetRollbackIsResimulating())
+  {
+    return NULL;
+  }
+#endif
   g_port_current_is_voice = (id >= 0x135) ? 1 : 0; // LUS: Tag the thread!
 
   if (id >= D_8009EDD0_406D0.fgm_ucode_count)

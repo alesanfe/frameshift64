@@ -88,5 +88,14 @@ extern u32 syNetInputGetPublishedInputChecksum(void);
 extern void syNetInputSetReplayMetadata(const SYNetInputReplayMetadata *metadata);
 extern sb32 syNetInputGetReplayMetadata(SYNetInputReplayMetadata *out_metadata);
 extern void syNetInputFuncRead(void);
+extern void syNetInputPublishMainController(void);
+extern void syNetInputRepublishTick(u32 tick);
+extern void syNetInputPreconfirmRemote(s32 player, u32 tick_count);
+extern u32 syNetInputGetRemoteNextUnconfirmed(s32 player);
+extern sb32 syNetInputTakeMispredictTick(u32 *out_tick);
+extern void syNetInputSetLocalDelay(u32 delay);
+extern u32 syNetInputGetLocalDelay(void);
+extern sb32 syNetInputGetLocalScheduledFrame(s32 player, u32 tick, SYNetInputFrame *out_frame);
+extern void syNetInputSetFuzzSeed(u32 seed);
 
 #endif /* _SYNETINPUT_H_ */

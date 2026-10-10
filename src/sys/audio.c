@@ -1664,6 +1664,20 @@ s32 syAudioPlayBGM(s32 sngplayer, u32 bgm)
         }
     }
 
+    /* Rollback resimulation: a request for the track this player already
+     * plays (e.g. item music re-triggered by a replayed tick) would restart
+     * it. Compare the pre-shuffle request so the shuffler can't defeat it. */
+    {
+        extern s32 syNetRollbackIsResimulating(void);
+        static u32 sSYAudioBGMRequestedIDs[ARRAY_COUNT(sSYAudioBGMPlayingIDs)];
+
+        if (syNetRollbackIsResimulating() && (sSYAudioCSPlayerStatuses[sngplayer] == AL_PLAYING) &&
+            (sSYAudioBGMRequestedIDs[sngplayer] == bgm))
+        {
+            return sSYAudioBGMPlayingIDs[sngplayer];
+        }
+        sSYAudioBGMRequestedIDs[sngplayer] = bgm;
+    }
     bgm = port_enhancement_shuffle_music(bgm); // music shuffler
 
 #endif

@@ -9,6 +9,7 @@
 #include <sc/scmanager.h>
 #include <sys/malloc.h>
 #include <sys/netinput.h>
+#include <sys/netpeer.h>
 #include <sys/netreplay.h>
 #include <sys/taskman.h>
 #include <sys/utils.h>
@@ -114,6 +115,32 @@ static SYNetRollbackRange sSYNetRollbackFileRanges[SYNETROLLBACK_FILE_RANGE_MAX]
 static s32 sSYNetRollbackFileRangesNum;
 static sb32 sSYNetRollbackIsFileRangeOverflow;
 
+/* Snapshot ring: slot i holds the pre-update state of sSYNetRollbackSlotTicks[i].
+ * Ticks before sSYNetRollbackChainStart are not reachable (a gap in the
+ * chain: some tick in between could not be snapshotted). */
+static u32 sSYNetRollbackSlotTicks[SYNETROLLBACK_SLOT_NUM];
+static u32 sSYNetRollbackChainStart;
+static u32 sSYNetRollbackSyncTestDistance;
+static SYNetSyncTickHash sSYNetRollbackFirstHashes[SYNETROLLBACK_SLOT_NUM];
+
+/* Netplay: hash of each tick's post-update state in the current (possibly
+ * corrected) timeline, and the confirmed-state trace written once a tick's
+ * inputs are all confirmed (SSB64_NETPLAY_CONFIRMED_TRACE). Two peers'
+ * traces must be identical line for line. */
+static SYNetSyncTickHash sSYNetRollbackLiveHashes[SYNETROLLBACK_SLOT_NUM];
+static u32 sSYNetRollbackLiveHashTicks[SYNETROLLBACK_SLOT_NUM];
+static sb32 sSYNetRollbackLiveHashValid[SYNETROLLBACK_SLOT_NUM];
+static u32 sSYNetRollbackTraceNextTick;
+static FILE *sSYNetRollbackConfirmedTrace;
+static const char *sSYNetRollbackConfirmedTracePath;
+static u32 sSYNetRollbackRollbacks;
+static u32 sSYNetRollbackResimTicks;
+static u32 sSYNetRollbackMaxRollback;
+static u32 sSYNetRollbackFailedRollbacks;
+
+/* Set when the live tick ran in a rollback session; consumed by taskman. */
+static sb32 sSYNetRollbackIsTickRan;
+
 static u32 sSYNetRollbackTotalTestedTicks;
 static u32 sSYNetRollbackTotalSkippedTicks;
 static u32 sSYNetRollbackTotalFailedTicks;
@@ -217,7 +244,13 @@ void syNetRollbackInitDebugEnv(void)
 	const char *synctest_env = getenv("SSB64_ROLLBACK_SYNCTEST");
 	const char *netplay_env = getenv("SSB64_NETPLAY");
 
-	sSYNetRollbackIsSyncTest = ((synctest_env != NULL) && (atoi(synctest_env) != 0)) ? TRUE : FALSE;
+	sSYNetRollbackIsSyncTest = ((synctest_env != NULL) && (atoi(synctest_env) > 0)) ? TRUE : FALSE;
+	sSYNetRollbackSyncTestDistance = (sSYNetRollbackIsSyncTest != FALSE) ? (u32)atoi(synctest_env) : 0;
+
+	if (sSYNetRollbackSyncTestDistance > SYNETROLLBACK_SLOT_NUM)
+	{
+		sSYNetRollbackSyncTestDistance = SYNETROLLBACK_SLOT_NUM;
+	}
 
 	if ((sSYNetRollbackIsSyncTest != FALSE) && (SYNETROLLBACK_HAS_SECTIONS == FALSE))
 	{
@@ -230,6 +263,7 @@ void syNetRollbackInitDebugEnv(void)
 	sSYNetRollbackIsTickTimer = ((sSYNetRollbackIsSyncTest != FALSE) || ((netplay_env != NULL) && (atoi(netplay_env) != 0))) ? TRUE : FALSE;
 
 	sSYNetRollbackIsRigExit = (syNetRollbackGetEnvInt("SSB64_RIG_EXIT", 0) != 0) ? TRUE : FALSE;
+	sSYNetRollbackConfirmedTracePath = getenv("SSB64_NETPLAY_CONFIRMED_TRACE");
 	sSYNetRollbackTraceTick = (u32)syNetRollbackGetEnvInt("SSB64_ROLLBACK_TRACE_TICK", 0);
 
 	if (syNetRollbackGetEnvInt("SSB64_ROLLBACK_AUTOVS", 0) != 0)
@@ -238,7 +272,7 @@ void syNetRollbackInitDebugEnv(void)
 	}
 	if (sSYNetRollbackIsSyncTest != FALSE)
 	{
-		port_log("SSB64 Rollback: SyncTest enabled data=%u bss=%u bytes\n",
+		port_log("SSB64 Rollback: SyncTest enabled distance=%u data=%u bss=%u bytes\n", sSYNetRollbackSyncTestDistance,
 		         (unsigned)syNetRollbackGetDataSize(), (unsigned)syNetRollbackGetBssSize());
 		{
 			u32 sym_offset;
@@ -285,6 +319,23 @@ void syNetRollbackStartVSSession(void)
 		sSYNetRollbackStates[i].is_valid = FALSE;
 	}
 	sSYNetRollbackArenaWatermark = (u8*)gSYTaskmanGeneralHeap.ptr;
+	sSYNetRollbackChainStart = 0;
+	sSYNetRollbackTraceNextTick = 0;
+	sSYNetRollbackRollbacks = 0;
+	sSYNetRollbackResimTicks = 0;
+	sSYNetRollbackMaxRollback = 0;
+	sSYNetRollbackFailedRollbacks = 0;
+
+	for (i = 0; i < SYNETROLLBACK_SLOT_NUM; i++)
+	{
+		sSYNetRollbackLiveHashValid[i] = FALSE;
+	}
+#ifdef PORT
+	if ((sSYNetRollbackConfirmedTracePath != NULL) && (sSYNetRollbackConfirmedTrace == NULL))
+	{
+		sSYNetRollbackConfirmedTrace = fopen(sSYNetRollbackConfirmedTracePath, "w");
+	}
+#endif
 	sSYNetRollbackFileRangesNum = 0;
 	sSYNetRollbackIsFileRangeOverflow = FALSE;
 	sSYNetRollbackIsSessionActive = TRUE;
@@ -300,6 +351,16 @@ void syNetRollbackStartVSSession(void)
 void syNetRollbackFinishVSSession(void)
 {
 #ifdef PORT
+	if ((syNetPeerIsRollbackActive() != FALSE) && (sSYNetRollbackIsSessionActive != FALSE))
+	{
+		port_log("SSB64 Rollback: netplay session rollbacks=%u resim_ticks=%u max_rollback=%u failed=%u traced_ticks=%u\n",
+		         sSYNetRollbackRollbacks, sSYNetRollbackResimTicks, sSYNetRollbackMaxRollback,
+		         sSYNetRollbackFailedRollbacks, sSYNetRollbackTraceNextTick);
+	}
+	if (sSYNetRollbackConfirmedTrace != NULL)
+	{
+		fflush(sSYNetRollbackConfirmedTrace);
+	}
 	if ((sSYNetRollbackIsSyncTest != FALSE) && (sSYNetRollbackIsSessionActive != FALSE))
 	{
 		syNetRollbackReportSession();
@@ -642,6 +703,36 @@ static const char *syNetRollbackDescribeArena(const u8 *addr)
 	return NULL;
 }
 
+/* Globals written only while drawing (or audio bookkeeping). Resimulated
+ * ticks are never drawn, so these legitimately differ from the first pass
+ * after a multi-tick rollback; the next draw recomputes them. */
+static const char *dSYNetRollbackPresentationSymbols[] =
+{
+	"gGCFrameQueueGfxLinks",
+	"sIFCommonTimerDigitsInterface",
+	"dLBParticleCurrentTransformID",
+	"sFTPublicCommonOrder",
+	"sFTPublicCommonALSound"
+};
+
+static sb32 syNetRollbackCheckPresentationSymbol(const char *sym)
+{
+	s32 i;
+
+	if (sym == NULL)
+	{
+		return FALSE;
+	}
+	for (i = 0; i < ARRAY_COUNT(dSYNetRollbackPresentationSymbols); i++)
+	{
+		if (strcmp(sym, dSYNetRollbackPresentationSymbols[i]) == 0)
+		{
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
 static void syNetRollbackReportDiff(const char *region, size_t region_offset, const u8 *live, const u8 *saved, size_t size)
 {
 	size_t i;
@@ -653,6 +744,11 @@ static void syNetRollbackReportDiff(const char *region, size_t region_offset, co
 			u32 sym_offset = 0;
 			const char *sym = (region[0] == 'a') ? syNetRollbackDescribeArena(&live[i]) : port_symbolize(&live[i], &sym_offset);
 			s32 range_id;
+
+			if (syNetRollbackCheckPresentationSymbol(sym) != FALSE)
+			{
+				continue;
+			}
 
 			for (range_id = 0; range_id < sSYNetRollbackFileRangesNum; range_id++)
 			{
@@ -774,20 +870,258 @@ static void syNetRollbackTraceTick(const char *phase)
 #define syNetRollbackTraceTick(phase)
 #endif
 
-void syNetRollbackRunBattleUpdate(void (*update)(void))
+/* Hash every gated/diag column and fold the mismatches into the session
+ * counters. Returns TRUE when a gated column diverged. */
+static sb32 syNetRollbackCompareTick(u32 tick, const SYNetSyncTickHash *expected, const SYNetSyncTickHash *actual)
 {
-	SYNetSyncTickHash first;
-	SYNetSyncTickHash second;
-	u32 diff_mask;
+	u32 diff_mask = 0;
 	s32 column;
 
+	for (column = 0; column < SYNETSYNC_COLUMN_NUM; column++)
+	{
+		if (expected->column[column] != actual->column[column])
+		{
+			diff_mask |= (1U << column);
+		}
+	}
+#ifdef PORT
+	if (diff_mask & ~sSYNetRollbackColumnReported)
+	{
+		port_log("SSB64 Rollback: SyncTest divergence sim_tick=%u tested_tick=%u game_tic=%u mask=0x%X\n",
+		         tick, sSYNetRollbackTestedTicks, (unsigned)gSCManagerBattleState->time_passed, diff_mask);
+
+		for (column = 0; column < SYNETSYNC_COLUMN_NUM; column++)
+		{
+			if ((diff_mask & ~sSYNetRollbackColumnReported) & (1U << column))
+			{
+				port_log("SSB64 Rollback:   column %s first=%08X resim=%08X\n",
+				         syNetSyncGetColumnName(column), expected->column[column], actual->column[column]);
+			}
+		}
+		sSYNetRollbackColumnReported |= diff_mask;
+	}
+#endif
+	return (diff_mask & SYNETSYNC_GATED_COLUMN_MASK) ? TRUE : FALSE;
+}
+
+/* Saves the pre-update state of sim tick `tick` into its ring slot. */
+static sb32 syNetRollbackSaveTick(u32 tick)
+{
+	s32 slot = tick % SYNETROLLBACK_SLOT_NUM;
+
+	if (syNetRollbackSave(slot) == FALSE)
+	{
+		return FALSE;
+	}
+	sSYNetRollbackSlotTicks[slot] = tick;
+
+	return TRUE;
+}
+
+/* Rewinds to the snapshot of `first_tick` and re-runs every tick through
+ * `last_tick` with its inputs re-published, re-saving each tick's snapshot
+ * on the way (as live rollback must, since resimulated states replace the
+ * predicted ones). `hashes`, when set, receives each resimulated tick's
+ * hash indexed by tick % SYNETROLLBACK_SLOT_NUM. Returns FALSE (and leaves
+ * the state untouched) if the snapshot chain does not cover the range. */
+sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void), SYNetSyncTickHash *hashes)
+{
+	u32 tick;
+
+	if ((last_tick < first_tick) || (last_tick - first_tick >= SYNETROLLBACK_SLOT_NUM) ||
+	    (first_tick < sSYNetRollbackChainStart))
+	{
+		return FALSE;
+	}
+	if ((sSYNetRollbackStates[first_tick % SYNETROLLBACK_SLOT_NUM].is_valid == FALSE) ||
+	    (sSYNetRollbackSlotTicks[first_tick % SYNETROLLBACK_SLOT_NUM] != first_tick))
+	{
+		return FALSE;
+	}
+	syNetRollbackLoad(first_tick % SYNETROLLBACK_SLOT_NUM);
+
+	sSYNetRollbackIsResimulating = TRUE;
+
+	for (tick = first_tick; tick <= last_tick; tick++)
+	{
+		if (tick != first_tick)
+		{
+			syNetRollbackSaveTick(tick);
+		}
+		syNetInputRepublishTick(tick);
+		update();
+
+		/* Stand in for the draw that followed this tick originally: draw
+		 * passes produce state the next tick's gameplay reads. The last tick
+		 * is drawn normally by the taskman loop afterwards. */
+		if (tick != last_tick)
+		{
+			syTaskmanShadowDraw();
+		}
+
+		if (hashes != NULL)
+		{
+			syNetSyncHashTick(&hashes[tick % SYNETROLLBACK_SLOT_NUM]);
+		}
+	}
+	sSYNetRollbackIsResimulating = FALSE;
+
+	return TRUE;
+}
+
+static void syNetRollbackStoreLiveHash(u32 tick)
+{
+	s32 slot = tick % SYNETROLLBACK_SLOT_NUM;
+
+	syNetSyncHashTick(&sSYNetRollbackLiveHashes[slot]);
+	sSYNetRollbackLiveHashTicks[slot] = tick;
+	sSYNetRollbackLiveHashValid[slot] = TRUE;
+}
+
+/* Writes the hash of every tick that can no longer change: simulated, and
+ * every remote input up to it confirmed. */
+static void syNetRollbackEmitConfirmedTrace(u32 last_simulated_tick)
+{
+	u32 confirmed = syNetInputGetRemoteNextUnconfirmed(syNetPeerGetRemotePlayer());
+
+	while ((sSYNetRollbackTraceNextTick <= last_simulated_tick) && (sSYNetRollbackTraceNextTick < confirmed))
+	{
+		u32 tick = sSYNetRollbackTraceNextTick;
+		s32 slot = tick % SYNETROLLBACK_SLOT_NUM;
+
+#ifdef PORT
+		if (sSYNetRollbackConfirmedTrace != NULL)
+		{
+			if ((sSYNetRollbackLiveHashValid[slot] != FALSE) && (sSYNetRollbackLiveHashTicks[slot] == tick))
+			{
+				SYNetSyncTickHash *hash = &sSYNetRollbackLiveHashes[slot];
+
+				fprintf(sSYNetRollbackConfirmedTrace, "%u %08X %08X %08X %08X %08X %08X %08X %08X\n", tick,
+				        hash->column[nSYNetSyncColumnFull], hash->column[nSYNetSyncColumnRNG],
+				        hash->column[nSYNetSyncColumnBattle], hash->column[nSYNetSyncColumnFighters],
+				        hash->column[nSYNetSyncColumnItems], hash->column[nSYNetSyncColumnWeapons],
+				        hash->column[nSYNetSyncColumnStage], hash->column[nSYNetSyncColumnObjMan]);
+			}
+			else fprintf(sSYNetRollbackConfirmedTrace, "%u missing\n", tick);
+
+			if ((tick % 60) == 0)
+			{
+				fflush(sSYNetRollbackConfirmedTrace);
+			}
+		}
+#endif
+		sSYNetRollbackTraceNextTick++;
+	}
+}
+
+/* Live rollback netplay. Before running tick T: if a confirmed remote input
+ * contradicted a prediction at tick E < T, rewind to E's snapshot and
+ * resimulate E..T-1 with the corrected inputs; then re-resolve T's inputs
+ * (its prediction may have improved), snapshot T and run it. */
+static void syNetRollbackRunNetplayUpdate(void (*update)(void))
+{
+	u32 tick = syNetInputGetTick() - 1;
+	u32 mispredict_tick;
+
+	if (syNetInputTakeMispredictTick(&mispredict_tick) != FALSE)
+	{
+		if (mispredict_tick < tick)
+		{
+			if (syNetRollbackResimulate(mispredict_tick, tick - 1, update, sSYNetRollbackLiveHashes) != FALSE)
+			{
+				u32 resim;
+
+				for (resim = mispredict_tick; resim < tick; resim++)
+				{
+					sSYNetRollbackLiveHashTicks[resim % SYNETROLLBACK_SLOT_NUM] = resim;
+					sSYNetRollbackLiveHashValid[resim % SYNETROLLBACK_SLOT_NUM] = TRUE;
+				}
+				sSYNetRollbackRollbacks++;
+				sSYNetRollbackResimTicks += tick - mispredict_tick;
+
+				if ((tick - mispredict_tick) > sSYNetRollbackMaxRollback)
+				{
+					sSYNetRollbackMaxRollback = tick - mispredict_tick;
+				}
+			}
+			else
+			{
+				/* Pacing keeps every mispredicted tick inside the snapshot
+				 * window, so this is a bug: the peers will desync. */
+				sSYNetRollbackFailedRollbacks++;
+#ifdef PORT
+				port_log("SSB64 Rollback: netplay rollback FAILED tick=%u mispredict=%u chain_start=%u\n",
+				         tick, mispredict_tick, sSYNetRollbackChainStart);
+#endif
+			}
+		}
+		syNetInputRepublishTick(tick);
+	}
+	if (syNetRollbackSaveTick(tick) == FALSE)
+	{
+		sSYNetRollbackChainStart = tick + 1;
+	}
+	update();
+	syNetRollbackStoreLiveHash(tick);
+	syNetRollbackEmitConfirmedTrace(tick);
+
+#ifdef PORT
+	if ((tick % 600) == 0)
+	{
+		port_log("SSB64 Rollback: netplay tick=%u rollbacks=%u resim_ticks=%u max_rollback=%u failed=%u confirmed=%u\n",
+		         tick, sSYNetRollbackRollbacks, sSYNetRollbackResimTicks, sSYNetRollbackMaxRollback,
+		         sSYNetRollbackFailedRollbacks, syNetInputGetRemoteNextUnconfirmed(syNetPeerGetRemotePlayer()));
+	}
+#endif
+}
+
+/* SyncTest (SSB64_ROLLBACK_SYNCTEST=N): every tick runs normally, then the
+ * last N ticks (this one included) are rolled back and resimulated from the
+ * snapshot ring with the same inputs; each resimulated tick must hash the
+ * same as its first run. Any divergence means the snapshot misses state or
+ * the tick is not a pure function of snapshot + published input. */
+s32 syNetRollbackTakeDrawRequest(void)
+{
+	s32 request;
+
+	if ((sSYNetRollbackIsSessionActive == FALSE) ||
+	    ((sSYNetRollbackIsSyncTest == FALSE) && (syNetPeerIsRollbackActive() == FALSE)))
+	{
+		return nSYNetRollbackDrawNormal;
+	}
+	request = (sSYNetRollbackIsTickRan != FALSE) ? nSYNetRollbackDrawRequired : nSYNetRollbackDrawSkip;
+	sSYNetRollbackIsTickRan = FALSE;
+
+	return request;
+}
+
+void syNetRollbackRunBattleUpdate(void (*update)(void))
+{
+	SYNetSyncTickHash resim_hashes[SYNETROLLBACK_SLOT_NUM];
+
+	sSYNetRollbackIsTickRan = TRUE;
+	u32 tick;
+	u32 first_tick;
+	u32 resim_tick;
+	sb32 is_failed;
+
+	if (syNetPeerIsRollbackActive() != FALSE)
+	{
+		syNetRollbackRunNetplayUpdate(update);
+		return;
+	}
 	if (sSYNetRollbackIsSyncTest == FALSE)
 	{
 		update();
 		return;
 	}
-	if (syNetRollbackSave(0) == FALSE)
+	tick = syNetInputGetTick() - 1;    // syNetInputFuncRead already advanced past this tick
+
+	if (syNetRollbackSaveTick(tick) == FALSE)
 	{
+		/* Unsnapshottable tick (thread process alive, not in Go): the chain of
+		 * contiguous snapshots restarts after it. */
+		sSYNetRollbackChainStart = tick + 1;
 		sSYNetRollbackSkippedTicks++;
 		update();
 		return;
@@ -795,51 +1129,42 @@ void syNetRollbackRunBattleUpdate(void (*update)(void))
 	syNetRollbackTraceTick("pre1");
 	update();
 	syNetRollbackTraceTick("post1");
-	syNetSyncHashTick(&first);
+	syNetSyncHashTick(&sSYNetRollbackFirstHashes[tick % SYNETROLLBACK_SLOT_NUM]);
 	syNetRollbackSaveState(&sSYNetRollbackStates[SYNETROLLBACK_SLOT_COMPARE]);
 
-	syNetRollbackLoad(0);
-	syNetRollbackTraceTick("pre2");
+	first_tick = ((tick + 1) >= sSYNetRollbackSyncTestDistance) ? (tick + 1 - sSYNetRollbackSyncTestDistance) : 0;
 
-	sSYNetRollbackIsResimulating = TRUE;
-	update();
-	sSYNetRollbackIsResimulating = FALSE;
+	if (first_tick < sSYNetRollbackChainStart)
+	{
+		first_tick = sSYNetRollbackChainStart;
+	}
+	if (syNetRollbackResimulate(first_tick, tick, update, resim_hashes) == FALSE)
+	{
+		sSYNetRollbackSkippedTicks++;
+		return;
+	}
 	syNetRollbackTraceTick("post2");
-
-	syNetSyncHashTick(&second);
 	sSYNetRollbackTestedTicks++;
 
-	diff_mask = 0;
+	is_failed = FALSE;
 
-	for (column = 0; column < SYNETSYNC_COLUMN_NUM; column++)
+	for (resim_tick = first_tick; resim_tick <= tick; resim_tick++)
 	{
-		if (first.column[column] != second.column[column])
+		if (syNetRollbackCompareTick(resim_tick, &sSYNetRollbackFirstHashes[resim_tick % SYNETROLLBACK_SLOT_NUM],
+		                             &resim_hashes[resim_tick % SYNETROLLBACK_SLOT_NUM]) != FALSE)
 		{
-			diff_mask |= (1U << column);
+			is_failed = TRUE;
 		}
 	}
-	if (diff_mask & SYNETSYNC_GATED_COLUMN_MASK)
+	if (is_failed != FALSE)
 	{
 		sSYNetRollbackFailedTicks++;
 	}
 #ifdef PORT
-	if (diff_mask & ~sSYNetRollbackColumnReported)
-	{
-		port_log("SSB64 Rollback: SyncTest divergence tested_tick=%u game_tic=%u mask=0x%X\n",
-		         sSYNetRollbackTestedTicks, (unsigned)gSCManagerBattleState->time_passed, diff_mask);
-
-		for (column = 0; column < SYNETSYNC_COLUMN_NUM; column++)
-		{
-			if ((diff_mask & ~sSYNetRollbackColumnReported) & (1U << column))
-			{
-				port_log("SSB64 Rollback:   column %s pass1=%08X pass2=%08X\n",
-				         syNetSyncGetColumnName(column), first.column[column], second.column[column]);
-			}
-		}
-		sSYNetRollbackColumnReported |= diff_mask;
-	}
-	/* The hashes cover a subset of state; the raw compare catches the rest. */
-	if (sSYNetRollbackDiffsReported < SYNETROLLBACK_DIFF_REPORT_MAX)
+	/* The hashes cover a subset of state; the raw compare catches the rest.
+	 * After a multi-tick rollback, draw-written state (matrices, frame
+	 * queues) differs legitimately, so then only report failing ticks. */
+	if ((sSYNetRollbackDiffsReported < SYNETROLLBACK_DIFF_REPORT_MAX) && ((first_tick == tick) || (is_failed != FALSE)))
 	{
 		syNetRollbackReportMemoryDiffs();
 	}

@@ -9,6 +9,7 @@
 #include <sys/video.h>
 #include <sys/scheduler.h>
 #include <sys/controller.h>
+#include <sys/netrollback.h>
 
 #include <macros.h>
 #include <ssb_types.h>
@@ -1127,6 +1128,37 @@ void syTaskmanRunTask(SYTaskFunction *tfunc)
 		{
 			break;
 		}
+#ifdef PORT
+		/* Under rollback (netplay/SyncTest) draws feed gameplay, so every peer
+		 * must run exactly one draw per simulated tick: none on a stalled
+		 * frame, and a shadow draw when no context is free to render. */
+		{
+			s32 rollback_draw = syNetRollbackTakeDrawRequest();
+
+			if (rollback_draw == nSYNetRollbackDrawSkip)
+			{
+				continue;
+			}
+			if ((dSYTaskmanUpdateCount % sSYTaskmanFrameInterval == 0) && (syTaskmanSwitchContext(1) != FALSE))
+			{
+				sSYTaskmanTimeStart = osGetCount();
+
+				tfunc->task_draw(tfunc);
+
+				dSYTaskmanFrameCount++;
+				sSYTaskmanFrameTimeDelta = (osGetCount() - sSYTaskmanTimeStart) / 2971;
+
+				if (syTaskmanCheckBreakLoop() != FALSE)
+				{
+					break;
+				}
+			}
+			else if (rollback_draw == nSYNetRollbackDrawRequired)
+			{
+				syTaskmanShadowDraw();
+			}
+		}
+#else
 		if ((dSYTaskmanUpdateCount % sSYTaskmanFrameInterval == 0) && (syTaskmanSwitchContext(1) != FALSE))
 		{
 			sSYTaskmanTimeStart = osGetCount();
@@ -1141,6 +1173,7 @@ void syTaskmanRunTask(SYTaskFunction *tfunc)
 				break;
 			}
 		}
+#endif
 	}
 	func_80005BFC();
 
@@ -1159,6 +1192,75 @@ void syTaskmanRunTask(SYTaskFunction *tfunc)
 	syRdpSetFuncLights(NULL);
 	D_800454BC = 2;
 }
+
+#ifdef PORT
+/* Rollback: the draw pass has gameplay side effects that the next tick reads
+ * (camera matrix for Link's boomerang, magnifying-glass state, ...). Ticks
+ * resimulated by rollback are never drawn, so syNetRollbackResimulate runs
+ * this between them: the scene's full draw into private scratch display
+ * lists and graphics heap, which are then discarded. The real frame's DL
+ * buffers, heads and heap are saved and restored around it. */
+static Gfx *sSYTaskmanShadowDLs[ARRAY_COUNT(gSYTaskmanDLHeads)];
+static u32 sSYTaskmanShadowDLSizes[ARRAY_COUNT(gSYTaskmanDLHeads)];
+static void *sSYTaskmanShadowHeap;
+static size_t sSYTaskmanShadowHeapSize;
+
+extern void portInterpSetRecordSuppressed(int suppressed);
+
+void syTaskmanShadowDraw(void)
+{
+	Gfx *heads_bak[ARRAY_COUNT(gSYTaskmanDLHeads)];
+	Gfx *branches_bak[ARRAY_COUNT(sSYTaskmanDLBranches)];
+	SYMallocRegion heap_bak = gSYTaskmanGraphicsHeap;
+	Gfx *rdp_reset_bak = sSYTaskmanRdpResetDL;
+	u16 ucode_bak = D_80046628;
+	size_t heap_size = (size_t)((uintptr_t)sSYTaskmanDefaultGraphicsHeap[gSYTaskmanTaskID].end -
+	                            (uintptr_t)sSYTaskmanDefaultGraphicsHeap[gSYTaskmanTaskID].start);
+	s32 i;
+
+	if (sSYTaskmanDefaultFunction.scene_draw == NULL)
+	{
+		return;
+	}
+	for (i = 0; i < ARRAY_COUNT(gSYTaskmanDLHeads); i++)
+	{
+		u32 length = sSYTaskmanDLBuffers[gSYTaskmanTaskID][i].length;
+
+		if (length > sSYTaskmanShadowDLSizes[i])
+		{
+			free(sSYTaskmanShadowDLs[i]);
+			sSYTaskmanShadowDLs[i] = malloc(length);
+			sSYTaskmanShadowDLSizes[i] = (sSYTaskmanShadowDLs[i] != NULL) ? length : 0;
+		}
+		heads_bak[i] = gSYTaskmanDLHeads[i];
+		branches_bak[i] = sSYTaskmanDLBranches[i];
+		gSYTaskmanDLHeads[i] = sSYTaskmanDLBranches[i] = (length != 0) ? sSYTaskmanShadowDLs[i] : NULL;
+	}
+	if (heap_size > sSYTaskmanShadowHeapSize)
+	{
+		free(sSYTaskmanShadowHeap);
+		sSYTaskmanShadowHeap = malloc(heap_size);
+		sSYTaskmanShadowHeapSize = (sSYTaskmanShadowHeap != NULL) ? heap_size : 0;
+	}
+	gSYTaskmanGraphicsHeap.id = heap_bak.id;
+	gSYTaskmanGraphicsHeap.start = sSYTaskmanShadowHeap;
+	gSYTaskmanGraphicsHeap.end = (u8*)sSYTaskmanShadowHeap + sSYTaskmanShadowHeapSize;
+	gSYTaskmanGraphicsHeap.ptr = sSYTaskmanShadowHeap;
+
+	portInterpSetRecordSuppressed(1);
+	sSYTaskmanDefaultFunction.scene_draw();
+	portInterpSetRecordSuppressed(0);
+
+	for (i = 0; i < ARRAY_COUNT(gSYTaskmanDLHeads); i++)
+	{
+		gSYTaskmanDLHeads[i] = heads_bak[i];
+		sSYTaskmanDLBranches[i] = branches_bak[i];
+	}
+	gSYTaskmanGraphicsHeap = heap_bak;
+	sSYTaskmanRdpResetDL = rdp_reset_bak;
+	D_80046628 = ucode_bak;
+}
+#endif
 
 // 0x800062B4
 void func_800062B4(SYTaskFunction *tfunc)
