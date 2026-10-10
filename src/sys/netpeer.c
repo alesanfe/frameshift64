@@ -1468,7 +1468,7 @@ void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 stage, 
 
 	syNetPeerMakeBootstrapMetadata(metadata);
 	metadata->stage_kind = stage;
-	metadata->stocks = stocks;
+	metadata->stocks = (stocks > 0) ? stocks - 1 : 0;   // the engine stores lives - 1 (3 = "4 Stocks")
 	metadata->rng_seed = seed;
 
 	if (is_items != FALSE)
