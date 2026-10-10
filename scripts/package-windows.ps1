@@ -240,7 +240,7 @@ Compress-Archive -Path "$StageDir\*" -DestinationPath $ZipPath -CompressionLevel
 if (-not (Test-Path $ZipPath)) { Fail "zip was not created" }
 
 $ZipKB = [int]((Get-Item $ZipPath).Length / 1024)
-Write-Host "`n✓ Release zip ready: $ZipPath ($ZipKB KB)" -ForegroundColor Green
+Write-Host "`nRelease zip ready: $ZipPath ($ZipKB KB)" -ForegroundColor Green
 Write-Host "   Portable: extract anywhere; save data lives next to BattleShip.exe."
 if ($EnableScripting) {
     Write-Host "   Includes TCC scripting support for C mods."

@@ -2,6 +2,25 @@
   <img src="assets/BattleShip.svg" alt="BattleShip" width="640">
 </p>
 
+# Smash Classic
+
+**Smash Classic** is a fork of [JRickey/BattleShip](https://github.com/JRickey/BattleShip). It adds **online play with rollback netcode** to the native PC port of Super Smash Bros. 64.
+
+- **Room codes.** Press **Esc → Online → Netplay**. One player hosts and shares a 6-character code, and the other joins.
+- **Rollback netcode.**
+  - There are 2 frames of input delay by default.
+  - The opponent's inputs are predicted, and the game silently corrects up to 6 frames.
+  - Time sync keeps both sides even.
+  - Every packet carries a state hash to detect desyncs.
+- **No port forwarding.** The lobby runs on Cloudflare (`server/cloudflare`). Players connect directly over UDP via STUN hole punching. When that's impossible, the match relays through Cloudflare.
+- **Download.** Get `BattleShip-windows.zip` from [Releases](../../releases), extract it, and run `BattleShip.exe`. On first launch it asks for **your own** Super Smash Bros. (USA) v1.0 ROM. No game data ships with this project.
+
+Details: [docs/netplay_online.md](docs/netplay_online.md), [docs/rollback_design.md](docs/rollback_design.md).
+
+The upstream BattleShip README follows.
+
+---
+
 # BattleShip
 
 **BattleShip** is a PC port of **Super Smash Bros. (N64)** — both the **US** (NTSC-U v1.0) and **Japanese** (Nintendo All-Star! Dairantou Smash Brothers) releases — built on top of the [VetriTheRetri/ssb-decomp-re](https://github.com/vetritheretri/ssb-decomp-re) decompilation, using [libultraship](https://github.com/Kenix3/libultraship) for PC-native rendering / audio / input and [Torch](https://github.com/HarbourMasters/Torch) for extracting assets out of the ROM at build time.

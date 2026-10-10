@@ -8,5 +8,5 @@
 	branch = ssb64
 [submodule "decomp"]
 	path = decomp
-	url = https://github.com/JRickey/ssb-decomp-re.git
-	branch = port-patches
+	url = https://github.com/fatty8me2/ssb-decomp-re.git
+	branch = smash-classic
