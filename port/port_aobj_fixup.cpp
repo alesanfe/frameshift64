@@ -12,33 +12,71 @@
 #include "resource/RelocPointerTable.h"
 
 #include <cstdint>
+#include <cstring>
 #include <unordered_set>
 #include <vector>
 
 namespace {
 
-std::unordered_set<uintptr_t> sUnswappedHeads;
-std::unordered_set<uintptr_t> sRejectedHeads;  /* walked once, didn't look like EVENT32 — don't retry */
+/* Fixup bookkeeping. The walker's verdicts are keyed on raw addresses inside
+ * fighter figatree heaps:
+ *   kHeads    - stream heads the walker un-halfswapped (incl. recursion targets)
+ *   kRejected - heads it decided were not halfswapped EVENT32
+ *   kFixed    - every u32 it has un-halfswapped. The parser calls the walker
+ *               with the stream's CURRENT position, so later calls land
+ *               inside already-converted streams; head-keyed sets can't see
+ *               that and the raw-vs-unswapped heuristic accepted 1-command
+ *               tails, double-swapping them. A walk now stops at the first
+ *               already-native word: idempotent per word, independent of
+ *               which joint or tick reached the data first.
+ *   kVisited  - one-shot in-place fixups (interp.c spline data).
+ *
+ * Inside a registered figatree range the verdicts live in per-range bitmaps
+ * (1 bit per byte) so rollback can snapshot heap bytes and their fixup state
+ * together (port_aobj_fixup_snapshot_*); anything else falls back to sets. */
+enum Kind { kHeads, kRejected, kFixed, kVisited, kKindNum };
 
-/* Registered fighter-figatree file ranges (base, end).  The walker only
- * operates on head pointers that fall within one of these — this guards
- * against a stream from a non-halfswapped file being un-halfswapped,
- * which would silently corrupt it. */
-struct Range { uintptr_t base; uintptr_t end; };
+struct Range {
+    uintptr_t base;
+    uintptr_t end;
+    std::vector<uint8_t> bits[kKindNum];
+};
+
+/* Registered fighter-figatree file ranges. The walker only operates on head
+ * pointers inside one of these, so a stream from a non-halfswapped file is
+ * never un-halfswapped. Heaps are reloaded at the same base on every status
+ * change; a re-registration resets that range in place. */
 std::vector<Range> sHalfswappedRanges;
+std::unordered_set<uintptr_t> sOutOfRange[kKindNum];
 
-/* Visited set for one-shot idempotent in-place fixups (e.g. interp.c
- * spline-data un-halfswap).  Cleared per-range when
- * port_aobj_register_halfswapped_range adds a new range so that
- * figatree-heap reloads at the same address get re-fixed. */
-std::unordered_set<uintptr_t> sUnhalfswappedVisited;
+Range *find_range(uintptr_t addr) {
+    for (auto &r : sHalfswappedRanges) {
+        if (addr >= r.base && addr < r.end) return &r;
+    }
+    return nullptr;
+}
 
 bool is_in_halfswapped_range(const void *p) {
-    uintptr_t addr = reinterpret_cast<uintptr_t>(p);
-    for (const auto &r : sHalfswappedRanges) {
-        if (addr >= r.base && addr < r.end) return true;
-    }
-    return false;
+    return find_range(reinterpret_cast<uintptr_t>(p)) != nullptr;
+}
+
+bool has(Kind kind, uintptr_t addr) {
+    Range *r = find_range(addr);
+    if (r == nullptr) return sOutOfRange[kind].count(addr) != 0;
+    uintptr_t off = addr - r->base;
+    return (r->bits[kind][off >> 3] >> (off & 7)) & 1;
+}
+
+/* Returns true when newly added. */
+bool add(Kind kind, uintptr_t addr) {
+    Range *r = find_range(addr);
+    if (r == nullptr) return sOutOfRange[kind].insert(addr).second;
+    uintptr_t off = addr - r->base;
+    uint8_t mask = static_cast<uint8_t>(1u << (off & 7));
+    uint8_t &byte = r->bits[kind][off >> 3];
+    if (byte & mask) return false;
+    byte |= mask;
+    return true;
 }
 
 /* Safety cap per stream: long-form figatree animations rarely exceed a
@@ -89,7 +127,7 @@ inline void skip_token(uint32_t *&ev) {
  * (End, Jump, SetAnim) with only valid opcodes — the second phase
  * applies the halfswap fix to every collected address.  If the
  * simulation hits an unknown opcode or runs away, the stream is added
- * to sRejectedHeads and left untouched.
+ * to the kRejected verdicts and left untouched.
  *
  * This protects streams that aren't truly EVENT32 from silent
  * corruption: gcParseDObjAnimJoint gets called with some pointers
@@ -118,8 +156,8 @@ bool scan(uint32_t *head, ScanCtx &ctx) {
     if (head == nullptr) return true;
     if (!is_in_halfswapped_range(head)) return true; /* not our data; skip silently */
     uintptr_t key = reinterpret_cast<uintptr_t>(head);
-    if (sUnswappedHeads.count(key)) return true;
-    if (sRejectedHeads.count(key)) return false;
+    if (has(kHeads, key)) return true;
+    if (has(kRejected, key)) return false;
     if (!ctx.visited.insert(key).second) return true; /* already scanning this head */
 
     uint32_t *ev = head;
@@ -127,6 +165,10 @@ bool scan(uint32_t *head, ScanCtx &ctx) {
     while (true) {
         if (++ctx.total_steps > kStreamStepLimit) {
             return false;
+        }
+        /* Rest of this stream was converted by an earlier walk. */
+        if (ctx.unhalfswap && has(kFixed, reinterpret_cast<uintptr_t>(ev))) {
+            return true;
         }
 
         uint32_t cmd_raw = *ev;
@@ -216,8 +258,9 @@ void walk(uint32_t *head) {
     if (head == nullptr) return;
     if (!is_in_halfswapped_range(head)) return;
     uintptr_t key = reinterpret_cast<uintptr_t>(head);
-    if (sUnswappedHeads.count(key)) return;
-    if (sRejectedHeads.count(key)) return;
+    if (has(kHeads, key)) return;
+    if (has(kRejected, key)) return;
+    if (has(kFixed, key)) return; /* position inside an already-converted stream */
 
     /* Phase 1: measure main-stream length under the un-halfswap
      * interpretation (no recursion yet — we just need the count for
@@ -231,7 +274,7 @@ void walk(uint32_t *head) {
     bool unswap_valid = scan(head, unswap_main);
 
     if (!unswap_valid) {
-        sRejectedHeads.insert(key);
+        add(kRejected, key);
         return;
     }
 
@@ -263,7 +306,7 @@ void walk(uint32_t *head) {
     bool raw_valid = scan(head, raw_main);
 
     if (raw_valid && raw_main.total_steps >= 2) {
-        sRejectedHeads.insert(key);
+        add(kRejected, key);
         return;
     }
 
@@ -277,15 +320,17 @@ void walk(uint32_t *head) {
     if (!scan(head, full)) {
         /* Main stream validated but a sub-stream failed.  Don't
          * partially un-halfswap; reject the whole tree. */
-        sRejectedHeads.insert(key);
+        add(kRejected, key);
         return;
     }
 
     for (uint32_t *p : full.pending) {
-        *p = unhalfswap(*p);
+        if (add(kFixed, reinterpret_cast<uintptr_t>(p))) {
+            *p = unhalfswap(*p);
+        }
     }
     for (uintptr_t k : full.visited) {
-        sUnswappedHeads.insert(k);
+        add(kHeads, k);
     }
 }
 
@@ -305,58 +350,111 @@ extern "C" void port_aobj_register_halfswapped_range(void *base, unsigned long s
      * previous load already populated.  Any cached "already processed"
      * verdict from the previous load is stale once the bytes change.
      *
-     * Three caches need eviction in lockstep, all keyed on raw heap
-     * pointer:
-     *   - sUnhalfswappedVisited: per-block one-shot fixup tracker (used
-     *     by interp.c spline data).  Eviction was already here.
-     *   - sUnswappedHeads: event32 streams the walker successfully fixed
-     *     up.  Without eviction, the walker short-circuits on a fresh
-     *     load's stream that happens to land at the same address.
-     *   - sRejectedHeads: event32 streams the walker decided not to
-     *     touch.  Without eviction, a stream that was non-event32 in the
-     *     previous load (correctly rejected) blocks a real event32 stream
-     *     in the new load from being un-halfswapped.
+     * Every verdict kind resets in lockstep (the range's bitmaps are
+     * re-zeroed below):
+     *   - kVisited: per-block one-shot fixup tracker (interp.c spline data).
+     *   - kHeads / kFixed: streams and words the walker converted. Stale
+     *     entries make the walker short-circuit on a fresh load's stream
+     *     that lands at the same address.
+     *   - kRejected: streams the walker decided not to touch. A stream that
+     *     was non-event32 in the previous load would otherwise block a real
+     *     event32 stream in the new load from being un-halfswapped.
      *
-     * Symptom that surfaced the missing two: Master Hand's okutsubushi /
+     * Symptom that surfaced the missing head/rejected eviction: Master Hand's okutsubushi /
      * okupunch / drill animations parsed garbage — gcParseDObjAnimJoint
      * would hit a halfswap-corrupted command word with an out-of-range
      * opcode (typically 64) and bail with "UNHANDLED opcode=64 — ending
      * anim", leaving TransN.translate at (0,0,0) for the rest of the
      * attack.  Same shape as project_fixup_idempotency_heap_reuse: cache
      * keyed on pointer, heap reuses addresses, fresh bytes skip fixup. */
-    auto evict = [&](std::unordered_set<uintptr_t> &set) {
+    for (auto &set : sOutOfRange) {
         for (auto it = set.begin(); it != set.end(); ) {
             if (*it >= b && *it < e) it = set.erase(it);
             else ++it;
         }
-    };
-    evict(sUnhalfswappedVisited);
-    evict(sUnswappedHeads);
-    evict(sRejectedHeads);
-    /* Heaps are bump-reset and reloaded at the same base across status
-     * changes, so the same {b,e} arrives repeatedly — update in place
-     * instead of letting the vector (linearly scanned on the per-joint
-     * hot path) accumulate duplicates over a long session. */
-    for (auto &range : sHalfswappedRanges) {
-        if (range.base == b) {
-            range.end = e;
-            return;
-        }
     }
-    sHalfswappedRanges.push_back({b, e});
+    /* A range overlapping the new one at a different base held other data;
+     * drop it (its verdicts are stale once these bytes change). */
+    for (auto it = sHalfswappedRanges.begin(); it != sHalfswappedRanges.end(); ) {
+        if (it->base != b && it->base < e && b < it->end) it = sHalfswappedRanges.erase(it);
+        else ++it;
+    }
+    Range *range = nullptr;
+    for (auto &r : sHalfswappedRanges) {
+        if (r.base == b) range = &r;
+    }
+    if (range == nullptr) {
+        sHalfswappedRanges.push_back({b, e, {}});
+        range = &sHalfswappedRanges.back();
+    }
+    range->end = e;
+    for (auto &bits : range->bits) {
+        bits.assign((size + 7) / 8, 0);
+    }
 }
 
 extern "C" int port_aobj_unhalfswap_visit(const void *p) {
     if (p == nullptr) return 1;
-    uintptr_t key = reinterpret_cast<uintptr_t>(p);
-    return sUnhalfswappedVisited.insert(key).second ? 0 : 1;
+    return add(kVisited, reinterpret_cast<uintptr_t>(p)) ? 0 : 1;
 }
 
 extern "C" void port_aobj_event32_unhalfswap_reset(void) {
-    sUnswappedHeads.clear();
-    sRejectedHeads.clear();
     sHalfswappedRanges.clear();
-    sUnhalfswappedVisited.clear();
+    for (auto &set : sOutOfRange) {
+        set.clear();
+    }
+}
+
+/* Rollback (sys/netrollback.c): serialize every range and its bitmaps.
+ * Layout: u32 count, then per range {u64 base, u64 end, bitmaps...}. */
+extern "C" size_t port_aobj_fixup_snapshot_size(void) {
+    size_t size = sizeof(uint32_t);
+    for (const auto &r : sHalfswappedRanges) {
+        size += 2 * sizeof(uint64_t) + kKindNum * r.bits[0].size();
+    }
+    return size;
+}
+
+extern "C" size_t port_aobj_fixup_snapshot_save(void *dst, size_t capacity) {
+    size_t size = port_aobj_fixup_snapshot_size();
+    if (dst == nullptr || capacity < size) return 0;
+    uint8_t *out = static_cast<uint8_t *>(dst);
+    uint32_t count = static_cast<uint32_t>(sHalfswappedRanges.size());
+    memcpy(out, &count, sizeof(count));
+    out += sizeof(count);
+    for (const auto &r : sHalfswappedRanges) {
+        uint64_t bounds[2] = { r.base, r.end };
+        memcpy(out, bounds, sizeof(bounds));
+        out += sizeof(bounds);
+        for (const auto &bits : r.bits) {
+            memcpy(out, bits.data(), bits.size());
+            out += bits.size();
+        }
+    }
+    return size;
+}
+
+extern "C" void port_aobj_fixup_snapshot_load(const void *src, size_t size) {
+    const uint8_t *in = static_cast<const uint8_t *>(src);
+    const uint8_t *in_end = in + size;
+    uint32_t count = 0;
+    if (src == nullptr || size < sizeof(count)) return;
+    memcpy(&count, in, sizeof(count));
+    in += sizeof(count);
+    sHalfswappedRanges.clear();
+    for (uint32_t i = 0; i < count && in + 2 * sizeof(uint64_t) <= in_end; i++) {
+        uint64_t bounds[2];
+        memcpy(bounds, in, sizeof(bounds));
+        in += sizeof(bounds);
+        Range r{ static_cast<uintptr_t>(bounds[0]), static_cast<uintptr_t>(bounds[1]), {} };
+        size_t bytes = (static_cast<size_t>(r.end - r.base) + 7) / 8;
+        for (auto &bits : r.bits) {
+            if (in + bytes > in_end) return;
+            bits.assign(in, in + bytes);
+            in += bytes;
+        }
+        sHalfswappedRanges.push_back(std::move(r));
+    }
 }
 
 extern "C" int port_aobj_is_in_halfswapped_range(const void *p) {

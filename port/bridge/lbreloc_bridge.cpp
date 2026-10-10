@@ -31,6 +31,8 @@
 #include "bridge/lbreloc_byteswap.h"
 
 extern "C" void port_aobj_register_halfswapped_range(void *base, unsigned long size);
+/* sys/netrollback.c: file bytes are excluded from rollback snapshots. */
+extern "C" void syNetRollbackNoteFileLoad(void *dst, size_t size, int is_figatree);
 
 // Bridge-local type definitions.
 // These MUST be ABI-compatible with the decomp definitions in lbtypes.h.
@@ -594,6 +596,7 @@ extern "C" void portRelocLoadFileFromBytes(
 	portPackedDisplayListCacheDeleteRange(ram_dst, copySize);
 	portRelocEvictFileRangesInRange(ram_dst, copySize);
 	memcpy(ram_dst, src_bytes, copySize);
+	syNetRollbackNoteFileLoad(ram_dst, copySize, is_fighter_figatree ? 1 : 0);
 
 	/* lbRelocGetExternHeapFile sets sLBRelocExternFileHeap = heap so that
 	 * subsequent dep loads (triggered by the chain walk via
@@ -904,6 +907,7 @@ extern "C" void portRelocLoadFileFromBytesPrivate(
 	portPackedDisplayListCacheDeleteRange(ram_dst, copySize);
 
 	memcpy(ram_dst, src_bytes, copySize);
+	syNetRollbackNoteFileLoad(ram_dst, copySize, 0);
 
 	// Byte-swap from N64 BE to native LE; same call portRelocLoadFileFromBytes
 	// makes inside its public path. file_id is unused by the swap logic for

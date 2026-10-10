@@ -760,6 +760,28 @@ if (NOT MSVC)
     target_compile_options(ssb64_game PRIVATE -fno-builtin-sinf -fno-builtin-cosf)
 endif()
 
+# Rollback snapshots (docs/rollback_design.md): force a section-pragma header
+# into every gameplay-module TU so all their globals are contiguous and
+# sys/netrollback.c can save/restore them with one memcpy. Engine plumbing
+# (net*, audio, scheduler, controller, taskman, reloc loader) stays outside.
+if (MSVC)
+    set(SSB64_ROLLBACK_SEG_SOURCES
+        ${SSB64_SRC_EF} ${SSB64_SRC_FT} ${SSB64_SRC_GM} ${SSB64_SRC_GR}
+        ${SSB64_SRC_IF} ${SSB64_SRC_IT} ${SSB64_SRC_MP} ${SSB64_SRC_SC}
+        ${SSB64_SRC_WP}
+        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/lb/lbcommon.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/lb/lbparticle.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/objanim.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/objhelper.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/objman.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/objscript.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/utils.c)
+    list(FILTER SSB64_ROLLBACK_SEG_SOURCES INCLUDE REGEX "\\.c$")
+    list(FILTER SSB64_ROLLBACK_SEG_SOURCES EXCLUDE REGEX "\\.inc\\.c$")
+    set_source_files_properties(${SSB64_ROLLBACK_SEG_SOURCES}
+        PROPERTIES COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/port/netrollback_seg.h")
+endif()
+
 # N64 audio library — synthesis driver, sequence player, voice management.
 # These decomp files are compiled with PORT defines; the CPU Acmd interpreter
 # (port/audio/mixer.h) replaces RSP microcode via macro substitution.
@@ -974,6 +996,10 @@ elseif(BATTLESHIP_UWP)
 else()
     add_dependencies(${PROJECT_NAME} libultraship TorchExternal discord-rpc)
     target_link_libraries(${PROJECT_NAME} PRIVATE libultraship discord-rpc)
+endif()
+if (WIN32)
+    # port_symbolize.cpp (rollback SyncTest diagnostics)
+    target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp)
 endif()
 
 # macOS: the port calls CFPreferences* directly (ApplePressAndHoldEnabled fix

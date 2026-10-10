@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 #include <spdlog/spdlog.h>
 
@@ -56,6 +57,14 @@ static uint32_t  sCapacity    = 0;
  * tokens don't collide with brand-new ones in test scenarios. Vector is
  * a small overhead per slot but the simplicity is worth it. */
 static std::vector<uint32_t> sFreeIndices;
+
+/* Live pointer -> slot index, so re-registering a pointer that already has a
+ * valid slot returns the SAME token. Fighter animation files are reloaded
+ * into the same figatree heap on every status change; without this each
+ * reload minted fresh tokens, so (a) the table grew for the whole match and
+ * (b) two identical simulations produced different bytes, which rollback
+ * SyncTest (sys/netrollback.c) reports as divergence. */
+static std::unordered_map<void *, uint32_t> sLiveIndexByPtr;
 
 static void ensureCapacity(void)
 {
@@ -142,6 +151,15 @@ uint32_t portRelocRegisterPointer(void *ptr)
     }
     ensureCapacity();
 
+    auto live = sLiveIndexByPtr.find(ptr);
+    if (live != sLiveIndexByPtr.end()) {
+        const Slot &slot = sSlots[live->second];
+        if (slot.gen != 0 && slot.ptr == ptr) {
+            return makeToken(live->second, slot.gen);
+        }
+        sLiveIndexByPtr.erase(live);
+    }
+
     uint32_t index;
     uint32_t gen;
     if (!sFreeIndices.empty()) {
@@ -161,6 +179,7 @@ uint32_t portRelocRegisterPointer(void *ptr)
         sSlots[index].gen = gen;
     }
     sSlots[index].ptr = ptr;
+    sLiveIndexByPtr[ptr] = index;
     return makeToken(index, gen);
 }
 
@@ -230,6 +249,7 @@ void portRelocInvalidateRange(const void *base, size_t size)
         if (sSlots[i].gen == 0) continue;       /* already free */
         uintptr_t p = reinterpret_cast<uintptr_t>(sSlots[i].ptr);
         if (p >= lo && p < hi) {
+            sLiveIndexByPtr.erase(sSlots[i].ptr);
             sSlots[i].ptr = nullptr;
             sSlots[i].gen = bumpSlotGeneration(sSlots[i].gen);
             sFreeIndices.push_back(i);
@@ -259,6 +279,7 @@ void portRelocResetPointerTable(void)
     }
     sNextIndex = 1;
     sFreeIndices.clear();
+    sLiveIndexByPtr.clear();
 }
 
 } /* extern "C" */

@@ -24,6 +24,8 @@
  * The head is passed as void* so the header has no game-type dependency.
  */
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -82,6 +84,16 @@ int port_aobj_is_in_halfswapped_range(const void *p);
  * and project_fixup_idempotency_heap_reuse for the failure mode.
  */
 int port_aobj_unhalfswap_visit(const void *p);
+
+/**
+ * Rollback snapshot of the fixup verdicts for every registered range
+ * (sys/netrollback.c). Figatree heap bytes are part of the rollback
+ * snapshot, so their "already converted" state must roll back with them.
+ * save returns the bytes written, or 0 if @capacity is too small.
+ */
+size_t port_aobj_fixup_snapshot_size(void);
+size_t port_aobj_fixup_snapshot_save(void *dst, size_t capacity);
+void port_aobj_fixup_snapshot_load(const void *src, size_t size);
 
 #ifdef __cplusplus
 }
