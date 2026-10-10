@@ -49,6 +49,13 @@ include(FetchContent) # pull discord-rpc from GitHub (desktop only)
 #   2. `git describe --tags --abbrev=0` for local builds at a tagged commit.
 #   3. "dev" fallback for source tarballs / shallow CI checkouts — those
 #      builds always show "update available", which is the right signal.
+# Smash Classic: the VERSION file is the release version (vX.Y.Z, matching the
+# GitHub release tag). It comes before `git describe`, which would pick up
+# upstream BattleShip's tags and make the updater compare against those.
+if(NOT BATTLESHIP_VERSION AND EXISTS "${CMAKE_SOURCE_DIR}/VERSION")
+    file(STRINGS "${CMAKE_SOURCE_DIR}/VERSION" BATTLESHIP_VERSION LIMIT_COUNT 1)
+    string(STRIP "${BATTLESHIP_VERSION}" BATTLESHIP_VERSION)
+endif()
 if(NOT BATTLESHIP_VERSION)
     find_package(Git QUIET)
     if(Git_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
@@ -999,7 +1006,7 @@ else()
 endif()
 if (WIN32)
     # port_symbolize.cpp (SyncTest diagnostics), port/net/port_udp.cpp, port/net/port_ws.cpp
-    target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp)
+    target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt)
 endif()
 
 # macOS: the port calls CFPreferences* directly (ApplePressAndHoldEnabled fix

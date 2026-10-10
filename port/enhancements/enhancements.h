@@ -123,6 +123,12 @@ bool IsCheckingForUpdates();
 std::string GetUpdateStatus();
 std::string GetDownloadStatus();
 std::string GetLatestVersion();
+std::string GetCurrentVersion();
+std::string GetReleaseNotes();
+void SkipLatestVersion();
+bool IsLatestVersionSkipped();
+void OpenReleasePage();
+void TickUpdater();
 
 // Libretro shader pack downloader. Two-phase background flow:
 //

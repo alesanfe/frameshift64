@@ -1870,7 +1870,8 @@ void PortMenu::AddMenuAbout() {
         !ssb64::enhancements::IsUpdateAvailable();
 
         if (!info.isHidden) {
-            info.name = "Download Update: " + ssb64::enhancements::GetLatestVersion();
+            // One click: download, verify, install, restart (Updater.cpp).
+            info.name = "Update now to " + ssb64::enhancements::GetLatestVersion();
         }
     })
     .Callback([](WidgetInfo&) {
@@ -1880,7 +1881,7 @@ void PortMenu::AddMenuAbout() {
     // 3. "Downloading... XX%" Text (Also handles the "Complete" text)
     AddWidget(path, "Download Status", WIDGET_TEXT)
     .PreFunc([](WidgetInfo& info) {
-        info.isHidden = !ssb64::enhancements::IsDownloading() && !ssb64::enhancements::IsDownloadComplete();
+        info.isHidden = ssb64::enhancements::GetDownloadStatus().empty();   // progress, success or error
         if (!info.isHidden) {
             // Pipe the curl progress bar or completion string straight to the UI
             info.name = ssb64::enhancements::GetDownloadStatus();

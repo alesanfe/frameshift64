@@ -17,6 +17,7 @@ param(
 
 $env:SSB64_ROLLBACK_SYNCTEST = "$Distance"
 $env:SSB64_MUTE = '1'
+$env:SSB64_NO_UPDATE_CHECK = '1'
 $env:SSB64_ROLLBACK_AUTOVS = '1'
 $env:SSB64_RIG_EXIT = '1'
 $env:SSB64_ROLLBACK_SEED = "$Seed"

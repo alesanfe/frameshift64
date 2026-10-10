@@ -740,6 +740,7 @@ void PortPushFrame(void)
 #if !defined(__ANDROID__)
 #if !defined(BATTLESHIP_UWP)
 	ssb64::enhancements::TickDiscordPresence(); // DRP
+	ssb64::enhancements::TickUpdater();         // closes the game once an update installer is running
 #endif
 #endif
 
