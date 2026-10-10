@@ -1264,7 +1264,10 @@ int main(int argc, char* argv[]) {
 	 * Ship::Context will later use for the user's saves and o2r. */
 	{
 		std::string logPath;
-		if (char* p = SDL_GetPrefPath(NULL, "BattleShip")) {
+		/* SSB64_LOG_PATH: per-instance log, e.g. two local netplay peers. */
+		if (const char* override_path = std::getenv("SSB64_LOG_PATH")) {
+			logPath = override_path;
+		} else if (char* p = SDL_GetPrefPath(NULL, "BattleShip")) {
 			logPath = std::string(p) + "ssb64.log";
 			SDL_free(p);
 		} else {

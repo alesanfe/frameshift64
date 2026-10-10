@@ -9,12 +9,13 @@ param(
     [string]$Fighters = "",
     [int]$Seed = 12345,
     [int]$Minutes = 1,
+    [int]$Distance = 1,
     [int]$TimeoutSeconds = 400,
     [string]$BuildDir = "$PSScriptRoot\..\build\us\Release",
     [int]$ShowLines = 40
 )
 
-$env:SSB64_ROLLBACK_SYNCTEST = '1'
+$env:SSB64_ROLLBACK_SYNCTEST = "$Distance"
 $env:SSB64_ROLLBACK_AUTOVS = '1'
 $env:SSB64_RIG_EXIT = '1'
 $env:SSB64_ROLLBACK_SEED = "$Seed"

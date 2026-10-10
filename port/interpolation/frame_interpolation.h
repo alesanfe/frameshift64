@@ -42,6 +42,9 @@ extern "C" {
  */
 void portInterpRecordMtx(void *mtx, void *owner, int ordinal, int tag);
 
+/** Suppress recording while a rollback shadow draw runs (never presented). */
+void portInterpSetRecordSuppressed(int suppressed);
+
 /**
  * Number of render subframes for the current tick (>= 1). Also lazily
  * initializes config and applies SetTargetFps when the effective value

@@ -317,9 +317,18 @@ extern "C" int portInterpActiveSubframes(void)
     return subframes;
 }
 
+/* Rollback shadow draws (sys/taskman.c syTaskmanShadowDraw) build display
+ * lists that are never presented; their matrices must not be recorded. */
+static bool sRecordSuppressed = false;
+
+extern "C" void portInterpSetRecordSuppressed(int suppressed)
+{
+    sRecordSuppressed = (suppressed != 0);
+}
+
 extern "C" void portInterpRecordMtx(void *mtx, void *owner, int ordinal, int tag)
 {
-    if (!sRecordArmed || mtx == nullptr) {
+    if (!sRecordArmed || sRecordSuppressed || mtx == nullptr) {
         return;
     }
     if (sRecords.size() >= kMaxRecords) {
