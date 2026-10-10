@@ -38,6 +38,9 @@ extern void syNetRollbackLoad(s32 slot);
 extern sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void), SYNetSyncTickHash *hashes);
 extern void syNetRollbackRunBattleUpdate(void (*update)(void));
 extern s32 syNetRollbackTakeDrawRequest(void);
+extern sb32 syNetRollbackGetLatestConfirmedHash(u32 *out_tick, u32 *out_hash);
+extern void syNetRollbackCheckRemoteConfirmedHash(u32 tick, u32 hash);
+extern sb32 syNetRollbackIsDesynced(void);
 extern void syTaskmanShadowDraw(void);
 
 #endif /* _SYNETROLLBACK_H_ */

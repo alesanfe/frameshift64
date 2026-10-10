@@ -21,11 +21,12 @@ extern void port_log(const char *fmt, ...);
 #endif
 
 #define SYNETPEER_MAGIC 0x53534E50 // SSNP
-#define SYNETPEER_VERSION 2
+#define SYNETPEER_VERSION 3
 #define SYNETPEER_MAX_PACKET_FRAMES 16
 #define SYNETPEER_FRAME_BYTES 8
 #define SYNETPEER_INPUT_HEADER_BYTES (4 + 2 + 2 + 4 + 4 + 4 + 1 + 1 + 1 + 1)
-#define SYNETPEER_PACKET_BYTES ((SYNETPEER_INPUT_HEADER_BYTES) + ((SYNETPEER_MAX_PACKET_FRAMES) * (SYNETPEER_FRAME_BYTES)) + 4)
+#define SYNETPEER_SYNC_CHECK_BYTES (4 + 4)
+#define SYNETPEER_PACKET_BYTES ((SYNETPEER_INPUT_HEADER_BYTES) + ((SYNETPEER_MAX_PACKET_FRAMES) * (SYNETPEER_FRAME_BYTES)) + SYNETPEER_SYNC_CHECK_BYTES + 4)
 #define SYNETPEER_VALIDATION_INPUT_WINDOW 120
 #define SYNETPEER_METADATA_BYTES (11 * 4 + 8 + (MAXCONTROLLERS * 7))
 #define SYNETPEER_BOOTSTRAP_PACKET_BYTES (4 + 2 + 2 + 4 + SYNETPEER_METADATA_BYTES + 4)
@@ -44,6 +45,13 @@ extern void port_log(const char *fmt, ...);
  * first mispredicted tick through the snapshot ring, so this stays below
  * SYNETROLLBACK_SLOT_NUM. */
 #define SYNETPEER_MAX_PREDICTION 6
+
+/* Time sync: each packet carries the sender's frame advantage (ticks it runs
+ * ahead of the newest remote input it has confirmed). The peer that is
+ * further ahead skips one frame at a time, at most every N frames, so both
+ * sides share the rollback load instead of one peer predicting at the cap. */
+#define SYNETPEER_TIMESYNC_THRESHOLD 2
+#define SYNETPEER_TIMESYNC_INTERVAL 10
 
 void syNetPeerReceiveRemoteInput(void);
 void syNetPeerUpdateStartBarrier(void);
@@ -113,6 +121,9 @@ u32 sSYNetPeerFuzzSeed;              // SSB64_NETPLAY_FUZZ
 sb32 sSYNetPeerFrameReady;           // decided once per frame in syNetPeerBeginFrame
 u32 sSYNetPeerStallFrames;
 u32 sSYNetPeerLockstepStallFrames;
+s32 sSYNetPeerRemoteAdvantage;
+u32 sSYNetPeerTimeSyncStallFrames;
+u32 sSYNetPeerFramesSinceTimeSync;
 
 #ifdef PORT
 const char *sSYNetPeerBindSpec;
@@ -812,6 +823,9 @@ void syNetPeerStartVSSession(void)
 	sSYNetPeerFrameReady = FALSE;
 	sSYNetPeerStallFrames = 0;
 	sSYNetPeerLockstepStallFrames = 0;
+	sSYNetPeerRemoteAdvantage = 0;
+	sSYNetPeerTimeSyncStallFrames = 0;
+	sSYNetPeerFramesSinceTimeSync = 0;
 
 	port_log("SSB64 NetPeer: VS session start role=%s local=%d remote=%d delay=%u barrier=%d rollback=%d fuzz=%u tick=%u\n",
 	         (sSYNetPeerBootstrapIsHost != FALSE) ? "host" : "client",
@@ -845,12 +859,21 @@ static sb32 syNetPeerCheckPacing(void)
 	}
 	if (syNetRollbackCheckCanSave() != FALSE)
 	{
-		if (tick < confirmed + SYNETPEER_MAX_PREDICTION)
+		s32 advantage = (s32)tick - (s32)confirmed;
+
+		if (tick >= confirmed + SYNETPEER_MAX_PREDICTION)
 		{
-			return TRUE;
+			sSYNetPeerStallFrames++;
+			return FALSE;
 		}
-		sSYNetPeerStallFrames++;
-		return FALSE;
+		if (((advantage - sSYNetPeerRemoteAdvantage) >= SYNETPEER_TIMESYNC_THRESHOLD) &&
+		    (sSYNetPeerFramesSinceTimeSync >= SYNETPEER_TIMESYNC_INTERVAL))
+		{
+			sSYNetPeerFramesSinceTimeSync = 0;
+			sSYNetPeerTimeSyncStallFrames++;
+			return FALSE;
+		}
+		return TRUE;
 	}
 	if (tick < confirmed)
 	{
@@ -873,6 +896,7 @@ void syNetPeerBeginFrame(void)
 	}
 	syNetPeerReceiveRemoteInput();
 	syNetPeerUpdateStartBarrier();
+	sSYNetPeerFramesSinceTimeSync++;
 
 	sSYNetPeerFrameReady = ((syNetPeerCheckBarrierReleased() != FALSE) && (syNetPeerCheckPacing() != FALSE)) ? TRUE : FALSE;
 }
@@ -944,7 +968,12 @@ void syNetPeerBuildPacket(u8 *buffer, u32 *out_size)
 
 	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
 	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
-	syNetPeerWriteU16(&cursor, 0);
+	{
+		s32 advantage = (s32)syNetInputGetTick() - (s32)syNetInputGetRemoteNextUnconfirmed(sSYNetPeerRemotePlayer);
+
+		advantage = (advantage < -32768) ? -32768 : (advantage > 32767) ? 32767 : advantage;
+		syNetPeerWriteU16(&cursor, (u16)(s16)advantage);
+	}
 	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
 	syNetPeerWriteU32(&cursor, sSYNetPeerHighestRemoteTick);
 	syNetPeerWriteU32(&cursor, sSYNetPeerSendSeq);
@@ -961,6 +990,18 @@ void syNetPeerBuildPacket(u8 *buffer, u32 *out_size)
 		syNetPeerWriteU16(&cursor, frame->buttons);
 		syNetPeerWriteU8(&cursor, (u8)frame->stick_x);
 		syNetPeerWriteU8(&cursor, (u8)frame->stick_y);
+	}
+	{
+		u32 check_tick;
+		u32 check_hash;
+
+		if (syNetRollbackGetLatestConfirmedHash(&check_tick, &check_hash) == FALSE)
+		{
+			check_tick = 0xFFFFFFFFU;
+			check_hash = 0;
+		}
+		syNetPeerWriteU32(&cursor, check_tick);
+		syNetPeerWriteU32(&cursor, check_hash);
 	}
 	syNetPeerWriteU32(&cursor, checksum);
 	*out_size = SYNETPEER_PACKET_BYTES;
@@ -1001,6 +1042,9 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 	u8 frame_count;
 	u8 packet_local_player;
 	u8 packet_remote_player;
+	s32 remote_advantage;
+	u32 check_tick;
+	u32 check_hash;
 	u32 current_tick = syNetInputGetTick();
 	s32 i;
 
@@ -1020,7 +1064,7 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 
 	magic = syNetPeerReadU32(&cursor);
 	version = syNetPeerReadU16(&cursor);
-	(void)syNetPeerReadU16(&cursor);
+	remote_advantage = (s16)syNetPeerReadU16(&cursor);
 	session_id = syNetPeerReadU32(&cursor);
 	ack_tick = syNetPeerReadU32(&cursor);
 	packet_seq = syNetPeerReadU32(&cursor);
@@ -1045,6 +1089,8 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 		frames[i].stick_x = (s8)syNetPeerReadU8(&cursor);
 		frames[i].stick_y = (s8)syNetPeerReadU8(&cursor);
 	}
+	check_tick = syNetPeerReadU32(&cursor);
+	check_hash = syNetPeerReadU32(&cursor);
 	checksum = syNetPeerReadU32(&cursor);
 	expected_checksum = syNetPeerChecksumPacket(session_id, ack_tick, packet_seq, player, frame_count, frames);
 
@@ -1054,6 +1100,12 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 		return;
 	}
 	sSYNetPeerPacketsReceived++;
+	sSYNetPeerRemoteAdvantage = remote_advantage;
+
+	if (check_tick != 0xFFFFFFFFU)
+	{
+		syNetRollbackCheckRemoteConfirmedHash(check_tick, check_hash);
+	}
 
 	if (sSYNetPeerRecvSeqInitialized == FALSE)
 	{
@@ -1379,10 +1431,10 @@ void syNetPeerStopVSSession(void)
 #ifdef PORT
 	if (sSYNetPeerIsActive != FALSE)
 	{
-		port_log("SSB64 NetPeer: VS session stop sent=%u recv=%u dropped=%u staged=%u late=%u stalls=%u lockstep_stalls=%u checksum=0x%08X\n",
+		port_log("SSB64 NetPeer: VS session stop sent=%u recv=%u dropped=%u staged=%u late=%u stalls=%u lockstep_stalls=%u timesync_stalls=%u checksum=0x%08X\n",
 		         sSYNetPeerPacketsSent, sSYNetPeerPacketsReceived, sSYNetPeerPacketsDropped,
 		         sSYNetPeerFramesStaged, sSYNetPeerLateFrames, sSYNetPeerStallFrames, sSYNetPeerLockstepStallFrames,
-		         sSYNetPeerInputChecksum);
+		         sSYNetPeerTimeSyncStallFrames, sSYNetPeerInputChecksum);
 	}
 	syNetPeerCloseSocket();
 #endif

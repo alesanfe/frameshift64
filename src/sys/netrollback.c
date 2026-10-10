@@ -138,6 +138,18 @@ static u32 sSYNetRollbackResimTicks;
 static u32 sSYNetRollbackMaxRollback;
 static u32 sSYNetRollbackFailedRollbacks;
 
+/* In-band desync detection: the confirmed full-state hash of recent ticks;
+ * each input packet carries the newest one and the receiver compares. */
+#define SYNETROLLBACK_CONFIRMED_RING 128
+static u32 sSYNetRollbackConfirmedTicks[SYNETROLLBACK_CONFIRMED_RING];
+static u32 sSYNetRollbackConfirmedHashes[SYNETROLLBACK_CONFIRMED_RING];
+static sb32 sSYNetRollbackConfirmedValid[SYNETROLLBACK_CONFIRMED_RING];
+static sb32 sSYNetRollbackHasConfirmed;
+static u32 sSYNetRollbackLatestConfirmedTick;
+static sb32 sSYNetRollbackIsDesynced;
+static u32 sSYNetRollbackDesyncTick;
+static u32 sSYNetRollbackSyncChecks;
+
 /* Set when the live tick ran in a rollback session; consumed by taskman. */
 static sb32 sSYNetRollbackIsTickRan;
 
@@ -321,6 +333,14 @@ void syNetRollbackStartVSSession(void)
 	sSYNetRollbackArenaWatermark = (u8*)gSYTaskmanGeneralHeap.ptr;
 	sSYNetRollbackChainStart = 0;
 	sSYNetRollbackTraceNextTick = 0;
+	sSYNetRollbackHasConfirmed = FALSE;
+	sSYNetRollbackIsDesynced = FALSE;
+	sSYNetRollbackSyncChecks = 0;
+
+	for (i = 0; i < SYNETROLLBACK_CONFIRMED_RING; i++)
+	{
+		sSYNetRollbackConfirmedValid[i] = FALSE;
+	}
 	sSYNetRollbackRollbacks = 0;
 	sSYNetRollbackResimTicks = 0;
 	sSYNetRollbackMaxRollback = 0;
@@ -353,9 +373,9 @@ void syNetRollbackFinishVSSession(void)
 #ifdef PORT
 	if ((syNetPeerIsRollbackActive() != FALSE) && (sSYNetRollbackIsSessionActive != FALSE))
 	{
-		port_log("SSB64 Rollback: netplay session rollbacks=%u resim_ticks=%u max_rollback=%u failed=%u traced_ticks=%u\n",
+		port_log("SSB64 Rollback: netplay session rollbacks=%u resim_ticks=%u max_rollback=%u failed=%u traced_ticks=%u sync_checks=%u desync=%d\n",
 		         sSYNetRollbackRollbacks, sSYNetRollbackResimTicks, sSYNetRollbackMaxRollback,
-		         sSYNetRollbackFailedRollbacks, sSYNetRollbackTraceNextTick);
+		         sSYNetRollbackFailedRollbacks, sSYNetRollbackTraceNextTick, sSYNetRollbackSyncChecks, sSYNetRollbackIsDesynced);
 	}
 	if (sSYNetRollbackConfirmedTrace != NULL)
 	{
@@ -989,6 +1009,17 @@ static void syNetRollbackEmitConfirmedTrace(u32 last_simulated_tick)
 		u32 tick = sSYNetRollbackTraceNextTick;
 		s32 slot = tick % SYNETROLLBACK_SLOT_NUM;
 
+		if ((sSYNetRollbackLiveHashValid[slot] != FALSE) && (sSYNetRollbackLiveHashTicks[slot] == tick))
+		{
+			s32 ring = tick % SYNETROLLBACK_CONFIRMED_RING;
+
+			sSYNetRollbackConfirmedTicks[ring] = tick;
+			sSYNetRollbackConfirmedHashes[ring] = sSYNetRollbackLiveHashes[slot].column[nSYNetSyncColumnFull];
+			sSYNetRollbackConfirmedValid[ring] = TRUE;
+			sSYNetRollbackLatestConfirmedTick = tick;
+			sSYNetRollbackHasConfirmed = TRUE;
+		}
+
 #ifdef PORT
 		if (sSYNetRollbackConfirmedTrace != NULL)
 		{
@@ -1061,6 +1092,24 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
 	{
 		sSYNetRollbackChainStart = tick + 1;
 	}
+#ifdef PORT
+	/* SSB64_NETPLAY_TEST_DESYNC=<tick>: corrupt this peer's RNG once, to
+	 * prove the in-band desync detector fires. Test harness only. */
+	{
+		static s32 sInjectTick = -2;
+
+		if (sInjectTick == -2)
+		{
+			sInjectTick = syNetRollbackGetEnvInt("SSB64_NETPLAY_TEST_DESYNC", -1);
+		}
+		if ((sInjectTick >= 0) && (tick == (u32)sInjectTick))
+		{
+			port_log("SSB64 Rollback: TEST injecting desync at tick=%u\n", tick);
+			syUtilsSetRandomSeed(syUtilsRandSeed() ^ 0x5A5A5A5AU);
+			sInjectTick = -1;
+		}
+	}
+#endif
 	update();
 	syNetRollbackStoreLiveHash(tick);
 	syNetRollbackEmitConfirmedTrace(tick);
@@ -1068,9 +1117,10 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
 #ifdef PORT
 	if ((tick % 600) == 0)
 	{
-		port_log("SSB64 Rollback: netplay tick=%u rollbacks=%u resim_ticks=%u max_rollback=%u failed=%u confirmed=%u\n",
+		port_log("SSB64 Rollback: netplay tick=%u rollbacks=%u resim_ticks=%u max_rollback=%u failed=%u confirmed=%u sync_checks=%u desync=%d\n",
 		         tick, sSYNetRollbackRollbacks, sSYNetRollbackResimTicks, sSYNetRollbackMaxRollback,
-		         sSYNetRollbackFailedRollbacks, syNetInputGetRemoteNextUnconfirmed(syNetPeerGetRemotePlayer()));
+		         sSYNetRollbackFailedRollbacks, syNetInputGetRemoteNextUnconfirmed(syNetPeerGetRemotePlayer()),
+		         sSYNetRollbackSyncChecks, sSYNetRollbackIsDesynced);
 	}
 #endif
 }
@@ -1080,6 +1130,46 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
  * snapshot ring with the same inputs; each resimulated tick must hash the
  * same as its first run. Any divergence means the snapshot misses state or
  * the tick is not a pure function of snapshot + published input. */
+sb32 syNetRollbackGetLatestConfirmedHash(u32 *out_tick, u32 *out_hash)
+{
+	if (sSYNetRollbackHasConfirmed == FALSE)
+	{
+		return FALSE;
+	}
+	*out_tick = sSYNetRollbackLatestConfirmedTick;
+	*out_hash = sSYNetRollbackConfirmedHashes[sSYNetRollbackLatestConfirmedTick % SYNETROLLBACK_CONFIRMED_RING];
+
+	return TRUE;
+}
+
+/* The peer's full-state hash for a tick it has confirmed. Ours must match;
+ * a mismatch means the simulations diverged (a determinism bug). */
+void syNetRollbackCheckRemoteConfirmedHash(u32 tick, u32 hash)
+{
+	s32 ring = tick % SYNETROLLBACK_CONFIRMED_RING;
+
+	if ((sSYNetRollbackConfirmedValid[ring] == FALSE) || (sSYNetRollbackConfirmedTicks[ring] != tick))
+	{
+		return;     // not confirmed here yet, or already rotated out
+	}
+	sSYNetRollbackSyncChecks++;
+
+	if ((sSYNetRollbackConfirmedHashes[ring] != hash) && (sSYNetRollbackIsDesynced == FALSE))
+	{
+		sSYNetRollbackIsDesynced = TRUE;
+		sSYNetRollbackDesyncTick = tick;
+#ifdef PORT
+		port_log("SSB64 Rollback: DESYNC detected at tick=%u local=%08X remote=%08X\n",
+		         tick, sSYNetRollbackConfirmedHashes[ring], hash);
+#endif
+	}
+}
+
+sb32 syNetRollbackIsDesynced(void)
+{
+	return sSYNetRollbackIsDesynced;
+}
+
 s32 syNetRollbackTakeDrawRequest(void)
 {
 	s32 request;
