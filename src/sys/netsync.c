@@ -91,6 +91,18 @@ u32 syNetSyncNextSpawnSerial(void)
 	return sSYNetSyncSpawnSerial;
 }
 
+/* Rollback snapshots carry the serial: it is stamped into items/weapons, so
+ * resimulated spawns must draw the same serials as the original pass. */
+u32 syNetSyncGetSpawnSerial(void)
+{
+	return sSYNetSyncSpawnSerial;
+}
+
+void syNetSyncSetSpawnSerial(u32 serial)
+{
+	sSYNetSyncSpawnSerial = serial;
+}
+
 static const char *sSYNetSyncColumnNames[SYNETSYNC_COLUMN_NUM] = {
 	"full", "rng", "battle", "fighters", "items", "weapons", "stage", "objman", "input", "joints", "camera", "vars",
 };

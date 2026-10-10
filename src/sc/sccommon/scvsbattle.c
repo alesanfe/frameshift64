@@ -8,6 +8,7 @@ extern void port_coroutine_yield(void);
 #include <sys/netinput.h>
 #include <sys/netpeer.h>
 #include <sys/netreplay.h>
+#include <sys/netrollback.h>
 #include <sys/netsync.h>
 #include <sys/video.h>
 #include <reloc_data.h>
@@ -113,7 +114,7 @@ void scVSBattleFuncUpdate(void)
 	{
 		return;
 	}
-	ifCommonBattleUpdateInterfaceAll();
+	syNetRollbackRunBattleUpdate(ifCommonBattleUpdateInterfaceAll);
 	syNetSyncRecordTick();
 	syNetReplayUpdate();
 	syNetPeerUpdate();
@@ -260,6 +261,7 @@ void scVSBattleStartBattle(void)
 	FTDesc desc;
 	SYColorRGBA color;
 
+	syNetRollbackStartVSSession();
 	syNetInputStartVSSession();
 	syNetReplayStartVSSession(gSCManagerBattleState);
 	syNetSyncStartVSSession();
@@ -558,6 +560,8 @@ void scVSBattleStartSuddenDeath(void)
 	FTDesc desc;
 	SYColorRGBA color;
 
+	syNetRollbackStartVSSession();
+
 	gSCManagerSceneData.is_reset = FALSE;
 
 	scVSBattleSetupFiles();
@@ -706,6 +710,7 @@ void scVSBattleStartScene(void)
 		func_800266A0_272A0();
 		gmRumbleInitPlayers();
 	}
+	syNetRollbackFinishVSSession();
 	syNetSyncFinishVSSession();
 	syNetReplayFinishVSSession();
 	syNetPeerStopVSSession();

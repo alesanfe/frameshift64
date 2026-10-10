@@ -21,6 +21,7 @@ extern void port_coroutine_yield(void);
 #include <sys/controller.h>
 #include <sys/netpeer.h>
 #include <sys/netreplay.h>
+#include <sys/netrollback.h>
 #include <sys/netsync.h>
 #ifdef PORT
 #include <gr/ground.h>
@@ -961,6 +962,7 @@ void scManagerRunLoop(sb32 arg)
 		syNetSyncInitDebugEnv();
 		syNetReplayInitDebugEnv();
 		syNetPeerInitDebugEnv();
+		syNetRollbackInitDebugEnv();
 	}
 
 	// boot straight to CSS if enabled

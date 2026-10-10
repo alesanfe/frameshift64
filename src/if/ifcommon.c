@@ -7,6 +7,7 @@
 #include <sys/video.h>
 #include <sys/rdp.h>
 #include <reloc_data.h>
+#include <sys/netrollback.h>
 
 extern alSoundEffect* func_800269C0_275C0(u16);
 
@@ -472,6 +473,12 @@ s32 sIFCommonPad0x801317F8;
 
 // 0x801317FC
 u32 sIFCommonTimerStamp;
+
+#ifdef PORT
+/* Sim-tick clock for the match timer under rollback-capable sessions; see
+ * ifCommonTimerFuncRun. Lives in the rollback snapshot with the stamp. */
+u32 sIFCommonTimerTicCount;
+#endif
 
 // 0x80131800
 u32 sIFCommonTimerIsStarted; // Confirmed u32 by ifCommonBattleUpdateInterfaceAll
@@ -2691,7 +2698,14 @@ void ifCommonTimerFuncRun(GObj *interface_gobj)
 
     if (sIFCommonTimerIsStarted != FALSE)
     {
+#ifdef PORT
+        // The N64 timer counts VI retraces; rollback resimulates several
+        // ticks per VI, so those sessions count sim ticks instead (identical
+        // when every VI runs exactly one tick).
+        time_update = (syNetRollbackIsTickTimer() != FALSE) ? sIFCommonTimerTicCount : sySchedulerGetTicCount();
+#else
         time_update = sySchedulerGetTicCount();
+#endif
         time_delta = time_update - sIFCommonTimerStamp;
 
         if (time_delta != 0)
@@ -3404,7 +3418,15 @@ void ifCommonBattleUpdateInterfaceAll(void)
         sIFCommonTimerStamp = 0;
 
         sySchedulerSetTicCount(0);
+#ifdef PORT
+        sIFCommonTimerTicCount = 0;
+#endif
     }
+#ifdef PORT
+    // Mirrors the retrace that precedes every tick after the one that set
+    // the scheduler count to 0.
+    else sIFCommonTimerTicCount++;
+#endif
     switch (gSCManagerBattleState->game_status)
     {
     case nSCBattleGameStatusWait:

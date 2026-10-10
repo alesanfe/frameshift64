@@ -42,6 +42,8 @@ enum SYNetSyncVerifyResult
 
 extern u32 syNetSyncHashBattleFighters(void);
 extern u32 syNetSyncNextSpawnSerial(void);
+extern u32 syNetSyncGetSpawnSerial(void);
+extern void syNetSyncSetSpawnSerial(u32 serial);
 
 extern u32 syNetSyncHashFighters(void);
 extern u32 syNetSyncHashJoints(void);
