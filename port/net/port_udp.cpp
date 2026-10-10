@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <random>
@@ -49,6 +50,11 @@ struct PendingPacket {
 PortSocket sSocket = kInvalidSocket;
 sockaddr_in sPeer;
 bool sHasPeer = false;
+
+/* Relay fallback (server/lobby-server.js "SSBX" frames). */
+bool sRelay = false;
+sockaddr_in sRelayServer;
+char sRelayCode[7];
 
 /* Network simulator (send side). */
 unsigned int sSimLatencyMs = 0;
@@ -110,7 +116,7 @@ bool parse_address(const char *spec, sockaddr_in *out)
     }
     std::string host = text.substr(0, colon);
     long port = std::strtol(text.c_str() + colon + 1, nullptr, 10);
-    if (port <= 0 || port > 65535) {
+    if (port < 0 || port > 65535) {     /* 0 = let the OS pick (bind only) */
         return false;
     }
     std::memset(out, 0, sizeof(*out));
@@ -137,11 +143,64 @@ bool parse_address(const char *spec, sockaddr_in *out)
     return true;
 }
 
-int raw_send(const uint8_t *data, int size)
+int raw_send_to(const sockaddr_in &to, const uint8_t *data, int size)
 {
     int sent = sendto(sSocket, reinterpret_cast<const char *>(data), size, 0,
-                      reinterpret_cast<const sockaddr *>(&sPeer), sizeof(sPeer));
+                      reinterpret_cast<const sockaddr *>(&to), sizeof(to));
     return (sent == size) ? size : -1;
+}
+
+/* Game traffic to the peer: direct, or wrapped for the relay. */
+int raw_send(const uint8_t *data, int size)
+{
+    if (!sRelay) {
+        return raw_send_to(sPeer, data, size);
+    }
+    std::vector<uint8_t> frame(10 + size);
+    std::memcpy(frame.data(), "SSBX", 4);
+    std::memcpy(frame.data() + 4, sRelayCode, 6);
+    std::memcpy(frame.data() + 10, data, size);
+    return (raw_send_to(sRelayServer, frame.data(), static_cast<int>(frame.size())) > 0) ? size : -1;
+}
+
+bool same_endpoint(const sockaddr_in &a, const sockaddr_in &b)
+{
+    return a.sin_addr.s_addr == b.sin_addr.s_addr && a.sin_port == b.sin_port;
+}
+
+/* Receives one datagram; unwraps relay frames in place. kind: 0 peer/direct,
+ * 1 relayed from the peer, 2 anyone else. Returns size, 0 none, -1 error. */
+int raw_recv(void *buffer, int capacity, sockaddr_in *from, int *kind)
+{
+#if defined(_WIN32)
+    int from_len = sizeof(*from);
+#else
+    socklen_t from_len = sizeof(*from);
+#endif
+    /* Receive into a full-size buffer: relay frames are 10 bytes longer than
+     * the payload, and on Windows a datagram larger than the caller's buffer
+     * fails recvfrom outright (WSAEMSGSIZE) instead of truncating. */
+    uint8_t bytes[2048];
+    int size = recvfrom(sSocket, reinterpret_cast<char *>(bytes), sizeof(bytes), 0,
+                        reinterpret_cast<sockaddr *>(from), &from_len);
+    if (size < 0) {
+        int err = port_udp_last_error();
+        return port_udp_would_block(err) ? 0 : -1;
+    }
+    const uint8_t *payload = bytes;
+    if (sRelay && same_endpoint(*from, sRelayServer) && size >= 10 &&
+        std::memcmp(bytes, "SSBX", 4) == 0 && std::memcmp(bytes + 4, sRelayCode, 6) == 0) {
+        payload = bytes + 10;
+        size -= 10;
+        *kind = 1;
+    } else {
+        *kind = (sHasPeer && same_endpoint(*from, sPeer)) ? 0 : 2;
+    }
+    if (size > capacity) {
+        return -1;  /* not one of ours: every protocol datagram fits its caller's buffer */
+    }
+    std::memcpy(buffer, payload, size);
+    return size;
 }
 
 void flush_sim_queue(void)
@@ -206,7 +265,7 @@ extern "C" int port_udp_open(const char *bind_spec)
 
 extern "C" int port_udp_set_peer(const char *peer_spec)
 {
-    if (!startup() || !parse_address(peer_spec, &sPeer) || sPeer.sin_addr.s_addr == htonl(INADDR_ANY)) {
+    if (!startup() || !parse_address(peer_spec, &sPeer) || sPeer.sin_addr.s_addr == htonl(INADDR_ANY) || sPeer.sin_port == 0) {
         port_log("SSB64 UDP: invalid peer address '%s' (expected host:port)\n", peer_spec ? peer_spec : "(null)");
         sHasPeer = false;
         return 0;
@@ -222,6 +281,8 @@ extern "C" void port_udp_close(void)
         sSocket = kInvalidSocket;
     }
     sSimQueue.clear();
+    sRelay = false;
+    sHasPeer = false;
 }
 
 extern "C" int port_udp_is_open(void)
@@ -264,22 +325,111 @@ extern "C" int port_udp_recv(void *buffer, int capacity)
 
     for (;;) {
         sockaddr_in from;
-#if defined(_WIN32)
-        int from_len = sizeof(from);
-#else
-        socklen_t from_len = sizeof(from);
-#endif
-        int size = recvfrom(sSocket, static_cast<char *>(buffer), capacity, 0,
-                            reinterpret_cast<sockaddr *>(&from), &from_len);
-        if (size < 0) {
-            int err = port_udp_last_error();
-            return port_udp_would_block(err) ? 0 : -1;
+        int kind = 2;
+        int size = raw_recv(buffer, capacity, &from, &kind);
+
+        if (size <= 0) {
+            return size;
         }
-        if (sHasPeer && (from.sin_addr.s_addr != sPeer.sin_addr.s_addr || from.sin_port != sPeer.sin_port)) {
-            continue; /* not our peer */
+        if (sHasPeer && kind == 2) {
+            continue; /* not our peer (stray lobby/server traffic) */
         }
         return size;
     }
+}
+
+extern "C" int port_udp_send_to(const char *spec, const void *data, int size)
+{
+    sockaddr_in to;
+
+    if (sSocket == kInvalidSocket || data == nullptr || size <= 0 || !parse_address(spec, &to)) {
+        return -1;
+    }
+    return raw_send_to(to, static_cast<const uint8_t *>(data), size);
+}
+
+extern "C" int port_udp_recv_from(void *buffer, int capacity, char *from_text, int from_capacity)
+{
+    sockaddr_in from;
+    int kind = 2;
+
+    if (sSocket == kInvalidSocket || buffer == nullptr || capacity <= 0) {
+        return -1;
+    }
+    flush_sim_queue();
+
+    int size = raw_recv(buffer, capacity, &from, &kind);
+    if (size > 0 && from_text != nullptr && from_capacity > 0) {
+        if (kind == 1) {
+            std::snprintf(from_text, from_capacity, "relay");
+        } else {
+            char ip[INET_ADDRSTRLEN] = "?";
+            inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
+            std::snprintf(from_text, from_capacity, "%s:%u", ip, static_cast<unsigned>(ntohs(from.sin_port)));
+        }
+    }
+    return size;
+}
+
+extern "C" int port_udp_set_relay(const char *server_spec, const char *code)
+{
+    if (code == nullptr) {
+        sRelay = false;
+        return 1;
+    }
+    if (std::strlen(code) != 6 || !parse_address(server_spec, &sRelayServer)) {
+        return 0;
+    }
+    std::memcpy(sRelayCode, code, 6);
+    sRelayCode[6] = '\0';
+    sRelay = true;
+    return 1;
+}
+
+extern "C" int port_udp_is_relay(void)
+{
+    return sRelay ? 1 : 0;
+}
+
+extern "C" int port_udp_local_endpoint(char *out, int capacity)
+{
+    sockaddr_in bound;
+#if defined(_WIN32)
+    int len = sizeof(bound);
+#else
+    socklen_t len = sizeof(bound);
+#endif
+    if (sSocket == kInvalidSocket || out == nullptr ||
+        getsockname(sSocket, reinterpret_cast<sockaddr *>(&bound), &len) != 0) {
+        return 0;
+    }
+    /* Route-selection trick: "connecting" a throwaway UDP socket sends
+     * nothing but makes the OS pick the outbound interface address. */
+    in_addr local = bound.sin_addr;
+    PortSocket probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (probe != kInvalidSocket) {
+        sockaddr_in remote;
+        std::memset(&remote, 0, sizeof(remote));
+        remote.sin_family = AF_INET;
+        remote.sin_port = htons(53);
+        inet_pton(AF_INET, "8.8.8.8", &remote.sin_addr);
+        if (connect(probe, reinterpret_cast<sockaddr *>(&remote), sizeof(remote)) == 0) {
+            sockaddr_in name;
+#if defined(_WIN32)
+            int name_len = sizeof(name);
+#else
+            socklen_t name_len = sizeof(name);
+#endif
+            if (getsockname(probe, reinterpret_cast<sockaddr *>(&name), &name_len) == 0) {
+                local = name.sin_addr;
+            }
+        }
+        port_udp_close_socket(probe);
+    }
+    char ip[INET_ADDRSTRLEN] = "127.0.0.1";
+    inet_ntop(AF_INET, &local, ip, sizeof(ip));
+    std::snprintf(out, capacity, "%s:%u", ip, static_cast<unsigned>(ntohs(bound.sin_port)));
+    return 1;
 }
 
 extern "C" void port_udp_sleep_us(unsigned int usecs)

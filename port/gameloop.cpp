@@ -21,6 +21,7 @@
 
 #include "gameloop.h"
 #include "coroutine.h"
+#include "net/netlobby.h"
 #include "enhancements/enhancements.h"
 #include "interpolation/frame_interpolation.h"
 #include "widescreen/widescreen.h"
@@ -708,6 +709,10 @@ void PortPushFrame(void)
 	 * this BEFORE posting INTR_VRETRACE so old gfx completions are
 	 * delivered before the next game tick can tear down scene memory. */
 	port_vi_simulate_vblank();
+
+	/* Online lobby (room codes / hole punching): runs every frame, outside
+	 * the game tick; hands off to sys/netpeer.c when a match starts. */
+	port_netlobby_update();
 
 	/* Post a VI retrace event to the scheduler's message queue. See
 	 * port_make_os_mesg_int() above for why we don't just write
