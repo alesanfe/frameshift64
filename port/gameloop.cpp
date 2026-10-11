@@ -43,6 +43,9 @@
 #include <string>
 #include <cstdlib>
 #include <cstring>
+#if defined(_M_X64) || defined(__x86_64__)
+#include <xmmintrin.h>
+#endif
 
 /* GBI trace system */
 #include "../debug_tools/gbi_trace/gbi_trace.h"
@@ -713,6 +716,14 @@ void PortPushFrame(void)
 	/* Online lobby (room codes / hole punching): runs every frame, outside
 	 * the game tick; hands off to sys/netpeer.c when a match starts. */
 	port_netlobby_update();
+
+#if defined(_M_X64) || defined(__x86_64__)
+	/* Netplay determinism: pin SSE float mode (round-to-nearest, no
+	 * flush-to-zero / denormals-are-zero) before the game tick. GPU drivers
+	 * and overlays can change it on this thread, and two PCs whose MXCSR
+	 * differ simulate different matches. 0x1F80 is the x64 default. */
+	_mm_setcsr(0x1F80);
+#endif
 
 	/* Post a VI retrace event to the scheduler's message queue. See
 	 * port_make_os_mesg_int() above for why we don't just write

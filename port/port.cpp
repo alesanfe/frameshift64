@@ -1282,7 +1282,18 @@ int main(int argc, char* argv[]) {
 		/* SSB64_LOG_PATH: per-instance log, e.g. two local netplay peers. */
 		if (const char* override_path = std::getenv("SSB64_LOG_PATH")) {
 			logPath = override_path;
-		} else if (char* p = SDL_GetPrefPath(NULL, "BattleShip")) {
+		}
+#ifdef _WIN32
+		/* Portable Windows build: keep the log next to the game, in logs\,
+		 * where players can find it to send with a bug report. */
+		else if (char* base = SDL_GetBasePath()) {
+			std::string dir = std::string(base) + "logs";
+			SDL_free(base);
+			CreateDirectoryA(dir.c_str(), NULL);
+			logPath = dir + "\\ssb64.log";
+		}
+#endif
+		else if (char* p = SDL_GetPrefPath(NULL, "BattleShip")) {
 			logPath = std::string(p) + "ssb64.log";
 			SDL_free(p);
 		} else {

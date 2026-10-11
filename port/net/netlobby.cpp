@@ -9,7 +9,8 @@
  *
  * Peer-to-peer lobby messages ("SSBL" lines, over direct UDP or relay):
  *   SSBL HELLO | SSBL HELLOACK                punch / keepalive
- *   SSBL PICK <fkind> <time_ms> <tapjump_off> character pick + RTT probe + own tap-jump setting
+ *   SSBL PICK <fkind> <time_ms> <tapjump_off> <version>
+ *                                             character pick + RTT probe + own tap-jump setting + game version
  *   SSBL PONG <time_ms>                       immediate echo of a PICK's time
  *   SSBL START <stage> <stocks> <items> <seed> <delay> <hostfk> <hostcos> <clientfk> <clientcos>
  *              <autoz> <comp> <neutral> <hazards_off> <host_tapjump_off> <client_tapjump_off>
@@ -75,6 +76,7 @@ struct Lobby {
     int my_fkind = 0;
     int peer_fkind = -1;
     int peer_tap_jump_off = 0;
+    std::string peer_version;       // from PICK; "" = not heard yet, "old" = a build that predates the field
     bool after_match = false;       // an online match ended; players are back in their own menus
     int stage = 0;
     int stocks = 3;
@@ -307,9 +309,31 @@ std::string start_message(void)
     return text;
 }
 
+#ifdef BATTLESHIP_CURRENT_VERSION
+const char *const kGameVersion = BATTLESHIP_CURRENT_VERSION;
+#else
+const char *const kGameVersion = "dev";
+#endif
+
+/* Two different builds can simulate the same inputs differently, so an online
+ * match only starts when both players run the same version. */
+bool version_mismatch()
+{
+    if (sLobby.peer_version.empty() || sLobby.peer_version == kGameVersion) {
+        return false;
+    }
+    const std::string theirs = (sLobby.peer_version == "old") ? std::string("an older version") : sLobby.peer_version;
+    set_state(PORT_NETLOBBY_CONNECTED, std::string("Can't start: you're on ") + kGameVersion + ", your opponent is on " +
+              theirs + ". Both players need to update to the same version.");
+    return true;
+}
+
 void start_as_client(const std::vector<std::string> &args)
 {
     if (args.size() < 11) {
+        return;
+    }
+    if (version_mismatch()) {
         return;
     }
     unsigned int stage = std::strtoul(args[2].c_str(), nullptr, 10);
@@ -389,6 +413,7 @@ void handle_peer(const std::vector<std::string> &args, const std::string &from)
             send_peer("SSBL PONG " + args[3]);
         }
         sLobby.peer_tap_jump_off = (args.size() >= 5) ? (std::atoi(args[4].c_str()) != 0) : 0;
+        sLobby.peer_version = (args.size() >= 6) ? args[5] : "old";
     } else if (args[1] == "PONG" && args.size() >= 3) {
         sLobby.ping_ms = static_cast<int>(port_udp_now_ms() - std::strtoul(args[2].c_str(), nullptr, 10));
     } else if (args[1] == "START" && !sLobby.is_host && sLobby.state == PORT_NETLOBBY_CONNECTED) {
@@ -433,6 +458,7 @@ void handle_server(const std::string &msg)
                 port_udp_set_relay_hooks(nullptr, nullptr);
                 sLobby.peer.clear();
                 sLobby.peer_fkind = -1;
+                sLobby.peer_version.clear();
                 set_state(PORT_NETLOBBY_WAITING, "Opponent left - room " + sLobby.code + " is open again");
             } else {
                 fail("The host closed the room");
@@ -497,6 +523,7 @@ void begin(bool is_host, const char *server)
     sLobby.peer.clear();
     sLobby.candidates.clear();
     sLobby.peer_fkind = -1;
+    sLobby.peer_version.clear();
     sLobby.ping_ms = -1;
     for (uint8_t &b : sLobby.stun_txid) {
         b = static_cast<uint8_t>(sRng());
@@ -631,7 +658,7 @@ extern "C" void port_netlobby_update(void)
     case PORT_NETLOBBY_STARTING:
         if (elapsed(l.last_send_ms, (l.state == PORT_NETLOBBY_STARTING) ? kStartRetryMs : kPickMs)) {
             send_peer("SSBL PICK " + std::to_string(l.my_fkind) + " " + std::to_string(port_udp_now_ms()) + " " +
-                      std::to_string(local_tap_jump_off()));
+                      std::to_string(local_tap_jump_off()) + " " + kGameVersion);
             if (l.state == PORT_NETLOBBY_STARTING) {
                 send_peer(start_message());
             }
@@ -683,6 +710,9 @@ extern "C" void port_netlobby_cancel(void)
 extern "C" void port_netlobby_start_match(void)
 {
     if (!sLobby.is_host || sLobby.state != PORT_NETLOBBY_CONNECTED || sLobby.peer_fkind < 0) {
+        return;
+    }
+    if (version_mismatch()) {
         return;
     }
     sLobby.seed = (sRng() & 0x7FFFFFFF) | 1;

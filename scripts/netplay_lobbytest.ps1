@@ -22,6 +22,7 @@ param(
     [int]$Stage = 0,
     [switch]$ForceRelay,
     [string]$BuildDir = "$PSScriptRoot\..\build\us\Release",
+    [string]$HostDir = "",      # run the host from another install (its own cfg + save)
     [string]$OutDir = "$PSScriptRoot\..\build\us\lobby-test"
 )
 
@@ -55,7 +56,6 @@ function Start-Peer([string]$role, [int]$fighter, [int]$fuzz) {
         SSB64_NETPLAY_SIM_LATENCY_MS = "$LatencyMs"; SSB64_NETPLAY_SIM_JITTER_MS = "$JitterMs"
         SSB64_NETPLAY_SIM_LOSS_PCT = "$LossPct"; SSB64_NETPLAY_SIM_SEED = "$fuzz"
         SSB64_NETPLAY_CONFIRMED_TRACE = "$out\$role.trace"; SSB64_LOG_PATH = "$out\$role.log"
-        SSB64_SAVE_PATH = "$out\$role.sav"
         SSB64_LOBBY_FORCE_RELAY = $(if ($ForceRelay) { "1" } else { "" })
     }
     if ($role -eq 'host') {
@@ -64,8 +64,11 @@ function Start-Peer([string]$role, [int]$fighter, [int]$fuzz) {
         $vars['SSB64_LOBBY_JOIN'] = $Server
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = Join-Path $build 'BattleShip.exe'
-    $psi.WorkingDirectory = $build
+    $own = ($role -eq 'host' -and $HostDir)
+    $dir = $(if ($own) { $HostDir } else { $build })
+    if (-not $own) { $vars['SSB64_SAVE_PATH'] = "$out\$role.sav" }
+    $psi.FileName = Join-Path $dir 'BattleShip.exe'
+    $psi.WorkingDirectory = $dir
     $psi.UseShellExecute = $false
     foreach ($k in $vars.Keys) { $psi.EnvironmentVariables[$k] = $vars[$k] }
     return [System.Diagnostics.Process]::Start($psi)
