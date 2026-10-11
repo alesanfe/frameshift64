@@ -816,6 +816,18 @@ void syNetPeerStartVSSession(void)
 	sSYNetPeerExecutionHoldFrames = 0;
 	sSYNetPeerExecutionBeginLogged = (sSYNetPeerBattleBarrierEnabled == FALSE) ? TRUE : FALSE;
 
+	{
+		s32 slot;
+
+		/* Slots nobody plays must read identically on both peers: the
+		 * Saved source with no saved frames resolves to neutral input.
+		 * Left as Local they'd read whatever extra controllers happen to
+		 * be plugged into each PC (a pause or reset combo on one peer only). */
+		for (slot = 0; slot < MAXCONTROLLERS; slot++)
+		{
+			syNetInputSetSlotSource(slot, nSYNetInputSourceSaved);
+		}
+	}
 	syNetInputSetSlotSource(sSYNetPeerLocalPlayer, nSYNetInputSourceLocal);
 	syNetInputSetSlotSource(sSYNetPeerRemotePlayer, nSYNetInputSourceRemotePredicted);
 	syNetInputSetLocalDelay(sSYNetPeerInputDelay);
