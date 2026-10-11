@@ -354,9 +354,18 @@ void syNetRollbackStartVSSession(void)
 		sSYNetRollbackLiveHashValid[i] = FALSE;
 	}
 #ifdef PORT
-	if ((sSYNetRollbackConfirmedTracePath != NULL) && (sSYNetRollbackConfirmedTrace == NULL))
+	if (sSYNetRollbackConfirmedTrace == NULL)
 	{
-		sSYNetRollbackConfirmedTrace = fopen(sSYNetRollbackConfirmedTracePath, "w");
+		if (sSYNetRollbackConfirmedTracePath != NULL)
+		{
+			sSYNetRollbackConfirmedTrace = fopen(sSYNetRollbackConfirmedTracePath, "w");
+		}
+		else if (syNetPeerIsRollbackActive() != FALSE)
+		{
+			/* Online matches always keep a trace next to the game, so a
+			 * desync between two players' PCs can be diffed afterwards. */
+			sSYNetRollbackConfirmedTrace = fopen("logs/netplay_trace.txt", "w");
+		}
 	}
 #endif
 	sSYNetRollbackFileRangesNum = 0;
@@ -1042,11 +1051,13 @@ static void syNetRollbackEmitConfirmedTrace(u32 last_simulated_tick)
 			{
 				SYNetSyncTickHash *hash = &sSYNetRollbackLiveHashes[slot];
 
-				fprintf(sSYNetRollbackConfirmedTrace, "%u %08X %08X %08X %08X %08X %08X %08X %08X\n", tick,
+				fprintf(sSYNetRollbackConfirmedTrace, "%u %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X\n", tick,
 				        hash->column[nSYNetSyncColumnFull], hash->column[nSYNetSyncColumnRNG],
 				        hash->column[nSYNetSyncColumnBattle], hash->column[nSYNetSyncColumnFighters],
 				        hash->column[nSYNetSyncColumnItems], hash->column[nSYNetSyncColumnWeapons],
-				        hash->column[nSYNetSyncColumnStage], hash->column[nSYNetSyncColumnObjMan]);
+				        hash->column[nSYNetSyncColumnStage], hash->column[nSYNetSyncColumnObjMan],
+				        hash->column[nSYNetSyncColumnInput], hash->column[nSYNetSyncColumnJoints],
+				        hash->column[nSYNetSyncColumnCamera], hash->column[nSYNetSyncColumnVars]);
 			}
 			else fprintf(sSYNetRollbackConfirmedTrace, "%u missing\n", tick);
 
