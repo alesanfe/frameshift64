@@ -134,6 +134,9 @@ static sb32 sSYNetRollbackLiveHashValid[SYNETROLLBACK_SLOT_NUM];
 static u32 sSYNetRollbackTraceNextTick;
 static FILE *sSYNetRollbackConfirmedTrace;
 static const char *sSYNetRollbackConfirmedTracePath;
+#ifdef PORT
+static sb32 sSYNetRollbackIsDefaultTraceTried;
+#endif
 static u32 sSYNetRollbackRollbacks;
 static u32 sSYNetRollbackResimTicks;
 static u32 sSYNetRollbackMaxRollback;
@@ -145,6 +148,11 @@ static u32 sSYNetRollbackFailedRollbacks;
 #define SYNETROLLBACK_SYNC_CHECK_LAG 16
 static u32 sSYNetRollbackConfirmedTicks[SYNETROLLBACK_CONFIRMED_RING];
 static u32 sSYNetRollbackConfirmedHashes[SYNETROLLBACK_CONFIRMED_RING];
+#ifdef PORT
+/* Every column of each confirmed tick, logged on a desync so the two
+ * players' logs show which part of the game state diverged. */
+static SYNetSyncTickHash sSYNetRollbackConfirmedColumns[SYNETROLLBACK_CONFIRMED_RING];
+#endif
 static sb32 sSYNetRollbackConfirmedValid[SYNETROLLBACK_CONFIRMED_RING];
 static sb32 sSYNetRollbackHasConfirmed;
 static u32 sSYNetRollbackLatestConfirmedTick;
@@ -336,6 +344,9 @@ void syNetRollbackStartVSSession(void)
 	sSYNetRollbackArenaWatermark = (u8*)gSYTaskmanGeneralHeap.ptr;
 	sSYNetRollbackChainStart = 0;
 	sSYNetRollbackTraceNextTick = 0;
+#ifdef PORT
+	sSYNetRollbackIsDefaultTraceTried = FALSE;
+#endif
 	sSYNetRollbackHasConfirmed = FALSE;
 	sSYNetRollbackIsDesynced = FALSE;
 	sSYNetRollbackSyncChecks = 0;
@@ -359,12 +370,6 @@ void syNetRollbackStartVSSession(void)
 		if (sSYNetRollbackConfirmedTracePath != NULL)
 		{
 			sSYNetRollbackConfirmedTrace = fopen(sSYNetRollbackConfirmedTracePath, "w");
-		}
-		else if (syNetPeerIsRollbackActive() != FALSE)
-		{
-			/* Online matches always keep a trace next to the game, so a
-			 * desync between two players' PCs can be diffed afterwards. */
-			sSYNetRollbackConfirmedTrace = fopen("logs/netplay_trace.txt", "w");
 		}
 	}
 #endif
@@ -1028,6 +1033,16 @@ static void syNetRollbackEmitConfirmedTrace(u32 last_simulated_tick)
 {
 	u32 confirmed = syNetInputGetRemoteNextUnconfirmed(syNetPeerGetRemotePlayer());
 
+#ifdef PORT
+	if ((sSYNetRollbackConfirmedTrace == NULL) && (sSYNetRollbackConfirmedTracePath == NULL) &&
+	    (sSYNetRollbackIsDefaultTraceTried == FALSE))
+	{
+		/* Online matches always keep a trace next to the game, so a desync
+		 * between two players' PCs can be diffed afterwards. */
+		sSYNetRollbackIsDefaultTraceTried = TRUE;
+		sSYNetRollbackConfirmedTrace = fopen("logs/netplay_trace.txt", "w");
+	}
+#endif
 	while ((sSYNetRollbackTraceNextTick <= last_simulated_tick) && (sSYNetRollbackTraceNextTick < confirmed))
 	{
 		u32 tick = sSYNetRollbackTraceNextTick;
@@ -1039,6 +1054,9 @@ static void syNetRollbackEmitConfirmedTrace(u32 last_simulated_tick)
 
 			sSYNetRollbackConfirmedTicks[ring] = tick;
 			sSYNetRollbackConfirmedHashes[ring] = sSYNetRollbackLiveHashes[slot].column[nSYNetSyncColumnFull];
+#ifdef PORT
+			sSYNetRollbackConfirmedColumns[ring] = sSYNetRollbackLiveHashes[slot];
+#endif
 			sSYNetRollbackConfirmedValid[ring] = TRUE;
 			sSYNetRollbackLatestConfirmedTick = tick;
 			sSYNetRollbackHasConfirmed = TRUE;
@@ -1138,6 +1156,14 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
 #endif
 	update();
 	syNetRollbackStoreLiveHash(tick);
+#ifdef PORT
+	/* Readable state at a few early ticks: both players' logs can be diffed
+	 * line by line when a match desyncs from the start. */
+	if ((tick == 0) || (tick == 1) || (tick == 60) || (tick == 300))
+	{
+		syNetSyncLogState(tick);
+	}
+#endif
 	syNetRollbackEmitConfirmedTrace(tick);
 
 #ifdef PORT
@@ -1200,6 +1226,16 @@ void syNetRollbackCheckRemoteConfirmedHash(u32 tick, u32 hash)
 #ifdef PORT
 		port_log("SSB64 Rollback: DESYNC detected at tick=%u local=%08X remote=%08X\n",
 		         tick, sSYNetRollbackConfirmedHashes[ring], hash);
+		{
+			const SYNetSyncTickHash *cols = &sSYNetRollbackConfirmedColumns[ring];
+			s32 c;
+
+			for (c = 0; c < SYNETSYNC_COLUMN_NUM; c++)
+			{
+				port_log("SSB64 Rollback: DESYNC tick=%u column %s=%08X\n", tick, syNetSyncGetColumnName(c),
+				         cols->column[c]);
+			}
+		}
 #endif
 	}
 }

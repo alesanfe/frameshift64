@@ -1525,6 +1525,95 @@ void syNetSyncHashTick(SYNetSyncTickHash *out)
 	out->column[nSYNetSyncColumnFull] = full;
 }
 
+
+#ifdef PORT
+/* Plain-value dump of the gated state, for diffing two players' logs after a
+ * desync. Each line is "SSB64 State: <what> ..." with no addresses. */
+void syNetSyncLogState(u32 tick)
+{
+	SCBattleState *bs = gSCManagerBattleState;
+	GObj *gobj;
+	s32 link_id;
+	s32 i;
+
+	port_log("SSB64 State: tick=%u rng=%d rng_ptr_own=%d\n", tick, syUtilsRandSeed(),
+	         (sSYUtilsRandomSeedPtr == &sSYUtilsRandomSeed) ? 1 : 0);
+	if (bs != NULL)
+	{
+		port_log("SSB64 State: battle type=%u gkind=%u team=%u rules=%u pl=%u cp=%u time_limit=%u stocks=%u "
+		         "handicap=%u team_attack=%u stage_select=%u damage_ratio=%u items=%08X reset=%u status=%u "
+		         "remain=%u passed=%u item_rate=%u show_score=%u no_teamshadows=%u\n",
+		         bs->game_type, bs->gkind, bs->is_team_battle, bs->game_rules, bs->pl_count, bs->cp_count,
+		         bs->time_limit, bs->stocks, bs->handicap, bs->is_team_attack, bs->is_stage_select,
+		         bs->damage_ratio, bs->item_toggles, bs->is_reset_players, bs->game_status, bs->time_remain,
+		         bs->time_passed, bs->item_appearance_rate, bs->is_show_score, bs->is_not_teamshadows);
+
+		for (i = 0; i < GMCOMMON_PLAYERS_MAX; i++)
+		{
+			SCPlayerData *pd = &bs->players[i];
+
+			port_log("SSB64 State: pdata[%d] level=%u handicap=%u pkind=%u fkind=%u team=%u player=%u costume=%u "
+			         "shade=%u color=%u single_stock=%u tag=%u stocks=%d spenemy=%u place=%u falls=%d score=%d "
+			         "has_gobj=%d stale_id=%u\n",
+			         i, pd->level, pd->handicap, pd->pkind, pd->fkind, pd->team, pd->player, pd->costume, pd->shade,
+			         pd->color, pd->is_single_stockicon, pd->tag, pd->stock_count, pd->is_spgame_enemy, pd->place,
+			         pd->falls, pd->score, (pd->fighter_gobj != NULL) ? 1 : 0, pd->stale_id);
+		}
+	}
+	port_log("SSB64 State: ftmanager players=%u motion_count=%u stat_count=%u\n", gFTManagerPlayersNum,
+	         gFTManagerMotionCount, gFTManagerStatUpdateCount);
+
+	for (gobj = gGCCommonLinks[nGCCommonLinkIDFighter]; gobj != NULL; gobj = gobj->link_next)
+	{
+		FTStruct *fp = ftGetStruct(gobj);
+		DObj *dobj = DObjGetStruct(gobj);
+
+		if (fp == NULL)
+		{
+			continue;
+		}
+		port_log("SSB64 State: fighter p%d fkind=%d team=%u detail=%u/%u costume=%u shade=%u handicap=%u level=%u "
+		         "stocks=%d pnum=%d pkind=%d status=%d motion=%d tics=%u pct=%d lr=%d ga=%d jumps=%u\n",
+		         fp->player, fp->fkind, fp->team, fp->detail_curr, fp->detail_base, fp->costume, fp->shade,
+		         fp->handicap, fp->level, fp->stock_count, fp->player_num, fp->pkind, fp->status_id, fp->motion_id,
+		         fp->status_total_tics, fp->percent_damage, fp->lr, fp->ga, fp->jumps_used);
+		if (dobj != NULL)
+		{
+			port_log("SSB64 State: fighter p%d pos=%08X %08X %08X (%g %g %g) vel_air=%g %g vel_ground=%g\n",
+			         fp->player, syNetSyncHashF32(dobj->translate.vec.f.x), syNetSyncHashF32(dobj->translate.vec.f.y),
+			         syNetSyncHashF32(dobj->translate.vec.f.z), dobj->translate.vec.f.x, dobj->translate.vec.f.y,
+			         dobj->translate.vec.f.z, fp->physics.vel_air.x, fp->physics.vel_air.y,
+			         fp->physics.vel_ground.x);
+		}
+		port_log("SSB64 State: fighter p%d hash=%08X\n", fp->player, syNetSyncHashFighter(fp));
+	}
+	{
+		const f32 *bounds = (const f32 *)&gMPCollisionBounds;
+
+		port_log("SSB64 State: map tic=%u lines=%d yakumonos=%d bounds0=%g %g %g %g\n", gMPCollisionUpdateTic,
+		         gMPCollisionLinesNum, gMPCollisionYakumonosNum, bounds[0], bounds[1], bounds[2], bounds[3]);
+	}
+	for (link_id = nGCCommonLinkIDGround; link_id <= nGCCommonLinkIDWeapon; link_id++)
+	{
+		u32 count = 0;
+
+		port_log("SSB64 State: link %d:", link_id);
+		for (gobj = gGCCommonLinks[link_id]; gobj != NULL; gobj = gobj->link_next)
+		{
+			if (count < 24)
+			{
+				port_log(" %u/%08X", gobj->id, syNetSyncObjectKey(gobj));
+			}
+			count++;
+		}
+		port_log(" (count=%u)\n", count);
+	}
+	port_log("SSB64 State: hashes rng=%08X battle=%08X fighters=%08X items=%08X weapons=%08X stage=%08X objman=%08X\n",
+	         syNetSyncHashRNG(), syNetSyncHashBattleState(), syNetSyncHashFighters(), syNetSyncHashItems(),
+	         syNetSyncHashWeapons(), syNetSyncHashStage(), syNetSyncHashObjectManager());
+}
+#endif
+
 /* ------------------------------------------------------------------------ */
 /* trace file + verify                                                       */
 
