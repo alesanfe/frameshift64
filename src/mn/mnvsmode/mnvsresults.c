@@ -3441,6 +3441,20 @@ void mnVSResultsFuncRun(GObj *gobj)
 		{
 			gSCManagerSceneData.scene_prev = gSCManagerSceneData.scene_curr;
 			gSCManagerSceneData.scene_curr = nSCKindPlayersVS;
+#ifdef PORT
+			{
+				/* After an online match, don't drop into the local 4-player
+				 * character select (it looks like you're still online but
+				 * aren't). Go to the VS menu; the Online window offers the
+				 * rematch. */
+				extern int port_netlobby_after_match(void);
+
+				if (port_netlobby_after_match() != 0)
+				{
+					gSCManagerSceneData.scene_curr = nSCKindVSMode;
+				}
+			}
+#endif
 		}
 		func_800266A0_272A0();
 		syAudioStopBGMAll();
