@@ -1,3 +1,4 @@
+#include "../net/netrules.h"
 #include "enhancements.h"
 
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -213,7 +214,12 @@ void LatchBattleSettingIfNeeded() {
 
     BattleKey key = CurrentBattleKey();
     if (IsNewBattle(key)) {
-        sDisableHazardsForBattle = CVarGetInteger(kStageHazardsDisabledCVar, 0) != 0;
+        {
+            int online;
+            sDisableHazardsForBattle = port_netrules_override(PORT_NETRULE_HAZARDS_DISABLED, 0, &online)
+                                           ? (online != 0)
+                                           : (CVarGetInteger(kStageHazardsDisabledCVar, 0) != 0);
+        }
     }
 
     sWasInBattle = true;

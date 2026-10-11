@@ -1,6 +1,7 @@
 #include "enhancements.h"
 
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "../net/netrules.h"
 
 namespace {
 
@@ -16,6 +17,10 @@ constexpr const char* kTapJumpCVars[PORT_ENHANCEMENT_MAX_PLAYERS] = {
 extern "C" int port_enhancement_tap_jump_disabled(int playerIndex) {
     if (playerIndex < 0 || playerIndex >= PORT_ENHANCEMENT_MAX_PLAYERS) {
         return 0;
+    }
+    int online;
+    if (port_netrules_override(PORT_NETRULE_TAP_JUMP_DISABLED, playerIndex, &online)) {
+        return online;
     }
     return CVarGetInteger(kTapJumpCVars[playerIndex], 0) != 0;
 }

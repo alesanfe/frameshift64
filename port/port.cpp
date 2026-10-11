@@ -10,6 +10,7 @@
 
 #include <libultraship/libultraship.h>
 #include <SDL2/SDL.h>
+#include <math.h>  /* _set_FMA3_enable */
 #include <libultraship/controller/controldeck/ControlDeck.h>
 #include <fast/Fast3dWindow.h>
 #include <ship/resource/File.h>
@@ -35,6 +36,7 @@
 #include "enhancements/enhancements.h"
 #include "first_run.h"
 #include "gui/UpdatePrompt.h"
+#include "gui/OnlineStatus.h"
 #include "gui/PortMenu.h"
 #ifdef PORT_HIRES_ENABLED
 #include "hires/HiResHook.h"
@@ -917,6 +919,7 @@ static int PortInitImpl(int argc, char* argv[]) {
 #if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
 			// Startup "update available" prompt; Init kicks off the check.
 			gui->AddGuiWindow(std::make_shared<ssb64::UpdatePromptWindow>());
+			gui->AddGuiWindow(std::make_shared<ssb64::OnlineStatusWindow>());
 #endif
 		}
 
@@ -1261,6 +1264,13 @@ int PortIsRunning(void) {
 } // extern "C"
 
 int main(int argc, char* argv[]) {
+#if defined(_MSC_VER) && defined(_M_X64)
+	/* Netplay determinism: the MSVC CRT picks FMA3 or SSE2 implementations of
+	 * sinf/cosf/atan2f/... by CPU, and the two round differently. Two peers
+	 * on different CPUs would then simulate slightly different matches. Pin
+	 * every machine to the same (SSE2) path. */
+	_set_FMA3_enable(0);
+#endif
 	/* Use an absolute path for ssb64.log so it lands in a predictable
 	 * place regardless of how the binary was launched (Finder / open /
 	 * shell from any cwd). SDL_GetPrefPath returns the OS app-data dir

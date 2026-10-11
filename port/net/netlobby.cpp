@@ -9,14 +9,18 @@
  *
  * Peer-to-peer lobby messages ("SSBL" lines, over direct UDP or relay):
  *   SSBL HELLO | SSBL HELLOACK                punch / keepalive
- *   SSBL PICK <fkind> <time_ms>               character pick + RTT probe
+ *   SSBL PICK <fkind> <time_ms> <tapjump_off> character pick + RTT probe + own tap-jump setting
  *   SSBL PONG <time_ms>                       immediate echo of a PICK's time
  *   SSBL START <stage> <stocks> <items> <seed> <delay> <hostfk> <hostcos> <clientfk> <clientcos>
+ *              <autoz> <comp> <neutral> <hazards_off> <host_tapjump_off> <client_tapjump_off>
  *   SSBL GO <seed>                            client accepted START */
 #include "netlobby.h"
 #include "port_udp.h"
 #include "port_ws.h"
 #include "port_log.h"
+#include "netrules.h"
+
+#include <libultraship/bridge/consolevariablebridge.h>
 
 #include <algorithm>
 #include <cctype>
@@ -70,6 +74,8 @@ struct Lobby {
     unsigned int last_heard_ms = 0;
     int my_fkind = 0;
     int peer_fkind = -1;
+    int peer_tap_jump_off = 0;
+    bool after_match = false;       // an online match ended; players are back in their own menus
     int stage = 0;
     int stocks = 3;
     int items = 0;
@@ -111,6 +117,9 @@ bool elapsed(unsigned int since, unsigned int ms)
 
 void set_state(PortNetLobbyState state, const std::string &status)
 {
+    if (state == PORT_NETLOBBY_IN_MATCH || state == PORT_NETLOBBY_IDLE || state == PORT_NETLOBBY_FAILED) {
+        sLobby.after_match = false;
+    }
     sLobby.state = state;
     sLobby.status = status;
     sLobby.state_ms = port_udp_now_ms();
@@ -120,6 +129,7 @@ void set_state(PortNetLobbyState state, const std::string &status)
 
 void shutdown_net(void)
 {
+    port_netrules_clear();
     port_udp_set_relay_hooks(nullptr, nullptr);
     port_ws_close();
     port_udp_close();
@@ -269,12 +279,31 @@ void connect_to(const std::string &endpoint)
               (sLobby.is_host ? " - press Start match" : " - waiting for host to start"));
 }
 
+/* This player's own tap-jump setting: they play on their controller port 1. */
+int local_tap_jump_off(void)
+{
+    return CVarGetInteger("gEnhancements.TapJumpDisabled.P1", 0) != 0;
+}
+
+/* Host-wide gameplay rules that would otherwise be read from each peer's
+ * local settings mid-match (see netrules.h). */
+void host_rules(int *autoz, int *comp, int *neutral, int *hazards_off)
+{
+    *autoz = CVarGetInteger("gEnhancements.CasualRules.AutoZCancel", 0) != 0;
+    *comp = CVarGetInteger("gEnhancements.CompRuleset", 0) != 0;
+    *neutral = CVarGetInteger("gEnhancements.NeutralSpawns", 0) != 0;
+    *hazards_off = CVarGetInteger("gEnhancements.StageHazardsDisabled", 0) != 0;
+}
+
 std::string start_message(void)
 {
-    char text[160];
+    char text[200];
+    int autoz, comp, neutral, hazards_off;
     int client_costume = (sLobby.peer_fkind == sLobby.my_fkind) ? 1 : 0;   // same fighter: tell them apart
-    std::snprintf(text, sizeof(text), "SSBL START %d %d %d %u %d %d %d %d %d", sLobby.stage, sLobby.stocks,
-                  sLobby.items, sLobby.seed, sLobby.delay, sLobby.my_fkind, 0, sLobby.peer_fkind, client_costume);
+    host_rules(&autoz, &comp, &neutral, &hazards_off);
+    std::snprintf(text, sizeof(text), "SSBL START %d %d %d %u %d %d %d %d %d %d %d %d %d %d %d", sLobby.stage,
+                  sLobby.stocks, sLobby.items, sLobby.seed, sLobby.delay, sLobby.my_fkind, 0, sLobby.peer_fkind,
+                  client_costume, autoz, comp, neutral, hazards_off, local_tap_jump_off(), sLobby.peer_tap_jump_off);
     return text;
 }
 
@@ -291,6 +320,13 @@ void start_as_client(const std::vector<std::string> &args)
     int hostfk = std::atoi(args[7].c_str()), hostcos = std::atoi(args[8].c_str());
     int clientfk = std::atoi(args[9].c_str()), clientcos = std::atoi(args[10].c_str());
 
+    if (args.size() >= 17) {
+        port_netrules_set(std::atoi(args[11].c_str()), std::atoi(args[12].c_str()), std::atoi(args[13].c_str()),
+                          std::atoi(args[14].c_str()), std::atoi(args[15].c_str()), std::atoi(args[16].c_str()));
+    } else {
+        port_netrules_set(0, 0, 0, 0, 0, 0);    // older host: stock rules on both sides
+    }
+
     /* netpeer owns the receive side once the match starts, so acknowledge
      * redundantly now (the host retransmits START until it sees GO). */
     std::string go = "SSBL GO " + std::to_string(seed);
@@ -304,7 +340,10 @@ void start_as_client(const std::vector<std::string> &args)
 void start_as_host(void)
 {
     int client_costume = (sLobby.peer_fkind == sLobby.my_fkind) ? 1 : 0;
+    int autoz, comp, neutral, hazards_off;
 
+    host_rules(&autoz, &comp, &neutral, &hazards_off);
+    port_netrules_set(autoz, comp, neutral, hazards_off, local_tap_jump_off(), sLobby.peer_tap_jump_off);
     set_state(PORT_NETLOBBY_IN_MATCH, "In match");
     syNetPeerStartOnlineMatch(1, sLobby.delay, sLobby.stage, sLobby.stocks, sLobby.items, sLobby.seed,
                               sLobby.my_fkind, 0, sLobby.peer_fkind, client_costume);
@@ -349,6 +388,7 @@ void handle_peer(const std::vector<std::string> &args, const std::string &from)
         if (args.size() >= 4) {
             send_peer("SSBL PONG " + args[3]);
         }
+        sLobby.peer_tap_jump_off = (args.size() >= 5) ? (std::atoi(args[4].c_str()) != 0) : 0;
     } else if (args[1] == "PONG" && args.size() >= 3) {
         sLobby.ping_ms = static_cast<int>(port_udp_now_ms() - std::strtoul(args[2].c_str(), nullptr, 10));
     } else if (args[1] == "START" && !sLobby.is_host && sLobby.state == PORT_NETLOBBY_CONNECTED) {
@@ -590,7 +630,8 @@ extern "C" void port_netlobby_update(void)
     case PORT_NETLOBBY_CONNECTED:
     case PORT_NETLOBBY_STARTING:
         if (elapsed(l.last_send_ms, (l.state == PORT_NETLOBBY_STARTING) ? kStartRetryMs : kPickMs)) {
-            send_peer("SSBL PICK " + std::to_string(l.my_fkind) + " " + std::to_string(port_udp_now_ms()));
+            send_peer("SSBL PICK " + std::to_string(l.my_fkind) + " " + std::to_string(port_udp_now_ms()) + " " +
+                      std::to_string(local_tap_jump_off()));
             if (l.state == PORT_NETLOBBY_STARTING) {
                 send_peer(start_message());
             }
@@ -655,10 +696,12 @@ extern "C" void port_netlobby_set_fkind(int fkind)
 
 extern "C" void port_netlobby_on_match_end(void)
 {
+    port_netrules_clear();
     if (sLobby.state == PORT_NETLOBBY_IN_MATCH) {
         sLobby.last_heard_ms = port_udp_now_ms();
         set_state(PORT_NETLOBBY_CONNECTED, std::string("Match over") +
-                  (sLobby.is_host ? " - press Start match for a rematch" : " - waiting for host"));
+                  (sLobby.is_host ? " - press Start rematch to play again" : " - waiting for the host to start a rematch"));
+        sLobby.after_match = true;
     }
 }
 
@@ -669,3 +712,4 @@ extern "C" int port_netlobby_peer_fkind(void) { return sLobby.peer_fkind; }
 extern "C" int port_netlobby_is_host(void) { return sLobby.is_host ? 1 : 0; }
 extern "C" int port_netlobby_is_relay(void) { return port_udp_is_relay(); }
 extern "C" int port_netlobby_ping_ms(void) { return sLobby.ping_ms; }
+extern "C" int port_netlobby_after_match(void) { return sLobby.after_match ? 1 : 0; }

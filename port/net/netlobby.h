@@ -45,6 +45,10 @@ int port_netlobby_is_host(void);
 int port_netlobby_is_relay(void);
 int port_netlobby_ping_ms(void);
 
+/* 1 after an online match has ended while the players are still connected
+ * (each is back in their own local menus; the host can start a rematch). */
+int port_netlobby_after_match(void);
+
 /* Called by sys/netpeer.c when an online match's VS session ends. */
 void port_netlobby_on_match_end(void);
 
