@@ -1302,6 +1302,21 @@ int main(int argc, char* argv[]) {
 		port_log_init(logPath.c_str());
 	}
 	port_log("SSB64: main entered\n");
+	/* SSB64_ADDR_JITTER=<n>: shift this process's heap layout (leaked
+	 * allocations of varying size) so two local netplay peers don't share
+	 * addresses the way two different PCs never do. Test-only. */
+	if (const char* jitter = std::getenv("SSB64_ADDR_JITTER")) {
+		int n = std::atoi(jitter);
+		for (int i = 0; i < n; i++) {
+			volatile char* leak = (volatile char*)std::malloc((size_t)(i + 1) * 4099 + 24);
+			if (leak != nullptr) leak[0] = 1;
+		}
+#ifdef _WIN32
+		for (int i = 0; i < n; i++) {
+			VirtualAlloc(NULL, (SIZE_T)(i + 1) * 65536, MEM_RESERVE, PAGE_NOACCESS);
+		}
+#endif
+	}
 
 #ifdef __APPLE__
 	/* Disable the macOS press-and-hold accent/diacritic popup for this app.

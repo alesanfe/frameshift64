@@ -22,6 +22,7 @@ param(
     [int]$Stage = 0,
     [switch]$ForceRelay,
     [string]$BuildDir = "$PSScriptRoot\..\build\us\Release",
+    [int]$AddrJitter = 0,       # client shifts its heap layout like a different PC would
     [string]$HostDir = "",      # run the host from another install (its own cfg + save)
     [string]$OutDir = "$PSScriptRoot\..\build\us\lobby-test"
 )
@@ -62,6 +63,7 @@ function Start-Peer([string]$role, [int]$fighter, [int]$fuzz) {
         $vars['SSB64_LOBBY_HOST'] = $Server; $vars['SSB64_LOBBY_AUTOSTART'] = '1'
     } else {
         $vars['SSB64_LOBBY_JOIN'] = $Server
+        if ($AddrJitter) { $vars['SSB64_ADDR_JITTER'] = "$AddrJitter" }
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $own = ($role -eq 'host' -and $HostDir)
