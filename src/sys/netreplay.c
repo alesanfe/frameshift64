@@ -10,12 +10,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #ifdef PORT
 extern void port_log(const char *fmt, ...);
 extern void port_exit_process(int code);
 extern char *getenv(const char *name);
 extern int atoi(const char *s);
+extern const char *port_save_get_dir(void);
+extern int port_mkdir_p(const char *path);
 #endif
 
 #define SYNETREPLAY_DEFAULT_RECORD_FRAMES 1800
@@ -34,6 +37,13 @@ typedef struct SYNetReplayFileHeader
 
 const char *sSYNetReplayRecordPath;
 const char *sSYNetReplayPlayPath;
+/* Online matches record automatically (netpeer arms this): the replay lands
+ * in <save dir>/replays/ at match end unless SSB64_REPLAY_RECORD already
+ * named an explicit destination. */
+sb32 sSYNetReplayAutoSave;
+sb32 sSYNetReplayIsAutoRecording;
+
+const char *syNetReplayMakeAutoPath(char *out, size_t capacity);
 u32 sSYNetReplayRecordFrameLimit = SYNETREPLAY_DEFAULT_RECORD_FRAMES;
 u32 sSYNetReplayLoadedFrameCount;
 u32 sSYNetReplayLoadedInputChecksum;
@@ -221,6 +231,11 @@ void syNetReplayInitDebugEnv(void)
 #endif
 }
 
+void syNetReplayArmAutoSave(void)
+{
+	sSYNetReplayAutoSave = TRUE;
+}
+
 void syNetReplayStartVSSession(SCBattleState *battle_state)
 {
 	SYNetInputReplayMetadata metadata;
@@ -255,7 +270,7 @@ void syNetReplayStartVSSession(SCBattleState *battle_state)
 #endif
 		return;
 	}
-	if (sSYNetReplayRecordPath != NULL)
+	if ((sSYNetReplayRecordPath != NULL) || (sSYNetReplayAutoSave != FALSE))
 	{
 		syNetReplayCaptureBattleMetadata(battle_state, &metadata);
 		syNetInputClearReplayFrames();
@@ -263,10 +278,12 @@ void syNetReplayStartVSSession(SCBattleState *battle_state)
 		syNetInputSetRecordingEnabled(TRUE);
 		sSYNetReplayIsRecording = TRUE;
 		sSYNetReplayIsRecordWritten = FALSE;
+		sSYNetReplayIsAutoRecording = (sSYNetReplayRecordPath == NULL) ? TRUE : FALSE;
 
 #ifdef PORT
 		port_log("SSB64 Replay: recording start path=%s limit=%u stage=%u seed=%u players=%u\n",
-		         sSYNetReplayRecordPath, sSYNetReplayRecordFrameLimit, metadata.stage_kind,
+		         (sSYNetReplayRecordPath != NULL) ? sSYNetReplayRecordPath : "<auto>",
+		         sSYNetReplayRecordFrameLimit, metadata.stage_kind,
 		         metadata.rng_seed, metadata.player_count);
 #endif
 	}
@@ -371,11 +388,90 @@ void syNetReplayFinishVSSession(void)
 	}
 	if ((sSYNetReplayIsRecording != FALSE) && (sSYNetReplayIsRecordWritten == FALSE))
 	{
-		syNetReplayWriteDebugFile(sSYNetReplayRecordPath);
+		char path[640];
+		const char *target = sSYNetReplayRecordPath;
+
+		if ((target == NULL) && (sSYNetReplayIsAutoRecording != FALSE))
+		{
+			target = syNetReplayMakeAutoPath(path, sizeof(path));
+		}
+		if (target != NULL)
+		{
+			syNetReplayWriteDebugFile(target);
+		}
 		syNetInputSetRecordingEnabled(FALSE);
 		sSYNetReplayIsRecording = FALSE;
 		sSYNetReplayIsRecordWritten = TRUE;
 	}
+}
+
+/* <save dir>/replays/<YYYYMMDD>-<HHMMSS>-<seed hex>.ssr — created under the
+ * same directory convention as ssb64_save.bin. */
+const char *syNetReplayMakeAutoPath(char *out, size_t capacity)
+{
+#ifdef PORT
+	SYNetInputReplayMetadata metadata;
+	char dir[512];
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	char stamp[32];
+
+	strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", tm_info);
+	snprintf(dir, sizeof(dir), "%s/replays", port_save_get_dir());
+	port_mkdir_p(dir);
+	syNetInputGetReplayMetadata(&metadata);
+	snprintf(out, capacity, "%s/replay-%s-%08X.ssr", dir, stamp, metadata.rng_seed);
+	return out;
+#else
+	(void)out; (void)capacity;
+	return NULL;
+#endif
+}
+
+/* A desync leaves each peer's simulation diverged: dump everything needed to
+ * reproduce it locally into <save dir>/desync/<stamp>-<seed>/ — the recorded
+ * input replay plus a human-readable info file with the diverging tick and
+ * both hashes. Pair two players' packages to diff determinism bugs. */
+void syNetReplayWriteDesyncPackage(u32 tick, u32 local_hash, u32 remote_hash)
+{
+#ifdef PORT
+	SYNetInputReplayMetadata metadata;
+	char dir[512], path[640];
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	char stamp[32];
+	FILE *fp;
+	s32 player;
+
+	strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", tm_info);
+	snprintf(dir, sizeof(dir), "%s/desync/%s-%08X", port_save_get_dir(), stamp,
+	         (syNetInputGetReplayMetadata(&metadata) != FALSE) ? metadata.rng_seed : 0);
+	if (port_mkdir_p(dir) != 0)
+	{
+		return;
+	}
+	snprintf(path, sizeof(path), "%s/replay.ssr", dir);
+	syNetReplayWriteDebugFile(path);
+	snprintf(path, sizeof(path), "%s/info.txt", dir);
+	fp = fopen(path, "w");
+	if (fp == NULL)
+	{
+		return;
+	}
+	fprintf(fp, "desync_tick=%u\nlocal_hash=%08X\nremote_hash=%08X\n", tick, local_hash, remote_hash);
+	fprintf(fp, "stage=%u seed=%u players=%u stocks=%u items=%u\n",
+	        metadata.stage_kind, metadata.rng_seed, metadata.player_count,
+	        metadata.stocks, metadata.item_switch);
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		fprintf(fp, "p%d fkind=%u costume=%u\n", player,
+		        metadata.fighter_kinds[player], metadata.costumes[player]);
+	}
+	fclose(fp);
+	port_log("SSB64 Replay: desync package written to %s\n", dir);
+#else
+	(void)tick; (void)local_hash; (void)remote_hash;
+#endif
 }
 
 sb32 syNetReplayWriteDebugFile(const char *path)

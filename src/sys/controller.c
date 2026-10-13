@@ -4,7 +4,7 @@
 #include <sys/scheduler.h>
 #include <missing_libultra.h>
 #include <PR/os.h>
-#include "enhancements/enhancements.h"
+#include "features/enhancements.h"
 #include "sc/scmanager.h"
 #include "sc/sctypes.h"
 
@@ -402,7 +402,23 @@ void syControllerUpdateRumbleEvent(s32 port, s32 ev_kind)
     D_80045268[i].port_motor_evt.evt.cbQueue = &sSYControllerDeviceMesgQueue;
     D_80045268[i].port_motor_evt.contID      = port;
     D_80045268[i].port_motor_evt.cmd         = (MotorCmd)ev_kind;
+#ifdef PORT
+    {
+        /* Rollback resimulation re-runs the game update, which re-issues the
+         * rumble commands of the rewound ticks. The slot bookkeeping above is
+         * snapshotted BSS and must stay identical between passes — only the
+         * motor dispatch is a physical side effect, so suppress just the send.
+         * Pass 1 already produced the completion token for this slot, so the
+         * confirmed timeline's token accounting is unchanged. */
+        extern s32 syNetRollbackIsResimulating(void);
+        if (syNetRollbackIsResimulating() == FALSE)
+        {
+            osSendMesg(&sSYControllerEventMesgQueue, (OSMesg)&D_80045268[i].port_motor_evt, OS_MESG_NOBLOCK);
+        }
+    }
+#else
     osSendMesg(&sSYControllerEventMesgQueue, (OSMesg)&D_80045268[i].port_motor_evt, OS_MESG_NOBLOCK);
+#endif
 #else
     osSendMesg(&sSYControllerEventMesgQueue, (OSMesg)&D_80045268[i].unk04, OS_MESG_NOBLOCK);
 #endif

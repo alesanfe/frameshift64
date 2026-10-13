@@ -109,6 +109,7 @@ static sb32 sSYNetRollbackIsTickTimerDefault;
 static sb32 sSYNetRollbackIsSessionActive;
 static sb32 sSYNetRollbackIsResimulating;
 static sb32 sSYNetRollbackIsRigExit;
+static sb32 sSYNetRollbackMutantSkipRNG;
 static u32 sSYNetRollbackTraceTick;
 static u8 *sSYNetRollbackArenaWatermark;
 
@@ -286,6 +287,15 @@ void syNetRollbackInitDebugEnv(void)
 	sSYNetRollbackIsTickTimerDefault = sSYNetRollbackIsTickTimer;
 
 	sSYNetRollbackIsRigExit = (syNetRollbackGetEnvInt("SSB64_RIG_EXIT", 0) != 0) ? TRUE : FALSE;
+	/* SSB64_ROLLBACK_MUTANT=skip_rng_restore: pretend the snapshot missed the
+	 * RNG — after a snapshot load the live (post-rollback) seed stays in
+	 * place. SyncTest must FAIL, proving RNG state is snapshot-covered.
+	 * Test harness only. */
+	{
+		const char *mutant_env = getenv("SSB64_ROLLBACK_MUTANT");
+
+		sSYNetRollbackMutantSkipRNG = ((mutant_env != NULL) && (strcmp(mutant_env, "skip_rng_restore") == 0)) ? TRUE : FALSE;
+	}
 	sSYNetRollbackConfirmedTracePath = getenv("SSB64_NETPLAY_CONFIRMED_TRACE");
 	sSYNetRollbackTraceTick = (u32)syNetRollbackGetEnvInt("SSB64_ROLLBACK_TRACE_TICK", 0);
 
@@ -989,6 +999,16 @@ sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void)
 	}
 	syNetRollbackLoad(first_tick % SYNETROLLBACK_SLOT_NUM);
 
+#ifdef PORT
+	/* Mutant skip_rng_restore: the resim runs with the live RNG seed instead
+	 * of the snapshot's — everything that consumed RNG since the rollback
+	 * point diverges. SyncTest must report FAIL. */
+	if (sSYNetRollbackMutantSkipRNG != FALSE)
+	{
+		syUtilsSetRandomSeed(syUtilsRandSeed() ^ 0x3C3C3C3CU);
+	}
+#endif
+
 	sSYNetRollbackIsResimulating = TRUE;
 
 	for (tick = first_tick; tick <= last_tick; tick++)
@@ -1236,6 +1256,7 @@ void syNetRollbackCheckRemoteConfirmedHash(u32 tick, u32 hash)
 				         cols->column[c]);
 			}
 		}
+		syNetReplayWriteDesyncPackage(tick, sSYNetRollbackConfirmedHashes[ring], hash);
 #endif
 	}
 }

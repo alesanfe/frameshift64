@@ -6,6 +6,8 @@
 #include <sys/netinput.h>
 
 extern void syNetReplayInitDebugEnv(void);
+extern void syNetReplayArmAutoSave(void);
+extern void syNetReplayWriteDesyncPackage(u32 tick, u32 local_hash, u32 remote_hash);
 extern void syNetReplayCaptureBattleMetadata(SCBattleState *battle_state, SYNetInputReplayMetadata *metadata);
 extern void syNetReplayApplyBattleMetadata(const SYNetInputReplayMetadata *metadata);
 extern void syNetReplayStartVSSession(SCBattleState *battle_state);

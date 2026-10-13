@@ -17,11 +17,14 @@ extern void port_log(const char *fmt, ...);
 
 #ifdef PORT
 #include <string.h>
-#include <net/port_udp.h>
+#include <netplay/port_udp.h>
 #endif
 
 #define SYNETPEER_MAGIC 0x53534E50 // SSNP
-#define SYNETPEER_VERSION 3
+/* v4: the checksum now covers the entire datagram (remote_advantage and the
+ * sync-check trailer used to ride unprotected — a bit-flip there produced
+ * false DESYNCs under corruption). Mixed v3/v4 sessions drop each other. */
+#define SYNETPEER_VERSION 4
 #define SYNETPEER_MAX_PACKET_FRAMES 16
 #define SYNETPEER_FRAME_BYTES 8
 #define SYNETPEER_INPUT_HEADER_BYTES (4 + 2 + 2 + 4 + 4 + 4 + 1 + 1 + 1 + 1)
@@ -56,6 +59,7 @@ extern void port_log(const char *fmt, ...);
 void syNetPeerReceiveRemoteInput(void);
 void syNetPeerUpdateStartBarrier(void);
 void syNetPeerSendLocalInput(void);
+static void syNetPeerSendForwardPacket(s32 link, s32 src_player, const u8 *buffer, s32 size);
 
 #define SYNETPEER_PACKET_INPUT 0
 #define SYNETPEER_PACKET_MATCH_CONFIG 1
@@ -145,6 +149,15 @@ sb32 sSYNetPeerBootstrapMetadataApplied;
 sb32 sSYNetPeerBootstrapPeerReady;
 sb32 sSYNetPeerBootstrapStartReceived;
 u32 sSYNetPeerBootstrapSeed;
+/* Mutation testing hooks (SSB64_NETPLAY_MUTANT=<name>): each knob removes
+ * one validation so the suite can prove the detector catches the failure.
+ * accept_bad_session | accept_bad_checksum | no_forward_guard. */
+sb32 sSYNetPeerMutantBadSession;
+sb32 sSYNetPeerMutantBadChecksum;
+sb32 sSYNetPeerMutantNoForwardGuard;
+/* SSB64_NETPLAY_PACKETFUZZ=<count>: seeded random datagrams injected into
+ * the receive path each call. See syNetPeerReceiveRemoteInput. */
+s32 sSYNetPeerPacketFuzzLeft = -2;
 SYNetInputReplayMetadata sSYNetPeerBootstrapMetadata;
 sb32 sSYNetPeerBattleBarrierEnabled;
 sb32 sSYNetPeerBattleLocalReady;
@@ -159,6 +172,17 @@ sb32 sSYNetPeerExecutionBeginLogged;
 
 sb32 sSYNetPeerIsRollback;           // SSB64_NETPLAY_ROLLBACK (default on)
 u32 sSYNetPeerFuzzSeed;              // SSB64_NETPLAY_FUZZ
+
+/* Spectator mode (PORT lobby "spectate" role): this instance only watches a
+ * live match. Every player slot is a remote stream, nothing is published or
+ * sent, the start barrier is skipped, and pacing is strict - a tick may run
+ * only once every player's input for it has arrived (never predicted). The
+ * star host pushes each packet it receives to the spectator's relay links,
+ * FORWARD-wrapped. */
+sb32 sSYNetPeerIsSpectator;
+s32 sSYNetPeerSpecLinks[8];
+s32 sSYNetPeerSpecLinkCount;
+
 sb32 sSYNetPeerFrameReady;           // decided once per frame in syNetPeerBeginFrame
 u32 sSYNetPeerStallFrames;
 u32 sSYNetPeerLockstepStallFrames;
@@ -304,6 +328,47 @@ sb32 syNetPeerAddRemote(s32 player, s32 link)
 	return TRUE;
 }
 
+#ifdef PORT
+/* Spectator relay links (the lobby registers one per watcher): the star host
+ * FORWARD-wraps every input packet it handles - its own stream included -
+ * onto these links so a spectator sees exactly the streams the players do
+ * without ever joining pacing. */
+void syNetPeerAddSpecLink(s32 link)
+{
+	s32 i;
+
+	if (link < 0)
+	{
+		return;
+	}
+	for (i = 0; i < sSYNetPeerSpecLinkCount; i++)
+	{
+		if (sSYNetPeerSpecLinks[i] == link)
+		{
+			return;
+		}
+	}
+	if (sSYNetPeerSpecLinkCount < (s32)(sizeof(sSYNetPeerSpecLinks) / sizeof(sSYNetPeerSpecLinks[0])))
+	{
+		sSYNetPeerSpecLinks[sSYNetPeerSpecLinkCount++] = link;
+	}
+}
+
+void syNetPeerRemoveSpecLink(s32 link)
+{
+	s32 i;
+
+	for (i = 0; i < sSYNetPeerSpecLinkCount; i++)
+	{
+		if (sSYNetPeerSpecLinks[i] == link)
+		{
+			sSYNetPeerSpecLinks[i] = sSYNetPeerSpecLinks[--sSYNetPeerSpecLinkCount];
+			return;
+		}
+	}
+}
+#endif
+
 u32 syNetPeerChecksumAccumulateU32(u32 checksum, u32 value)
 {
 	checksum ^= value;
@@ -319,27 +384,6 @@ u32 syNetPeerChecksumAccumulateFrame(u32 checksum, const SYNetPeerPacketFrame *f
 	checksum = syNetPeerChecksumAccumulateU32(checksum, (u8)frame->stick_x);
 	checksum = syNetPeerChecksumAccumulateU32(checksum, (u8)frame->stick_y);
 
-	return checksum;
-}
-
-u32 syNetPeerChecksumPacket(u32 session_id, u32 ack_tick, u32 packet_seq, u8 player, u8 frame_count, const SYNetPeerPacketFrame *frames)
-{
-	u32 checksum = 2166136261U;
-	s32 i;
-
-	checksum = syNetPeerChecksumAccumulateU32(checksum, SYNETPEER_MAGIC);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, SYNETPEER_VERSION);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, SYNETPEER_PACKET_INPUT);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, session_id);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, ack_tick);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, packet_seq);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, player);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, frame_count);
-
-	for (i = 0; i < frame_count; i++)
-	{
-		checksum = syNetPeerChecksumAccumulateFrame(checksum, &frames[i]);
-	}
 	return checksum;
 }
 
@@ -918,9 +962,17 @@ void syNetPeerInitDebugEnv(void)
 	{
 		char *rollback_env = getenv("SSB64_NETPLAY_ROLLBACK");
 		char *fuzz_env = getenv("SSB64_NETPLAY_FUZZ");
+		const char *mutant_env = getenv("SSB64_NETPLAY_MUTANT");
 
 		sSYNetPeerIsRollback = ((rollback_env == NULL) || (atoi(rollback_env) != 0)) ? TRUE : FALSE;
 		sSYNetPeerFuzzSeed = (fuzz_env != NULL) ? (u32)atoi(fuzz_env) : 0;
+		if (mutant_env != NULL)
+		{
+			sSYNetPeerMutantBadSession = (strcmp(mutant_env, "accept_bad_session") == 0) ? TRUE : FALSE;
+			sSYNetPeerMutantBadChecksum = (strcmp(mutant_env, "accept_bad_checksum") == 0) ? TRUE : FALSE;
+			sSYNetPeerMutantNoForwardGuard = (strcmp(mutant_env, "no_forward_guard") == 0) ? TRUE : FALSE;
+			port_log("SSB64 NetPeer: MUTANT %s active (test harness only)\n", mutant_env);
+		}
 	}
 
 	if (local_player_env != NULL)
@@ -1088,6 +1140,17 @@ static sb32 syNetPeerCheckPacing(void)
 	u32 confirmed = syNetPeerGetRemoteConfirmedTick();
 	s32 remote_advantage = syNetPeerGetWorstRemoteAdvantage();
 
+	if (sSYNetPeerIsSpectator != FALSE)
+	{
+		/* A spectator never predicts: a tick may run only once every
+		 * player's input for it has actually arrived. */
+		if (tick < confirmed)
+		{
+			return TRUE;
+		}
+		sSYNetPeerLockstepStallFrames++;
+		return FALSE;
+	}
 	if (sSYNetPeerIsRollback == FALSE)
 	{
 		return TRUE;
@@ -1192,16 +1255,6 @@ void syNetPeerBuildPacket(u8 *buffer, u32 *out_size, const SYNetPeerRemote *remo
 			frame_count++;
 		}
 	}
-	checksum = syNetPeerChecksumPacket
-	(
-		sSYNetPeerSessionID,
-		ack_tick,
-		sSYNetPeerSendSeq,
-		(u8)sSYNetPeerLocalPlayer,
-		(u8)frame_count,
-		frames
-	);
-
 	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
 	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
 	{
@@ -1240,6 +1293,9 @@ void syNetPeerBuildPacket(u8 *buffer, u32 *out_size, const SYNetPeerRemote *remo
 		syNetPeerWriteU32(&cursor, check_tick);
 		syNetPeerWriteU32(&cursor, check_hash);
 	}
+	/* Byte-wise over the whole datagram so the advantage and sync-check
+	 * trailer are authenticated too. */
+	checksum = syNetPeerChecksumBytes(buffer, SYNETPEER_PACKET_BYTES - 4);
 	syNetPeerWriteU32(&cursor, checksum);
 	*out_size = SYNETPEER_PACKET_BYTES;
 }
@@ -1252,6 +1308,11 @@ void syNetPeerSendLocalInput(void)
 	s32 player;
 	sb32 sent = FALSE;
 
+	/* A spectator watches only: it never publishes an input stream. */
+	if (sSYNetPeerIsSpectator != FALSE)
+	{
+		return;
+	}
 	for (player = 0; player < MAXCONTROLLERS; player++)
 	{
 		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
@@ -1277,6 +1338,21 @@ void syNetPeerSendLocalInput(void)
 			sent = TRUE;
 		}
 	}
+	/* The host's own stream also goes to every spectator; client packets
+	 * reach watchers through syNetPeerForwardPacket. */
+	if ((sSYNetPeerBootstrapIsHost != FALSE) && (sSYNetPeerSpecLinkCount > 0))
+	{
+		s32 spec;
+
+		syNetPeerBuildPacket(buffer, &size, NULL);
+		if (size != 0)
+		{
+			for (spec = 0; spec < sSYNetPeerSpecLinkCount; spec++)
+			{
+				syNetPeerSendForwardPacket(sSYNetPeerSpecLinks[spec], sSYNetPeerLocalPlayer, buffer, (s32)size);
+			}
+		}
+	}
 	if (sent != FALSE)
 	{
 		sSYNetPeerPacketsSent++;
@@ -1285,19 +1361,17 @@ void syNetPeerSendLocalInput(void)
 #endif
 }
 
-/* The star host relays a client's datagram to the other clients so every
- * participant sees every input stream without client<->client NAT punching. */
-void syNetPeerForwardPacket(const SYNetPeerRemote *from, const u8 *buffer, s32 size)
+/* FORWARD-wrap an INPUT packet authored by <src_player> and send it on
+ * <link> - used to reach star clients (which have no link to the sender)
+ * and to feed spectators (which have no player remotes at all). */
+static void syNetPeerSendForwardPacket(s32 link, s32 src_player, const u8 *buffer, s32 size)
 {
 #ifdef PORT
 	u8 wrapper[SYNETPEER_FORWARD_PACKET_BYTES];
 	u8 *cursor = wrapper;
 	u32 checksum;
-	s32 player;
 
-	if ((sSYNetPeerIsSocketExternal == FALSE) || (sSYNetPeerBootstrapIsHost == FALSE) ||
-		(sSYNetPeerRemoteCount < 2) || (size <= 0) ||
-		(size + SYNETPEER_FORWARD_HEADER_BYTES + 4 > SYNETPEER_FORWARD_PACKET_BYTES))
+	if ((size <= 0) || (size + SYNETPEER_FORWARD_HEADER_BYTES + 4 > SYNETPEER_FORWARD_PACKET_BYTES))
 	{
 		return;
 	}
@@ -1305,11 +1379,29 @@ void syNetPeerForwardPacket(const SYNetPeerRemote *from, const u8 *buffer, s32 s
 	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
 	syNetPeerWriteU16(&cursor, SYNETPEER_PACKET_FORWARD);
 	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
-	syNetPeerWriteU8(&cursor, (u8)from->player);
+	syNetPeerWriteU8(&cursor, (u8)src_player);
 	memcpy(cursor, buffer, size);
 	cursor += size;
 	checksum = syNetPeerChecksumBytes(wrapper, cursor - wrapper);
 	syNetPeerWriteU32(&cursor, checksum);
+	port_udp_link_send(link, wrapper, (s32)(cursor - wrapper));
+#endif
+}
+
+/* The star host relays a client's datagram to the other clients so every
+ * participant sees every input stream without client<->client NAT punching.
+ * Spectator links get the same treatment - they just are not remotes. */
+void syNetPeerForwardPacket(const SYNetPeerRemote *from, const u8 *buffer, s32 size)
+{
+#ifdef PORT
+	s32 player;
+	s32 spec;
+
+	if ((sSYNetPeerIsSocketExternal == FALSE) || (sSYNetPeerBootstrapIsHost == FALSE) ||
+		(sSYNetPeerRemoteCount < 2) || (size <= 0))
+	{
+		return;
+	}
 	for (player = 0; player < MAXCONTROLLERS; player++)
 	{
 		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
@@ -1317,8 +1409,12 @@ void syNetPeerForwardPacket(const SYNetPeerRemote *from, const u8 *buffer, s32 s
 		if ((remote->player == player) && (remote->dropped == FALSE) &&
 			(remote->link >= 0) && (remote != from))
 		{
-			port_udp_link_send(remote->link, wrapper, (s32)(cursor - wrapper));
+			syNetPeerSendForwardPacket(remote->link, from->player, buffer, size);
 		}
+	}
+	for (spec = 0; spec < sSYNetPeerSpecLinkCount; spec++)
+	{
+		syNetPeerSendForwardPacket(sSYNetPeerSpecLinks[spec], from->player, buffer, size);
 	}
 #endif
 }
@@ -1374,7 +1470,8 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 	packet_remote_player = syNetPeerReadU8(&cursor);
 
 	if ((magic != SYNETPEER_MAGIC) || (version != SYNETPEER_VERSION) ||
-		(session_id != sSYNetPeerSessionID) || (player != (u8)src_player) ||
+		((session_id != sSYNetPeerSessionID) && (sSYNetPeerMutantBadSession == FALSE)) ||
+		(player != (u8)src_player) ||
 		(packet_local_player != (u8)src_player) ||
 		((forwarded == FALSE) && (packet_remote_player != (u8)sSYNetPeerLocalPlayer)) ||
 		(frame_count > SYNETPEER_MAX_PACKET_FRAMES))
@@ -1392,9 +1489,9 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 	check_tick = syNetPeerReadU32(&cursor);
 	check_hash = syNetPeerReadU32(&cursor);
 	checksum = syNetPeerReadU32(&cursor);
-	expected_checksum = syNetPeerChecksumPacket(session_id, ack_tick, packet_seq, player, frame_count, frames);
+	expected_checksum = syNetPeerChecksumBytes(buffer, SYNETPEER_PACKET_BYTES - 4);
 
-	if (checksum != expected_checksum)
+	if ((checksum != expected_checksum) && (sSYNetPeerMutantBadChecksum == FALSE))
 	{
 		sSYNetPeerPacketsDropped++;
 		return;
@@ -1532,13 +1629,17 @@ void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size, s32 link)
 	{
 		return;
 	}
-	if (sSYNetPeerBootstrapIsHost != FALSE)
+	if ((sSYNetPeerBootstrapIsHost != FALSE) && (sSYNetPeerMutantNoForwardGuard == FALSE))
 	{
 		sSYNetPeerPacketsDropped++;
 		return;
 	}
 	host = syNetPeerGetRemoteByPlayer(0);
-	if ((host == NULL) || (link != host->link))
+	/* A spectator has no direct link to the host's player remote (all its
+	 * remotes are link -1 and every datagram arrives FORWARD-wrapped on its
+	 * own relay link), so the host-link check does not apply. */
+	if ((sSYNetPeerMutantNoForwardGuard == FALSE) && (sSYNetPeerIsSpectator == FALSE) &&
+		((host == NULL) || (link != host->link)))
 	{
 		sSYNetPeerPacketsDropped++;
 		return;
@@ -1566,7 +1667,7 @@ void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size, s32 link)
 	 * client that is every non-host participant (link == -1). A FORWARD
 	 * claiming to be the host, or anyone we could hear from directly, is
 	 * spoofed. */
-	if ((remote == NULL) || (remote->link != -1))
+	if ((remote == NULL) || ((remote->link != -1) && (sSYNetPeerMutantNoForwardGuard == FALSE)))
 	{
 		sSYNetPeerPacketsDropped++;
 		return;
@@ -1578,6 +1679,71 @@ void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size, s32 link)
 /* FORWARD datagrams are INPUT packets wrapped by the star host; they are
  * bigger than a bare INPUT packet, so size alone doesn't identify them.
  * Check the type field of the fixed header instead. */
+sb32 syNetPeerCheckForwardPacket(const u8 *buffer, s32 size); /* fwd */
+
+#ifdef PORT
+static sb32 sSYNetPeerFuzzIsMutantProbe;
+
+/* Packet-fuzz helpers (SSB64_NETPLAY_PACKETFUZZ / mutant probes). */
+
+static SYNetPeerRemote *syNetPeerFuzzPickRemote(s32 iter)
+{
+	s32 fsrc;
+
+	if (sSYNetPeerIsSocketExternal == FALSE)
+	{
+		return syNetPeerGetRemoteByPlayer(sSYNetPeerRemotePlayer);
+	}
+	fsrc = iter % MAXCONTROLLERS;
+	if (fsrc == sSYNetPeerLocalPlayer)
+	{
+		fsrc = (fsrc + 1) % MAXCONTROLLERS;
+	}
+	return syNetPeerGetRemoteByPlayer(fsrc);
+}
+
+/* Writes a wire-valid INPUT packet for <remote>: real header, plausible
+ * future frame ticks (so an accepted packet lands in the staging window and
+ * diverges), correct trailing checksum. Passing a session other than
+ * sSYNetPeerSessionID produces the cross-session-replay vector. */
+static void syNetPeerFuzzFillInputPacket(u8 *buf, u32 session, SYNetPeerRemote *remote, s32 iter, u32 seed)
+{
+	u8 *w = buf;
+	SYNetPeerPacketFrame frames[SYNETPEER_MAX_PACKET_FRAMES];
+	u8 fcount = (u8)(1 + (iter % SYNETPEER_MAX_PACKET_FRAMES));
+	u32 ftick = syNetInputGetTick() + 1;
+	u32 fsum;
+	s32 i;
+
+	syNetPeerWriteU32(&w, SYNETPEER_MAGIC);
+	syNetPeerWriteU16(&w, SYNETPEER_VERSION);
+	syNetPeerWriteU16(&w, (u16)(seed & 0x7FFF));
+	syNetPeerWriteU32(&w, session);
+	syNetPeerWriteU32(&w, ftick);
+	syNetPeerWriteU32(&w, (u32)iter);
+	syNetPeerWriteU8(&w, (u8)remote->player);
+	syNetPeerWriteU8(&w, fcount);
+	syNetPeerWriteU8(&w, (u8)remote->player);
+	syNetPeerWriteU8(&w, (u8)sSYNetPeerLocalPlayer);
+	memset(frames, 0, sizeof(frames));
+	for (i = 0; i < SYNETPEER_MAX_PACKET_FRAMES; i++)
+	{
+		frames[i].tick = ftick + (u32)i;
+		frames[i].buttons = (u16)(seed >> (i % 16));
+		frames[i].stick_x = (s8)(iter + i);
+		frames[i].stick_y = (s8)(iter - i);
+		syNetPeerWriteU32(&w, frames[i].tick);
+		syNetPeerWriteU16(&w, frames[i].buttons);
+		syNetPeerWriteU8(&w, (u8)frames[i].stick_x);
+		syNetPeerWriteU8(&w, (u8)frames[i].stick_y);
+	}
+	syNetPeerWriteU32(&w, 0xFFFFFFFFU);
+	syNetPeerWriteU32(&w, 0);
+	fsum = syNetPeerChecksumBytes(buf, SYNETPEER_PACKET_BYTES - 4);
+	syNetPeerWriteU32(&w, fsum);
+}
+#endif
+
 sb32 syNetPeerCheckForwardPacket(const u8 *buffer, s32 size)
 {
 	const u8 *cursor = buffer;
@@ -1601,6 +1767,173 @@ void syNetPeerReceiveRemoteInput(void)
 {
 #ifdef PORT
 	u8 buffer[SYNETPEER_FORWARD_PACKET_BYTES];
+
+	/* SSB64_NETPLAY_PACKETFUZZ=<count>: inject <count> seeded pseudo-random
+	 * datagrams through the real handlers before each drain. Tiered
+	 * validity so every defense depth is exercised:
+	 *   tier 0: fully random              — magic gate
+	 *   tier 1: + magic/version           — header gate
+	 *   tier 2: + session                 — session gate
+	 *   tier 3: + player fields + checksum — full accept path, frames decode
+	 *   tier 4: like 3 but wrong session (checksum signed with it) — this is
+	 *           exactly the cross-session replay an attacker would send;
+	 *           must be dropped unless MUTANT accept_bad_session is active
+	 *   tier 5: like 3 but checksum field off by one — must be dropped
+	 *           unless MUTANT accept_bad_checksum is active
+	 * Odd iterations are wrapped as FORWARD datagrams (relay path).
+	 * When a MUTANT is active and no fuzz count was given, a small probe
+	 * stream of the matching vector runs anyway so the mutation has an
+	 * observable effect (desync) rather than silently passing.
+	 * Oracle: no crash/OOB; accepted garbage must trip the desync
+	 * detector via the tick-hash check. Test harness only. */
+	if (sSYNetPeerPacketFuzzLeft == -2)
+	{
+		const char *fuzz_env = getenv("SSB64_NETPLAY_PACKETFUZZ");
+		sSYNetPeerPacketFuzzLeft = (fuzz_env != NULL) ? atoi(fuzz_env) : 0;
+		if ((sSYNetPeerPacketFuzzLeft == 0) &&
+			((sSYNetPeerMutantBadSession != FALSE) || (sSYNetPeerMutantBadChecksum != FALSE) ||
+			 (sSYNetPeerMutantNoForwardGuard != FALSE)))
+		{
+			sSYNetPeerPacketFuzzLeft = 300;   /* probe packets, mutant-shaped */
+			sSYNetPeerFuzzIsMutantProbe = TRUE;
+		}
+	}
+	while (sSYNetPeerPacketFuzzLeft > 0)
+	{
+		u8 fuzzbuf[SYNETPEER_FORWARD_PACKET_BYTES];
+		u32 fseed = sSYNetPeerFuzzSeed ^ (0x9E3779B9U * (u32)sSYNetPeerPacketFuzzLeft);
+		s32 fiter = sSYNetPeerPacketFuzzLeft;
+		s32 tier;
+		s32 fsize;
+		s32 fi;
+		SYNetPeerRemote *fremote;
+
+		sSYNetPeerPacketFuzzLeft--;
+		if (sSYNetPeerFuzzIsMutantProbe != FALSE)
+		{
+			/* Mutant probes: the exact datagram class the removed check is
+			 * supposed to reject — every iteration. */
+			tier = (sSYNetPeerMutantBadSession != FALSE) ? 4 :
+			       (sSYNetPeerMutantBadChecksum != FALSE) ? 5 : 6;
+		}
+		else
+		{
+			tier = fiter % 6;
+		}
+		for (fi = 0; fi < (s32)sizeof(fuzzbuf); fi++)
+		{
+			fseed = fseed * 1664525u + 1013904223u;
+			fuzzbuf[fi] = (u8)(fseed >> 24);
+		}
+		if (tier == 6)
+		{
+			/* no_forward_guard probe: a FORWARD datagram that did NOT arrive
+			 * via the host link, wrapping a fully valid INPUT packet. Must
+			 * be dropped unless the mutant removed the topology check. */
+			u8 *w;
+			SYNetPeerRemote *host = syNetPeerGetRemoteByPlayer(0);
+			SYNetPeerRemote *victim;
+			s32 badlink = (host != NULL) ? host->link + 1 : 0;
+			u32 fout;
+
+			victim = (sSYNetPeerLocalPlayer != 1) ? syNetPeerGetRemoteByPlayer(1)
+			                                    : syNetPeerGetRemoteByPlayer(2);
+			if (victim == NULL)
+			{
+				continue;
+			}
+			w = fuzzbuf;
+			syNetPeerWriteU32(&w, SYNETPEER_MAGIC);
+			syNetPeerWriteU16(&w, SYNETPEER_VERSION);
+			syNetPeerWriteU16(&w, SYNETPEER_PACKET_FORWARD);
+			syNetPeerWriteU32(&w, sSYNetPeerSessionID);
+			syNetPeerWriteU8(&w, (u8)victim->player);
+			syNetPeerFuzzFillInputPacket(w, sSYNetPeerSessionID, victim, fiter, fseed);
+			fout = syNetPeerChecksumBytes(fuzzbuf, SYNETPEER_FORWARD_HEADER_BYTES + SYNETPEER_PACKET_BYTES);
+			w = fuzzbuf + SYNETPEER_FORWARD_HEADER_BYTES + SYNETPEER_PACKET_BYTES;
+			syNetPeerWriteU32(&w, fout);
+			syNetPeerHandleForwardPacket(fuzzbuf, SYNETPEER_FORWARD_PACKET_BYTES, badlink);
+			continue;
+		}
+		if ((sSYNetPeerIsSocketExternal != FALSE) && ((fiter & 1) != 0))
+		{
+			/* FORWARD wrapper: real outer fields (passes CheckForward),
+			 * random inner packet. Tier >= 3 also fixes the trailing
+			 * checksum so the inner parse runs. */
+			u8 *w = fuzzbuf;
+			SYNetPeerRemote *host = syNetPeerGetRemoteByPlayer(0);
+
+			syNetPeerWriteU32(&w, SYNETPEER_MAGIC);
+			syNetPeerWriteU16(&w, SYNETPEER_VERSION);
+			syNetPeerWriteU16(&w, SYNETPEER_PACKET_FORWARD);
+			syNetPeerWriteU32(&w, (tier >= 2) ? sSYNetPeerSessionID : fseed);
+			syNetPeerWriteU8(&w, (u8)(fiter % MAXCONTROLLERS));
+			fsize = SYNETPEER_FORWARD_HEADER_BYTES + 4 + ((fiter * 37) % (s32)(sizeof(fuzzbuf) - SYNETPEER_FORWARD_HEADER_BYTES - 8)) + 4;
+			if (tier >= 3)
+			{
+				u32 fsum = syNetPeerChecksumBytes(fuzzbuf, fsize - 4);
+				w = fuzzbuf + fsize - 4;
+				syNetPeerWriteU32(&w, fsum);
+			}
+			syNetPeerHandleForwardPacket(fuzzbuf, fsize, (host != NULL) ? host->link : -1);
+			continue;
+		}
+		fsize = SYNETPEER_PACKET_BYTES;
+		if (tier >= 1)
+		{
+			u8 *w = fuzzbuf;
+
+			syNetPeerWriteU32(&w, SYNETPEER_MAGIC);
+			syNetPeerWriteU16(&w, SYNETPEER_VERSION);
+		}
+		if (tier == 2)
+		{
+			u8 *w = fuzzbuf + 8;
+
+			syNetPeerWriteU32(&w, sSYNetPeerSessionID);
+		}
+		if (tier >= 3)
+		{
+			fremote = syNetPeerFuzzPickRemote(fiter);
+			if (fremote == NULL)
+			{
+				continue;
+			}
+			syNetPeerFuzzFillInputPacket(fuzzbuf,
+				(tier == 4) ? (sSYNetPeerSessionID ^ 0x5AF00D5AU) : sSYNetPeerSessionID,
+				fremote, fiter, fseed);
+			if (tier == 5)
+			{
+				fuzzbuf[fsize - 1] ^= 0xFFu;   /* break the trailing checksum */
+			}
+		}
+		else if (sSYNetPeerIsSocketExternal != FALSE)
+		{
+			fremote = NULL;
+			for (fi = 0; fi < MAXCONTROLLERS; fi++)
+			{
+				fremote = syNetPeerGetRemoteByPlayer(fi);
+				if ((fremote != NULL) && (fremote->player != sSYNetPeerLocalPlayer))
+				{
+					break;
+				}
+				fremote = NULL;
+			}
+			if (fremote == NULL)
+			{
+				continue;
+			}
+		}
+		else
+		{
+			fremote = syNetPeerGetRemoteByPlayer(sSYNetPeerRemotePlayer);
+			if (fremote == NULL)
+			{
+				continue;
+			}
+		}
+		syNetPeerHandlePacket(fuzzbuf, fsize, fremote, FALSE);
+	}
 
 	while (TRUE)
 	{
@@ -1982,6 +2315,8 @@ void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is
 	sSYNetPeerIsEnabled = TRUE;
 	sSYNetPeerIsConfigured = TRUE;
 	sSYNetPeerIsSocketExternal = TRUE;
+	sSYNetPeerIsSpectator = FALSE;
+	sSYNetPeerSpecLinkCount = 0;            /* the lobby re-registers watchers each match */
 	sSYNetPeerLocalPlayer = local_player;
 	syNetPeerResetRemotes();
 	if (is_host != FALSE)
@@ -2079,8 +2414,75 @@ void syNetPeerStartOnlineMatch(s32 local_slot, s32 player_count, u32 delay, u32 
 	}
 
 	syNetPeerMakeOnlineMetadata(&metadata, stage, stocks, is_items, seed, player_count, fighter_kinds, costume_ids);
+	/* every online match auto-records its inputs; the file lands under
+	 * <save dir>/replays/ when the VS session ends (and doubles as the
+	 * payload of a desync package if the sync detector fires) */
+	syNetReplayArmAutoSave();
 	syNetPeerStartOnline(local_slot, player_count, delay, (local_slot == 0) ? TRUE : FALSE, &metadata, wire_slots,
 	                     session_id);
+}
+
+/* Spectator entry point for the lobby: same match parameters as
+ * syNetPeerStartOnlineMatch but with no local player. Every slot is a
+ * remote stream fed exclusively by FORWARD datagrams pushed by the host
+ * over the spectator's relay link; nothing is sent, the start barrier is
+ * skipped and pacing is strict (no predictions), so the watched match runs
+ * slightly behind live play whenever the relay adds latency. */
+void syNetPeerStartOnlineSpectate(s32 player_count, u32 delay, u32 stage, u32 stocks, s32 is_items, u32 seed,
+                                  u32 session_id, const s32 *fkinds, const s32 *costumes)
+{
+#ifdef PORT
+	extern void portSCManagerRequestScene(s32 target);
+	SYNetInputReplayMetadata metadata;
+	u8 fighter_kinds[MAXCONTROLLERS] = { 0 };
+	u8 costume_ids[MAXCONTROLLERS] = { 0 };
+	s32 player;
+
+	if (player_count < 2)
+	{
+		player_count = 2;
+	}
+	if (player_count > MAXCONTROLLERS)
+	{
+		player_count = MAXCONTROLLERS;
+	}
+	for (player = 0; player < player_count; player++)
+	{
+		fighter_kinds[player] = (u8)fkinds[player];
+		costume_ids[player] = (u8)costumes[player];
+	}
+	syNetPeerMakeOnlineMetadata(&metadata, stage, stocks, is_items, seed, player_count, fighter_kinds, costume_ids);
+	syNetReplayArmAutoSave();
+
+	sSYNetPeerIsEnabled = TRUE;
+	sSYNetPeerIsConfigured = TRUE;
+	sSYNetPeerIsSocketExternal = TRUE;
+	sSYNetPeerIsSpectator = TRUE;
+	sSYNetPeerSpecLinkCount = 0;
+	sSYNetPeerLocalPlayer = -1;
+	syNetPeerResetRemotes();
+	/* every player is a remote with no direct link: their packets all
+	 * arrive FORWARD-wrapped from the host */
+	for (player = 0; player < player_count; player++)
+	{
+		syNetPeerAddRemote(player, -1);
+	}
+	sSYNetPeerRemotePlayer = 0;
+	sSYNetPeerInputDelay = delay;
+	sSYNetPeerSessionID = (session_id != 0) ? session_id : metadata.rng_seed;
+	sSYNetPeerIsRollback = FALSE;         /* spectators never predict, so snapshots are never needed */
+	sSYNetPeerFuzzSeed = 0;
+	sSYNetPeerBootstrapIsEnabled = FALSE; /* no start barrier for watchers */
+	sSYNetPeerBootstrapIsHost = FALSE;
+	sSYNetPeerBootstrapSeed = metadata.rng_seed;
+
+	syNetRollbackSetTickTimer(TRUE);
+	syNetPeerApplyBootstrapMetadata(&metadata);
+	portSCManagerRequestScene(nSCKindVSBattle);
+
+	port_log("SSB64 NetPeer: spectating match players=%d delay=%u stage=%u seed=%u\n",
+	         player_count, delay, metadata.stage_kind, metadata.rng_seed);
+#endif
 }
 
 void syNetPeerStopVSSession(void)
@@ -2103,6 +2505,8 @@ void syNetPeerStopVSSession(void)
 		sSYNetPeerIsConfigured = FALSE;
 		sSYNetPeerBootstrapIsEnabled = FALSE;
 		sSYNetPeerIsSocketExternal = FALSE;
+		sSYNetPeerIsSpectator = FALSE;
+		sSYNetPeerSpecLinkCount = 0;
 		syNetRollbackRestoreTickTimer();
 		port_netlobby_on_match_end();
 	}
