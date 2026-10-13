@@ -55,6 +55,13 @@ sb32 sSYNetReplayIsPlaybackVerified;
 /* SSB64_RIG_EXIT=1: turn the playback verify verdict into the process exit
  * code (0 PASS, 1 FAIL, 2 playback ended before the replay did). */
 sb32 sSYNetReplayRigExit;
+/* SSB64_REPLAY_TAKEOVER=<player>:<tick>: replay runs the recorded inputs
+ * until <tick>, then that slot's source flips to the live controller - the
+ * classic "train from this exact moment" workflow. The other slots keep
+ * replaying their recorded inputs. Verification is disabled once the
+ * takeover fires: diverging from the recording is the point. */
+s32 sSYNetReplayTakeoverPlayer = -1;
+u32 sSYNetReplayTakeoverTick;
 SYNetInputReplayMetadata sSYNetReplayLoadedMetadata;
 SYNetInputFrame sSYNetReplayLoadedFrames[MAXCONTROLLERS][SYNETINPUT_REPLAY_MAX_FRAMES];
 
@@ -205,6 +212,19 @@ void syNetReplayInitDebugEnv(void)
 			sSYNetReplayRecordFrameLimit = frame_limit;
 		}
 	}
+	{
+		const char *takeover_env = getenv("SSB64_REPLAY_TAKEOVER");
+		int player = -1;
+		unsigned int tick = 0;
+
+		if ((takeover_env != NULL) && (sscanf(takeover_env, "%d:%u", &player, &tick) == 2) &&
+			(player >= 0) && (player < MAXCONTROLLERS))
+		{
+			sSYNetReplayTakeoverPlayer = player;
+			sSYNetReplayTakeoverTick = tick;
+			port_log("SSB64 Replay: takeover armed player=%d tick=%u\n", player, tick);
+		}
+	}
 	if (sSYNetReplayPlayPath != NULL)
 	{
 		if (syNetReplayLoadDebugFile(sSYNetReplayPlayPath) != FALSE)
@@ -291,6 +311,22 @@ void syNetReplayStartVSSession(SCBattleState *battle_state)
 
 void syNetReplayUpdate(void)
 {
+#ifdef PORT
+	/* syNetReplayUpdate runs after the tick's inputs were resolved, so when
+	 * N ticks are published the next simulated tick is N itself - switching
+	 * the slot's source here hands control over exactly at takeover_tick. */
+	if ((sSYNetReplayTakeoverPlayer >= 0) && (sSYNetReplayIsPlaybackActive != FALSE) &&
+		(syNetInputGetPublishedTickCount() >= sSYNetReplayTakeoverTick))
+	{
+		port_log("SSB64 Replay: takeover player=%d at tick=%u - slot is live input now\n",
+		         sSYNetReplayTakeoverPlayer, sSYNetReplayTakeoverTick);
+		syNetInputSetSlotSource(sSYNetReplayTakeoverPlayer, nSYNetInputSourceLocal);
+		sSYNetReplayTakeoverPlayer = -1;
+		/* the input stream intentionally diverges from here - the end-of-
+		 * replay checksum verdict would be a false FAIL */
+		sSYNetReplayIsPlaybackVerified = TRUE;
+	}
+#endif
 	if ((sSYNetReplayIsRecording != FALSE) && (sSYNetReplayIsRecordWritten == FALSE) &&
 		(syNetInputGetRecordedFrameCount() >= sSYNetReplayRecordFrameLimit))
 	{
