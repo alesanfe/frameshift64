@@ -17,7 +17,8 @@ extern void syNetPeerUpdateBattleGate(void);
 extern void syNetPeerUpdate(void);
 extern void syNetPeerStopVSSession(void);
 extern void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is_host,
-                                 const SYNetInputReplayMetadata *metadata, const s32 *wire_slots);
+                                 const SYNetInputReplayMetadata *metadata, const s32 *wire_slots,
+                                 u32 session_id);
 extern void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 stage, u32 stocks, sb32 is_items, u32 seed,
                                         u32 player_count, const u8 *fighter_kinds, const u8 *costumes);
 

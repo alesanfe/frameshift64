@@ -1509,8 +1509,11 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 }
 
 /* Unwrap a FORWARD datagram (clients only): the inner packet is handled as
- * if it had arrived from its original sender. */
-void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size)
+ * if it had arrived from its original sender. `link` is the transport link
+ * it arrived on, which must be our link to the star host — a FORWARD on any
+ * other link, or any FORWARD at all on the host itself, is an injection
+ * attempt (the host receives client datagrams directly, never wrapped). */
+void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size, s32 link)
 {
 #ifdef PORT
 	const u8 *cursor = buffer;
@@ -1523,9 +1526,21 @@ void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size)
 	u16 packet_type;
 	u8 src_player;
 	SYNetPeerRemote *remote;
+	SYNetPeerRemote *host;
 
 	if (size < SYNETPEER_FORWARD_HEADER_BYTES + 4)
 	{
+		return;
+	}
+	if (sSYNetPeerBootstrapIsHost != FALSE)
+	{
+		sSYNetPeerPacketsDropped++;
+		return;
+	}
+	host = syNetPeerGetRemoteByPlayer(0);
+	if ((host == NULL) || (link != host->link))
+	{
+		sSYNetPeerPacketsDropped++;
 		return;
 	}
 	expected_checksum = syNetPeerChecksumBytes(buffer, size - 4);
@@ -1547,7 +1562,11 @@ void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size)
 		return;
 	}
 	remote = syNetPeerGetRemoteByPlayer(src_player);
-	if (remote == NULL)
+	/* The wrapped sender must be a remote we have no direct link to — on a
+	 * client that is every non-host participant (link == -1). A FORWARD
+	 * claiming to be the host, or anyone we could hear from directly, is
+	 * spoofed. */
+	if ((remote == NULL) || (remote->link != -1))
 	{
 		sSYNetPeerPacketsDropped++;
 		return;
@@ -1599,7 +1618,7 @@ void syNetPeerReceiveRemoteInput(void)
 			}
 			if (syNetPeerCheckForwardPacket(buffer, size) != FALSE)
 			{
-				syNetPeerHandleForwardPacket(buffer, size);
+				syNetPeerHandleForwardPacket(buffer, size, link);
 				continue;
 			}
 			remote = syNetPeerGetRemoteByLink(link);
@@ -1953,7 +1972,8 @@ void syNetPeerUpdate(void)
  * room slots sparsely when a middle player leaves, so game slot != room
  * slot in that case; NULL means the identity map. */
 void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is_host,
-                          const SYNetInputReplayMetadata *metadata, const s32 *wire_slots)
+                          const SYNetInputReplayMetadata *metadata, const s32 *wire_slots,
+                          u32 session_id)
 {
 #ifdef PORT
 	extern void portSCManagerRequestScene(s32 target);
@@ -1988,7 +2008,10 @@ void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is
 	}
 	sSYNetPeerRemotePlayer = (local_player == 0) ? 1 : 0;
 	sSYNetPeerInputDelay = delay;
-	sSYNetPeerSessionID = metadata->rng_seed;
+	/* session id comes from the lobby, generated independently of the
+	 * broadcast rng_seed; 0 keeps the legacy seed-derived behavior for
+	 * start packets that predate the field */
+	sSYNetPeerSessionID = (session_id != 0) ? session_id : metadata->rng_seed;
 	sSYNetPeerIsRollback = TRUE;
 	sSYNetPeerFuzzSeed = (getenv("SSB64_NETPLAY_FUZZ") != NULL) ? (u32)atoi(getenv("SSB64_NETPLAY_FUZZ")) : 0;
 	sSYNetPeerBootstrapIsEnabled = TRUE;    // enables the in-battle start barrier
@@ -2034,7 +2057,7 @@ void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 stage, 
  * occupies one contiguous game slot 0..player_count-1. wire_slots maps each
  * game slot back to its room slot (NULL = identity). */
 void syNetPeerStartOnlineMatch(s32 local_slot, s32 player_count, u32 delay, u32 stage, u32 stocks, s32 is_items, u32 seed,
-                               const s32 *fkinds, const s32 *costumes, const s32 *wire_slots)
+                               u32 session_id, const s32 *fkinds, const s32 *costumes, const s32 *wire_slots)
 {
 	SYNetInputReplayMetadata metadata;
 	u8 fighter_kinds[MAXCONTROLLERS] = { 0 };
@@ -2056,7 +2079,8 @@ void syNetPeerStartOnlineMatch(s32 local_slot, s32 player_count, u32 delay, u32 
 	}
 
 	syNetPeerMakeOnlineMetadata(&metadata, stage, stocks, is_items, seed, player_count, fighter_kinds, costume_ids);
-	syNetPeerStartOnline(local_slot, player_count, delay, (local_slot == 0) ? TRUE : FALSE, &metadata, wire_slots);
+	syNetPeerStartOnline(local_slot, player_count, delay, (local_slot == 0) ? TRUE : FALSE, &metadata, wire_slots,
+	                     session_id);
 }
 
 void syNetPeerStopVSSession(void)
