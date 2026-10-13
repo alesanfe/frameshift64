@@ -106,3 +106,51 @@ with no validation.
   themselves on range-table overflow instead of silently missing state.
 - Netsync hashing is field-structured (floats by bit pattern, no
   pointers, draw-order-independent) — the §6 concerns don't apply.
+
+## Remediation (2026-10-13, same day)
+
+All P0/P1 findings were fixed in `netplay: harden the relay path
+end-to-end` (outer `5d3b0e8`, decomp `3fef14e` on
+`netplay-v2-multiplayer`):
+
+- **SEC-1/SEC-2**: the Worker now enforces the star it documented —
+  clients may only address slot 0 and the host only client slots, and a
+  relayed hop additionally requires the link to be marked relayed
+  (`relay` on the sender for client→host, on the target for
+  host→client). The relay `from_slot` is stamped from the authenticated
+  socket, never from frame bytes. Client side, FORWARD datagrams are
+  only accepted by non-host participants, only on the link to the host,
+  and only when the claimed inner sender is a forward-only remote
+  (`link == -1`); `link_of` validates the relay framing byte against an
+  active relay-backed link.
+- **SEC-3**: uplinks authenticate with a per-connection `upkey` issued
+  in the v2 `welcome` (`&key=` on the upgrade). Keys are bound to the
+  owner socket — a stolen or replayed key for another slot fails, a
+  control socket's uplinks die with it, and a reconnect replaces the
+  stale uplink.
+- **SEC-4**: per-socket token windows (20 text/s, 600 binary/s, close
+  4029), ≤10 endpoint updates per connection, ≤12 join/uplink attempts
+  per room per 10 s. node-lobby also garbage-collects empty rooms and
+  rejects joins to nonexistent rooms without minting a Room.
+- **SEC-5**: `session_id` is a fresh lobby-generated u32 carried in
+  `STARTM`/`START`, decoupled from the broadcast `rng_seed`; 0 keeps the
+  legacy seed-derived value for interop with pre-session builds.
+- **OPS-1**: decomp work lives on branch `netplay-v2-multiplayer`
+  (49f339d + 3fef14e) and the outer tree is committed; nothing netplay
+  is left uncommitted.
+
+Verified: `node server/test-lobby-security.js` — 15/15 checks (uplink
+key accept/reject paths, client→client drop, relay-flag gating both
+directions, from_slot stamping, join/text flood limits). The C++ builds
+clean (MSVC Release); the final link needs BattleShip.exe instances to
+be closed. Same hardening mirrored in `server/node-lobby.js` so local
+tests match production.
+
+### Residual limitations
+
+- The room code remains the only room secret (now rate-limited). A
+  Cloudflare-level per-IP limit (e.g. Workers rate limiting API or
+  Turnstile on the join path) is the remaining hardening if abuse
+  appears.
+- v1 rooms keep the legacy wire format; they get the session id only
+  when both ends run a build that sends the trailing field.

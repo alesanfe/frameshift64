@@ -435,10 +435,10 @@ extern "C" size_t port_aobj_fixup_snapshot_save(void *dst, size_t capacity) {
 }
 
 extern "C" void port_aobj_fixup_snapshot_load(const void *src, size_t size) {
+    if (src == nullptr || size < sizeof(uint32_t)) return;
     const uint8_t *in = static_cast<const uint8_t *>(src);
     const uint8_t *in_end = in + size;
     uint32_t count = 0;
-    if (src == nullptr || size < sizeof(count)) return;
     memcpy(&count, in, sizeof(count));
     in += sizeof(count);
     sHalfswappedRanges.clear();

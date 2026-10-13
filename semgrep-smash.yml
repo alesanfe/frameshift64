@@ -5,7 +5,7 @@ rules:
     languages: [c, cpp]
     paths:
       include:
-        - "*/net/*"
+        - "**/net/*"
         - "*netpeer*"
         - "*netinput*"
         - "*netrollback*"
@@ -35,7 +35,7 @@ rules:
     languages: [c, cpp]
     paths:
       include:
-        - "*/net/*"
+        - "**/net/*"
         - "*netpeer*"
         - "*netinput*"
         - "*netrollback*"
@@ -54,7 +54,7 @@ rules:
     languages: [c, cpp]
     paths:
       include:
-        - "*/net/*"
+        - "**/net/*"
         - "*netpeer*"
         - "*netinput*"
         - "*netrollback*"
@@ -72,7 +72,7 @@ rules:
     languages: [c, cpp]
     paths:
       include:
-        - "*/net/*"
+        - "**/net/*"
         - "*netpeer*"
         - "*netinput*"
         - "*netrollback*"

@@ -957,7 +957,7 @@ bool Combobox(std::string label, T* value, const char* (&comboArray)[N], const C
     ImGui::BeginDisabled(options.disabled);
     PushStyleCombobox(options.color);
 
-    const char* longest;
+    const char* longest = "";   // N == 0 or all-empty strings: stay defined
     size_t length = 0;
     for (size_t i = 0; i < N; i++) {
         size_t len = strlen(comboArray[i]);
