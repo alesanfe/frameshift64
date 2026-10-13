@@ -1500,7 +1500,7 @@ u32 syNetSyncHashVars(void)
 #endif
 }
 
-void syNetSyncHashTick(SYNetSyncTickHash *out)
+void syNetSyncHashTick(SYNetSyncTickHash *out, u32 tick)
 {
 	u32 full = SYNETSYNC_FNV_BASIS;
 	s32 i;
@@ -1513,7 +1513,7 @@ void syNetSyncHashTick(SYNetSyncTickHash *out)
 	out->column[nSYNetSyncColumnWeapons] = syNetSyncHashWeapons();
 	out->column[nSYNetSyncColumnStage] = syNetSyncHashStage();
 	out->column[nSYNetSyncColumnObjMan] = syNetSyncHashObjectManager();
-	out->column[nSYNetSyncColumnInput] = syNetInputGetPublishedInputChecksum();
+	out->column[nSYNetSyncColumnInput] = syNetInputGetTickInputChecksum(tick);
 	out->column[nSYNetSyncColumnJoints] = syNetSyncHashJoints();
 	out->column[nSYNetSyncColumnCamera] = syNetSyncHashCamera();
 	out->column[nSYNetSyncColumnVars] = syNetSyncHashVars();
@@ -1912,7 +1912,7 @@ void syNetSyncRecordTick(void)
 		return;
 	}
 	tick = sSYNetSyncTickCount;
-	syNetSyncHashTick(&rec);
+	syNetSyncHashTick(&rec, tick);
 
 	if ((tick >= sSYNetSyncDumpTick) && (tick <= sSYNetSyncDumpTick + 2))
 	{

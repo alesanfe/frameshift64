@@ -1010,7 +1010,7 @@ sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void)
 
 		if (hashes != NULL)
 		{
-			syNetSyncHashTick(&hashes[tick % SYNETROLLBACK_SLOT_NUM]);
+			syNetSyncHashTick(&hashes[tick % SYNETROLLBACK_SLOT_NUM], tick);
 		}
 	}
 	sSYNetRollbackIsResimulating = FALSE;
@@ -1022,7 +1022,7 @@ static void syNetRollbackStoreLiveHash(u32 tick)
 {
 	s32 slot = tick % SYNETROLLBACK_SLOT_NUM;
 
-	syNetSyncHashTick(&sSYNetRollbackLiveHashes[slot]);
+	syNetSyncHashTick(&sSYNetRollbackLiveHashes[slot], tick);
 	sSYNetRollbackLiveHashTicks[slot] = tick;
 	sSYNetRollbackLiveHashValid[slot] = TRUE;
 }
@@ -1031,7 +1031,7 @@ static void syNetRollbackStoreLiveHash(u32 tick)
  * every remote input up to it confirmed. */
 static void syNetRollbackEmitConfirmedTrace(u32 last_simulated_tick)
 {
-	u32 confirmed = syNetInputGetRemoteNextUnconfirmed(syNetPeerGetRemotePlayer());
+	u32 confirmed = syNetPeerGetRemoteConfirmedTick();
 
 #ifdef PORT
 	if ((sSYNetRollbackConfirmedTrace == NULL) && (sSYNetRollbackConfirmedTracePath == NULL) &&
@@ -1171,7 +1171,7 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
 	{
 		port_log("SSB64 Rollback: netplay tick=%u rollbacks=%u resim_ticks=%u max_rollback=%u failed=%u confirmed=%u sync_checks=%u desync=%d\n",
 		         tick, sSYNetRollbackRollbacks, sSYNetRollbackResimTicks, sSYNetRollbackMaxRollback,
-		         sSYNetRollbackFailedRollbacks, syNetInputGetRemoteNextUnconfirmed(syNetPeerGetRemotePlayer()),
+		         sSYNetRollbackFailedRollbacks, syNetPeerGetRemoteConfirmedTick(),
 		         sSYNetRollbackSyncChecks, sSYNetRollbackIsDesynced);
 	}
 #endif
@@ -1294,7 +1294,7 @@ void syNetRollbackRunBattleUpdate(void (*update)(void))
 	syNetRollbackTraceTick("pre1");
 	update();
 	syNetRollbackTraceTick("post1");
-	syNetSyncHashTick(&sSYNetRollbackFirstHashes[tick % SYNETROLLBACK_SLOT_NUM]);
+	syNetSyncHashTick(&sSYNetRollbackFirstHashes[tick % SYNETROLLBACK_SLOT_NUM], tick);
 	syNetRollbackSaveState(&sSYNetRollbackStates[SYNETROLLBACK_SLOT_COMPARE]);
 
 	first_tick = ((tick + 1) >= sSYNetRollbackSyncTestDistance) ? (tick + 1 - sSYNetRollbackSyncTestDistance) : 0;

@@ -55,7 +55,7 @@ extern u32 syNetSyncHashRNG(void);
 extern u32 syNetSyncHashObjectManager(void);
 extern u32 syNetSyncHashCamera(void);
 extern u32 syNetSyncHashVars(void);
-extern void syNetSyncHashTick(SYNetSyncTickHash *out);
+extern void syNetSyncHashTick(SYNetSyncTickHash *out, u32 tick);
 extern const char *syNetSyncGetColumnName(s32 column);
 #ifdef PORT
 extern void syNetSyncLogState(u32 tick);

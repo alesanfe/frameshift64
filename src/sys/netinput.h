@@ -85,6 +85,7 @@ extern u32 syNetInputGetReplayInputChecksum(void);
 extern void syNetInputSetPublishedChecksumLimit(u32 tick_limit);
 extern u32 syNetInputGetPublishedTickCount(void);
 extern u32 syNetInputGetPublishedInputChecksum(void);
+extern u32 syNetInputGetTickInputChecksum(u32 tick);
 extern void syNetInputSetReplayMetadata(const SYNetInputReplayMetadata *metadata);
 extern sb32 syNetInputGetReplayMetadata(SYNetInputReplayMetadata *out_metadata);
 extern void syNetInputFuncRead(void);

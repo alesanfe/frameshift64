@@ -536,6 +536,27 @@ u32 syNetInputAccumulateInputChecksum(u32 checksum, s32 player, SYNetInputFrame 
 	return checksum;
 }
 
+/* Hash of the inputs published for one tick across all player slots. The
+ * stored history converges to the confirmed values (a wrong prediction is
+ * corrected by the resimulation that follows it), so this agrees on every
+ * peer - unlike the running published checksum, which folds whatever was
+ * published at the time and stays diverged after a mispredict. */
+u32 syNetInputGetTickInputChecksum(u32 tick)
+{
+	SYNetInputFrame frame;
+	u32 checksum = 2166136261U;
+	s32 player;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		if (syNetInputGetHistoryFrame(player, tick, &frame) != FALSE)
+		{
+			checksum = syNetInputAccumulateInputChecksum(checksum, player, &frame);
+		}
+	}
+	return checksum;
+}
+
 u32 syNetInputGetHistoryInputValueChecksumForPlayer(s32 player, u32 tick_begin, u32 frame_count)
 {
 	SYNetInputFrame frame;

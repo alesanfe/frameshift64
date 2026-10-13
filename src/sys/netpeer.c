@@ -63,6 +63,18 @@ void syNetPeerSendLocalInput(void);
 #define SYNETPEER_PACKET_START 3
 #define SYNETPEER_PACKET_BATTLE_READY 4
 #define SYNETPEER_PACKET_BATTLE_START 5
+#define SYNETPEER_PACKET_FORWARD 6
+
+/* FORWARD packets let the star-topology host relay one client's input
+ * datagram to the other clients: [magic][version][type][session]
+ * [src_player][inner packet][checksum]. */
+#define SYNETPEER_FORWARD_HEADER_BYTES (4 + 2 + 2 + 4 + 1)
+#define SYNETPEER_FORWARD_PACKET_BYTES (SYNETPEER_FORWARD_HEADER_BYTES + SYNETPEER_PACKET_BYTES + 4)
+
+/* A remote that goes silent mid-match stops pacing the session after this
+ * many milliseconds: its fighter freezes on the last input but the other
+ * players keep playing. */
+#define SYNETPEER_REMOTE_DROP_MS 10000
 
 typedef struct SYNetPeerPacketFrame
 {
@@ -72,6 +84,35 @@ typedef struct SYNetPeerPacketFrame
 	s8 stick_y;
 
 } SYNetPeerPacketFrame;
+
+/* One per remote participant, indexed by game slot. link is the port_udp
+ * link the remote is reached on (equal to its slot in lobby matches);
+ * link == -1 marks a remote the star host forwards to us (clients) or the
+ * legacy single-peer socket (env-driven sessions). */
+typedef struct SYNetPeerRemote
+{
+	s32 player;
+	s32 link;
+	u32 recv_seq_highwater;
+	sb32 recv_seq_initialized;
+	u32 seq_gaps;
+	u32 seq_duplicates;
+	u32 seq_out_of_order;
+	u32 last_peer_ack_tick;
+	s32 remote_advantage;
+	u32 highest_remote_tick;
+	u32 last_heard_ms;
+	sb32 dropped;
+	sb32 battle_ready;
+	sb32 battle_start_received;
+	u32 last_packet_oldest_tick;
+	u32 last_packet_newest_tick;
+	sb32 last_packet_ticks_valid;
+
+} SYNetPeerRemote;
+
+SYNetPeerRemote sSYNetPeerRemotes[MAXCONTROLLERS];
+s32 sSYNetPeerRemoteCount;
 
 sb32 sSYNetPeerIsEnabled;
 sb32 sSYNetPeerIsConfigured;
@@ -130,6 +171,138 @@ sb32 sSYNetPeerIsSocketExternal;     // the lobby owns the UDP endpoint; don't c
 const char *sSYNetPeerBindSpec;
 const char *sSYNetPeerPeerSpec;
 #endif
+
+SYNetPeerRemote *syNetPeerGetRemoteByPlayer(s32 player)
+{
+	if ((player >= 0) && (player < MAXCONTROLLERS) && (sSYNetPeerRemotes[player].player == player))
+	{
+		return &sSYNetPeerRemotes[player];
+	}
+	return NULL;
+}
+
+SYNetPeerRemote *syNetPeerGetRemoteByLink(s32 link)
+{
+	s32 player;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		if ((sSYNetPeerRemotes[player].player == player) && (sSYNetPeerRemotes[player].link == link))
+		{
+			return &sSYNetPeerRemotes[player];
+		}
+	}
+	return NULL;
+}
+
+/* Tick all live remotes have confirmed up to: the session may only run ahead
+ * of the *slowest* remote input stream, so pacing uses the minimum. */
+u32 syNetPeerGetRemoteConfirmedTick(void)
+{
+	u32 confirmed = 0xFFFFFFFFU;
+	s32 player;
+	sb32 any = FALSE;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		if ((remote->player == player) && (remote->dropped == FALSE))
+		{
+			u32 next = syNetInputGetRemoteNextUnconfirmed(player);
+
+			if (next < confirmed)
+			{
+				confirmed = next;
+			}
+			any = TRUE;
+		}
+	}
+	/* no live remotes: nothing left to wait on, free-run */
+	return (any != FALSE) ? confirmed : 0xFFFFFFFFU;
+}
+
+/* Worst (largest) frame advantage reported by any live remote: if one peer
+ * runs far behind, everyone eases off so it can catch up. */
+s32 syNetPeerGetWorstRemoteAdvantage(void)
+{
+	s32 worst = 0;
+	s32 player;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		if ((remote->player == player) && (remote->dropped == FALSE) &&
+			(remote->remote_advantage > worst))
+		{
+			worst = remote->remote_advantage;
+		}
+	}
+	return worst;
+}
+
+/* Highest input tick seen so far, per remote (or the minimum across live
+ * remotes when for_all != FALSE): goes into the packet's ack field. */
+u32 syNetPeerGetAckTick(const SYNetPeerRemote *remote)
+{
+	return (remote != NULL) ? remote->highest_remote_tick : 0;
+}
+
+void syNetPeerResetRemote(SYNetPeerRemote *remote, s32 player, s32 link)
+{
+	memset(remote, 0, sizeof(*remote));
+	remote->player = player;
+	remote->link = link;
+	remote->last_heard_ms = 0;
+	remote->remote_advantage = 0;
+	remote->highest_remote_tick = 0;
+}
+
+void syNetPeerResetRemotes(void)
+{
+	s32 player;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		sSYNetPeerRemotes[player].player = -1;
+		sSYNetPeerRemotes[player].link = -1;
+	}
+	sSYNetPeerRemoteCount = 0;
+}
+
+/* A packet just arrived from this remote: it is alive. If it had been
+ * dropped for silence it rejoins pacing; its fighter unfreezes as its
+ * real inputs replace the predictions. */
+void syNetPeerTouchRemote(SYNetPeerRemote *remote)
+{
+#ifdef PORT
+	remote->last_heard_ms = port_udp_now_ms();
+	if (remote->dropped != FALSE)
+	{
+		remote->dropped = FALSE;
+		port_log("SSB64 NetPeer: remote player %d resumed - back in pacing\n", remote->player);
+	}
+#endif
+}
+
+sb32 syNetPeerAddRemote(s32 player, s32 link)
+{
+	if ((player < 0) || (player >= MAXCONTROLLERS) || (player == sSYNetPeerLocalPlayer))
+	{
+		return FALSE;
+	}
+	syNetPeerResetRemote(&sSYNetPeerRemotes[player], player, link);
+#ifdef PORT
+	/* The drop clock starts now: a remote that never sends a single packet
+	 * stops gating the session after SYNETPEER_REMOTE_DROP_MS instead of
+	 * blocking the start barrier forever. */
+	sSYNetPeerRemotes[player].last_heard_ms = port_udp_now_ms();
+#endif
+	sSYNetPeerRemoteCount++;
+	sSYNetPeerRemotePlayer = player;    // last added; keeps single-remote callers/logs sane
+	return TRUE;
+}
 
 u32 syNetPeerChecksumAccumulateU32(u32 checksum, u32 value)
 {
@@ -402,6 +575,23 @@ void syNetPeerSendBytes(const u8 *buffer, u32 size)
 {
 	port_udp_send(buffer, (s32)size);
 }
+
+/* Lobby (external-socket) matches send each datagram on the remote's link;
+ * env-driven sessions share the legacy single-peer socket. */
+void syNetPeerSendBytesTo(const SYNetPeerRemote *remote, const u8 *buffer, u32 size)
+{
+	if (sSYNetPeerIsSocketExternal != FALSE)
+	{
+		/* link == -1 remotes are reached through the star host's FORWARD
+		 * wrapper: there is no direct path to send on. */
+		if ((remote != NULL) && (remote->link >= 0))
+		{
+			port_udp_link_send(remote->link, buffer, (s32)size);
+		}
+		return;
+	}
+	syNetPeerSendBytes(buffer, size);
+}
 #endif
 
 void syNetPeerSendControlPacket(u16 packet_type)
@@ -410,6 +600,7 @@ void syNetPeerSendControlPacket(u16 packet_type)
 	u8 buffer[SYNETPEER_CONTROL_PACKET_BYTES];
 	u8 *cursor = buffer;
 	u32 checksum;
+	s32 player;
 
 	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
 	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
@@ -417,7 +608,15 @@ void syNetPeerSendControlPacket(u16 packet_type)
 	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
 	checksum = syNetPeerChecksumBytes(buffer, cursor - buffer);
 	syNetPeerWriteU32(&cursor, checksum);
-	syNetPeerSendBytes(buffer, SYNETPEER_CONTROL_PACKET_BYTES);
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		if ((remote->player == player) && (remote->dropped == FALSE))
+		{
+			syNetPeerSendBytesTo(remote, buffer, SYNETPEER_CONTROL_PACKET_BYTES);
+		}
+	}
 #endif
 }
 
@@ -438,7 +637,7 @@ void syNetPeerSendMatchConfigPacket(void)
 	syNetPeerSendBytes(buffer, SYNETPEER_BOOTSTRAP_PACKET_BYTES);
 }
 
-void syNetPeerHandleControlPacket(const u8 *buffer, s32 size)
+void syNetPeerHandleControlPacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote)
 {
 	const u8 *cursor = buffer;
 	u32 magic;
@@ -447,6 +646,7 @@ void syNetPeerHandleControlPacket(const u8 *buffer, s32 size)
 	u32 expected_checksum;
 	u16 version;
 	u16 packet_type;
+	s32 remote_player = (remote != NULL) ? remote->player : sSYNetPeerRemotePlayer;
 
 	if (size != SYNETPEER_CONTROL_PACKET_BYTES)
 	{
@@ -466,6 +666,10 @@ void syNetPeerHandleControlPacket(const u8 *buffer, s32 size)
 		sSYNetPeerPacketsDropped++;
 		return;
 	}
+	if (remote != NULL)
+	{
+		syNetPeerTouchRemote(remote);
+	}
 	if (packet_type == SYNETPEER_PACKET_READY)
 	{
 		sSYNetPeerBootstrapPeerReady = TRUE;
@@ -476,21 +680,29 @@ void syNetPeerHandleControlPacket(const u8 *buffer, s32 size)
 	}
 	else if (packet_type == SYNETPEER_PACKET_BATTLE_READY)
 	{
-		if (sSYNetPeerBattlePeerReady == FALSE)
+		if ((remote == NULL) || (remote->battle_ready == FALSE))
 		{
 			port_log("SSB64 NetPeer: received BATTLE_READY role=%s tick=%u local=%d remote=%d\n",
 			         (sSYNetPeerBootstrapIsHost != FALSE) ? "host" : "client",
-			         syNetInputGetTick(), sSYNetPeerLocalPlayer, sSYNetPeerRemotePlayer);
+			         syNetInputGetTick(), sSYNetPeerLocalPlayer, remote_player);
+		}
+		if (remote != NULL)
+		{
+			remote->battle_ready = TRUE;
 		}
 		sSYNetPeerBattlePeerReady = TRUE;
 	}
 	else if (packet_type == SYNETPEER_PACKET_BATTLE_START)
 	{
-		if (sSYNetPeerBattleStartReceived == FALSE)
+		if ((remote == NULL) || (remote->battle_start_received == FALSE))
 		{
 			port_log("SSB64 NetPeer: received BATTLE_START role=%s tick=%u local=%d remote=%d\n",
 			         (sSYNetPeerBootstrapIsHost != FALSE) ? "host" : "client",
-			         syNetInputGetTick(), sSYNetPeerLocalPlayer, sSYNetPeerRemotePlayer);
+			         syNetInputGetTick(), sSYNetPeerLocalPlayer, remote_player);
+		}
+		if (remote != NULL)
+		{
+			remote->battle_start_received = TRUE;
 		}
 		sSYNetPeerBattleStartReceived = TRUE;
 	}
@@ -538,7 +750,7 @@ void syNetPeerHandleBootstrapPacket(const u8 *buffer, s32 size)
 {
 	if (size == SYNETPEER_CONTROL_PACKET_BYTES)
 	{
-		syNetPeerHandleControlPacket(buffer, size);
+		syNetPeerHandleControlPacket(buffer, size, syNetPeerGetRemoteByPlayer(sSYNetPeerRemotePlayer));
 	}
 	else if (size == SYNETPEER_BOOTSTRAP_PACKET_BYTES)
 	{
@@ -668,6 +880,7 @@ void syNetPeerInitDebugEnv(void)
 	sSYNetPeerIsConfigured = FALSE;
 	sSYNetPeerLocalPlayer = 0;
 	sSYNetPeerRemotePlayer = 1;
+	syNetPeerResetRemotes();
 	sSYNetPeerInputDelay = SYNETPEER_DEFAULT_INPUT_DELAY;
 	sSYNetPeerSessionID = SYNETPEER_DEFAULT_SESSION_ID;
 	sSYNetPeerBootstrapIsEnabled = FALSE;
@@ -768,6 +981,7 @@ void syNetPeerInitDebugEnv(void)
 	}
 	sSYNetPeerBindSpec = bind_env;
 	sSYNetPeerPeerSpec = peer_env;
+	syNetPeerAddRemote(sSYNetPeerRemotePlayer, -1);   // legacy single-peer socket
 	sSYNetPeerIsConfigured = TRUE;
 	port_log("SSB64 NetPeer: configured local=%d remote=%d delay=%u session=%u bootstrap=%d host=%d seed=%u bind=%s peer=%s\n",
 	         sSYNetPeerLocalPlayer, sSYNetPeerRemotePlayer, sSYNetPeerInputDelay,
@@ -819,7 +1033,7 @@ void syNetPeerStartVSSession(void)
 	{
 		s32 slot;
 
-		/* Slots nobody plays must read identically on both peers: the
+		/* Slots nobody plays must read identically on every peer: the
 		 * Saved source with no saved frames resolves to neutral input.
 		 * Left as Local they'd read whatever extra controllers happen to
 		 * be plugged into each PC (a pause or reset combo on one peer only). */
@@ -827,11 +1041,17 @@ void syNetPeerStartVSSession(void)
 		{
 			syNetInputSetSlotSource(slot, nSYNetInputSourceSaved);
 		}
+		syNetInputSetSlotSource(sSYNetPeerLocalPlayer, nSYNetInputSourceLocal);
+		for (slot = 0; slot < MAXCONTROLLERS; slot++)
+		{
+			if (sSYNetPeerRemotes[slot].player == slot)
+			{
+				syNetInputSetSlotSource(slot, nSYNetInputSourceRemotePredicted);
+				syNetInputPreconfirmRemote(slot, sSYNetPeerInputDelay);
+			}
+		}
 	}
-	syNetInputSetSlotSource(sSYNetPeerLocalPlayer, nSYNetInputSourceLocal);
-	syNetInputSetSlotSource(sSYNetPeerRemotePlayer, nSYNetInputSourceRemotePredicted);
 	syNetInputSetLocalDelay(sSYNetPeerInputDelay);
-	syNetInputPreconfirmRemote(sSYNetPeerRemotePlayer, sSYNetPeerInputDelay);
 	syNetInputSetFuzzSeed(sSYNetPeerFuzzSeed);
 	syNetInputSetLocalDevice(sSYNetPeerLocalPlayer, (sSYNetPeerIsSocketExternal != FALSE) ? 0 : sSYNetPeerLocalPlayer);
 	sSYNetPeerFrameReady = FALSE;
@@ -865,7 +1085,8 @@ static sb32 syNetPeerCheckBarrierReleased(void)
 static sb32 syNetPeerCheckPacing(void)
 {
 	u32 tick = syNetInputGetTick();
-	u32 confirmed = syNetInputGetRemoteNextUnconfirmed(sSYNetPeerRemotePlayer);
+	u32 confirmed = syNetPeerGetRemoteConfirmedTick();
+	s32 remote_advantage = syNetPeerGetWorstRemoteAdvantage();
 
 	if (sSYNetPeerIsRollback == FALSE)
 	{
@@ -880,7 +1101,7 @@ static sb32 syNetPeerCheckPacing(void)
 			sSYNetPeerStallFrames++;
 			return FALSE;
 		}
-		if (((advantage - sSYNetPeerRemoteAdvantage) >= SYNETPEER_TIMESYNC_THRESHOLD) &&
+		if (((advantage - remote_advantage) >= SYNETPEER_TIMESYNC_THRESHOLD) &&
 		    (sSYNetPeerFramesSinceTimeSync >= SYNETPEER_TIMESYNC_INTERVAL))
 		{
 			sSYNetPeerFramesSinceTimeSync = 0;
@@ -939,13 +1160,14 @@ sb32 syNetPeerCheckStartBarrierReleased(void)
 	return syNetPeerCheckBattleExecutionReady();
 }
 
-void syNetPeerBuildPacket(u8 *buffer, u32 *out_size)
+void syNetPeerBuildPacket(u8 *buffer, u32 *out_size, const SYNetPeerRemote *remote)
 {
 	SYNetInputFrame history_frame;
 	SYNetPeerPacketFrame frames[SYNETPEER_MAX_PACKET_FRAMES];
 	SYNetPeerPacketFrame zero_frame;
 	u8 *cursor = buffer;
 	u32 latest_tick;
+	u32 ack_tick = syNetPeerGetAckTick((SYNetPeerRemote *)remote);
 	u32 checksum;
 	s32 frame_count = 0;
 	s32 back;
@@ -973,7 +1195,7 @@ void syNetPeerBuildPacket(u8 *buffer, u32 *out_size)
 	checksum = syNetPeerChecksumPacket
 	(
 		sSYNetPeerSessionID,
-		sSYNetPeerHighestRemoteTick,
+		ack_tick,
 		sSYNetPeerSendSeq,
 		(u8)sSYNetPeerLocalPlayer,
 		(u8)frame_count,
@@ -983,18 +1205,19 @@ void syNetPeerBuildPacket(u8 *buffer, u32 *out_size)
 	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
 	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
 	{
-		s32 advantage = (s32)syNetInputGetTick() - (s32)syNetInputGetRemoteNextUnconfirmed(sSYNetPeerRemotePlayer);
+		s32 remote_slot = (remote != NULL) ? remote->player : sSYNetPeerRemotePlayer;
+		s32 advantage = (s32)syNetInputGetTick() - (s32)syNetInputGetRemoteNextUnconfirmed(remote_slot);
 
 		advantage = (advantage < -32768) ? -32768 : (advantage > 32767) ? 32767 : advantage;
 		syNetPeerWriteU16(&cursor, (u16)(s16)advantage);
 	}
 	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
-	syNetPeerWriteU32(&cursor, sSYNetPeerHighestRemoteTick);
+	syNetPeerWriteU32(&cursor, ack_tick);
 	syNetPeerWriteU32(&cursor, sSYNetPeerSendSeq);
 	syNetPeerWriteU8(&cursor, (u8)sSYNetPeerLocalPlayer);
 	syNetPeerWriteU8(&cursor, (u8)frame_count);
 	syNetPeerWriteU8(&cursor, (u8)sSYNetPeerLocalPlayer);
-	syNetPeerWriteU8(&cursor, (u8)sSYNetPeerRemotePlayer);
+	syNetPeerWriteU8(&cursor, (u8)((remote != NULL) ? remote->player : sSYNetPeerRemotePlayer));
 
 	for (i = 0; i < SYNETPEER_MAX_PACKET_FRAMES; i++)
 	{
@@ -1026,14 +1249,35 @@ void syNetPeerSendLocalInput(void)
 #ifdef PORT
 	u8 buffer[SYNETPEER_PACKET_BYTES];
 	u32 size;
+	s32 player;
+	sb32 sent = FALSE;
 
-	syNetPeerBuildPacket(buffer, &size);
-
-	if (size == 0)
+	for (player = 0; player < MAXCONTROLLERS; player++)
 	{
-		return;
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		/* link == -1 remotes are reached through the star host's forwarding;
+		 * nothing is sent to them directly. */
+		if ((remote->player != player) || (remote->dropped != FALSE) ||
+			((sSYNetPeerIsSocketExternal != FALSE) && (remote->link < 0)))
+		{
+			continue;
+		}
+		syNetPeerBuildPacket(buffer, &size, remote);
+
+		if (size == 0)
+		{
+			continue;
+		}
+		if (((sSYNetPeerIsSocketExternal != FALSE) &&
+		     (port_udp_link_send(remote->link, buffer, (s32)size) == (s32)size)) ||
+		    ((sSYNetPeerIsSocketExternal == FALSE) &&
+		     (port_udp_send(buffer, (s32)size) == (s32)size)))
+		{
+			sent = TRUE;
+		}
 	}
-	if (port_udp_send(buffer, (s32)size) == (s32)size)
+	if (sent != FALSE)
 	{
 		sSYNetPeerPacketsSent++;
 		sSYNetPeerSendSeq++;
@@ -1041,7 +1285,48 @@ void syNetPeerSendLocalInput(void)
 #endif
 }
 
-void syNetPeerHandlePacket(const u8 *buffer, s32 size)
+/* The star host relays a client's datagram to the other clients so every
+ * participant sees every input stream without client<->client NAT punching. */
+void syNetPeerForwardPacket(const SYNetPeerRemote *from, const u8 *buffer, s32 size)
+{
+#ifdef PORT
+	u8 wrapper[SYNETPEER_FORWARD_PACKET_BYTES];
+	u8 *cursor = wrapper;
+	u32 checksum;
+	s32 player;
+
+	if ((sSYNetPeerIsSocketExternal == FALSE) || (sSYNetPeerBootstrapIsHost == FALSE) ||
+		(sSYNetPeerRemoteCount < 2) || (size <= 0) ||
+		(size + SYNETPEER_FORWARD_HEADER_BYTES + 4 > SYNETPEER_FORWARD_PACKET_BYTES))
+	{
+		return;
+	}
+	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
+	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
+	syNetPeerWriteU16(&cursor, SYNETPEER_PACKET_FORWARD);
+	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
+	syNetPeerWriteU8(&cursor, (u8)from->player);
+	memcpy(cursor, buffer, size);
+	cursor += size;
+	checksum = syNetPeerChecksumBytes(wrapper, cursor - wrapper);
+	syNetPeerWriteU32(&cursor, checksum);
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		if ((remote->player == player) && (remote->dropped == FALSE) &&
+			(remote->link >= 0) && (remote != from))
+		{
+			port_udp_link_send(remote->link, wrapper, (s32)(cursor - wrapper));
+		}
+	}
+#endif
+}
+
+/* src is the remote this datagram came from (or, for forwarded packets, the
+ * client the star host relays). forwarded packets skip the remote_player
+ * check because the inner datagram was addressed to the host. */
+void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, sb32 forwarded)
 {
 	const u8 *cursor = buffer;
 	SYNetPeerPacketFrame frames[SYNETPEER_MAX_PACKET_FRAMES];
@@ -1060,12 +1345,13 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 	u32 check_tick;
 	u32 check_hash;
 	u32 current_tick = syNetInputGetTick();
+	s32 src_player = (remote != NULL) ? remote->player : sSYNetPeerRemotePlayer;
 	s32 i;
 
 #ifdef PORT
 	if (size == SYNETPEER_CONTROL_PACKET_BYTES)
 	{
-		syNetPeerHandleControlPacket(buffer, size);
+		syNetPeerHandleControlPacket(buffer, size, remote);
 		return;
 	}
 #endif
@@ -1088,9 +1374,9 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 	packet_remote_player = syNetPeerReadU8(&cursor);
 
 	if ((magic != SYNETPEER_MAGIC) || (version != SYNETPEER_VERSION) ||
-		(session_id != sSYNetPeerSessionID) || (player != (u8)sSYNetPeerRemotePlayer) ||
-		(packet_local_player != (u8)sSYNetPeerRemotePlayer) ||
-		(packet_remote_player != (u8)sSYNetPeerLocalPlayer) ||
+		(session_id != sSYNetPeerSessionID) || (player != (u8)src_player) ||
+		(packet_local_player != (u8)src_player) ||
+		((forwarded == FALSE) && (packet_remote_player != (u8)sSYNetPeerLocalPlayer)) ||
 		(frame_count > SYNETPEER_MAX_PACKET_FRAMES))
 	{
 		sSYNetPeerPacketsDropped++;
@@ -1114,6 +1400,11 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 		return;
 	}
 	sSYNetPeerPacketsReceived++;
+	if (remote != NULL)
+	{
+		remote->remote_advantage = remote_advantage;
+		syNetPeerTouchRemote(remote);
+	}
 	sSYNetPeerRemoteAdvantage = remote_advantage;
 
 	if (check_tick != 0xFFFFFFFFU)
@@ -1121,26 +1412,33 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 		syNetRollbackCheckRemoteConfirmedHash(check_tick, check_hash);
 	}
 
-	if (sSYNetPeerRecvSeqInitialized == FALSE)
+	if (remote != NULL)
 	{
-		sSYNetPeerRecvSeqHighWater = packet_seq;
-		sSYNetPeerRecvSeqInitialized = TRUE;
-	}
-	else
-	{
-		if (packet_seq > sSYNetPeerRecvSeqHighWater)
+		if (remote->recv_seq_initialized == FALSE)
 		{
-			sSYNetPeerSeqGaps += packet_seq - sSYNetPeerRecvSeqHighWater - 1U;
-			sSYNetPeerRecvSeqHighWater = packet_seq;
-		}
-		else if (packet_seq == sSYNetPeerRecvSeqHighWater)
-		{
-			sSYNetPeerSeqDuplicates++;
+			remote->recv_seq_highwater = packet_seq;
+			remote->recv_seq_initialized = TRUE;
 		}
 		else
 		{
-			sSYNetPeerSeqOutOfOrder++;
+			if (packet_seq > remote->recv_seq_highwater)
+			{
+				remote->seq_gaps += packet_seq - remote->recv_seq_highwater - 1U;
+				sSYNetPeerSeqGaps += packet_seq - remote->recv_seq_highwater - 1U;
+				remote->recv_seq_highwater = packet_seq;
+			}
+			else if (packet_seq == remote->recv_seq_highwater)
+			{
+				remote->seq_duplicates++;
+				sSYNetPeerSeqDuplicates++;
+			}
+			else
+			{
+				remote->seq_out_of_order++;
+				sSYNetPeerSeqOutOfOrder++;
+			}
 		}
+		remote->last_peer_ack_tick = ack_tick;
 	}
 	sSYNetPeerLastPeerAckTick = ack_tick;
 
@@ -1160,15 +1458,29 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 				newest_tick_bundle = frames[i].tick;
 			}
 		}
+		if (remote != NULL)
+		{
+			remote->last_packet_oldest_tick = oldest_tick_bundle;
+			remote->last_packet_newest_tick = newest_tick_bundle;
+			remote->last_packet_ticks_valid = TRUE;
+		}
 		sSYNetPeerLastPacketOldestTick = oldest_tick_bundle;
 		sSYNetPeerLastPacketNewestTick = newest_tick_bundle;
 		sSYNetPeerLastPacketTicksValid = TRUE;
 	}
-	else sSYNetPeerLastPacketTicksValid = FALSE;
+	else
+	{
+		if (remote != NULL)
+		{
+			remote->last_packet_ticks_valid = FALSE;
+		}
+		sSYNetPeerLastPacketTicksValid = FALSE;
+	}
 
 	for (i = 0; i < frame_count; i++)
 	{
-		sb32 is_new_remote_tick = (frames[i].tick > sSYNetPeerHighestRemoteTick) ? TRUE : FALSE;
+		u32 *highest = (remote != NULL) ? &remote->highest_remote_tick : &sSYNetPeerHighestRemoteTick;
+		sb32 is_new_remote_tick = (frames[i].tick > *highest) ? TRUE : FALSE;
 
 		if ((is_new_remote_tick != FALSE) && (frames[i].tick < current_tick))
 		{
@@ -1176,40 +1488,141 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size)
 		}
 		if (is_new_remote_tick != FALSE)
 		{
-			sSYNetPeerHighestRemoteTick = frames[i].tick;
+			*highest = frames[i].tick;
 		}
 		syNetInputSetRemoteInput
 		(
-			sSYNetPeerRemotePlayer,
+			src_player,
 			frames[i].tick,
 			frames[i].buttons,
 			frames[i].stick_x,
 			frames[i].stick_y
 		);
 		sSYNetPeerFramesStaged++;
-		sSYNetPeerInputChecksum = syNetPeerChecksumAccumulateU32(sSYNetPeerInputChecksum, sSYNetPeerRemotePlayer);
+		sSYNetPeerInputChecksum = syNetPeerChecksumAccumulateU32(sSYNetPeerInputChecksum, src_player);
 		sSYNetPeerInputChecksum = syNetPeerChecksumAccumulateFrame(sSYNetPeerInputChecksum, &frames[i]);
 	}
+	if ((remote != NULL) && (forwarded == FALSE))
+	{
+		syNetPeerForwardPacket(remote, buffer, size);
+	}
+}
+
+/* Unwrap a FORWARD datagram (clients only): the inner packet is handled as
+ * if it had arrived from its original sender. */
+void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size)
+{
+#ifdef PORT
+	const u8 *cursor = buffer;
+	const u8 *check_cursor;
+	u32 magic;
+	u32 session_id;
+	u32 checksum;
+	u32 expected_checksum;
+	u16 version;
+	u16 packet_type;
+	u8 src_player;
+	SYNetPeerRemote *remote;
+
+	if (size < SYNETPEER_FORWARD_HEADER_BYTES + 4)
+	{
+		return;
+	}
+	expected_checksum = syNetPeerChecksumBytes(buffer, size - 4);
+
+	magic = syNetPeerReadU32(&cursor);
+	version = syNetPeerReadU16(&cursor);
+	packet_type = syNetPeerReadU16(&cursor);
+	session_id = syNetPeerReadU32(&cursor);
+	src_player = syNetPeerReadU8(&cursor);
+	check_cursor = buffer + size - 4;
+	checksum = syNetPeerReadU32(&check_cursor);
+
+	if ((magic != SYNETPEER_MAGIC) || (version != SYNETPEER_VERSION) ||
+		(packet_type != SYNETPEER_PACKET_FORWARD) ||
+		(session_id != sSYNetPeerSessionID) || (checksum != expected_checksum) ||
+		(src_player == (u8)sSYNetPeerLocalPlayer))
+	{
+		sSYNetPeerPacketsDropped++;
+		return;
+	}
+	remote = syNetPeerGetRemoteByPlayer(src_player);
+	if (remote == NULL)
+	{
+		sSYNetPeerPacketsDropped++;
+		return;
+	}
+	syNetPeerHandlePacket(cursor, size - SYNETPEER_FORWARD_HEADER_BYTES - 4, remote, TRUE);
+#endif
+}
+
+/* FORWARD datagrams are INPUT packets wrapped by the star host; they are
+ * bigger than a bare INPUT packet, so size alone doesn't identify them.
+ * Check the type field of the fixed header instead. */
+sb32 syNetPeerCheckForwardPacket(const u8 *buffer, s32 size)
+{
+	const u8 *cursor = buffer;
+	u32 magic;
+	u16 version;
+	u16 packet_type;
+
+	if (size < SYNETPEER_FORWARD_HEADER_BYTES + 4)
+	{
+		return FALSE;
+	}
+	magic = syNetPeerReadU32(&cursor);
+	version = syNetPeerReadU16(&cursor);
+	packet_type = syNetPeerReadU16(&cursor);
+
+	return ((magic == SYNETPEER_MAGIC) && (version == SYNETPEER_VERSION) &&
+	        (packet_type == SYNETPEER_PACKET_FORWARD)) ? TRUE : FALSE;
 }
 
 void syNetPeerReceiveRemoteInput(void)
 {
 #ifdef PORT
-	u8 buffer[SYNETPEER_PACKET_BYTES];
+	u8 buffer[SYNETPEER_FORWARD_PACKET_BYTES];
 
 	while (TRUE)
 	{
-		s32 size = port_udp_recv(buffer, sizeof(buffer));
+		s32 size;
+		SYNetPeerRemote *remote;
 
-		if (size <= 0)
+		if (sSYNetPeerIsSocketExternal != FALSE)
 		{
-			if (size < 0)
+			s32 link = -1;
+
+			size = port_udp_link_recv(&link, buffer, sizeof(buffer));
+			if (size <= 0)
+			{
+				break;
+			}
+			if (syNetPeerCheckForwardPacket(buffer, size) != FALSE)
+			{
+				syNetPeerHandleForwardPacket(buffer, size);
+				continue;
+			}
+			remote = syNetPeerGetRemoteByLink(link);
+			if (remote == NULL)
 			{
 				sSYNetPeerPacketsDropped++;
+				continue;
 			}
-			break;
 		}
-		syNetPeerHandlePacket(buffer, (s32)size);
+		else
+		{
+			size = port_udp_recv(buffer, sizeof(buffer));
+			if (size <= 0)
+			{
+				if (size < 0)
+				{
+					sSYNetPeerPacketsDropped++;
+				}
+				break;
+			}
+			remote = syNetPeerGetRemoteByPlayer(sSYNetPeerRemotePlayer);
+		}
+		syNetPeerHandlePacket(buffer, (s32)size, remote, FALSE);
 	}
 #endif
 }
@@ -1360,6 +1773,60 @@ void syNetPeerReleaseBattleBarrier(const char *reason)
 	}
 }
 
+/* Only remotes we talk to directly gate the barrier: on a client, the other
+ * clients arrive through the star host's forwarding (link == -1) and the
+ * host's BATTLE_START already implies they were ready. */
+sb32 syNetPeerCheckAllBattleReady(void)
+{
+	s32 player;
+	sb32 any = FALSE;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		if ((remote->player == player) && (remote->link >= 0) && (remote->dropped == FALSE))
+		{
+			if (remote->battle_ready == FALSE)
+			{
+				return FALSE;
+			}
+			any = TRUE;
+		}
+	}
+	if ((any == FALSE) && (sSYNetPeerIsSocketExternal == FALSE))
+	{
+		/* legacy single-peer socket: the remote has link == -1 */
+		for (player = 0; player < MAXCONTROLLERS; player++)
+		{
+			SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+			if ((remote->player == player) && (remote->dropped == FALSE))
+			{
+				return remote->battle_ready;
+			}
+		}
+	}
+	return any;
+}
+
+sb32 syNetPeerCheckAllBattleStartReceived(void)
+{
+	s32 player;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		if ((remote->player == player) && (remote->dropped == FALSE) &&
+			(remote->battle_start_received == FALSE))
+		{
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
 void syNetPeerUpdateStartBarrier(void)
 {
 #ifdef PORT
@@ -1370,14 +1837,14 @@ void syNetPeerUpdateStartBarrier(void)
 	sSYNetPeerBattleBarrierWaitFrames++;
 	syNetPeerSendControlPacket(SYNETPEER_PACKET_BATTLE_READY);
 
-	if (sSYNetPeerBattlePeerReady != FALSE)
+	if (syNetPeerCheckAllBattleReady() != FALSE)
 	{
 		if (sSYNetPeerBootstrapIsHost != FALSE)
 		{
 			syNetPeerSendControlPacket(SYNETPEER_PACKET_BATTLE_START);
 			sSYNetPeerBattleStartSent = TRUE;
 
-			if (sSYNetPeerBattleStartReceived != FALSE)
+			if (syNetPeerCheckAllBattleStartReceived() != FALSE)
 			{
 				sSYNetPeerBattleStartRepeatFrames = SYNETPEER_BATTLE_START_REPEAT_FRAMES;
 				syNetPeerReleaseBattleBarrier("client-ack");
@@ -1395,17 +1862,49 @@ void syNetPeerUpdateStartBarrier(void)
 #endif
 }
 
+/* A remote that has gone silent for SYNETPEER_REMOTE_DROP_MS is excluded
+ * from pacing so one lost player can't freeze everyone else's match. */
+void syNetPeerUpdateRemoteDrops(void)
+{
+#ifdef PORT
+	u32 now = port_udp_now_ms();
+	s32 player;
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		if ((remote->player == player) && (remote->dropped == FALSE) &&
+			(remote->last_heard_ms != 0) &&
+			(now - remote->last_heard_ms > SYNETPEER_REMOTE_DROP_MS))
+		{
+			remote->dropped = TRUE;
+			port_log("SSB64 NetPeer: remote player %d silent for %ums - dropping from pacing\n",
+			         player, now - remote->last_heard_ms);
+		}
+	}
+#endif
+}
+
 void syNetPeerUpdateBattleGate(void)
 {
 	if (sSYNetPeerIsActive == FALSE)
 	{
 		return;
 	}
+	sb32 dbg = (getenv("SSB64_NETPLAY_DEBUG_STAGES") != NULL) ? TRUE : FALSE;
+
+	if (dbg != FALSE) port_log("SSB64 DBG: gate:recv enter\n");
 	syNetPeerReceiveRemoteInput();
+	if (dbg != FALSE) port_log("SSB64 DBG: gate:drops\n");
+	syNetPeerUpdateRemoteDrops();
+	if (dbg != FALSE) port_log("SSB64 DBG: gate:barrier\n");
 	syNetPeerUpdateStartBarrier();
 
 	if (syNetPeerCheckBattleExecutionReady() == FALSE)
 	{
+		sb32 dbg = (getenv("SSB64_NETPLAY_DEBUG_STAGES") != NULL) ? TRUE : FALSE;
+
 		sSYNetPeerExecutionHoldFrames++;
 		syNetPeerLogExecutionHold();
 
@@ -1413,7 +1912,9 @@ void syNetPeerUpdateBattleGate(void)
 		 * other's input would never resume. */
 		if (syNetPeerCheckBarrierReleased() != FALSE)
 		{
+			if (dbg != FALSE) port_log("SSB64 DBG: hold:send enter\n");
 			syNetPeerSendLocalInput();
+			if (dbg != FALSE) port_log("SSB64 DBG: hold:send exit\n");
 		}
 	}
 	else syNetPeerLogExecutionBegin();
@@ -1445,17 +1946,47 @@ void syNetPeerUpdate(void)
  * same way the env-driven bootstrap does, applies the agreed match and asks
  * the scene manager to enter VS battle. Both peers call it with mirrored
  * player slots and identical metadata; the in-battle start barrier then
- * aligns tick 0. */
-void syNetPeerStartOnline(s32 local_player, s32 remote_player, u32 delay, sb32 is_host, const SYNetInputReplayMetadata *metadata)
+ * aligns tick 0.
+ *
+ * wire_slots maps each game slot (0..player_count-1, always contiguous) to
+ * the room slot the lobby transport links are keyed by. The lobby assigns
+ * room slots sparsely when a middle player leaves, so game slot != room
+ * slot in that case; NULL means the identity map. */
+void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is_host,
+                          const SYNetInputReplayMetadata *metadata, const s32 *wire_slots)
 {
 #ifdef PORT
 	extern void portSCManagerRequestScene(s32 target);
+	s32 player;
 
 	sSYNetPeerIsEnabled = TRUE;
 	sSYNetPeerIsConfigured = TRUE;
 	sSYNetPeerIsSocketExternal = TRUE;
 	sSYNetPeerLocalPlayer = local_player;
-	sSYNetPeerRemotePlayer = remote_player;
+	syNetPeerResetRemotes();
+	if (is_host != FALSE)
+	{
+		/* star topology: the host keeps one link per client, keyed by the
+		 * remote's room slot */
+		for (player = 1; player < player_count; player++)
+		{
+			syNetPeerAddRemote(player, (wire_slots != NULL) ? wire_slots[player] : player);
+		}
+	}
+	else
+	{
+		/* clients link only to the host (always room slot 0); the other
+		 * clients' input streams arrive inside FORWARD packets on it */
+		syNetPeerAddRemote(0, 0);
+		for (player = 1; player < player_count; player++)
+		{
+			if (player != local_player)
+			{
+				syNetPeerAddRemote(player, -1);
+			}
+		}
+	}
+	sSYNetPeerRemotePlayer = (local_player == 0) ? 1 : 0;
 	sSYNetPeerInputDelay = delay;
 	sSYNetPeerSessionID = metadata->rng_seed;
 	sSYNetPeerIsRollback = TRUE;
@@ -1468,27 +1999,29 @@ void syNetPeerStartOnline(s32 local_player, s32 remote_player, u32 delay, sb32 i
 	syNetPeerApplyBootstrapMetadata(metadata);
 	portSCManagerRequestScene(nSCKindVSBattle);
 
-	port_log("SSB64 NetPeer: online match local=%d remote=%d delay=%u host=%d stage=%u seed=%u\n",
-	         local_player, remote_player, delay, is_host, metadata->stage_kind, metadata->rng_seed);
+	port_log("SSB64 NetPeer: online match local=%d players=%d remotes=%d delay=%u host=%d stage=%u seed=%u\n",
+	         local_player, player_count, sSYNetPeerRemoteCount, delay, is_host, metadata->stage_kind, metadata->rng_seed);
 #endif
 }
 
-/* Online match rules: 2 humans, stock battle. */
-void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 stage, u32 stocks, sb32 is_items, u32 seed, const u8 *fighter_kinds, const u8 *costumes)
+/* Online match rules: player_count humans (slots 0..player_count-1), stock battle. */
+void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 stage, u32 stocks, sb32 is_items, u32 seed,
+                                 u32 player_count, const u8 *fighter_kinds, const u8 *costumes)
 {
-	s32 player;
+	u32 player;
 
 	syNetPeerMakeBootstrapMetadata(metadata);
 	metadata->stage_kind = stage;
 	metadata->stocks = (stocks > 0) ? stocks - 1 : 0;   // the engine stores lives - 1 (3 = "4 Stocks")
 	metadata->rng_seed = seed;
+	metadata->player_count = player_count;
 
 	if (is_items != FALSE)
 	{
 		metadata->item_toggles = ~0;
 		metadata->item_switch = metadata->item_appearance_rate = nSCBattleItemSwitchMiddle;
 	}
-	for (player = 0; player < 2; player++)
+	for (player = 0; (player < player_count) && (player < MAXCONTROLLERS); player++)
 	{
 		metadata->player_kinds[player] = nFTPlayerKindMan;
 		metadata->fighter_kinds[player] = fighter_kinds[player];
@@ -1497,21 +2030,33 @@ void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 stage, 
 }
 
 /* Plain-int entry for the C++ lobby (keeps decomp headers out of port C++).
- * The host plays slot 0, the client slot 1. */
-void syNetPeerStartOnlineMatch(s32 is_host, u32 delay, u32 stage, u32 stocks, s32 is_items, u32 seed,
-                               s32 host_fkind, s32 host_costume, s32 client_fkind, s32 client_costume)
+ * local_slot is this instance's game slot (0 = host); every participant
+ * occupies one contiguous game slot 0..player_count-1. wire_slots maps each
+ * game slot back to its room slot (NULL = identity). */
+void syNetPeerStartOnlineMatch(s32 local_slot, s32 player_count, u32 delay, u32 stage, u32 stocks, s32 is_items, u32 seed,
+                               const s32 *fkinds, const s32 *costumes, const s32 *wire_slots)
 {
 	SYNetInputReplayMetadata metadata;
-	u8 fighter_kinds[2];
-	u8 costumes[2];
+	u8 fighter_kinds[MAXCONTROLLERS] = { 0 };
+	u8 costume_ids[MAXCONTROLLERS] = { 0 };
+	s32 player;
 
-	fighter_kinds[0] = host_fkind;
-	fighter_kinds[1] = client_fkind;
-	costumes[0] = host_costume;
-	costumes[1] = client_costume;
+	for (player = 0; (player < player_count) && (player < MAXCONTROLLERS); player++)
+	{
+		fighter_kinds[player] = (u8)fkinds[player];
+		costume_ids[player] = (u8)costumes[player];
+	}
+	if (player_count < 2)
+	{
+		player_count = 2;
+	}
+	if (player_count > MAXCONTROLLERS)
+	{
+		player_count = MAXCONTROLLERS;
+	}
 
-	syNetPeerMakeOnlineMetadata(&metadata, stage, stocks, is_items, seed, fighter_kinds, costumes);
-	syNetPeerStartOnline((is_host != FALSE) ? 0 : 1, (is_host != FALSE) ? 1 : 0, delay, is_host, &metadata);
+	syNetPeerMakeOnlineMetadata(&metadata, stage, stocks, is_items, seed, player_count, fighter_kinds, costume_ids);
+	syNetPeerStartOnline(local_slot, player_count, delay, (local_slot == 0) ? TRUE : FALSE, &metadata, wire_slots);
 }
 
 void syNetPeerStopVSSession(void)
