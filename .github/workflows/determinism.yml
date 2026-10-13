@@ -1,0 +1,87 @@
+name: Determinism & Netplay
+
+# Behavioral tests for the rollback netcode. NOT per-PR: they need the game
+# binary plus BattleShip.o2r, which is extracted from baserom.us.z64 — a ROM
+# that can never be committed. The suite runs only when the repo defines a
+# BASEROM_US_Z64 secret (base64 of the user's legally-owned ROM); without it
+# every step skips cleanly.
+#
+#   SyncTest   — snapshot/resimulate self-check each tick (R3)
+#   Localtest  — two instances on loopback UDP, deterministic fuzz inputs,
+#                confirmed-state trace diff (R1/R2/R4/R5)
+#   Stress     — SyncTest at distance 6 = worst-case rollback every tick
+#
+# Runs nightly + on demand. To enable: add a repository secret named
+# BASEROM_US_Z64 containing the base64 of baserom.us.z64.
+
+on:
+  schedule:
+    - cron: '12 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Rollback suite (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      BASEROM_B64: ${{ secrets.BASEROM_US_Z64 }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.BASEROM_B64 != ''
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Skip notice
+        if: env.BASEROM_B64 == ''
+        run: echo "BASEROM_US_Z64 secret not set — determinism suite skipped."
+      - name: Decode baserom
+        if: env.BASEROM_B64 != ''
+        run: |
+          [IO.File]::WriteAllBytes("$PWD\baserom.us.z64", [Convert]::FromBase64String($env:BASEROM_B64))
+          $env:BASEROM_B64 = ''
+        shell: pwsh
+      - name: Install build deps
+        if: env.BASEROM_B64 != ''
+        run: |
+          choco install ninja -y
+          python -m pip install --upgrade pip
+          python -m pip install Pillow
+        shell: pwsh
+      - name: Configure + build + extract assets
+        if: env.BASEROM_B64 != ''
+        run: |
+          cmake -B build "-DPython3_EXECUTABLE=$((Get-Command python).Source)"
+          cmake --build build --config Release -j 4
+          cmake --build build --config Release --target ExtractAssets -j 4
+        shell: pwsh
+      - name: SyncTest (distance 1)
+        if: env.BASEROM_B64 != ''
+        run: ./scripts/rollback_synctest.ps1 -BuildDir build/Release -Distance 1 -Minutes 2
+        shell: pwsh
+      - name: Rollback stress (distance 6)
+        if: env.BASEROM_B64 != ''
+        run: ./scripts/rollback_synctest.ps1 -BuildDir build/Release -Distance 6 -Minutes 2
+        shell: pwsh
+      - name: Netplay local test — clean net
+        if: env.BASEROM_B64 != ''
+        run: ./scripts/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60
+        shell: pwsh
+      - name: Netplay local test — degraded net matrix
+        if: env.BASEROM_B64 != ''
+        run: |
+          ./scripts/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 50 -JitterMs 10
+          ./scripts/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 100 -JitterMs 25 -LossPct 3
+          ./scripts/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 150 -JitterMs 50 -LossPct 5
+        shell: pwsh
+      - name: Upload traces + logs
+        if: env.BASEROM_B64 != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: determinism-traces
+          path: build/us/netplay-test/
+          retention-days: 30
+          if-no-files-found: ignore

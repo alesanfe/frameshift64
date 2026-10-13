@@ -1,0 +1,37 @@
+---
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  cert-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  performance-*,
+  portability-*,
+  readability-container-*,
+  readability-convert-member-functions-to-static,
+  readability-delete-null-pointer,
+  readability-duplicate-include,
+  readability-inconsistent-declaration-parameter-name,
+  readability-make-member-function-const,
+  readability-misleading-indentation,
+  readability-redundant-*,
+  readability-simplify-boolean-expr,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-owning-memory,
+  -cert-msc32-c,
+  -cert-msc30-c
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(port|include|server|android|uwp|tools|debug_tools)/.*'
+FormatStyle: file
+CheckOptions:
+  bugprone-argument-comment.StrictMode: 'true'
+  performance-move-const-arg.CheckTriviallyCopyableMove: 'true'
+  readability-identifier-naming.IgnoreMainLikeFunctions: 'true'
+SystemHeaders: false
+UseColor: false
+...

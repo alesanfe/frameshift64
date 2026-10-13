@@ -1,0 +1,83 @@
+rules:
+  - id: raw-struct-network-send
+    message: Posible envío directo de una estructura por red (endianness/padding)
+    severity: WARNING
+    languages: [c, cpp]
+    paths:
+      include:
+        - "*/net/*"
+        - "*netpeer*"
+        - "*netinput*"
+        - "*netrollback*"
+        - "*netsync*"
+    patterns:
+      - pattern-either:
+          - pattern: sendto(..., &$OBJ, sizeof($OBJ), ...)
+          - pattern: send(..., &$OBJ, sizeof($OBJ), ...)
+          - pattern: sendto(..., $OBJ, sizeof($OBJ), ...)
+
+  - id: raw-struct-hashing
+    message: Hash/checksum sobre sizeof(x) puede incluir padding o punteros
+    severity: WARNING
+    languages: [c, cpp]
+    patterns:
+      - pattern-either:
+          - pattern: $HASH(&$OBJ, sizeof($OBJ), ...)
+          - pattern: $HASH($OBJ, sizeof($OBJ), ...)
+          - pattern: $HASH(..., &$OBJ, sizeof($OBJ), ...)
+      - metavariable-regex:
+          metavariable: $HASH
+          regex: (?i).*(hash|crc|checksum|fnv|digest).*
+
+  - id: wall-clock-in-netcode
+    message: Reloj de pared dentro del código de red/simulación — verificar que no afecte al determinismo
+    severity: WARNING
+    languages: [c, cpp]
+    paths:
+      include:
+        - "*/net/*"
+        - "*netpeer*"
+        - "*netinput*"
+        - "*netrollback*"
+        - "*netsync*"
+        - "*gameloop*"
+    patterns:
+      - pattern-either:
+          - pattern: std::chrono::system_clock::now()
+          - pattern: std::chrono::high_resolution_clock::now()
+          - pattern: SDL_GetTicks(...)
+          - pattern: time(...)
+
+  - id: unbounded-atoi-on-packet
+    message: atoi/strtoul sobre argumento de mensaje de red sin validación de rango
+    severity: INFO
+    languages: [c, cpp]
+    paths:
+      include:
+        - "*/net/*"
+        - "*netpeer*"
+        - "*netinput*"
+        - "*netrollback*"
+        - "*netsync*"
+    patterns:
+      - pattern-either:
+          - pattern: std::atoi(...)
+          - pattern: std::strtoul(...)
+          - pattern: atoi(...)
+          - pattern: strtoul(...)
+
+  - id: recv-into-buffer
+    message: Recepción de red — verificar cap de tamaño del buffer
+    severity: INFO
+    languages: [c, cpp]
+    paths:
+      include:
+        - "*/net/*"
+        - "*netpeer*"
+        - "*netinput*"
+        - "*netrollback*"
+        - "*netsync*"
+    patterns:
+      - pattern-either:
+          - pattern: recvfrom(...)
+          - pattern: recv(...)

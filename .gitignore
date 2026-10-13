@@ -114,3 +114,9 @@ debug_traces/
 # Local extraction / scratch directories used during debugging
 extract/
 test.zip
+
+# Static analysis tooling
+.venv-lint/
+lint-reports/
+requirements-lint.txt
+configure-lint.bat

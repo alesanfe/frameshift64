@@ -1,0 +1,4 @@
+[codespell]
+skip = .git,.venv-lint,build,build-lint,assets,decomp,libultraship,torch,workspace,.claude,node_modules,*.o,*.a,*.dll,*.exe,*.png,*.jpg,*.jpeg,*.gif,*.zip,*.bin,*.otr,*.o2r,*.trace,*.z64,server/cloudflare/node_modules,x64
+ignore-words-list = nd,th,fo,ba,ser,mos,hda,hist,crate,afile,te,siz,ue
+quiet-level = 2

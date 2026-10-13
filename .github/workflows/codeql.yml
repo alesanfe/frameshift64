@@ -1,0 +1,74 @@
+name: CodeQL
+
+# Code scanning for C/C++ (the port + decomp) and JavaScript (the Cloudflare
+# Worker). C/C++ needs a real build so the analyzer sees actual semantics —
+# reuses the same dep set + configure as build.yml, ROM-independent.
+#
+# NOTE: on private repos CodeQL requires GitHub Advanced Security; if the
+# repo is private without GHAS this workflow will fail at upload — delete it
+# or upgrade the plan. Public repos get it free.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '33 5 * * 1'   # weekly deep scan
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze-cpp:
+    name: C/C++
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+          build-mode: manual
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build zip clang \
+            libsdl2-dev libzip-dev libglew-dev \
+            nlohmann-json3-dev libtinyxml2-dev libspdlog-dev \
+            libgl1-mesa-dev libegl1-mesa-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            python3 python3-pil imagemagick file
+          sudo touch /usr/bin/zipcmp /usr/bin/zipmerge /usr/bin/ziptool
+          sudo chmod +x /usr/bin/zipcmp /usr/bin/zipmerge /usr/bin/ziptool
+      - name: Build (CodeQL traces this)
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DNON_PORTABLE=ON
+          cmake --build build -j"$(nproc)"
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: cpp
+
+  analyze-js:
+    name: JavaScript (Cloudflare Worker)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: js

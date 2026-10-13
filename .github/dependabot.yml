@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /server/cloudflare
+    schedule:
+      interval: weekly
+    groups:
+      wrangler:
+        patterns: ["wrangler*"]
+
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
+    # decomp/libultraship/torch pin to forks — manual bumps via worktree flow.
+    open-pull-requests-limit: 0

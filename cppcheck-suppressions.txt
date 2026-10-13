@@ -1,0 +1,7 @@
+missingIncludeSystem
+unusedFunction:decomp/*
+unusedFunction:libultraship/*
+unusedFunction:torch/*
+unusedFunction:workspace/*
+*:decomp/asm/*
+*:*/node_modules/*

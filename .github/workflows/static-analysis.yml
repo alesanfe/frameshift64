@@ -1,0 +1,137 @@
+name: Static Analysis
+
+# Two tiers:
+#
+#   fast-lints — codespell, yamllint, ruff, bandit, lizard, cpplint,
+#     cmake-lint and the repo's own semgrep rules. No build needed.
+#
+#   clang-tidy / cppcheck — run against a real compile_commands.json produced
+#     by the same configure as the Linux CI build. Needs the full dep set.
+#
+# BASELINE PHASE: every tool's output is collected as an artifact and the
+# check stays green while the existing backlog is triaged. Flip a tool to
+# blocking by removing its `continue-on-error` / adding `--error-exitcode`
+# once its report is clean. See docs/audit_static_analysis_2026-10-14.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * *'   # nightly, full sweep included
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-lints:
+    name: Fast lints (no build)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install lint tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cpplint cmakelang lizard codespell yamllint ruff bandit semgrep
+      - name: Run fast lints
+        run: |
+          mkdir -p lint-reports
+          codespell . --config .codespellrc > lint-reports/codespell.txt 2>&1 || true
+          yamllint -c .yamllint.yml . > lint-reports/yamllint.txt 2>&1 || true
+          ruff check . --exclude .venv-lint --exclude build --exclude build-lint \
+            --exclude decomp --exclude libultraship --exclude torch \
+            --output-format full > lint-reports/ruff.txt 2>&1 || true
+          bandit -r scripts tools debug_tools -x '*/tests/*,*/build/*' \
+            > lint-reports/bandit.txt 2>&1 || true
+          lizard -l cpp -C 15 -L 120 -a 6 -w \
+            port include android uwp tools debug_tools \
+            > lint-reports/lizard.txt 2>&1 || true
+          cpplint --recursive --extensions=c,cc,cpp,cxx,h,hh,hpp,hxx \
+            --filter=-whitespace/line_length,-build/include_subdir \
+            --exclude=build --exclude=build-lint --exclude=decomp \
+            --exclude=libultraship --exclude=torch --exclude=workspace \
+            port include android uwp tools debug_tools \
+            > lint-reports/cpplint.txt 2>&1 || true
+          find . \( -name CMakeLists.txt -o -name '*.cmake' \) \
+            -not -path './build*' -not -path './decomp/*' \
+            -not -path './libultraship/*' -not -path './torch/*' \
+            -print0 | xargs -0 cmake-lint > lint-reports/cmake-lint.txt 2>&1 || true
+          semgrep scan --config semgrep-smash.yml \
+            port include android uwp tools debug_tools scripts decomp/src/sys \
+            > lint-reports/semgrep-smash.txt 2>&1 || true
+      - name: Summarize findings
+        run: |
+          {
+            echo "## Static analysis (fast tier)"
+            echo ""
+            for f in lint-reports/*.txt; do
+              echo "- $(basename "$f"): $(wc -l < "$f") lines"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports-fast
+          path: lint-reports/
+          retention-days: 14
+
+  clang-tidy:
+    name: clang-tidy (compile DB)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build zip clang \
+            libsdl2-dev libzip-dev libglew-dev \
+            nlohmann-json3-dev libtinyxml2-dev libspdlog-dev \
+            libgl1-mesa-dev libegl1-mesa-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            python3 python3-pil imagemagick file
+          sudo touch /usr/bin/zipcmp /usr/bin/zipmerge /usr/bin/ziptool
+          sudo chmod +x /usr/bin/zipcmp /usr/bin/zipmerge /usr/bin/ziptool
+          python -m pip install clang-tidy cppcheck
+      - name: Configure (compile_commands.json only)
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -B build-lint -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DNON_PORTABLE=ON
+      - name: clang-tidy (own code)
+        run: |
+          run-clang-tidy -p build-lint -config-file .clang-tidy -j "$(nproc)" \
+            'smash-classic.(port|include|android|uwp|tools|debug_tools).' \
+            > lint-reports/clang-tidy.txt 2>&1 || true
+      - name: cppcheck (own code)
+        run: |
+          cppcheck --project=build-lint/compile_commands.json \
+            --enable=warning,performance,portability,style \
+            --inconclusive --inline-suppr --std=c++20 \
+            --suppressions-list=cppcheck-suppressions.txt \
+            -i decomp -i libultraship -i torch -i build-lint/_deps \
+            > lint-reports/cppcheck.txt 2>&1 || true
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports-db
+          path: lint-reports/
+          retention-days: 14
