@@ -534,12 +534,16 @@ extern "C" int port_udp_link_send(int link, const void *data, int size)
 }
 
 /* Maps a datagram source to its link: framed relay traffic carries the
- * remote slot, direct UDP matches the link's endpoint. */
+ * remote slot, direct UDP matches the link's endpoint. The framing byte
+ * is only trusted as far as the link table allows: a relayed frame that
+ * claims a slot with no active relay-backed link is dropped rather than
+ * routed to a link the attacker picked. */
 int link_of(const sockaddr_in *from, int kind, const uint8_t *bytes, int size)
 {
     if (kind == 1) {
         if (sRelayFramed) {
-            return (size >= 1 && bytes[0] < PORT_UDP_LINK_MAX) ? bytes[0] : -1;
+            const int link = (size >= 1 && bytes[0] < PORT_UDP_LINK_MAX) ? bytes[0] : -1;
+            return (link >= 0 && sLinks[link].active && sLinks[link].relay) ? link : -1;
         }
         for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
             if (sLinks[i].active && sLinks[i].relay) {

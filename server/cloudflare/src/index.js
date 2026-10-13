@@ -3,7 +3,7 @@
 // Each room is a Durable Object keyed by its 6-character code. Players
 // connect over WebSocket:
 //
-//   GET /ws?room=CODE&role=host|join[&v=2][&up=1&slot=N]  (WebSocket upgrade)
+//   GET /ws?room=CODE&role=host|join[&v=2][&up=1&slot=N&key=K]  (WebSocket upgrade)
 //   GET /health
 //
 // Protocol v1 (1v1, unchanged):
@@ -30,19 +30,28 @@
 //   S->C {type:"peer_left", slot}
 //   S->C {type:"error", reason}  then close 4000
 //   Binary frames are routed: client sends [to_slot][payload] and the
-//   Worker delivers [from_slot][payload] to that socket. Clients only
-//   address slot 0 (star); the host forwards game packets between clients.
+//   Worker delivers [from_slot][payload] to that socket. The star is
+//   enforced here: clients may only address slot 0 and the host may only
+//   address client slots; relayed traffic additionally only flows on
+//   links the owner marked relayed (client -> host needs the sender's
+//   relay flag, host -> client the target's).
 //
 // A room's protocol version is fixed by the host. A joiner on a different
 // version gets {type:"error", reason:"version-mismatch"} so old and new
 // builds never silently share a room (the game's own version check would
 // also catch it).
 //
-// &up=1&slot=N upgrades a send-only uplink for the client that already owns
-// room slot N: synchronous WinHTTP websocket sends can serialize badly on a
-// socket with a pending receive, so all outbound game traffic prefers this
-// second connection. Uplinks carry no roster state and are excluded from
-// close/roster bookkeeping.
+// &up=1&slot=N&key=K upgrades a send-only uplink for the client that
+// already owns room slot N: synchronous WinHTTP websocket sends can
+// serialize badly on a socket with a pending receive, so all outbound
+// game traffic prefers this second connection. K is the per-connection
+// upkey the Worker issued in the owner's welcome, so a room-code guesser
+// cannot hijack another player's slot. Uplinks carry no roster state and
+// are excluded from close/roster bookkeeping; they die with their owner.
+//
+// Rate limiting is per socket (text/binary per second) and per room
+// (join attempts per 10 s window) — the 6-character room code is the only
+// room secret, so guessing and relay abuse need a bounded cost.
 //
 // The Durable Object uses the classic non-hibernating websocket API
 // (ws.accept() + addEventListener): hibernation reloads proved unreliable
@@ -58,6 +67,20 @@ const CODE_RE = /^[A-HJ-NP-Z2-9]{6}$/;
 const MAX_TEXT_BYTES = 2048;
 const MAX_BINARY_BYTES = 1024;
 const MAX_PLAYERS_V2 = 4;
+const RATE_WINDOW_MS = 1000;
+const MAX_TEXT_PER_SEC = 20;
+const MAX_BINARY_PER_SEC = 600;   // ~10x the 60 fps input packet rate
+const MAX_ENDPOINT_UPDATES = 10;  // per connection lifetime
+const JOIN_WINDOW_MS = 10000;
+const MAX_JOINS_PER_WINDOW = 12;  // control sockets + uplinks combined
+
+// Per-connection uplink key (v2): the uplink upgrade must prove it knows
+// this secret, so slot ownership comes from the welcome, not the URL.
+function newUpkey() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 export default {
   async fetch(request, env) {
@@ -87,9 +110,10 @@ export class NetplayRoom extends DurableObject {
     super(ctx, env);
     // Non-hibernating sockets: every open ws lives in this.sockets and keeps
     // the DO resident, so in-memory state is authoritative.
-    this.sockets = new Map();   // WebSocket -> { kind, version, slot, endpoint, relay }
+    this.sockets = new Map();   // WebSocket -> { kind, version, slot, endpoint, relay, upkey, owner, rate }
     this.version = 0;           // 0 = empty room, else 1|2 fixed by the host
     this.relayV1 = false;       // v1: whole session relayed
+    this.recentJoins = [];      // timestamps, bounded join/uplink rate
   }
 
   /* ---- socket bookkeeping ---- */
@@ -132,10 +156,24 @@ export class NetplayRoom extends DurableObject {
   }
 
   attach(ws, info) {
+    info.rate = { win: 0, text: 0, bin: 0 };
+    info.endpoints = 0;
     this.sockets.set(ws, info);
     ws.addEventListener("message", (event) => this.onMessage(ws, event.data));
     ws.addEventListener("close", () => this.onClose(ws));
     ws.addEventListener("error", () => this.onClose(ws));
+  }
+
+  /* Per-socket token window; over the limit the socket is dropped. */
+  allowMessage(info, binary) {
+    const now = Date.now();
+    const r = info.rate;
+    if (now - r.win >= RATE_WINDOW_MS) {
+      r.win = now;
+      r.text = 0;
+      r.bin = 0;
+    }
+    return binary ? ++r.bin <= MAX_BINARY_PER_SEC : ++r.text <= MAX_TEXT_PER_SEC;
   }
 
   /* ---- connection ---- */
@@ -146,17 +184,38 @@ export class NetplayRoom extends DurableObject {
     const role = url.searchParams.get("role");
     const version = url.searchParams.get("v") === "2" ? 2 : 1;
 
+    // Bounded join rate: the room code is the only room secret, so make
+    // upgrade attempts (control + uplink) cost real connections.
+    const now = Date.now();
+    this.recentJoins = this.recentJoins.filter((t) => now - t < JOIN_WINDOW_MS);
+    this.recentJoins.push(now);
+    if (this.recentJoins.length > MAX_JOINS_PER_WINDOW) {
+      return this.reject("rate-limited");
+    }
+
     // Send-only uplink (see file header): tagged {kind:"up"} with the owner's
     // slot, excluded from the roster; inbound text applies to the owner.
+    // The &key= must match the upkey the owner got in its welcome — slot
+    // ownership is authenticated by the connection, not by the URL.
     if (url.searchParams.get("up") === "1") {
       const slot = parseInt(url.searchParams.get("slot") || "-1", 10);
-      if (version !== 2 || this.version !== 2 || slot < 0 ||
-          slot >= MAX_PLAYERS_V2 || !this.socketForSlot(slot)) {
+      const key = url.searchParams.get("key") || "";
+      const owner = (version === 2 && this.version === 2 && slot >= 0 &&
+                     slot < MAX_PLAYERS_V2) ? this.socketForSlot(slot) : null;
+      const oi = owner ? this.info(owner) : null;
+      if (!oi || !oi.upkey || key !== oi.upkey) {
         return this.reject("no-such-room");
+      }
+      // One uplink per slot: a reconnect replaces the stale socket.
+      for (const [ws, i] of this.sockets) {
+        if (i.kind === "up" && i.slot === slot) {
+          try { ws.close(4003, "uplink-replaced"); } catch { /* gone */ }
+          this.sockets.delete(ws);
+        }
       }
       const pair = new WebSocketPair();
       pair[1].accept();
-      this.attach(pair[1], { kind: "up", version: 2, slot, endpoint: null, relay: false });
+      this.attach(pair[1], { kind: "up", version: 2, slot, endpoint: null, relay: false, owner });
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
 
@@ -191,10 +250,11 @@ export class NetplayRoom extends DurableObject {
     // grab the same one (no await between freeSlot and accept).
     const slot = role === "host" ? 0 : this.freeSlot();
     if (role !== "host" && slot < 0) return this.reject("room-full");
+    const upkey = newUpkey();
     const pair = new WebSocketPair();
     pair[1].accept();
-    this.attach(pair[1], { kind: role, version: 2, slot, endpoint: null, relay: false });
-    pair[1].send(JSON.stringify({ type: "welcome", room, role, slot }));
+    this.attach(pair[1], { kind: role, version: 2, slot, endpoint: null, relay: false, upkey });
+    pair[1].send(JSON.stringify({ type: "welcome", room, role, slot, upkey }));
     this.broadcastRoster();
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
@@ -246,14 +306,30 @@ export class NetplayRoom extends DurableObject {
     if (typeof message !== "string") {
       // Relayed game packet.
       if (message.byteLength > MAX_BINARY_BYTES) return;
+      if (!this.allowMessage(info, true)) {
+        try { ws.close(4029, "rate-limit"); } catch { /* gone */ }
+        return;
+      }
+      // Uplinks speak with their owner control socket's identity.
+      const src = (info.kind === "up" && info.owner) ? this.info(info.owner) : info;
+      if (!src) return;
       if (info.version === 2) {
-        // Routed: [to_slot][payload] -> [from_slot][payload]
+        // Routed: [to_slot][payload] -> [from_slot][payload]. The star is
+        // enforced: clients only reach slot 0, the host only client slots,
+        // and the hop must be a link the room marked as relayed.
         const bytes = new Uint8Array(message);
         if (bytes.length < 2) return;
-        const target = this.socketForSlot(bytes[0]);
-        if (!target) return;
+        const toSlot = bytes[0];
+        if (toSlot === src.slot || (src.slot !== 0 && toSlot !== 0)) return;
+        if (src.slot !== 0 && !src.relay) return;
+        const target = this.socketForSlot(toSlot);
+        if (!target || target === ws || target === info.owner) return;
+        if (src.slot === 0) {
+          const ti = this.info(target);
+          if (!ti || !ti.relay) return;
+        }
         const framed = new Uint8Array(bytes.length);
-        framed[0] = info.slot;
+        framed[0] = src.slot;
         framed.set(bytes.subarray(1), 1);
         try { target.send(framed); } catch { /* gone */ }
         return;
@@ -267,15 +343,16 @@ export class NetplayRoom extends DurableObject {
       return;
     }
     if (message.length > MAX_TEXT_BYTES) return;
+    if (!this.allowMessage(info, false)) {
+      try { ws.close(4029, "rate-limit"); } catch { /* gone */ }
+      return;
+    }
 
     // Uplink sockets are send-only: their text messages (endpoint, relay,
-    // ping) apply to the owner's control socket.
+    // ping) apply to the owner socket the uplink was authenticated against.
     if (info.kind === "up") {
-      const owner = this.socketForSlot(info.slot);
-      if (!owner) return;
-      ws = owner;
-      const ownerInfo = this.info(ws);
-      if (!ownerInfo) return;
+      if (!info.owner || !this.info(info.owner)) return;
+      ws = info.owner;
     }
     const wi = this.info(ws);
     if (!wi || wi.kind === "up") return;
@@ -292,6 +369,7 @@ export class NetplayRoom extends DurableObject {
         this.sendJson(ws, { type: "keepalive_ack" });
         break;
       case "endpoint":
+        if (++wi.endpoints > MAX_ENDPOINT_UPDATES) break;
         wi.endpoint = {
           public: String(msg.public || "-").slice(0, 64),
           local: String(msg.local || "-").slice(0, 64),
@@ -330,6 +408,13 @@ export class NetplayRoom extends DurableObject {
     if (info.kind === "up") {
       // Uplinks carry no roster state; never let one end the room.
       return;
+    }
+    // A control socket's uplinks die with it.
+    for (const [s, si] of this.sockets) {
+      if (si.kind === "up" && si.owner === ws) {
+        this.sockets.delete(s);
+        try { s.close(1000, "owner-gone"); } catch { /* gone */ }
+      }
     }
     if (info.version === 2) {
       if (info.slot === 0) {

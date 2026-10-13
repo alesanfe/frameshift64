@@ -17,13 +17,17 @@
  *                                             character pick + RTT probe + own tap-jump setting + game version
  *   SSBL PONG <time_ms>                       immediate echo of a PICK's time
  *   SSBL START <stage> <stocks> <items> <seed> <delay> <hostfk> <hostcos> <clientfk> <clientcos>
- *              <autoz> <comp> <neutral> <hazards_off> <host_tapjump_off> <client_tapjump_off>
- *                                             legacy 1v1 start (v1 rooms)
+ *              <autoz> <comp> <neutral> <hazards_off> <host_tapjump_off> <client_tapjump_off> [<session>]
+ *                                             legacy 1v1 start (v1 rooms); the trailing session id is
+ *                                             optional so older builds still interop (they use the seed)
  *   SSBL STARTM <stage> <stocks> <items> <seed> <delay> <autoz> <comp> <neutral> <hazards_off>
- *               <player_count> [<room_slot> <fk> <cos> <tapjump_off>] x player_count
+ *               <player_count> [<room_slot> <fk> <cos> <tapjump_off>] x player_count <session>
  *                                             multi-player start (v2 rooms). Entries are sorted by
  *                                             room slot; a player's position in the list is its game
- *                                             slot (room slots can be sparse when someone leaves).
+ *                                             slot (room slots can be sparse when someone leaves). The
+ *                                             session id is host-generated and independent of the seed:
+ *                                             packets from another match can't be replayed into this
+ *                                             one even when the seed is reused.
  *   SSBL GO <seed>                            client accepted the start packet */
 #include "netlobby.h"
 #include "port_udp.h"
@@ -45,7 +49,8 @@
 
 extern "C" void syNetPeerStartOnlineMatch(int local_slot, int player_count, unsigned int delay,
                                           unsigned int stage, unsigned int stocks, int items,
-                                          unsigned int seed, const int *fkinds, const int *costumes,
+                                          unsigned int seed, unsigned int session,
+                                          const int *fkinds, const int *costumes,
                                           const int *wire_slots);
 
 namespace {
@@ -113,6 +118,8 @@ struct Lobby {
 
     int stage = 4, stocks = 3, items = 0, delay = 2;
     unsigned int seed = 0;
+    unsigned int session = 0;             /* match session id, decoupled from the public seed */
+    std::string up_key;                   /* uplink auth secret issued in "welcome" */
     unsigned int start_sent_ms = 0;
     unsigned int last_start_ms = 0;
 
@@ -217,6 +224,8 @@ void shutdown_net(void)
     sLobby.stun_public.clear();
     sLobby.player_count = 1;
     sLobby.my_slot = sLobby.is_host ? 0 : 1;
+    sLobby.session = 0;
+    sLobby.up_key.clear();
     sLobby.start_sent_ms = 0;
     sLobby.last_start_ms = 0;
 }
@@ -385,7 +394,8 @@ void open_uplink(void)
     while (!url.empty() && url.back() == '/') {
         url.pop_back();
     }
-    url += "/ws?room=" + sLobby.code + "&role=join&v=2&up=1&slot=" + std::to_string(sLobby.my_slot);
+    url += "/ws?room=" + sLobby.code + "&role=join&v=2&up=1&slot=" + std::to_string(sLobby.my_slot) +
+           "&key=" + sLobby.up_key;
     port_ws_uplink_connect(url.c_str());
 }
 
@@ -491,11 +501,11 @@ int gather_roster(int *wire_slots, int *fkinds, int *tjs)
 void apply_match_start(int player_count, int my_game_slot, unsigned int stage, unsigned int stocks,
                        int items, unsigned int seed, unsigned int delay, int autoz, int comp,
                        int neutral, int hazards, const int *fkinds, const int *costumes,
-                       const int *tap_jumps, const int *wire_slots)
+                       const int *tap_jumps, const int *wire_slots, unsigned int session)
 {
     port_netrules_set(autoz, comp, neutral, hazards, tap_jumps);
     syNetPeerStartOnlineMatch(my_game_slot, player_count, delay, stage, stocks, items, seed,
-                              fkinds, costumes, wire_slots);
+                              session, fkinds, costumes, wire_slots);
 }
 
 void begin_match(void)
@@ -546,6 +556,9 @@ std::string build_start_payload(void)
                                  sLobby.start_wire[i], sLobby.start_fkinds[i],
                                  sLobby.start_costumes[i], sLobby.start_tjs[i]);
         }
+        if (len > 0) {
+            len += std::snprintf(buf + len, sizeof(buf) - len, " %u", sLobby.session);
+        }
     } else {
         /* v1 dialect: fixed host+client fields understood by old clients */
         int cfk = 0, ctj = 0, cslot = 1;
@@ -557,12 +570,12 @@ std::string build_start_payload(void)
                 break;
             }
         }
-        len = std::snprintf(buf, sizeof(buf), "SSBL START %d %d %d %u %d %d %d %d %d %d %d %d %d %d %d",
+        len = std::snprintf(buf, sizeof(buf), "SSBL START %d %d %d %u %d %d %d %d %d %d %d %d %d %d %d %u",
                             sLobby.stage, sLobby.stocks, sLobby.items, sLobby.seed, sLobby.delay,
                             sLobby.my_fkind, costume_for(0, sLobby.start_fkinds, 2), cfk,
                             costume_for(cslot, sLobby.start_fkinds, 2),
                             autoz, comp, neutral, hazards_off,
-                            sLobby.start_tjs[0], ctj);
+                            sLobby.start_tjs[0], ctj, sLobby.session);
     }
     return std::string(buf, len > 0 ? static_cast<size_t>(len) : 0);
 }
@@ -668,12 +681,14 @@ void handle_game_message(Peer &p, const std::vector<std::string> &args)
     }
     if (verb == "STARTM" && args.size() >= 12) {
         /* client: full roster start, [<room_slot> <fk> <cos> <tj>] sorted by
-         * room slot - our position in the list is our game slot */
+         * room slot - our position in the list is our game slot; the last
+         * field is the host-generated session id */
         int n = std::atoi(args[11].c_str());
         if (sLobby.is_host || p.slot != 0 || n < 2 || n > 4 ||
-            args.size() < 12u + 4u * static_cast<unsigned int>(n)) {
+            args.size() < 13u + 4u * static_cast<unsigned int>(n)) {
             return;
         }
+        unsigned int session = std::strtoul(args[12 + n * 4].c_str(), nullptr, 10);
         int wires[4] = {}, fkinds[4] = {}, costumes[4] = {}, tjs[4] = {};
         int my_game = -1;
         for (int i = 0; i < n; i++) {
@@ -700,7 +715,7 @@ void handle_game_message(Peer &p, const std::vector<std::string> &args)
                           std::strtoul(args[6].c_str(), nullptr, 10),
                           std::atoi(args[7].c_str()), std::atoi(args[8].c_str()),
                           std::atoi(args[9].c_str()), std::atoi(args[10].c_str()),
-                          fkinds, costumes, tjs, wires);
+                          fkinds, costumes, tjs, wires, session);
         begin_match();
         return;
     }
@@ -732,8 +747,12 @@ void handle_game_message(Peer &p, const std::vector<std::string> &args)
         for (int i = 0; i < 5; i++) {
             send_to_peer(p, ("SSBL GO " + std::to_string(seed)).c_str());
         }
+        /* optional trailing session id; old hosts don't send it and the
+         * engine falls back to the seed (legacy 1v1 compat) */
+        unsigned int session = (args.size() >= 18)
+            ? std::strtoul(args[17].c_str(), nullptr, 10) : 0;
         apply_match_start(2, 1, stage, stocks, items, seed, delay, autoz, comp, neutral, hazards,
-                          fkinds, costumes, tjs, nullptr);
+                          fkinds, costumes, tjs, nullptr, session);
         begin_match();
         return;
     }
@@ -848,10 +867,12 @@ void on_server_text(const char *text)
     if (type == "welcome") {
         sLobby.ws_welcomed = true;
         sLobby.code = json_field(text, "room");
+        sLobby.up_key = json_field(text, "upkey");
         std::string slot = json_field(text, "slot");
         if (!slot.empty()) {
             sLobby.server_version = 2;
             sLobby.my_slot = std::atoi(slot.c_str());
+            sLobby.up_key = json_field(text, "upkey");
             port_udp_set_relay_framed(1);
             port_udp_set_relay_hooks(relay_send, relay_recv);
             open_uplink();      // send-only channel for relayed game traffic
@@ -1056,7 +1077,7 @@ void host_apply_start(void)
     apply_match_start(sLobby.start_count, 0, sLobby.stage, sLobby.stocks, sLobby.items,
                       sLobby.seed, sLobby.delay, autoz, comp, neutral, hazards_off,
                       sLobby.start_fkinds, sLobby.start_costumes, sLobby.start_tjs,
-                      sLobby.start_wire);
+                      sLobby.start_wire, sLobby.session);
     begin_match();
 }
 
@@ -1311,6 +1332,9 @@ extern "C" void port_netlobby_start_match(void)
     }
     sLobby.player_count = n;
     sLobby.seed = sLobby.rng();
+    /* the match's session id is a fresh random token, not the seed: the
+     * seed is broadcast in STARTM and can't double as a replay guard */
+    sLobby.session = sLobby.rng();
     /* freeze the roster every participant will run on */
     sLobby.start_count = gather_roster(sLobby.start_wire, sLobby.start_fkinds, sLobby.start_tjs);
     for (int i = 0; i < sLobby.start_count; i++) {

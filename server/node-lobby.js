@@ -2,26 +2,40 @@
 // server/cloudflare/src/index.js (protocols v1 + v2 + send-only uplinks),
 // for local testing without wrangler. Run: node server/node-lobby.js [port]
 //
+// Mirrors the Worker's hardening: per-connection uplink keys, star-topology
+// enforcement, relay-gated binary routing, and per-socket/per-room rate
+// limits, so local tests exercise the same rules production enforces.
+//
 // The ws package resolves from server/cloudflare/node_modules.
 
 const path = require("path");
 const http = require("http");
+const crypto = require("crypto");
 const { WebSocketServer } = require(path.join(__dirname, "cloudflare", "node_modules", "ws"));
 
 const CODE_RE = /^[A-HJ-NP-Z2-9]{6}$/;
 const MAX_TEXT_BYTES = 2048;
 const MAX_BINARY_BYTES = 1024;
 const MAX_PLAYERS_V2 = 4;
+const RATE_WINDOW_MS = 1000;
+const MAX_TEXT_PER_SEC = 20;
+const MAX_BINARY_PER_SEC = 600;   // ~10x the 60 fps input packet rate
+const MAX_ENDPOINT_UPDATES = 10;  // per connection lifetime
+const JOIN_WINDOW_MS = 10000;
+const MAX_JOINS_PER_WINDOW = 12;  // control sockets + uplinks combined
 
 const rooms = new Map();   // code -> Room
 
+function newUpkey() {
+  return crypto.randomBytes(16).toString("hex");
+}
+
 class Room {
   constructor() {
-    this.sockets = new Map();  // ws -> { kind, version, slot, endpoint, relay }
+    this.sockets = new Map();  // ws -> { kind, version, slot, endpoint, relay, upkey, owner, rate, endpoints }
     this.version = 0;
     this.relayV1 = false;
-    this.bin = 0;
-    this.counts = {};
+    this.recentJoins = [];
   }
 
   info(ws) { return this.sockets.get(ws); }
@@ -51,6 +65,25 @@ class Room {
     try { ws.send(JSON.stringify(obj)); } catch { /* gone */ }
   }
 
+  allowJoin() {
+    const now = Date.now();
+    this.recentJoins = this.recentJoins.filter((t) => now - t < JOIN_WINDOW_MS);
+    this.recentJoins.push(now);
+    return this.recentJoins.length <= MAX_JOINS_PER_WINDOW;
+  }
+
+  /* Per-socket token window; over the limit the socket is dropped. */
+  allowMessage(info, binary) {
+    const now = Date.now();
+    const r = info.rate;
+    if (now - r.win >= RATE_WINDOW_MS) {
+      r.win = now;
+      r.text = 0;
+      r.bin = 0;
+    }
+    return binary ? ++r.bin <= MAX_BINARY_PER_SEC : ++r.text <= MAX_TEXT_PER_SEC;
+  }
+
   broadcastRoster(exclude) {
     const players = [];
     for (const [ws, i] of this.sockets) {
@@ -74,19 +107,30 @@ class Room {
 
     if (isBinary) {
       if (message.length > MAX_BINARY_BYTES) return;
+      if (!this.allowMessage(info, true)) {
+        try { ws.close(4029, "rate-limit"); } catch { /* gone */ }
+        return;
+      }
+      // Uplinks speak with their owner control socket's identity.
+      const src = (info.kind === "up" && info.owner) ? this.info(info.owner) : info;
+      if (!src) return;
       if (info.version === 2) {
+        // Routed: [to_slot][payload] -> [from_slot][payload]. The star is
+        // enforced: clients only reach slot 0, the host only client slots,
+        // and the hop must be a link the room marked as relayed.
         const bytes = message;
         if (bytes.length < 2) return;
-        this.bin++;
-        const key = info.kind + ":" + info.slot;
-        this.counts[key] = (this.counts[key] || 0) + 1;
-        const target = this.socketForSlot(bytes[0]);
-        if (!target) return;
-        const framed = Buffer.concat([Buffer.from([info.slot]), bytes.subarray(1)]);
-        try { target.send(framed); } catch { /* gone */ }
-        if (this.bin % 1000 === 0) {
-          console.log(`room bin#${this.bin} counts=${JSON.stringify(this.counts)}`);
+        const toSlot = bytes[0];
+        if (toSlot === src.slot || (src.slot !== 0 && toSlot !== 0)) return;
+        if (src.slot !== 0 && !src.relay) return;
+        const target = this.socketForSlot(toSlot);
+        if (!target || target === ws || target === info.owner) return;
+        if (src.slot === 0) {
+          const ti = this.info(target);
+          if (!ti || !ti.relay) return;
         }
+        const framed = Buffer.concat([Buffer.from([src.slot]), bytes.subarray(1)]);
+        try { target.send(framed); } catch { /* gone */ }
         return;
       }
       if (this.relayV1) {
@@ -96,11 +140,16 @@ class Room {
       return;
     }
     if (message.length > MAX_TEXT_BYTES) return;
+    if (!this.allowMessage(info, false)) {
+      try { ws.close(4029, "rate-limit"); } catch { /* gone */ }
+      return;
+    }
 
+    // Uplink sockets are send-only: their text messages (endpoint, relay,
+    // ping) apply to the owner socket the uplink was authenticated against.
     if (info.kind === "up") {
-      const owner = this.socketForSlot(info.slot);
-      if (!owner) return;
-      ws = owner;
+      if (!info.owner || !this.info(info.owner)) return;
+      ws = info.owner;
     }
     const wi = this.info(ws);
     if (!wi || wi.kind === "up") return;
@@ -113,6 +162,7 @@ class Room {
         this.sendJson(ws, { type: "keepalive_ack" });
         break;
       case "endpoint":
+        if (++wi.endpoints > MAX_ENDPOINT_UPDATES) break;
         wi.endpoint = {
           public: String(msg.public || "-").slice(0, 64),
           local: String(msg.local || "-").slice(0, 64),
@@ -160,7 +210,17 @@ class Room {
     this.sockets.delete(ws);
     try { ws.close(1000, "closed"); } catch { /* already closed */ }
 
-    if (info.kind === "up") return;
+    if (info.kind === "up") {
+      // Uplinks carry no roster state; never let one end the room.
+      return;
+    }
+    // A control socket's uplinks die with it.
+    for (const [s, si] of this.sockets) {
+      if (si.kind === "up" && si.owner === ws) {
+        this.sockets.delete(s);
+        try { s.close(1000, "owner-gone"); } catch { /* gone */ }
+      }
+    }
     if (info.version === 2) {
       if (info.slot === 0) {
         for (const [other, oi] of this.sockets) {
@@ -213,6 +273,7 @@ wss.on("connection", (ws, req) => {
   const role = url.searchParams.get("role");
   const version = url.searchParams.get("v") === "2" ? 2 : 1;
   if (!CODE_RE.test(room) || (role !== "host" && role !== "join")) {
+    ws.send(JSON.stringify({ type: "error", reason: "bad room or role" }));
     ws.close(4000, "bad room or role");
     return;
   }
@@ -221,19 +282,33 @@ wss.on("connection", (ws, req) => {
     r = new Room();
     rooms.set(room, r);
   }
+  if (!r.allowJoin()) {
+    ws.send(JSON.stringify({ type: "error", reason: "rate-limited" }));
+    ws.close(4029, "rate-limited");
+    return;
+  }
 
+  // Send-only uplink: &key= must match the upkey issued in the owner's
+  // welcome — slot ownership is authenticated, not URL-derived.
   if (url.searchParams.get("up") === "1") {
     const slot = parseInt(url.searchParams.get("slot") || "-1", 10);
-    if (version !== 2 || r.version !== 2 || slot < 0 ||
-        slot >= MAX_PLAYERS_V2 || !r.socketForSlot(slot)) {
+    const key = url.searchParams.get("key") || "";
+    const owner = (version === 2 && r.version === 2 && slot >= 0 &&
+                   slot < MAX_PLAYERS_V2) ? r.socketForSlot(slot) : null;
+    const oi = owner ? r.info(owner) : null;
+    if (!oi || !oi.upkey || key !== oi.upkey) {
       ws.send(JSON.stringify({ type: "error", reason: "no-such-room" }));
       ws.close(4000, "no-such-room");
       return;
     }
-    r.sockets.set(ws, { kind: "up", version: 2, slot, endpoint: null, relay: false });
-    ws.on("message", (d, b) => r.onMessage(ws, d, b));
-    ws.on("close", () => r.onClose(ws));
-    ws.on("error", () => r.onClose(ws));
+    // One uplink per slot: a reconnect replaces the stale socket.
+    for (const [s, i] of r.sockets) {
+      if (i.kind === "up" && i.slot === slot) {
+        r.sockets.delete(s);
+        try { s.close(4003, "uplink-replaced"); } catch { /* gone */ }
+      }
+    }
+    attach(r, ws, { kind: "up", version: 2, slot, endpoint: null, relay: false, owner });
     return;
   }
 
@@ -270,27 +345,32 @@ wss.on("connection", (ws, req) => {
   }
 
   if (version === 1) {
-    r.sockets.set(ws, { kind: role, version: 1, slot: role === "host" ? 0 : 1, endpoint: null, relay: false });
-    ws.on("message", (d, b) => r.onMessage(ws, d, b));
-    ws.on("close", () => r.onClose(ws));
-    ws.on("error", () => r.onClose(ws));
+    attach(r, ws, { kind: role, version: 1, slot: role === "host" ? 0 : 1, endpoint: null, relay: false });
     ws.send(JSON.stringify({ type: "welcome", room, role }));
     r.introduceV1();
     return;
   }
 
+  // v2: the slot assignment and upkey are issued with the welcome.
   const slot = role === "host" ? 0 : r.freeSlot();
   if (role !== "host" && slot < 0) {
     ws.send(JSON.stringify({ type: "error", reason: "room-full" }));
     ws.close(4000, "room-full");
     return;
   }
-  r.sockets.set(ws, { kind: role, version: 2, slot, endpoint: null, relay: false });
-  ws.on("message", (d, b) => r.onMessage(ws, d, b));
-  ws.on("close", () => r.onClose(ws));
-  ws.on("error", () => r.onClose(ws));
-  ws.send(JSON.stringify({ type: "welcome", room, role, slot }));
+  const upkey = newUpkey();
+  attach(r, ws, { kind: role, version: 2, slot, endpoint: null, relay: false, upkey });
+  ws.send(JSON.stringify({ type: "welcome", room, role, slot, upkey }));
   r.broadcastRoster();
 });
+
+function attach(room, ws, info) {
+  info.rate = { win: 0, text: 0, bin: 0 };
+  info.endpoints = 0;
+  room.sockets.set(ws, info);
+  ws.on("message", (d, b) => room.onMessage(ws, d, b));
+  ws.on("close", () => room.onClose(ws));
+  ws.on("error", () => room.onClose(ws));
+}
 
 console.log(`node-lobby ws listening on :${port}`);
