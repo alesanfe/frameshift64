@@ -15,15 +15,15 @@ if(BATTLESHIP_UWP)
 endif()
 
 # Android needs ASM for the aarch64 coroutine context-switch
-# (port/coroutine_aarch64.S). Enable it before any add_library/add_executable
+# (src/platform/coroutine_aarch64.S). Enable it before any add_library/add_executable
 # call sees an .S source. ASM is preprocessed by clang on the way through.
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     enable_language(ASM)
 endif()
 
 # Mod system master switch (TinyCC source scripting + funchook hook backend +
-# port/mods). DISABLE_SCRIPTING gates it everywhere — funchook FetchContent,
-# port/mods sources, the no-inline linkage tweaks, the post-build .tcc/ staging,
+# src/bridge/modding). DISABLE_SCRIPTING gates it everywhere — funchook FetchContent,
+# src/bridge/modding sources, the no-inline linkage tweaks, the post-build .tcc/ staging,
 # and the in-engine call sites (#ifndef DISABLE_SCRIPTING). Forced ON for
 # Android: funchook/TinyCC have no Android target and the loader is desktop-only.
 # Set BEFORE add_subdirectory(libultraship) so the engine half sees it too.
@@ -33,7 +33,7 @@ endif()
 
 if (DISABLE_SCRIPTING)
     # Define for every superproject target (ssb64_game + the exe + port glue)
-    # so the #ifndef DISABLE_SCRIPTING guards in port/*.cpp engage. libultraship
+    # so the #ifndef DISABLE_SCRIPTING guards in src/*.cpp engage. libultraship
     # additionally defines it PUBLIC from its own CMake when the var is set.
     add_compile_definitions(DISABLE_SCRIPTING)
 endif()
@@ -72,6 +72,24 @@ if(NOT BATTLESHIP_VERSION)
     set(BATTLESHIP_VERSION "dev")
 endif()
 message(STATUS "BattleShip updater version: ${BATTLESHIP_VERSION}")
+
+# Build identity for the netplay compatibility handshake: the git SHA of the
+# exact tree compiled catches same-version builds that differ (dev builds,
+# local patches) where the release tag alone would silently desync.
+find_package(Git QUIET)
+if(Git_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short=10 HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE BATTLESHIP_BUILD_SHA
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+if(NOT BATTLESHIP_BUILD_SHA)
+    set(BATTLESHIP_BUILD_SHA "dev")
+endif()
+message(STATUS "BattleShip build sha: ${BATTLESHIP_BUILD_SHA}")
 
 # Pulled-in BEFORE the libultraship subdirectory so its
 # find_package(tinyxml2) sees our pkg-config-fallback shim. Required
@@ -286,57 +304,9 @@ else()
     endif()
 endif()
 
-# Reloc YAML category files (same category set for every version; the
-# per-version ROM offsets differ inside them). yamls/${SSB64_VERSION}/ is
-# produced by tools/generate_yamls.py --version ${SSB64_VERSION}.
-set(SSB64_RELOC_YAML_CATEGORIES
-    animations bonus effects extern_data fighters_common fighters_main
-    interface items menus misc_named movies scene stages submotions
-    transitions
-)
-set(SSB64_RELOC_YAML_FILES "")
-foreach(_cat ${SSB64_RELOC_YAML_CATEGORIES})
-    list(APPEND SSB64_RELOC_YAML_FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/yamls/${SSB64_VERSION}/reloc_${_cat}.yml)
-endforeach()
+# Reloc YAML codegen, reloc stub/table generation, credits encoding.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Codegen.cmake)
 
-set(SSB64_CREDITS_GENERATED_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits/staff.credits.encoded
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits/staff.credits.metadata
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits/titles.credits.encoded
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits/titles.credits.metadata
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits/info.credits.encoded
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits/info.credits.metadata
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits/companies.credits.encoded
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits/companies.credits.metadata
-)
-
-add_custom_target(RegenerateRelocYamls
-    BYPRODUCTS ${SSB64_RELOC_YAML_FILES}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_yamls.py --version ${SSB64_VERSION}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Regenerating reloc YAML configs (${SSB64_VERSION})"
-)
-
-add_custom_target(GenerateRelocArtifacts
-    BYPRODUCTS
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/reloc_data.${SSB64_VERSION}.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/port/resource/RelocFileTable.${SSB64_VERSION}.cpp
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_reloc_stubs.py --version ${SSB64_VERSION}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_reloc_table.py --version ${SSB64_VERSION}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Generating reloc headers and RelocFileTable (${SSB64_VERSION})"
-)
-
-add_custom_target(GenerateCreditsAssets
-    BYPRODUCTS ${SSB64_CREDITS_GENERATED_FILES}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/creditsTextConverter.py staff.credits.${SSB64_VERSION}.txt
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/creditsTextConverter.py titles.credits.${SSB64_VERSION}.txt
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/creditsTextConverter.py -paragraphFont -multiline info.credits.${SSB64_VERSION}.txt
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/creditsTextConverter.py -paragraphFont companies.credits.${SSB64_VERSION}.txt
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/credits
-    COMMENT "Encoding credits text assets (${SSB64_VERSION})"
-)
 
 add_custom_target(PrepareBuildInputs
     DEPENDS GenerateRelocArtifacts GenerateCreditsAssets
@@ -345,8 +315,8 @@ add_custom_target(PrepareBuildInputs
 # ── Window icon embed (US/JP) ─────────────────────────────────────────────
 # Linux SDL only renders an app icon on the WM if SDL_SetWindowIcon() is
 # called at runtime — there's no .rc-equivalent that the WM reads at
-# launch. The PNG bytes are baked into the binary via tools/embed_icon.py
-# so port/port_window_icon.cpp doesn't have to chase the icon across
+# launch. The PNG bytes are baked into the binary via tools/asset-pipeline/embed_icon.py
+# so src/platform/port_window_icon.cpp doesn't have to chase the icon across
 # build/dev-tree/AppImage layouts. Region-aware: US uses assets/icon.png,
 # JP uses assets/icon-jp.png.
 set(SSB64_ICON_PNG ${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png)
@@ -358,18 +328,18 @@ set(SSB64_ICON_GEN ${SSB64_ICON_GEN_DIR}/port_icon_data.h)
 add_custom_command(
     OUTPUT ${SSB64_ICON_GEN}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_icon.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/embed_icon.py
             ${SSB64_ICON_PNG} ${SSB64_ICON_GEN} kSSB64IconPng
     DEPENDS
         ${SSB64_ICON_PNG}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_icon.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/embed_icon.py
     COMMENT "Embedding window icon (${SSB64_VERSION}) -> ${SSB64_ICON_GEN}"
     VERBATIM
 )
 
 # ── CSS icon pipeline ─────────────────────────────────────────────────────
 # Stage-specific assets (background wallpapers + CSS thumbnails) are now
-# extracted from baserom.us.z64 at build time by tools/derive_stage_assets.py
+# extracted from baserom.us.z64 at build time by tools/asset-pipeline/derive_stage_assets.py
 # and loaded at runtime as PNG files. No Nintendo-derived bytes are baked
 # into the binary.
 #
@@ -401,17 +371,17 @@ set(SSB64_CSS_BF_NAME_PNG    ${SSB64_CSS_STAGE_ASSET_DIR}/battlefield_name.png)
 # 8-byte-aligned (W=6 visual → W=8 canvas, transparent padding centered).
 # Two variants: right-pointing (default) and left-pointing (--mirror) so the
 # second-page indicator doesn't depend on negative SObj scalex.
-set(SSB64_CSS_ARROW_PNG       ${CMAKE_CURRENT_SOURCE_DIR}/port/assets/css_icons/arrow.png)
-set(SSB64_CSS_ARROW_LEFT_PNG  ${CMAKE_CURRENT_SOURCE_DIR}/port/assets/css_icons/arrow_left.png)
+set(SSB64_CSS_ARROW_PNG       ${CMAKE_CURRENT_SOURCE_DIR}/assets/source/css-icons/arrow.png)
+set(SSB64_CSS_ARROW_LEFT_PNG  ${CMAKE_CURRENT_SOURCE_DIR}/assets/source/css-icons/arrow_left.png)
 set(SSB64_CSS_ARROW_H         ${SSB64_CSS_GEN_DIR}/arrow_data.h)
 set(SSB64_CSS_ARROW_LEFT_H    ${SSB64_CSS_GEN_DIR}/arrow_left_data.h)
 
 # Baked nameplate headers for the port-introduced stages. Rendered from text
-# strings only (tools/render_nameplates.py — NO ROM data), so unlike the
+# strings only (tools/asset-pipeline/render_nameplates.py — NO ROM data), so unlike the
 # stage icons these are legal to compile into shipped binaries. They are the
 # release fallback for portCSSGetStageNameSprite when no
 # assets/css_icons/<name>_name.png override exists; keep the strings in sync
-# with STAGES in tools/derive_stage_assets.py.
+# with STAGES in tools/asset-pipeline/derive_stage_assets.py.
 set(SSB64_CSS_NAMEPLATES
     "final_destination|FINAL DESTINATION|nameFinalDestination"
     "metal_cavern|METAL CAVERN|nameMetalCavern"
@@ -427,22 +397,22 @@ foreach(entry IN LISTS SSB64_CSS_NAMEPLATES)
     add_custom_command(
         OUTPUT ${np_png}
         COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/render_nameplates.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/render_nameplates.py
                 ${np_text}
                 ${np_png}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tools/render_nameplates.py
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/render_nameplates.py
         COMMENT "Rendering nameplate PNG (${np_text})"
         VERBATIM
     )
     add_custom_command(
         OUTPUT ${np_h}
         COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/png_to_c_array.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
                 ${np_png}
                 ${np_h}
                 ${np_symbol}
         DEPENDS ${np_png}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/png_to_c_array.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
         COMMENT "Baking nameplate -> ${np_h}"
         VERBATIM
     )
@@ -451,48 +421,48 @@ endforeach()
 add_custom_command(
     OUTPUT ${SSB64_CSS_ARROW_PNG}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_arrow_svg.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/generate_arrow_svg.py
             ${SSB64_CSS_ARROW_PNG}
             6 44
     DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_arrow_svg.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/generate_arrow_svg.py
     COMMENT "Generating CSS scroll-arrow PNG (visual 6x44, canvas 8x44 padded)"
     VERBATIM
 )
 add_custom_command(
     OUTPUT ${SSB64_CSS_ARROW_LEFT_PNG}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_arrow_svg.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/generate_arrow_svg.py
             ${SSB64_CSS_ARROW_LEFT_PNG}
             6 44 --mirror
     DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_arrow_svg.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/generate_arrow_svg.py
     COMMENT "Generating CSS scroll-arrow PNG (left-mirrored)"
     VERBATIM
 )
 add_custom_command(
     OUTPUT ${SSB64_CSS_ARROW_H}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/png_to_c_array.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
             ${SSB64_CSS_ARROW_PNG}
             ${SSB64_CSS_ARROW_H}
             arrow
     DEPENDS
         ${SSB64_CSS_ARROW_PNG}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/png_to_c_array.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
     COMMENT "Baking scroll-arrow -> ${SSB64_CSS_ARROW_H}"
     VERBATIM
 )
 add_custom_command(
     OUTPUT ${SSB64_CSS_ARROW_LEFT_H}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/png_to_c_array.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
             ${SSB64_CSS_ARROW_LEFT_PNG}
             ${SSB64_CSS_ARROW_LEFT_H}
             arrowLeft
     DEPENDS
         ${SSB64_CSS_ARROW_LEFT_PNG}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/png_to_c_array.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
     COMMENT "Baking scroll-arrow (left) -> ${SSB64_CSS_ARROW_LEFT_H}"
     VERBATIM
 )
@@ -522,50 +492,56 @@ file(GLOB_RECURSE SSB64_SRC_SC      "decomp/src/sc/*.c"      "decomp/src/sc/*.h"
 file(GLOB_RECURSE SSB64_SRC_SYS     "decomp/src/sys/*.c"     "decomp/src/sys/*.h")
 file(GLOB_RECURSE SSB64_SRC_WP      "decomp/src/wp/*.c"      "decomp/src/wp/*.h")
 
-# Port layer (C++ glue) — excludes port/stubs/ which is compiled as part of ssb64_game
-# CONFIGURE_DEPENDS: new port TUs (e.g. a new port/enhancements/*.cpp whose
+# Port layer (C++ glue) — excludes src/compatibility/ which is compiled as part of ssb64_game
+# CONFIGURE_DEPENDS: new port TUs (e.g. a new src/features/*.cpp whose
 # symbol a decomp TU references) must be picked up by already-configured build
 # dirs, or a plain `cmake --build` after pulling hits an undefined-reference
 # link error against a stale glob.
-file(GLOB_RECURSE SSB64_SRC_PORT CONFIGURE_DEPENDS "port/*.cpp" "port/*.c" "port/*.h")
-list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/stubs/")
+file(GLOB_RECURSE SSB64_SRC_PORT CONFIGURE_DEPENDS "src/*.cpp" "src/*.c" "src/*.h" "src/*.S")
+list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/compatibility/.*\.c$")
 # RelocFileTable.{us,jp}.cpp both define gRelocFileTable — compile only the
 # selected version's table (the rest are siblings for the other version).
-list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/resource/RelocFileTable\\.(us|jp)\\.cpp$")
+list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/resources/RelocFileTable\\.(us|jp)\\.cpp$")
 list(APPEND SSB64_SRC_PORT
-    ${CMAKE_CURRENT_SOURCE_DIR}/port/resource/RelocFileTable.${SSB64_VERSION}.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/RelocFileTable.${SSB64_VERSION}.cpp)
 # coroutine_test.cpp has its own main(); only built standalone when
 # SSB64_BUILD_COROUTINE_TEST=ON below. Never link it into the game.
-list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/coroutine_test\\.cpp$")
-# port/mods/ (HookManager + SymbolResolver) wraps funchook, which isn't
+list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "tests/unit/coroutine_test\\.cpp$")
+# ARM coroutine asm shims are Android-only (added explicitly to that target
+# below); MSVC can't assemble .S and produces no .obj, which breaks the
+# exports.def generation at link time.
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/coroutine_.*\\.S$")
+endif()
+# src/bridge/modding/ (HookManager + SymbolResolver) wraps funchook, which isn't
 # fetched when the mod system is disabled. Drop it so nothing references the
-# missing backend. port/hooks/ (the event dispatch system) is funchook-free
+# missing backend. src/bridge/hooks/ (the event dispatch system) is funchook-free
 # and uses core libultraship events, so it stays compiled on every target.
 if (DISABLE_SCRIPTING)
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/mods/")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/bridge/modding/")
 endif()
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # libtorch_runner.so wraps android_torch_bridge.cpp separately; keep
     # it out of libmain.so so the static libtorch + its FetchContent'd
     # deps don't bloat the SDL-bound game library.
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/android_torch_bridge\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/android/android_torch_bridge\\.cpp$")
     # Drop features we explicitly disable on Android (no curl-driven
     # self-updater, no discord-rpc link, no libretro shader downloader).
     # The corresponding menu entries are gated with #if !defined(__ANDROID__)
-    # in port/gui/PortMenu.cpp so nothing references the removed symbols.
-    # (port/hires/ is NOT dropped here — it compiles on Android but runs
+    # in src/presentation/PortMenu.cpp so nothing references the removed symbols.
+    # (src/resources/textures/hires/ is NOT dropped here — it compiles on Android but runs
     # opt-in with a reduced LRU budget; see the PORT_HIRES_ENABLED block.)
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
-        "port/enhancements/(Updater|DiscordRichPresence|ShaderDownloader)\\.cpp$")
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/port_window_icon\\.cpp$")
+        "src/features/(Updater|DiscordRichPresence|ShaderDownloader)\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/port_window_icon\\.cpp$")
 endif()
 if(BATTLESHIP_UWP)
     # Xbox packages are updated as MSIX and cannot use these Win32
     # shell-out/IPC integrations.
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
-        "port/enhancements/(Updater|DiscordRichPresence|ShaderDownloader)\\.cpp$")
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/port_window_icon\\.cpp$")
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/first_run\\.cpp$")
+        "src/features/(Updater|DiscordRichPresence|ShaderDownloader)\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/port_window_icon\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/application/first_run\\.cpp$")
 endif()
 # Treat the generated icon header as a source so CMake schedules it ahead
 # of any port TU compilation (port_window_icon.cpp #includes it).
@@ -584,8 +560,8 @@ list(APPEND SSB64_SRC_PORT
 
 # Debug tools (GBI trace + Acmd trace systems)
 file(GLOB SSB64_DEBUG_TOOLS
-    "debug_tools/gbi_trace/*.c" "debug_tools/gbi_trace/*.h"
-    "debug_tools/acmd_trace/*.c" "debug_tools/acmd_trace/*.h"
+    "tools/debugging/gbi_trace/*.c" "tools/debugging/gbi_trace/*.h"
+    "tools/debugging/acmd_trace/*.c" "tools/debugging/acmd_trace/*.h"
 )
 
 set(SSB64_DECOMP_SOURCES
@@ -652,7 +628,7 @@ if(NOT SSB64_TORCH_SHA)
 endif()
 file(SHA1 ${CMAKE_CURRENT_SOURCE_DIR}/config.yml SSB64_RECIPE_CONFIG_SHA1)
 set(SSB64_RECIPE_CONCAT "${SSB64_TORCH_SHA}:${SSB64_RECIPE_CONFIG_SHA1}")
-file(GLOB SSB64_RECIPE_YAMLS ${CMAKE_CURRENT_SOURCE_DIR}/yamls/${SSB64_VERSION}/*.yml)
+file(GLOB SSB64_RECIPE_YAMLS ${CMAKE_CURRENT_SOURCE_DIR}/assets/configuration/extraction/${SSB64_VERSION}/*.yml)
 list(SORT SSB64_RECIPE_YAMLS)
 foreach(_recipe_yaml ${SSB64_RECIPE_YAMLS})
     file(SHA1 ${_recipe_yaml} _recipe_yaml_sha1)
@@ -701,6 +677,9 @@ set(SSB64_COMPILE_DEFS
     # Updater
     BATTLESHIP_CURRENT_VERSION=\"${BATTLESHIP_VERSION}\"
 
+    # Netplay handshake (see src/netplay/netlobby.cpp)
+    BATTLESHIP_BUILD_SHA=\"${BATTLESHIP_BUILD_SHA}\"
+
     # Asset-recipe fingerprint (see the computation above SSB64_COMPILE_DEFS)
     SSB64_ASSET_RECIPE_HASH=\"${SSB64_ASSET_RECIPE_HASH}\"
 )
@@ -711,7 +690,7 @@ endif()
 
 # Hi-res texture pack support is US-only (desktop AND Android). On Android
 # it compiles but defaults to OFF and runs with a smaller decoded-RGBA8 LRU
-# budget (see port/hires/HiResPack.h: kHiResEnabledDefault / kDefaultLruBudgetMB)
+# budget (see src/resources/textures/hires/HiResPack.h: kHiResEnabledDefault / kDefaultLruBudgetMB)
 # plus a per-texture upscale cap, so a pack can't blow the mobile memory
 # budget and trip the low-memory killer; the dev dump-tooling menu items are
 # still gated off touch UI in PortMenu.cpp.
@@ -719,12 +698,12 @@ endif()
 # came out of the US ROM fast-path; JP rendering hits different hash inputs
 # (different glyph art for VS-records, JP-only menus, plus palette/sprite
 # nuances on shared assets), so a US-built pack would silently miss on JP
-# and no JP-only pack has been authored. Drop port/hires/ from the JP build
+# and no JP-only pack has been authored. Drop src/resources/textures/hires/ from the JP build
 # entirely and gate the port.cpp / PortMenu.cpp integration on PORT_HIRES_ENABLED.
 if(SSB64_VERSION STREQUAL "us")
     list(APPEND SSB64_COMPILE_DEFS PORT_HIRES_ENABLED=1)
 else()
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "port/hires/")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/resources/textures/hires/")
 endif()
 
 ################################################################################
@@ -734,7 +713,7 @@ endif()
 add_library(ssb64_game OBJECT ${SSB64_DECOMP_SOURCES})
 
 # Port stub definitions (C code that satisfies N64 linker symbols)
-file(GLOB SSB64_STUBS "port/stubs/*.c")
+file(GLOB SSB64_STUBS "src/compatibility/*.c")
 target_sources(ssb64_game PRIVATE ${SSB64_STUBS})
 
 # Selectively include decomp libultra files that provide needed functionality.
@@ -747,7 +726,7 @@ set(SSB64_LIBULTRA_PORT
     decomp/src/libultra/gu/sinf.c           # __sinf — SGI polynomial + Cody-Waite reduction
     decomp/src/libultra/gu/cosf.c           # __cosf — same (all game trig routes here, not host libm)
     # NOTE: sprite.c is NOT included — drawbitmap is assembly-only (MIPS).
-    # Sprite functions are stubbed in port/stubs/n64_stubs.c instead.
+    # Sprite functions are stubbed in src/compatibility/n64_stubs.c instead.
 )
 target_sources(ssb64_game PRIVATE ${SSB64_LIBULTRA_PORT})
 
@@ -786,12 +765,12 @@ if (MSVC)
     list(FILTER SSB64_ROLLBACK_SEG_SOURCES INCLUDE REGEX "\\.c$")
     list(FILTER SSB64_ROLLBACK_SEG_SOURCES EXCLUDE REGEX "\\.inc\\.c$")
     set_source_files_properties(${SSB64_ROLLBACK_SEG_SOURCES}
-        PROPERTIES COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/port/netrollback_seg.h")
+        PROPERTIES COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/netrollback_seg.h")
 endif()
 
 # N64 audio library — synthesis driver, sequence player, voice management.
 # These decomp files are compiled with PORT defines; the CPU Acmd interpreter
-# (port/audio/mixer.h) replaces RSP microcode via macro substitution.
+# (src/resources/audio/mixer.h) replaces RSP microcode via macro substitution.
 set(SSB64_NAUDIO_PORT
     decomp/src/libultra/n_audio/n_env.c             # Core: synth driver, audio frame, pull chain, CSP, FX, event queue
     decomp/src/libultra/n_audio/n_synaddplayer.c     # Add player to synth driver
@@ -827,8 +806,27 @@ target_include_directories(ssb64_game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include          # Port-tree generated headers (reloc_data.h)
     ${CMAKE_CURRENT_SOURCE_DIR}/decomp/include   # Decomp C headers (shadows system headers)
     ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src       # Decomp game module headers
-    ${CMAKE_CURRENT_SOURCE_DIR}/port             # Port headers (coroutine.h, etc.)
-    ${CMAKE_CURRENT_SOURCE_DIR}/debug_tools      # Acmd trace (mixer.h calls acmd_trace_log_cmd)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src            # src/<module>/x.h prefixed includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/modding
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/features
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/features/internal
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/features/cosmetics/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/interpolation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/shaders
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/css_icons
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/textures/hires
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/android
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/compatibility
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/debugging      # Acmd trace (mixer.h calls acmd_trace_log_cmd)
     # Event system headers: decomp PORT hooks fire engine events directly
     # (hooks/Events.h -> ship/events/EventTypes.h + bridge/eventsbridge.h).
     ${CMAKE_CURRENT_SOURCE_DIR}/libultraship/src
@@ -923,8 +921,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
         ${SSB64_SRC_PORT}
         ${SSB64_DEBUG_TOOLS}
         $<TARGET_OBJECTS:ssb64_game>
-        port/coroutine_aarch64.S
-        port/coroutine_armv7.S
+        src/platform/coroutine_aarch64.S
+        src/platform/coroutine_armv7.S
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "main")
 elseif(BATTLESHIP_UWP)
@@ -970,11 +968,30 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE ${SSB64_COMPILE_DEFS})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     # NOTE: Do NOT add decomp/include here. The C decomp shim headers (stdlib.h,
-    # stddef.h, ...) shadow the C++ standard library when picked up by port/*.cpp,
+    # stddef.h, ...) shadow the C++ standard library when picked up by src/*.cpp,
     # producing libc++ <cstdlib> errors. Only ssb64_game (C decomp) consumes them.
     ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src       # Decomp game module headers (sys/, ft/, sc/, ...)
-    ${CMAKE_CURRENT_SOURCE_DIR}/port
-    ${CMAKE_CURRENT_SOURCE_DIR}/debug_tools
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/modding
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/features
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/features/internal
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/features/cosmetics/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/interpolation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/shaders
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/css_icons
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/textures/hires
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/android
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/compatibility
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/debugging
     ${SSB64_CSS_GEN_DIR}                         # CSS icon baked headers (arrow_data.h)
 )
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT BATTLESHIP_UWP)
@@ -1005,7 +1022,7 @@ else()
     target_link_libraries(${PROJECT_NAME} PRIVATE libultraship discord-rpc)
 endif()
 if (WIN32)
-    # port_symbolize.cpp (SyncTest diagnostics), port/net/port_udp.cpp, port/net/port_ws.cpp
+    # src/core/port_symbolize.cpp (SyncTest diagnostics), src/netplay/port_udp.cpp, src/netplay/port_ws.cpp
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt)
 endif()
 
@@ -1068,7 +1085,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT BATTLESHIP_UWP)
     # Game DMA code is no-opped via #ifdef PORT in dma.c, so no /FORCE needed.
     target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
     # Embed the application icon (Explorer / taskbar / window). The .rc
-    # is generated per-region from port/ssb64.rc.in: US embeds
+    # is generated per-region from src/platform/ssb64.rc.in: US embeds
     # assets/icon.ico, JP embeds assets/icon-jp.ico. The icon also
     # surfaces as the .exe's Explorer thumbnail because RC resources
     # carry over to the PE's icon group.
@@ -1077,10 +1094,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT BATTLESHIP_UWP)
         set(SSB64_RC_ICON_PATH "${CMAKE_SOURCE_DIR}/assets/icon-jp.ico")
     endif()
     configure_file(
-        ${CMAKE_SOURCE_DIR}/port/ssb64.rc.in
-        ${CMAKE_BINARY_DIR}/port/ssb64.rc
+        ${CMAKE_SOURCE_DIR}/src/platform/ssb64.rc.in
+        ${CMAKE_BINARY_DIR}/src/platform/ssb64.rc
         @ONLY)
-    target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/port/ssb64.rc)
+    target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/src/platform/ssb64.rc)
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(${PROJECT_NAME} PRIVATE -Wl,-export-dynamic)
 endif()
@@ -1109,71 +1126,8 @@ if(NOT DISABLE_SCRIPTING)
     )
 endif()
 
-################################################################################
-# Copy runtime data files to build directory (desktop only — Android stages
-# these into the APK assets/ at Gradle time via android/app/build.gradle.kts).
-################################################################################
-
-if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
-    configure_file(
-        ${CMAKE_SOURCE_DIR}/gamecontrollerdb.txt
-        ${CMAKE_BINARY_DIR}/gamecontrollerdb.txt
-        COPYONLY
-    )
-
-    add_custom_target(GenerateF3DO2R
-        BYPRODUCTS ${CMAKE_SOURCE_DIR}/f3d.o2r
-        COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_SOURCE_DIR}/f3d.o2r
-        COMMAND ${CMAKE_COMMAND} -E tar cf ${CMAKE_SOURCE_DIR}/f3d.o2r --format=zip shaders
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/libultraship/src/fast
-        COMMENT "Packaging Fast3D shaders into f3d.o2r"
-    )
-
-    add_dependencies(${PROJECT_NAME} GenerateF3DO2R)
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/custom/fonts
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/yamls/${SSB64_VERSION}
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/f3d.o2r
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/f3d.o2r
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/gamecontrollerdb.txt
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/gamecontrollerdb.txt
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/assets/custom/fonts/Montserrat-Regular.ttf
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/custom/fonts/Montserrat-Regular.ttf
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/assets/custom/fonts/Inconsolata-Regular.ttf
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/custom/fonts/Inconsolata-Regular.ttf
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/config.yml
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/config.yml
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/yamls/${SSB64_VERSION}
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/yamls/${SSB64_VERSION}
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${TORCH_EXECUTABLE}
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/${TORCH_SIDECAR_NAME}
-        # CSS stage asset PNGs (final_destination_background.png, etc.) are
-        # copied in a separate POST_BUILD step added by the DeriveStageAssets
-        # block further below, after SSB64_BASEROM is resolved.
-        # Arrow data is baked into the binary via arrow_data.h / arrow_left_data.h.
-    )
-else()
-    # Android: produce f3d.o2r in the source tree so Gradle's stageGameAssets
-    # task can pick it up at APK build time. No POST_BUILD copies — the APK
-    # asset pipeline handles staging into externalFilesDir on first launch.
-    add_custom_target(GenerateF3DO2R
-        BYPRODUCTS ${CMAKE_SOURCE_DIR}/f3d.o2r
-        COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_SOURCE_DIR}/f3d.o2r
-        COMMAND ${CMAKE_COMMAND} -E tar cf ${CMAKE_SOURCE_DIR}/f3d.o2r --format=zip shaders
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/libultraship/src/fast
-        COMMENT "Packaging Fast3D shaders into f3d.o2r (Android)"
-    )
-    add_dependencies(${PROJECT_NAME} GenerateF3DO2R)
-endif()
+# Runtime data staging (f3d.o2r, gamecontrollerdb, fonts, config.yml, extraction yamls).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/RuntimeAssets.cmake)
 
 ################################################################################
 # TCC mod scripting: post-build .tcc/ population + BattleShip.def generation
@@ -1289,7 +1243,7 @@ endif()
 ################################################################################
 # Asset extraction targets (desktop only — Android extracts on-device from
 # the user's ROM via libtorch_runner.so at first launch; see
-# port/android_torch_bridge.cpp + RomImporter.java).
+# src/platform/android/android_torch_bridge.cpp + RomImporter.java).
 ################################################################################
 
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
@@ -1332,12 +1286,24 @@ set(SSB64_O2R     ${SSB64_O2R_DIR}/BattleShip.o2r)
 #       invoked, but does NOT register the file-level rule. Any caller that
 #       genuinely needs the o2r will hit ExtractAssets and get the
 #       explanatory error.
+# Torch resolves config.yml's `path: yamls/<region>` relative to its `-s`
+# dir. Recipe yamls now live under assets/configuration/extraction/, so the
+# build stages a torch-src dir (config.yml + yamls/) in the build tree
+# rather than pointing -s at the source root. This mirrors what
+# first_run.cpp stages at runtime.
+set(SSB64_TORCH_SRC_DIR ${CMAKE_BINARY_DIR}/torch-src)
+
 if(EXISTS "${SSB64_BASEROM}")
     add_custom_command(
         OUTPUT ${SSB64_O2R}
         DEPENDS TorchExternal PrepareBuildInputs GenerateF3DO2R ${SSB64_BASEROM}
+                ${CMAKE_CURRENT_SOURCE_DIR}/config.yml ${SSB64_RECIPE_YAMLS}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${SSB64_O2R_DIR}
-        COMMAND ${TORCH_EXECUTABLE} o2r ${SSB64_BASEROM} -s ${CMAKE_SOURCE_DIR} -d ${SSB64_O2R_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_CURRENT_SOURCE_DIR}/config.yml ${SSB64_TORCH_SRC_DIR}/config.yml
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_CURRENT_SOURCE_DIR}/assets/configuration/extraction ${SSB64_TORCH_SRC_DIR}/yamls
+        COMMAND ${TORCH_EXECUTABLE} o2r ${SSB64_BASEROM} -s ${SSB64_TORCH_SRC_DIR} -d ${SSB64_O2R_DIR}
         COMMENT "Extracting ${SSB64_VERSION} assets from ${SSB64_BASEROM} -> ${SSB64_O2R}"
     )
     add_custom_target(ExtractAssets DEPENDS ${SSB64_O2R})
@@ -1402,12 +1368,12 @@ if(EXISTS "${SSB64_CSS_ASSET_ROM}")
             ${SSB64_CSS_BF_SMALL_PNG}
             ${SSB64_CSS_BF_NAME_PNG}
         COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/derive_stage_assets.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/derive_stage_assets.py
                 ${SSB64_CSS_ASSET_ROM}
                 ${SSB64_CSS_STAGE_ASSET_DIR}
         DEPENDS
             ${SSB64_CSS_ASSET_ROM}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/derive_stage_assets.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/derive_stage_assets.py
         COMMENT "Extracting CSS stage assets from ${SSB64_CSS_ASSET_ROM}"
         VERBATIM
     )
@@ -1486,7 +1452,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # Lives outside libmain.so so Java can load it BEFORE SDLActivity/libSDL2
     # are initialized — the ROM picker is a regular Activity that runs before
     # the SDL game loop starts.
-    add_library(torch_runner SHARED port/android_torch_bridge.cpp)
+    add_library(torch_runner SHARED src/platform/android/android_torch_bridge.cpp)
     target_include_directories(torch_runner PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/torch/src
     )
@@ -1505,10 +1471,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
         "Build the ARM coroutine standalone test binary (Android)" OFF)
     if (SSB64_BUILD_COROUTINE_TEST)
         add_executable(coroutine_test
-            port/coroutine_test.cpp
-            port/coroutine_android.cpp
-            port/coroutine_aarch64.S
-            port/coroutine_armv7.S
+            tests/unit/coroutine_test.cpp
+            src/platform/android/coroutine_android.cpp
+            src/platform/coroutine_aarch64.S
+            src/platform/coroutine_armv7.S
         )
         target_include_directories(coroutine_test PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/port
@@ -1517,9 +1483,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
 endif()
 
 ################################################################################
-# Workspace TCC mods (desktop only — the mod system is excluded on Android)
+# Mod TCC mods (desktop only — the mod system is excluded on Android)
 #
-# Each mod under workspace/ has its own CMakeLists.txt that bundles the
+# Each mod under mods/examples/ or mods/templates/ has its own CMakeLists.txt that bundles the
 # mod's source + assets into output/ and stages a copy under
 # build/<config>/mods/<ModName>/ so the runtime loader picks it up.
 # ModO2R provides the optional ssb64_add_mod_o2r_target helper for

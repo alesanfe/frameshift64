@@ -9,7 +9,9 @@ name: Determinism & Netplay
 #   SyncTest   — snapshot/resimulate self-check each tick (R3)
 #   Localtest  — two instances on loopback UDP, deterministic fuzz inputs,
 #                confirmed-state trace diff (R1/R2/R4/R5)
-#   Stress     — SyncTest at distance 6 = worst-case rollback every tick
+#   Mutants    — each knob removes one validation; the run MUST fail (§21)
+#   PacketFuzz — seeded hostile datagrams through the real parser (§11)
+#   CrossBuild — Release vs Debug must produce identical traces
 #
 # Runs nightly + on demand. To enable: add a repository secret named
 # BASEROM_US_Z64 containing the base64 of baserom.us.z64.
@@ -26,11 +28,11 @@ jobs:
   rollback:
     name: Rollback suite (Windows)
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       BASEROM_B64: ${{ secrets.BASEROM_US_Z64 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         if: env.BASEROM_B64 != ''
         with:
           submodules: recursive
@@ -51,37 +53,131 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install Pillow
         shell: pwsh
-      - name: Configure + build + extract assets
+      - name: Configure + build Release + extract assets
         if: env.BASEROM_B64 != ''
         run: |
           cmake -B build "-DPython3_EXECUTABLE=$((Get-Command python).Source)"
           cmake --build build --config Release -j 4
           cmake --build build --config Release --target ExtractAssets -j 4
         shell: pwsh
+
+      # ── R3: snapshot ↔ resimulate integrity, worst cases included ──────
       - name: SyncTest (distance 1)
         if: env.BASEROM_B64 != ''
-        run: ./scripts/rollback_synctest.ps1 -BuildDir build/Release -Distance 1 -Minutes 2
+        run: ./scripts/development/rollback_synctest.ps1 -BuildDir build/Release -Distance 1 -Minutes 2
+        shell: pwsh
+      - name: SyncTest (distance 3)
+        if: env.BASEROM_B64 != ''
+        run: ./scripts/development/rollback_synctest.ps1 -BuildDir build/Release -Distance 3 -Minutes 2
         shell: pwsh
       - name: Rollback stress (distance 6)
         if: env.BASEROM_B64 != ''
-        run: ./scripts/rollback_synctest.ps1 -BuildDir build/Release -Distance 6 -Minutes 2
+        run: ./scripts/development/rollback_synctest.ps1 -BuildDir build/Release -Distance 6 -Minutes 2
         shell: pwsh
-      - name: Netplay local test — clean net
+
+      # ── R1/R2/R4/R5: two peers on loopback, confirmed-trace diff ───────
+      - name: Netplay local test — clean net (P0)
         if: env.BASEROM_B64 != ''
-        run: ./scripts/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60
+        run: ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60
         shell: pwsh
-      - name: Netplay local test — degraded net matrix
+      - name: Netplay local test — degraded net matrix (P1–P4)
         if: env.BASEROM_B64 != ''
         run: |
-          ./scripts/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 50 -JitterMs 10
-          ./scripts/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 100 -JitterMs 25 -LossPct 3
-          ./scripts/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 150 -JitterMs 50 -LossPct 5
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 50 -JitterMs 10
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 100 -JitterMs 25 -LossPct 3 -DupPct 2 -ReorderPct 5
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 150 -JitterMs 50 -LossPct 5 -DupPct 5 -ReorderPct 15 -CorruptPct 2
         shell: pwsh
+
+      # ── §11: packet parser fuzz — must not crash; desync is expected ───
+      - name: Packet fuzz through real handlers
+        if: env.BASEROM_B64 != ''
+        run: |
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 45 -PacketFuzz 600
+          if ($LASTEXITCODE -ne 0) { Write-Error "packet fuzz crashed or produced no trace (exit $LASTEXITCODE)"; exit 1 }
+        shell: pwsh
+
+      # ── §21: mutation suite — every mutant must be caught ──────────────
+      - name: Mutation suite
+        if: env.BASEROM_B64 != ''
+        run: ./scripts/testing/netplay_mutation_suite.ps1 -BuildDir build/Release -Minutes 1 -Seconds 45
+        shell: pwsh
+
       - name: Upload traces + logs
         if: env.BASEROM_B64 != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: determinism-traces
           path: build/us/netplay-test/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  cross-build:
+    name: Cross-build determinism (Release vs Debug)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      BASEROM_B64: ${{ secrets.BASEROM_US_Z64 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        if: env.BASEROM_B64 != ''
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Skip notice
+        if: env.BASEROM_B64 == ''
+        run: echo "BASEROM_US_Z64 secret not set — cross-build check skipped."
+      - name: Decode baserom
+        if: env.BASEROM_B64 != ''
+        run: |
+          [IO.File]::WriteAllBytes("$PWD\baserom.us.z64", [Convert]::FromBase64String($env:BASEROM_B64))
+          $env:BASEROM_B64 = ''
+        shell: pwsh
+      - name: Install build deps
+        if: env.BASEROM_B64 != ''
+        run: |
+          choco install ninja -y
+          python -m pip install --upgrade pip
+          python -m pip install Pillow
+        shell: pwsh
+      - name: Build Release + Debug
+        if: env.BASEROM_B64 != ''
+        run: |
+          cmake -B build "-DPython3_EXECUTABLE=$((Get-Command python).Source)"
+          cmake --build build --config Release -j 4
+          cmake --build build --config Debug -j 4
+          cmake --build build --config Release --target ExtractAssets -j 4
+          cmake --build build --config Debug --target ExtractAssets -j 4
+        shell: pwsh
+      # Same seed + same sim seed on both builds → the confirmed traces must
+      # be byte-identical (trace lines are tick hashes, portable across
+      # build configs — a divergence means the sim depends on build mode).
+      - name: Trace compare Release vs Debug
+        if: env.BASEROM_B64 != ''
+        run: |
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -OutDir build/xb-rel -Seconds 60 -Seed 777
+          if ($LASTEXITCODE -ne 0) { Write-Error "Release run not in sync"; exit 1 }
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Debug -OutDir build/xb-dbg -Seconds 60 -Seed 777
+          if ($LASTEXITCODE -ne 0) { Write-Error "Debug run not in sync"; exit 1 }
+          $rel = Get-Content build/xb-rel/host.trace
+          $dbg = Get-Content build/xb-dbg/host.trace
+          if (-not $rel -or -not $dbg) { Write-Error "missing trace"; exit 1 }
+          $n = [Math]::Min($rel.Count, $dbg.Count)
+          if ($rel.Count -ne $dbg.Count) { Write-Output "warn: trace length differs rel=$($rel.Count) dbg=$($dbg.Count)" }
+          for ($i = 0; $i -lt $n; $i++) {
+            if ($rel[$i] -ne $dbg[$i]) {
+              Write-Error "cross-build divergence at trace line $i`n  rel: $($rel[$i])`n  dbg: $($dbg[$i])"
+              exit 1
+            }
+          }
+          Write-Output "CROSS-BUILD IDENTICAL for $n ticks"
+        shell: pwsh
+      - name: Upload cross-build traces
+        if: env.BASEROM_B64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: crossbuild-traces
+          path: |
+            build/xb-rel/
+            build/xb-dbg/
           retention-days: 30
           if-no-files-found: ignore
