@@ -304,42 +304,12 @@ export class NetplayRoom extends DurableObject {
     if (!info) return;
 
     if (typeof message !== "string") {
-      // Relayed game packet.
-      if (message.byteLength > MAX_BINARY_BYTES) return;
-      if (!this.allowMessage(info, true)) {
-        try { ws.close(4029, "rate-limit"); } catch { /* gone */ }
-        return;
-      }
-      // Uplinks speak with their owner control socket's identity.
-      const src = (info.kind === "up" && info.owner) ? this.info(info.owner) : info;
-      if (!src) return;
-      if (info.version === 2) {
-        // Routed: [to_slot][payload] -> [from_slot][payload]. The star is
-        // enforced: clients only reach slot 0, the host only client slots,
-        // and the hop must be a link the room marked as relayed.
-        const bytes = new Uint8Array(message);
-        if (bytes.length < 2) return;
-        const toSlot = bytes[0];
-        if (toSlot === src.slot || (src.slot !== 0 && toSlot !== 0)) return;
-        if (src.slot !== 0 && !src.relay) return;
-        const target = this.socketForSlot(toSlot);
-        if (!target || target === ws || target === info.owner) return;
-        if (src.slot === 0) {
-          const ti = this.info(target);
-          if (!ti || !ti.relay) return;
-        }
-        const framed = new Uint8Array(bytes.length);
-        framed[0] = src.slot;
-        framed.set(bytes.subarray(1), 1);
-        try { target.send(framed); } catch { /* gone */ }
-        return;
-      }
-      if (this.relayV1) {
-        const other = this.otherV1(ws);
-        if (other) {
-          try { other.send(message); } catch { /* gone */ }
-        }
-      }
+      // Relayed game packet. Production workerd delivers ws binary frames as
+      // Blob (wrangler dev delivered ArrayBuffer); normalize through a
+      // per-socket queue so frames keep arrival order.
+      info.bin = (info.bin || Promise.resolve())
+        .then(async () => this.onBinary(ws, message instanceof Blob ? await message.arrayBuffer() : message))
+        .catch(() => {});
       return;
     }
     if (message.length > MAX_TEXT_BYTES) return;
@@ -395,6 +365,47 @@ export class NetplayRoom extends DurableObject {
       }
       default:
         break;
+    }
+  }
+
+  onBinary(ws, message) {
+    const info = this.info(ws);
+    if (!info) return;
+
+    if (message.byteLength > MAX_BINARY_BYTES) return;
+    if (!this.allowMessage(info, true)) {
+      try { ws.close(4029, "rate-limit"); } catch { /* gone */ }
+      return;
+    }
+    // Uplinks speak with their owner control socket's identity.
+    const src = (info.kind === "up" && info.owner) ? this.info(info.owner) : info;
+    if (!src) return;
+    if (info.version === 2) {
+      // Routed: [to_slot][payload] -> [from_slot][payload]. The star is
+      // enforced: clients only reach slot 0, the host only client slots,
+      // and the hop must be a link the room marked as relayed.
+      const bytes = new Uint8Array(message);
+      if (bytes.length < 2) return;
+      const toSlot = bytes[0];
+      if (toSlot === src.slot || (src.slot !== 0 && toSlot !== 0)) return;
+      if (src.slot !== 0 && !src.relay) return;
+      const target = this.socketForSlot(toSlot);
+      if (!target || target === ws || target === info.owner) return;
+      if (src.slot === 0) {
+        const ti = this.info(target);
+        if (!ti || !ti.relay) return;
+      }
+      const framed = new Uint8Array(bytes.length);
+      framed[0] = src.slot;
+      framed.set(bytes.subarray(1), 1);
+      try { target.send(framed); } catch { /* gone */ }
+      return;
+    }
+    if (this.relayV1) {
+      const other = this.otherV1(ws);
+      if (other) {
+        try { other.send(message); } catch { /* gone */ }
+      }
     }
   }
 
