@@ -8,5 +8,5 @@
 	branch = ssb64
 [submodule "decomp"]
 	path = decomp
-	url = https://github.com/fatty8me2/ssb-decomp-re.git
-	branch = smash-classic
+	url = https://github.com/alesanfe/frameshift64.git
+	branch = decomp
