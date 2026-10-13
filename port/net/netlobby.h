@@ -45,6 +45,16 @@ int port_netlobby_is_host(void);
 int port_netlobby_is_relay(void);
 int port_netlobby_ping_ms(void);
 
+/* Multi-player roster (up to 4 participants; this instance is slot
+ * port_netlobby_my_slot(), remote participants are the peers). */
+int port_netlobby_player_count(void);
+int port_netlobby_my_slot(void);
+int port_netlobby_peer_count(void);
+int port_netlobby_peer_slot(int index);          /* remote's game slot, -1 if none */
+int port_netlobby_peer_fkind_at(int index);      /* -1 until the peer picks */
+int port_netlobby_peer_connected_at(int index);
+int port_netlobby_peer_ping_at(int index);       /* -1 unknown */
+
 /* 1 after an online match has ended while the players are still connected
  * (each is back in their own local menus; the host can start a rematch). */
 int port_netlobby_after_match(void);

@@ -33,6 +33,16 @@ int port_ws_poll_text(char *out, int capacity);
 /* Next received binary message; returns its size, 0 if none pending. */
 int port_ws_poll_binary(void *out, int capacity);
 
+/* Uplink: a second, send-only websocket. Synchronous WinHTTP websocket
+ * sends serialize behind a pending receive on the same handle (measured
+ * multi-second stalls), so relayed game traffic goes out on this dedicated
+ * connection which never issues a receive. port_ws_uplink_connect performs
+ * the handshake synchronously on the calling thread. */
+int port_ws_uplink_connect(const char *url);
+void port_ws_uplink_close(void);
+int port_ws_uplink_state(void);
+int port_ws_uplink_send(const void *data, int size);
+
 #ifdef __cplusplus
 }
 #endif

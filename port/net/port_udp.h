@@ -44,6 +44,29 @@ typedef int (*port_udp_relay_recv_fn)(void *buffer, int capacity);  /* size, 0 =
 void port_udp_set_relay_hooks(port_udp_relay_send_fn send, port_udp_relay_recv_fn recv);
 int port_udp_is_relay(void);
 
+/* Multi-peer links (online matches with more than 2 players). A link is
+ * keyed by the remote's game slot (0..3; the local slot stays unused) and is
+ * either a direct UDP endpoint or routed through the lobby relay.
+ * Relayed frames are prefixed with a slot byte: [to] on send, [from] on
+ * receive, which is what the v2 lobby worker routes on. */
+#define PORT_UDP_LINK_MAX 4
+int port_udp_link_set(int link, const char *spec);   /* "ip:port" or "relay" */
+void port_udp_link_clear(int link);
+void port_udp_link_clear_all(void);
+int port_udp_link_is_set(int link);
+int port_udp_link_is_relay(int link);
+int port_udp_link_send(int link, const void *data, int size);
+
+/* Receives one datagram addressed to any configured link; *out_link gets
+ * the remote slot it arrived from (-1 when the sender matches no link).
+ * Returns size, 0 none, -1 error. */
+int port_udp_link_recv(int *out_link, void *buffer, int capacity);
+
+/* Relayed frames carry a slot byte only in the v2 lobby protocol; the lobby
+ * switches this on when the server answered a v2 welcome. Legacy 1v1 rooms
+ * forward binary frames verbatim. */
+void port_udp_set_relay_framed(int framed);
+
 /* The primary local IPv4 of this machine plus the bound port ("ip:port"),
  * for peers behind the same NAT. Returns 1 on success. */
 int port_udp_local_endpoint(char *out, int capacity);

@@ -23,7 +23,7 @@ enum PortNetRule {
 };
 
 void port_netrules_set(int auto_z_cancel, int comp_ruleset, int neutral_spawns, int hazards_disabled,
-                       int tap_jump_disabled_p1, int tap_jump_disabled_p2);
+                       const int *tap_jump_disabled);   /* per player slot, [4] */
 void port_netrules_clear(void);
 
 /* 1 and *out set when an online match overrides the rule, else 0. */

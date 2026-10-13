@@ -3,6 +3,7 @@
 #include "port_log.h"
 
 #include <chrono>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
@@ -45,6 +46,9 @@ namespace {
 struct PendingPacket {
     unsigned int release_ms;
     std::vector<uint8_t> bytes;
+    bool has_to = false;
+    sockaddr_in to = {};
+    int relay_link = -1;   /* -1 = legacy route (peer / unframed relay) */
 };
 
 PortSocket sSocket = kInvalidSocket;
@@ -55,6 +59,15 @@ bool sHasPeer = false;
  * UDP (port/net/netlobby.cpp installs WebSocket send/receive hooks). */
 port_udp_relay_send_fn sRelaySend = nullptr;
 port_udp_relay_recv_fn sRelayRecv = nullptr;
+bool sRelayFramed = false;   /* v2 protocol: relayed frames carry a slot byte */
+
+/* Multi-peer links, keyed by remote game slot. */
+struct Link {
+    sockaddr_in addr = {};
+    bool relay = false;
+    bool active = false;
+};
+Link sLinks[PORT_UDP_LINK_MAX];
 
 /* Network simulator (send side). */
 unsigned int sSimLatencyMs = 0;
@@ -159,6 +172,49 @@ int raw_send(const uint8_t *data, int size)
     return raw_send_to(sPeer, data, size);
 }
 
+/* Routed send for links: relay_link >= 0 goes over the relay as [slot]
+ * framed data (v2), relay_link == -2 is the legacy unframed relay route,
+ * relay_link == -1 sends to the UDP endpoint `to`. */
+void log_send_diag(const char *fmt, ...)
+{
+    static int sBudget = 40;
+    if (sBudget <= 0) {
+        return;
+    }
+    sBudget--;
+    char buf[256];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    port_log("SSB64 UDP: %s\n", buf);
+}
+
+int route_send(const uint8_t *data, int size, const sockaddr_in *to, int relay_link)
+{
+    if (relay_link >= 0 || relay_link == -2) {
+        if (sRelaySend == nullptr) {
+            log_send_diag("route_send relay_link=%d dropped: no relay hook", relay_link);
+            return -1;
+        }
+        if (relay_link < 0 || !sRelayFramed) {
+            int ok = sRelaySend(data, size);
+            if (!ok) log_send_diag("route_send unframed relay send failed size=%d", size);
+            return ok ? size : -1;
+        }
+        uint8_t framed[1500];
+        if (size + 1 > static_cast<int>(sizeof(framed))) {
+            return -1;
+        }
+        framed[0] = static_cast<uint8_t>(relay_link);
+        std::memcpy(framed + 1, data, size);
+        int ok = sRelaySend(framed, size + 1);
+        if (!ok) log_send_diag("route_send framed relay send failed to=%d size=%d", relay_link, size);
+        return ok ? size : -1;
+    }
+    return raw_send_to(*to, data, size);
+}
+
 bool same_endpoint(const sockaddr_in &a, const sockaddr_in &b)
 {
     return a.sin_addr.s_addr == b.sin_addr.s_addr && a.sin_port == b.sin_port;
@@ -166,7 +222,9 @@ bool same_endpoint(const sockaddr_in &a, const sockaddr_in &b)
 
 /* Receives one datagram. kind: 0 peer/direct, 1 relayed from the peer,
  * 2 anyone else. Returns size, 0 none, -1 error. Relayed packets come
- * first so the relay can't be starved by stray UDP. */
+ * first so the relay can't be starved by stray UDP. With framed relay the
+ * returned buffer keeps the leading [from] slot byte; callers that
+ * understand v2 (link_recv/recv_from) strip it themselves. */
 int raw_recv(void *buffer, int capacity, sockaddr_in *from, int *kind)
 {
     if (sRelayRecv != nullptr) {
@@ -204,9 +262,41 @@ void flush_sim_queue(void)
 {
     unsigned int now = port_udp_now_ms();
     while (!sSimQueue.empty() && static_cast<int>(now - sSimQueue.front().release_ms) >= 0) {
-        raw_send(sSimQueue.front().bytes.data(), static_cast<int>(sSimQueue.front().bytes.size()));
+        PendingPacket &front = sSimQueue.front();
+        route_send(front.bytes.data(), static_cast<int>(front.bytes.size()),
+                   front.has_to ? &front.to : nullptr, front.relay_link);
         sSimQueue.pop_front();
     }
+}
+
+/* Shared send path for port_udp_send / port_udp_link_send: applies the
+ * simulated network conditions, then routes to an endpoint or relay link. */
+int send_routed(const uint8_t *bytes, int size, const sockaddr_in *to, int relay_link)
+{
+    if (sSimLossPct != 0 && (sSimRng() % 100u) < sSimLossPct) {
+        return size;
+    }
+    if (sSimLatencyMs == 0 && sSimJitterMs == 0) {
+        return route_send(bytes, size, to, relay_link);
+    }
+    unsigned int delay = sSimLatencyMs + ((sSimJitterMs != 0) ? (sSimRng() % (sSimJitterMs + 1)) : 0);
+    PendingPacket packet;
+    packet.release_ms = port_udp_now_ms() + delay;
+    packet.bytes.assign(bytes, bytes + size);
+    if (to != nullptr) {
+        packet.has_to = true;
+        packet.to = *to;
+    }
+    packet.relay_link = relay_link;
+
+    /* Jitter may reorder packets, exactly like a real network. */
+    auto it = sSimQueue.end();
+    while (it != sSimQueue.begin() && static_cast<int>((it - 1)->release_ms - packet.release_ms) > 0) {
+        --it;
+    }
+    sSimQueue.insert(it, std::move(packet));
+    flush_sim_queue();
+    return size;
 }
 
 } // namespace
@@ -280,6 +370,8 @@ extern "C" void port_udp_close(void)
     sSimQueue.clear();
     sRelaySend = nullptr;
     sRelayRecv = nullptr;
+    sRelayFramed = false;
+    port_udp_link_clear_all();
     sHasPeer = false;
 }
 
@@ -294,24 +386,7 @@ extern "C" int port_udp_send(const void *data, int size)
         return -1;
     }
     const uint8_t *bytes = static_cast<const uint8_t *>(data);
-
-    if (sSimLossPct != 0 && (sSimRng() % 100u) < sSimLossPct) {
-        return size;
-    }
-    if (sSimLatencyMs == 0 && sSimJitterMs == 0) {
-        return raw_send(bytes, size);
-    }
-    unsigned int delay = sSimLatencyMs + ((sSimJitterMs != 0) ? (sSimRng() % (sSimJitterMs + 1)) : 0);
-    PendingPacket packet{ port_udp_now_ms() + delay, std::vector<uint8_t>(bytes, bytes + size) };
-
-    /* Jitter may reorder packets, exactly like a real network. */
-    auto it = sSimQueue.end();
-    while (it != sSimQueue.begin() && static_cast<int>((it - 1)->release_ms - packet.release_ms) > 0) {
-        --it;
-    }
-    sSimQueue.insert(it, std::move(packet));
-    flush_sim_queue();
-    return size;
+    return send_routed(bytes, size, sHasPeer ? &sPeer : nullptr, (sRelaySend != nullptr) ? -2 : -1);
 }
 
 extern "C" int port_udp_recv(void *buffer, int capacity)
@@ -356,17 +431,30 @@ extern "C" int port_udp_recv_from(void *buffer, int capacity, char *from_text, i
     }
     flush_sim_queue();
 
-    int size = raw_recv(buffer, capacity, &from, &kind);
-    if (size > 0 && from_text != nullptr && from_capacity > 0) {
+    uint8_t bytes[2048];
+    int size = raw_recv(bytes, sizeof(bytes), &from, &kind);
+    if (size <= 0) {
+        return size;
+    }
+    int skip = (kind == 1 && sRelayFramed) ? 1 : 0;
+    if (size - skip > capacity) {
+        return -1;
+    }
+    std::memcpy(buffer, bytes + skip, size - skip);
+    if (from_text != nullptr && from_capacity > 0) {
         if (kind == 1) {
-            std::snprintf(from_text, from_capacity, "relay");
+            if (sRelayFramed && size >= 1) {
+                std::snprintf(from_text, from_capacity, "relay:%u", bytes[0]);
+            } else {
+                std::snprintf(from_text, from_capacity, "relay");
+            }
         } else {
             char ip[INET_ADDRSTRLEN] = "?";
             inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
             std::snprintf(from_text, from_capacity, "%s:%u", ip, static_cast<unsigned>(ntohs(from.sin_port)));
         }
     }
-    return size;
+    return size - skip;
 }
 
 extern "C" void port_udp_set_relay_hooks(port_udp_relay_send_fn send, port_udp_relay_recv_fn recv)
@@ -375,9 +463,125 @@ extern "C" void port_udp_set_relay_hooks(port_udp_relay_send_fn send, port_udp_r
     sRelayRecv = recv;
 }
 
+/* ---- multi-peer links (v2 lobby protocol) ---- */
+
+extern "C" int port_udp_link_set(int link, const char *spec)
+{
+    if (link < 0 || link >= PORT_UDP_LINK_MAX) {
+        return 0;
+    }
+    if (spec != nullptr && std::strcmp(spec, "relay") == 0) {
+        sLinks[link].relay = true;
+        sLinks[link].active = true;
+        return 1;
+    }
+    if (!startup() || !parse_address(spec, &sLinks[link].addr) ||
+        sLinks[link].addr.sin_addr.s_addr == htonl(INADDR_ANY) || sLinks[link].addr.sin_port == 0) {
+        port_log("SSB64 UDP: invalid link address '%s' (expected host:port)\n", spec ? spec : "(null)");
+        return 0;
+    }
+    sLinks[link].relay = false;
+    sLinks[link].active = true;
+    return 1;
+}
+
+extern "C" void port_udp_link_clear(int link)
+{
+    if (link >= 0 && link < PORT_UDP_LINK_MAX) {
+        sLinks[link] = Link{};
+    }
+}
+
+extern "C" void port_udp_link_clear_all(void)
+{
+    for (Link &link : sLinks) {
+        link = Link{};
+    }
+}
+
+extern "C" int port_udp_link_is_set(int link)
+{
+    return (link >= 0 && link < PORT_UDP_LINK_MAX && sLinks[link].active) ? 1 : 0;
+}
+
 extern "C" int port_udp_is_relay(void)
 {
     return (sRelaySend != nullptr) ? 1 : 0;
+}
+
+extern "C" void port_udp_set_relay_framed(int framed)
+{
+    sRelayFramed = (framed != 0);
+}
+
+extern "C" int port_udp_link_is_relay(int link)
+{
+    return (link >= 0 && link < PORT_UDP_LINK_MAX && sLinks[link].active && sLinks[link].relay) ? 1 : 0;
+}
+
+extern "C" int port_udp_link_send(int link, const void *data, int size)
+{
+    if (sSocket == kInvalidSocket || data == nullptr || size <= 0 ||
+        link < 0 || link >= PORT_UDP_LINK_MAX || !sLinks[link].active) {
+        log_send_diag("link_send link=%d dropped: socket=%d size=%d active=%d",
+                      link, (int)(sSocket != kInvalidSocket), size,
+                      (link >= 0 && link < PORT_UDP_LINK_MAX) ? (int)sLinks[link].active : -1);
+        return -1;
+    }
+    const uint8_t *bytes = static_cast<const uint8_t *>(data);
+    const Link &l = sLinks[link];
+    return send_routed(bytes, size, l.relay ? nullptr : &l.addr, l.relay ? link : -1);
+}
+
+/* Maps a datagram source to its link: framed relay traffic carries the
+ * remote slot, direct UDP matches the link's endpoint. */
+int link_of(const sockaddr_in *from, int kind, const uint8_t *bytes, int size)
+{
+    if (kind == 1) {
+        if (sRelayFramed) {
+            return (size >= 1 && bytes[0] < PORT_UDP_LINK_MAX) ? bytes[0] : -1;
+        }
+        for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
+            if (sLinks[i].active && sLinks[i].relay) {
+                return i;
+            }
+        }
+        return -1;
+    }
+    for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
+        if (sLinks[i].active && !sLinks[i].relay && same_endpoint(*from, sLinks[i].addr)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+extern "C" int port_udp_link_recv(int *out_link, void *buffer, int capacity)
+{
+    if (sSocket == kInvalidSocket || buffer == nullptr || capacity <= 0 || out_link == nullptr) {
+        return -1;
+    }
+    flush_sim_queue();
+
+    uint8_t bytes[2048];
+    for (;;) {
+        sockaddr_in from;
+        int kind = 2;
+        int size = raw_recv(bytes, sizeof(bytes), &from, &kind);
+
+        if (size <= 0) {
+            return size;
+        }
+        int link = link_of(&from, kind, bytes, size);
+        int payload = (kind == 1 && sRelayFramed) ? size - 1 : size;
+
+        if (link < 0 || payload <= 0 || payload > capacity) {
+            continue;   /* stray, oversized or unrouteable: keep draining */
+        }
+        std::memmove(buffer, bytes + (size - payload), payload);
+        *out_link = link;
+        return payload;
+    }
 }
 
 extern "C" int port_udp_local_endpoint(char *out, int capacity)

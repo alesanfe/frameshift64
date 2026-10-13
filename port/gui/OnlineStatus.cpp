@@ -51,13 +51,13 @@ void OnlineStatusWindow::Draw() {
 
 void OnlineStatusWindow::DrawElement() {
     if (InMatchDesynced()) {
-        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "Out of sync with your opponent.");
+        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "Out of sync with the other players.");
         ImGui::TextWrapped("Your games no longer match - what you see may differ from what they see. "
                            "Finish or quit this match and start a rematch.");
         return;
     }
     ImGui::TextWrapped("%s", port_netlobby_status());
-    ImGui::TextDisabled("You're both back in your own menus. Use this window to play again.");
+    ImGui::TextDisabled("Everyone is back in their own menus. Use this window to play again.");
     const int ping = port_netlobby_ping_ms();
     if (ping >= 0) {
         ImGui::Text("Ping: %d ms%s", ping, port_netlobby_is_relay() ? " (relayed)" : "");

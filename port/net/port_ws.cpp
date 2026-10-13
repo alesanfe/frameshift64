@@ -53,16 +53,26 @@ void fail(const std::string &why)
     port_log("SSB64 WS: %s\n", why.c_str());
 }
 
+void close_conn_parts(Connection &c)
+{
+    if (c.request) { WinHttpCloseHandle(c.request); c.request = nullptr; }
+    if (c.connect) { WinHttpCloseHandle(c.connect); c.connect = nullptr; }
+    if (c.session) { WinHttpCloseHandle(c.session); c.session = nullptr; }
+}
+
 void close_handles(void)
 {
     std::lock_guard<std::mutex> lock(sMutex);
     if (sConn.socket) { WinHttpCloseHandle(sConn.socket); sConn.socket = nullptr; }
-    if (sConn.request) { WinHttpCloseHandle(sConn.request); sConn.request = nullptr; }
-    if (sConn.connect) { WinHttpCloseHandle(sConn.connect); sConn.connect = nullptr; }
-    if (sConn.session) { WinHttpCloseHandle(sConn.session); sConn.session = nullptr; }
+    close_conn_parts(sConn);
 }
 
-void run(std::string url)
+/* Blocking dial: URL parse, HTTP handshake, websocket upgrade. Returns the
+ * upgraded socket handle, or nullptr with `err` set. While `live`/`mu` are
+ * given the intermediate handles are published as they are obtained so a
+ * closer can abort a pending handshake; on success `live` keeps the
+ * session/connect handles (the request is retired by the upgrade). */
+HINTERNET ws_dial(const std::string &url, std::mutex *mu, Connection *live, std::string *err)
 {
     bool secure = false;
     std::string rest;
@@ -72,8 +82,8 @@ void run(std::string url)
     } else if (url.rfind("ws://", 0) == 0) {
         rest = url.substr(5);
     } else {
-        fail("server URL must start with ws:// or wss://");
-        return;
+        *err = "server URL must start with ws:// or wss://";
+        return nullptr;
     }
     size_t slash = rest.find('/');
     std::string hostport = (slash == std::string::npos) ? rest : rest.substr(0, slash);
@@ -86,44 +96,71 @@ void run(std::string url)
         port = static_cast<INTERNET_PORT>(std::stoi(hostport.substr(colon + 1)));
     }
 
-    HINTERNET session = WinHttpOpen(L"BattleShip-Netplay/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) { fail("WinHttpOpen failed"); return; }
-    WinHttpSetTimeouts(session, 5000, 5000, 5000, 0);   // receive: block forever (background thread)
-    HINTERNET connect = WinHttpConnect(session, widen(host).c_str(), port, 0);
-    HINTERNET request = connect ? WinHttpOpenRequest(connect, L"GET", widen(path).c_str(), nullptr,
-                                                     WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                                     secure ? WINHTTP_FLAG_SECURE : 0)
-                                : nullptr;
-    {
-        std::lock_guard<std::mutex> lock(sMutex);
-        sConn.session = session;
-        sConn.connect = connect;
-        sConn.request = request;
-    }
-    if (!connect || !request) { fail("couldn't reach " + host); close_handles(); return; }
+    Connection c;
+    auto publish = [&]() {
+        if (mu != nullptr && live != nullptr) {
+            std::lock_guard<std::mutex> lock(*mu);
+            *live = c;
+        }
+    };
+    auto dead = [&](const std::string &why) -> HINTERNET {
+        *err = why;
+        close_conn_parts(c);
+        publish();
+        return nullptr;
+    };
 
-    if (!WinHttpSetOption(request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0) ||
-        !WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) ||
-        !WinHttpReceiveResponse(request, nullptr)) {
-        fail("couldn't connect to " + host + " (error " + std::to_string(GetLastError()) + ")");
-        close_handles();
-        return;
+    c.session = WinHttpOpen(L"BattleShip-Netplay/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!c.session) {
+        return dead("WinHttpOpen failed");
+    }
+    /* Bounded receive: costs nothing where it does not apply to websocket
+     * receives and keeps long-lived sends from being starved where it does. */
+    WinHttpSetTimeouts(c.session, 5000, 5000, 5000, 200);
+    c.connect = WinHttpConnect(c.session, widen(host).c_str(), port, 0);
+    c.request = (c.connect != nullptr)
+        ? WinHttpOpenRequest(c.connect, L"GET", widen(path).c_str(), nullptr,
+                             WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                             secure ? WINHTTP_FLAG_SECURE : 0)
+        : nullptr;
+    publish();
+    if (!c.connect || !c.request) {
+        return dead("couldn't reach " + host);
+    }
+    if (!WinHttpSetOption(c.request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0) ||
+        !WinHttpSendRequest(c.request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) ||
+        !WinHttpReceiveResponse(c.request, nullptr)) {
+        return dead("couldn't connect to " + host + " (error " + std::to_string(GetLastError()) + ")");
     }
     DWORD status = 0;
     DWORD size = sizeof(status);
-    WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr, &status, &size, nullptr);
+    WinHttpQueryHeaders(c.request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr,
+                        &status, &size, nullptr);
     if (status != 101) {
-        fail("server answered HTTP " + std::to_string(status));
+        return dead("server answered HTTP " + std::to_string(status));
+    }
+    HINTERNET socket = WinHttpWebSocketCompleteUpgrade(c.request, 0);
+    if (!socket) {
+        return dead("WebSocket upgrade failed");
+    }
+    WinHttpCloseHandle(c.request);
+    c.request = nullptr;
+    publish();
+    return socket;
+}
+
+void run(std::string url)
+{
+    std::string err;
+    HINTERNET socket = ws_dial(url, &sMutex, &sConn, &err);
+    if (!socket) {
+        fail(err);
         close_handles();
         return;
     }
-    HINTERNET socket = WinHttpWebSocketCompleteUpgrade(request, 0);
-    if (!socket) { fail("WebSocket upgrade failed"); close_handles(); return; }
     {
         std::lock_guard<std::mutex> lock(sMutex);
-        WinHttpCloseHandle(sConn.request);
-        sConn.request = nullptr;
         sConn.socket = socket;
     }
     sState = PORT_WS_OPEN;
@@ -134,6 +171,9 @@ void run(std::string url)
         DWORD read = 0;
         WINHTTP_WEB_SOCKET_BUFFER_TYPE type;
         DWORD err = WinHttpWebSocketReceive(socket, buffer, sizeof(buffer), &read, &type);
+        if (err == ERROR_WINHTTP_TIMEOUT) {
+            continue;   // idle window so pending sends can proceed
+        }
         if (err != ERROR_SUCCESS) {
             if (!sStop) fail("connection to the server was lost");
             break;
@@ -164,6 +204,33 @@ void run(std::string url)
     }
 }
 
+/* WinHTTP forbids concurrent sends on one websocket; the game coroutine
+ * (netpeer relay traffic) and the main loop (lobby pings) can both send.
+ * One mutex serializes all sends across both sockets. */
+std::mutex sSendMutex;
+std::atomic<int> sSendInFlight{ 0 };
+
+std::atomic<unsigned long> sSendCount[2]{};   /* [0]=control [1]=uplink */
+
+int send_on(HINTERNET socket, const void *data, DWORD size, WINHTTP_WEB_SOCKET_BUFFER_TYPE type,
+            char which)
+{
+    ULONGLONG t0 = GetTickCount64();
+    sSendMutex.lock();
+    ULONGLONG waited = GetTickCount64() - t0;
+    int inflight = ++sSendInFlight;
+    DWORD err = WinHttpWebSocketSend(socket, type, const_cast<void *>(data), size);
+    --sSendInFlight;
+    sSendMutex.unlock();
+    ULONGLONG sent = GetTickCount64() - t0 - waited;
+    unsigned long count = ++sSendCount[which == 'U' ? 1 : 0];
+    if (err != ERROR_SUCCESS || waited > 100 || sent > 100) {
+        port_log("SSB64 WS: send %c type=%u err=%lu wait=%llums sent=%llums inflight=%d total=%lu\n",
+                 which, static_cast<unsigned>(type), err, waited, sent, inflight, count);
+    }
+    return err == ERROR_SUCCESS ? 1 : 0;
+}
+
 int send_frame(const void *data, DWORD size, WINHTTP_WEB_SOCKET_BUFFER_TYPE type)
 {
     if (sState != PORT_WS_OPEN) {
@@ -177,14 +244,25 @@ int send_frame(const void *data, DWORD size, WINHTTP_WEB_SOCKET_BUFFER_TYPE type
     if (!socket) {
         return 0;
     }
-    return WinHttpWebSocketSend(socket, type, const_cast<void *>(data), size) == ERROR_SUCCESS ? 1 : 0;
+    return send_on(socket, data, size, type, 'C');
 }
+
+/* Uplink socket: send-only second connection. The control socket carries a
+ * pending blocking receive for server->client traffic; keeping all outbound
+ * game frames on a dedicated socket avoids mixing directions on one handle
+ * and sidesteps ws proxies that mishandle it (observed with wrangler dev).
+ * Once open, ALL outbound traffic prefers this socket - the control socket
+ * only receives. */
+std::mutex sUpMutex;
+std::atomic<int> sUpState{ PORT_WS_CLOSED };
+Connection sUpConn;
 
 } // namespace
 
 extern "C" int port_ws_connect(const char *url)
 {
     port_ws_close();
+    port_ws_uplink_close();    // a new room never reuses an old uplink
     sStop = false;
     {
         std::lock_guard<std::mutex> lock(sMutex);
@@ -228,11 +306,34 @@ extern "C" const char *port_ws_error(void)
 
 extern "C" int port_ws_send_text(const char *text)
 {
+    /* uplink first: sends on the control socket stall behind its receive */
+    if (sUpState == PORT_WS_OPEN) {
+        HINTERNET socket;
+        {
+            std::lock_guard<std::mutex> lock(sUpMutex);
+            socket = sUpConn.socket;
+        }
+        if (socket != nullptr) {
+            return send_on(socket, text, static_cast<DWORD>(std::strlen(text)),
+                           WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, 'U');
+        }
+    }
     return send_frame(text, static_cast<DWORD>(std::strlen(text)), WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE);
 }
 
 extern "C" int port_ws_send_binary(const void *data, int size)
 {
+    if (sUpState == PORT_WS_OPEN) {
+        HINTERNET socket;
+        {
+            std::lock_guard<std::mutex> lock(sUpMutex);
+            socket = sUpConn.socket;
+        }
+        if (socket != nullptr) {
+            return send_on(socket, data, static_cast<DWORD>(size),
+                           WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE, 'U');
+        }
+    }
     return send_frame(data, static_cast<DWORD>(size), WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE);
 }
 
@@ -265,6 +366,60 @@ extern "C" int port_ws_poll_binary(void *out, int capacity)
     return static_cast<int>(data.size());
 }
 
+/* ---- uplink connection lifecycle ---- */
+
+extern "C" int port_ws_uplink_connect(const char *url)
+{
+    port_ws_uplink_close();
+    sUpState = PORT_WS_CONNECTING;
+    std::string err;
+    HINTERNET socket = ws_dial(url != nullptr ? url : "", &sUpMutex, &sUpConn, &err);
+    if (socket == nullptr) {
+        port_log("SSB64 WS: uplink failed: %s\n", err.c_str());
+        sUpState = PORT_WS_FAILED;
+        return 0;
+    }
+    {
+        std::lock_guard<std::mutex> lock(sUpMutex);
+        sUpConn.socket = socket;
+    }
+    sUpState = PORT_WS_OPEN;
+    return 1;
+}
+
+extern "C" void port_ws_uplink_close(void)
+{
+    std::lock_guard<std::mutex> lock(sUpMutex);
+    if (sUpConn.socket != nullptr) {
+        WinHttpWebSocketClose(sUpConn.socket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+        WinHttpCloseHandle(sUpConn.socket);
+        sUpConn.socket = nullptr;
+    }
+    close_conn_parts(sUpConn);
+    sUpState = PORT_WS_CLOSED;
+}
+
+extern "C" int port_ws_uplink_state(void)
+{
+    return sUpState;
+}
+
+extern "C" int port_ws_uplink_send(const void *data, int size)
+{
+    if (sUpState != PORT_WS_OPEN) {
+        return 0;
+    }
+    HINTERNET socket;
+    {
+        std::lock_guard<std::mutex> lock(sUpMutex);
+        socket = sUpConn.socket;
+    }
+    if (socket == nullptr) {
+        return 0;
+    }
+    return send_on(socket, data, static_cast<DWORD>(size), WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE, 'U');
+}
+
 #else
 
 extern "C" int port_ws_connect(const char *) { return 0; }
@@ -275,5 +430,9 @@ extern "C" int port_ws_send_text(const char *) { return 0; }
 extern "C" int port_ws_send_binary(const void *, int) { return 0; }
 extern "C" int port_ws_poll_text(char *, int) { return 0; }
 extern "C" int port_ws_poll_binary(void *, int) { return 0; }
+extern "C" int port_ws_uplink_connect(const char *) { return 0; }
+extern "C" void port_ws_uplink_close(void) {}
+extern "C" int port_ws_uplink_state(void) { return PORT_WS_CLOSED; }
+extern "C" int port_ws_uplink_send(const void *, int) { return 0; }
 
 #endif

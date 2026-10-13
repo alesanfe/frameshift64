@@ -420,8 +420,8 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
     const int state = port_netlobby_state();
     const bool idle = (state == PORT_NETLOBBY_IDLE || state == PORT_NETLOBBY_FAILED);
 
-    ImGui::TextWrapped("Play against someone online with rollback netcode. One player hosts and shares the "
-                       "room code; the other joins with it. No port forwarding needed.");
+    ImGui::TextWrapped("Play online with rollback netcode - up to 4 players in one room. One player hosts "
+                       "and shares the room code; the others join with it. No port forwarding needed.");
     ImGui::Spacing();
 
     ImGui::BeginDisabled(state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH);
@@ -505,20 +505,52 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
         }
     }
     if (state == PORT_NETLOBBY_CONNECTED || state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH) {
-        int peer = port_netlobby_peer_fkind();
-        ImGui::Text("Opponent: %s", (peer >= 0 && peer < IM_ARRAYSIZE(kNetplayFighters)) ? kNetplayFighters[peer]
-                                                                                         : "choosing...");
+        const int mySlot = port_netlobby_my_slot();
+        const int peers = port_netlobby_peer_count();
+        const int fighterCount = static_cast<int>(IM_ARRAYSIZE(kNetplayFighters));
+        ImGui::Text("Players in room: %d", port_netlobby_player_count());
+        ImGui::BulletText("Player %d: %s (you)", mySlot + 1,
+                          (fighter >= 0 && fighter < fighterCount) ? kNetplayFighters[fighter] : "?");
+        for (int i = 0; i < peers; i++) {
+            const int slot = port_netlobby_peer_slot(i);
+            if (slot < 0 || slot == mySlot) {
+                continue;
+            }
+            const char* label;
+            int fk = port_netlobby_peer_fkind_at(i);
+            if (!port_netlobby_peer_connected_at(i)) {
+                label = "connecting...";
+            } else if (fk >= 0 && fk < fighterCount) {
+                label = kNetplayFighters[fk];
+            } else {
+                label = "choosing...";
+            }
+            ImGui::BulletText("Player %d: %s", slot + 1, label);
+        }
         int ping = port_netlobby_ping_ms();
         if (ping >= 0) {
             ImGui::Text("Ping: %d ms%s", ping, port_netlobby_is_relay() ? " (relayed)" : "");
         }
     }
     if (port_netlobby_is_host() && state == PORT_NETLOBBY_CONNECTED) {
-        ImGui::BeginDisabled(port_netlobby_peer_fkind() < 0);
+        bool canStart = false;
+        const int peers = port_netlobby_peer_count();
+        for (int i = 0; i < peers; i++) {
+            if (port_netlobby_peer_connected_at(i)) {
+                canStart = port_netlobby_peer_fkind_at(i) >= 0;
+                if (!canStart) {
+                    break;
+                }
+            }
+        }
+        ImGui::BeginDisabled(!canStart);
         if (UIWidgets::Button("Start match", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::Green))) {
             port_netlobby_start_match();
         }
         ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !canStart) {
+            ImGui::SetTooltip("Waiting for every connected player to pick a fighter.");
+        }
     }
     if (!idle && state != PORT_NETLOBBY_IN_MATCH) {
         if (UIWidgets::Button("Leave", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::Red))) {

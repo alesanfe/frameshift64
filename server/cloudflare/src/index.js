@@ -3,12 +3,11 @@
 // Each room is a Durable Object keyed by its 6-character code. Players
 // connect over WebSocket:
 //
-//   GET /ws?room=CODE&role=host|join      (WebSocket upgrade)
+//   GET /ws?room=CODE&role=host|join[&v=2][&up=1&slot=N]  (WebSocket upgrade)
 //   GET /health
 //
-// Control messages are JSON text frames:
+// Protocol v1 (1v1, unchanged):
 //   C->S {type:"endpoint", public:"ip:port", local:"ip:port"}
-//          the client's UDP addresses (public from STUN, LAN from the OS)
 //   S->C {type:"welcome", room, role}
 //   S->C {type:"peer", role, public, local}   once both endpoints are known
 //   C->S {type:"relay"}          direct UDP failed; relay game traffic here
@@ -17,8 +16,40 @@
 //   S->C {type:"peer_left"}
 //   S->C {type:"error", reason}  then close 4000
 //
-// Binary frames carry relayed game packets and are forwarded verbatim to
-// the other player once relaying is on. Game traffic normally goes
+// Protocol v2 (up to 4 players, star topology through the host):
+//   Slots: host is always slot 0, joiners get the lowest free slot 1..3.
+//   S->C {type:"welcome", room, role, slot}
+//   S->C {type:"peers", players:[{slot, public, local}]}  full roster,
+//        resent whenever a player joins, leaves, or posts its endpoint;
+//        public/local are "-" until that player's endpoint arrives
+//   C->S {type:"endpoint", public:"ip:port", local:"ip:port"}
+//   C->S {type:"relay"}          this client can't reach the host directly;
+//        the Worker marks its link as relayed and tells the host
+//   S->C {type:"peer_relay", slot}   to the host: that client's link is relay
+//   S->C {type:"relaying"}           to the client that asked
+//   S->C {type:"peer_left", slot}
+//   S->C {type:"error", reason}  then close 4000
+//   Binary frames are routed: client sends [to_slot][payload] and the
+//   Worker delivers [from_slot][payload] to that socket. Clients only
+//   address slot 0 (star); the host forwards game packets between clients.
+//
+// A room's protocol version is fixed by the host. A joiner on a different
+// version gets {type:"error", reason:"version-mismatch"} so old and new
+// builds never silently share a room (the game's own version check would
+// also catch it).
+//
+// &up=1&slot=N upgrades a send-only uplink for the client that already owns
+// room slot N: synchronous WinHTTP websocket sends can serialize badly on a
+// socket with a pending receive, so all outbound game traffic prefers this
+// second connection. Uplinks carry no roster state and are excluded from
+// close/roster bookkeeping.
+//
+// The Durable Object uses the classic non-hibernating websocket API
+// (ws.accept() + addEventListener): hibernation reloads proved unreliable
+// under continuous game traffic in wrangler dev, and the room only needs to
+// be alive while players are connected anyway.
+//
+// Binary frames carry relayed game packets. Game traffic normally goes
 // peer-to-peer over UDP and never touches the Worker.
 
 import { DurableObject } from "cloudflare:workers";
@@ -26,6 +57,7 @@ import { DurableObject } from "cloudflare:workers";
 const CODE_RE = /^[A-HJ-NP-Z2-9]{6}$/;
 const MAX_TEXT_BYTES = 2048;
 const MAX_BINARY_BYTES = 1024;
+const MAX_PLAYERS_V2 = 4;
 
 export default {
   async fetch(request, env) {
@@ -53,21 +85,42 @@ export default {
 export class NetplayRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
-    this.ctx.setWebSocketAutoResponse(
-      new WebSocketRequestResponsePair('{"type":"keepalive"}', '{"type":"keepalive_ack"}'));
+    // Non-hibernating sockets: every open ws lives in this.sockets and keeps
+    // the DO resident, so in-memory state is authoritative.
+    this.sockets = new Map();   // WebSocket -> { kind, version, slot, endpoint, relay }
+    this.version = 0;           // 0 = empty room, else 1|2 fixed by the host
+    this.relayV1 = false;       // v1: whole session relayed
   }
 
-  socket(role) {
-    return this.ctx.getWebSockets(role)[0] || null;
+  /* ---- socket bookkeeping ---- */
+
+  info(ws) {
+    return this.sockets.get(ws);
   }
 
-  other(ws) {
-    const role = this.roleOf(ws);
-    return this.socket(role === "host" ? "join" : "host");
+  socketV1(role) {
+    for (const [ws, i] of this.sockets) {
+      if (i.kind !== "up" && i.version === 1 && i.kind === role) return ws;
+    }
+    return null;
   }
 
-  roleOf(ws) {
-    return this.ctx.getTags(ws)[0];
+  socketForSlot(slot) {
+    for (const [ws, i] of this.sockets) {
+      if (i.kind !== "up" && i.version === 2 && i.slot === slot) return ws;
+    }
+    return null;
+  }
+
+  freeSlot() {
+    for (let slot = 1; slot < MAX_PLAYERS_V2; slot++) {
+      if (!this.socketForSlot(slot)) return slot;
+    }
+    return -1;
+  }
+
+  sendJson(ws, obj) {
+    try { ws.send(JSON.stringify(obj)); } catch { /* socket already gone */ }
   }
 
   reject(reason) {
@@ -78,51 +131,154 @@ export class NetplayRoom extends DurableObject {
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
-  async fetch(request) {
+  attach(ws, info) {
+    this.sockets.set(ws, info);
+    ws.addEventListener("message", (event) => this.onMessage(ws, event.data));
+    ws.addEventListener("close", () => this.onClose(ws));
+    ws.addEventListener("error", () => this.onClose(ws));
+  }
+
+  /* ---- connection ---- */
+
+  fetch(request) {
     const url = new URL(request.url);
     const room = url.searchParams.get("room").toUpperCase();
     const role = url.searchParams.get("role");
+    const version = url.searchParams.get("v") === "2" ? 2 : 1;
 
-    if (role === "host" && this.socket("host")) return this.reject("room-in-use");
-    if (role === "join" && !this.socket("host")) return this.reject("no-such-room");
-    if (role === "join" && this.socket("join")) return this.reject("room-full");
+    // Send-only uplink (see file header): tagged {kind:"up"} with the owner's
+    // slot, excluded from the roster; inbound text applies to the owner.
+    if (url.searchParams.get("up") === "1") {
+      const slot = parseInt(url.searchParams.get("slot") || "-1", 10);
+      if (version !== 2 || this.version !== 2 || slot < 0 ||
+          slot >= MAX_PLAYERS_V2 || !this.socketForSlot(slot)) {
+        return this.reject("no-such-room");
+      }
+      const pair = new WebSocketPair();
+      pair[1].accept();
+      this.attach(pair[1], { kind: "up", version: 2, slot, endpoint: null, relay: false });
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
 
     if (role === "host") {
-      // A new host starts a fresh room (relay off).
-      await this.ctx.storage.deleteAll();
+      const oldHost = version === 2 ? this.socketForSlot(0) : this.socketV1("host");
+      if (oldHost) return this.reject("room-in-use");
+      // A new host starts a fresh room (relay off, roster reset, room
+      // protocol version = the host's).
+      for (const [ws] of this.sockets) {
+        try { ws.close(4002, "room-reset"); } catch { /* gone */ }
+      }
+      this.sockets.clear();
+      this.version = version;
+      this.relayV1 = false;
+    } else {
+      if (this.version !== version) return this.reject("version-mismatch");
+      const host = version === 2 ? this.socketForSlot(0) : this.socketV1("host");
+      if (!host) return this.reject("no-such-room");
+      if (version === 1 && this.socketV1("join")) return this.reject("room-full");
     }
-    const pair = new WebSocketPair();
-    this.ctx.acceptWebSocket(pair[1], [role]);
-    pair[1].serializeAttachment({ endpoint: null });
-    pair[1].send(JSON.stringify({ type: "welcome", room, role }));
-    this.introduce();
 
+    if (version === 1) {
+      const pair = new WebSocketPair();
+      pair[1].accept();
+      this.attach(pair[1], { kind: role, version: 1, slot: role === "host" ? 0 : 1, endpoint: null, relay: false });
+      pair[1].send(JSON.stringify({ type: "welcome", room, role }));
+      this.introduceV1();
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
+
+    // v2: assign the slot atomically with the accept so two joins can't
+    // grab the same one (no await between freeSlot and accept).
+    const slot = role === "host" ? 0 : this.freeSlot();
+    if (role !== "host" && slot < 0) return this.reject("room-full");
+    const pair = new WebSocketPair();
+    pair[1].accept();
+    this.attach(pair[1], { kind: role, version: 2, slot, endpoint: null, relay: false });
+    pair[1].send(JSON.stringify({ type: "welcome", room, role, slot }));
+    this.broadcastRoster();
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
-  // Both players known with endpoints: tell each about the other.
-  introduce() {
-    const host = this.socket("host");
-    const join = this.socket("join");
-    if (!host || !join) return;
-    const he = host.deserializeAttachment()?.endpoint;
-    const je = join.deserializeAttachment()?.endpoint;
-    if (!he || !je) return;
-    host.send(JSON.stringify({ type: "peer", role: "join", public: je.public, local: je.local }));
-    join.send(JSON.stringify({ type: "peer", role: "host", public: he.public, local: he.local }));
+  /* ---- v1: two players, endpoint exchange + symmetric relay ---- */
+
+  otherV1(ws) {
+    const i = this.info(ws);
+    if (!i) return null;
+    return this.socketV1(i.kind === "host" ? "join" : "host");
   }
 
-  async webSocketMessage(ws, message) {
+  introduceV1() {
+    const host = this.socketV1("host");
+    const join = this.socketV1("join");
+    if (!host || !join) return;
+    const he = this.info(host)?.endpoint;
+    const je = this.info(join)?.endpoint;
+    if (!he || !je) return;
+    this.sendJson(host, { type: "peer", role: "join", public: je.public, local: je.local });
+    this.sendJson(join, { type: "peer", role: "host", public: he.public, local: he.local });
+  }
+
+  /* ---- v2: roster broadcast + routed relay ---- */
+
+  broadcastRoster(exclude) {
+    const players = [];
+    for (const [ws, i] of this.sockets) {
+      if (ws === exclude || i.kind === "up") continue;
+      players.push({
+        slot: i.slot,
+        public: i.endpoint?.public || "-",
+        local: i.endpoint?.local || "-",
+      });
+    }
+    const text = JSON.stringify({ type: "peers", players });
+    for (const [ws, i] of this.sockets) {
+      if (ws === exclude || i.kind === "up") continue;
+      try { ws.send(text); } catch { /* gone */ }
+    }
+  }
+
+  /* ---- websocket events ---- */
+
+  onMessage(ws, message) {
+    const info = this.info(ws);
+    if (!info) return;
+
     if (typeof message !== "string") {
       // Relayed game packet.
       if (message.byteLength > MAX_BINARY_BYTES) return;
-      if (await this.ctx.storage.get("relay")) {
-        const other = this.other(ws);
-        if (other) other.send(message);
+      if (info.version === 2) {
+        // Routed: [to_slot][payload] -> [from_slot][payload]
+        const bytes = new Uint8Array(message);
+        if (bytes.length < 2) return;
+        const target = this.socketForSlot(bytes[0]);
+        if (!target) return;
+        const framed = new Uint8Array(bytes.length);
+        framed[0] = info.slot;
+        framed.set(bytes.subarray(1), 1);
+        try { target.send(framed); } catch { /* gone */ }
+        return;
+      }
+      if (this.relayV1) {
+        const other = this.otherV1(ws);
+        if (other) {
+          try { other.send(message); } catch { /* gone */ }
+        }
       }
       return;
     }
     if (message.length > MAX_TEXT_BYTES) return;
+
+    // Uplink sockets are send-only: their text messages (endpoint, relay,
+    // ping) apply to the owner's control socket.
+    if (info.kind === "up") {
+      const owner = this.socketForSlot(info.slot);
+      if (!owner) return;
+      ws = owner;
+      const ownerInfo = this.info(ws);
+      if (!ownerInfo) return;
+    }
+    const wi = this.info(ws);
+    if (!wi || wi.kind === "up") return;
 
     let msg;
     try {
@@ -131,16 +287,32 @@ export class NetplayRoom extends DurableObject {
       return;
     }
     switch (msg.type) {
+      case "ping":
+      case "keepalive":
+        this.sendJson(ws, { type: "keepalive_ack" });
+        break;
       case "endpoint":
-        ws.serializeAttachment({
-          endpoint: { public: String(msg.public || "-").slice(0, 64), local: String(msg.local || "-").slice(0, 64) },
-        });
-        this.introduce();
+        wi.endpoint = {
+          public: String(msg.public || "-").slice(0, 64),
+          local: String(msg.local || "-").slice(0, 64),
+        };
+        if (wi.version === 2) this.broadcastRoster(); else this.introduceV1();
         break;
       case "relay": {
-        await this.ctx.storage.put("relay", true);
-        const text = JSON.stringify({ type: "relaying" });
-        for (const s of this.ctx.getWebSockets()) s.send(text);
+        if (wi.version === 2) {
+          // Per-link relay: this client's path to the host goes over the
+          // WebSocket. Mark the socket and tell both ends.
+          wi.relay = true;
+          this.sendJson(ws, { type: "relaying" });
+          const host = this.socketForSlot(0);
+          if (host && host !== ws) this.sendJson(host, { type: "peer_relay", slot: wi.slot });
+        } else {
+          this.relayV1 = true;
+          const text = JSON.stringify({ type: "relaying" });
+          for (const [s] of this.sockets) {
+            try { s.send(text); } catch { /* gone */ }
+          }
+        }
         break;
       }
       default:
@@ -148,20 +320,43 @@ export class NetplayRoom extends DurableObject {
     }
   }
 
-  async webSocketClose(ws, code) {
-    const other = this.other(ws);
-    if (other) {
-      other.send(JSON.stringify({ type: "peer_left" }));
-      if (this.roleOf(ws) === "host") other.close(4001, "host-left");
-    }
-    try {
-      ws.close(code === 1005 ? 1000 : code, "closed");
-    } catch {
-      // already closed
-    }
-  }
+  onClose(ws) {
+    const info = this.info(ws);
+    if (!info) return;
+    const otherV1 = this.otherV1(ws);   // resolve before removing ws
+    this.sockets.delete(ws);
+    try { ws.close(1000, "closed"); } catch { /* already closed */ }
 
-  async webSocketError(ws) {
-    await this.webSocketClose(ws, 1011);
+    if (info.kind === "up") {
+      // Uplinks carry no roster state; never let one end the room.
+      return;
+    }
+    if (info.version === 2) {
+      if (info.slot === 0) {
+        // Host left: the room is over for everyone.
+        for (const [other, oi] of this.sockets) {
+          if (oi.kind !== "up") this.sendJson(other, { type: "peer_left", slot: 0 });
+          try { other.close(4001, "host-left"); } catch { /* gone */ }
+        }
+        this.sockets.clear();
+        this.version = 0;
+      } else {
+        for (const [other, oi] of this.sockets) {
+          if (oi.kind !== "up") this.sendJson(other, { type: "peer_left", slot: info.slot });
+        }
+        this.broadcastRoster();
+      }
+      return;
+    }
+    if (otherV1) {
+      this.sendJson(otherV1, { type: "peer_left" });
+      if (info.kind === "host") {
+        try { otherV1.close(4001, "host-left"); } catch { /* gone */ }
+      }
+    }
+    if (this.sockets.size === 0) {
+      this.version = 0;
+      this.relayV1 = false;
+    }
   }
 }
