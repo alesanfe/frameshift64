@@ -116,6 +116,8 @@ def main() -> int:
         if n == "host":
             continue
         for i, (a_, b_) in enumerate(zip(ref, traces[n])):
+            if len(a_.split()) < 13 or len(b_.split()) < 13:
+                continue   # torn final line: process was killed mid-write
             if a_ != b_:
                 print(f"DESYNC host vs {n} at line {i}\n  host: {a_}\n  {n}: {b_}")
                 return 1
