@@ -39,6 +39,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
 	(void)nbNetPacketParseInput(data, (s32)size, &ctx, &parsed_input);
 	(void)nbNetPacketParseControl(data, (s32)size, ctx.session_id);
+	{
+		u32 delay;
+		(void)nbNetPacketParseDelay(data, (s32)size, ctx.session_id, &delay);
+	}
 	(void)nbNetPacketParseForward(data, (s32)size, &ctx,
 								  &src_player, &inner, &inner_size);
 	(void)nbNetPacketIsForward(data, (s32)size);

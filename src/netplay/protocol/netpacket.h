@@ -49,6 +49,7 @@ typedef int32_t s32;
 	 (NB_NETPACKET_MAX_PACKET_FRAMES * NB_NETPACKET_FRAME_BYTES) + \
 	 NB_NETPACKET_SYNC_CHECK_BYTES + 4)
 #define NB_NETPACKET_CONTROL_PACKET_BYTES (4 + 2 + 2 + 4 + 4)
+#define NB_NETPACKET_DELAY_PACKET_BYTES   (4 + 2 + 2 + 4 + 4 + 4)
 #define NB_NETPACKET_FORWARD_HEADER_BYTES (4 + 2 + 2 + 4 + 1)
 #define NB_NETPACKET_FORWARD_PACKET_BYTES \
 	(NB_NETPACKET_FORWARD_HEADER_BYTES + NB_NETPACKET_PACKET_BYTES + 4)
@@ -60,6 +61,12 @@ typedef int32_t s32;
 #define NB_NETPACKET_PACKET_BATTLE_READY 4
 #define NB_NETPACKET_PACKET_BATTLE_START 5
 #define NB_NETPACKET_PACKET_FORWARD 6
+/* Host → players: raise the input delay symmetric mid-match when the host
+ * measures sustained prediction stalls (the "late" treadmill). Applied on
+ * receipt; repeated sends converge after loss. Asymmetric delay while a
+ * packet is in flight only costs prediction budget, never determinism —
+ * inputs are addressed by absolute tick. */
+#define NB_NETPACKET_PACKET_DELAY 7
 
 /* Sentinel for "no confirmed-state hash carried" in the sync trailer. */
 #define NB_NETPACKET_NO_CHECK_TICK 0xFFFFFFFFU
@@ -154,6 +161,14 @@ u32 nbNetPacketBuildControl(u8 *buffer, u16 packet_type, u32 session_id);
 /* Validate + return the control type (READY/START/BATTLE_READY/...) or a
  * negative NBNetPacketStatus. */
 s32 nbNetPacketParseControl(const u8 *buffer, s32 size, u32 session_id);
+
+/* ── DELAY packet ────────────────────────────────────────────────────── */
+
+u32 nbNetPacketBuildDelay(u8 *buffer, u32 session_id, u32 delay);
+
+/* Validate + return NB_NETPACKET_OK with *out_delay set, or a negative
+ * NBNetPacketStatus. */
+s32 nbNetPacketParseDelay(const u8 *buffer, s32 size, u32 session_id, u32 *out_delay);
 
 /* ── FORWARD envelope ────────────────────────────────────────────────── */
 

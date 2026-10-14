@@ -9,6 +9,7 @@
 #include "UIWidgets.hpp"
 #include "Compat.h"
 #include "app_paths.h"
+#include "netplay/session/netlobby.h"
 #include <ship/Context.h>
 #include <ship/window/Window.h>
 #include <ship/window/gui/Gui.h>
@@ -684,6 +685,24 @@ void Menu::MenuDrawItem(WidgetInfo& widget, uint32_t width, UIWidgets::Colors me
             ImGui::SameLine();
             ImGui::TextDisabled("[%s]", widget.tag);
         }
+        /* Recovery action for a disabled control: the widget-level action
+         * wins, otherwise the first activeDisables reason that carries one. */
+        if (widget.options->disabled) {
+            const char* actionLabel = widget.disabledActionLabel;
+            std::function<void()> action = widget.disabledAction;
+            for (auto option : widget.activeDisables) {
+                if (actionLabel == nullptr && disabledMap.at(option).actionLabel != nullptr) {
+                    actionLabel = disabledMap.at(option).actionLabel;
+                    action = disabledMap.at(option).action;
+                }
+            }
+            if (actionLabel != nullptr && action != nullptr) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton(actionLabel)) {
+                    action();
+                }
+            }
+        }
         /* Persistent-descriptions mode: print the tooltip inline under the
          * control instead of requiring a hover. */
         if (CVarGetInteger("gSettings.PersistentDescriptions", 0) &&
@@ -1163,9 +1182,17 @@ void Menu::DrawElement() {
             const char* hints = padNav ? "[A] Select    [B] Back    [X] Search    [Esc] Close menu"
                                        : "Enter Select    Esc Close menu    Type in Search box to find settings";
             ImGui::Separator();
+            const float hintLineY = ImGui::GetCursorScreenPos().y;
+            /* Online-match context: the menu never pauses netplay, so make
+             * that explicit instead of letting the player assume otherwise. */
+            if (port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
+                ImGui::SetCursorScreenPos(ImVec2(menuBlockPos.x + style.ItemSpacing.x * 2, hintLineY));
+                ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.25f, 1.0f),
+                                   "Match in progress - the game continues while this menu is open");
+            }
             ImGui::SetCursorScreenPos(
                 ImVec2(menuBlockPos.x + menuSize.x - ImGui::CalcTextSize(hints).x - style.ItemSpacing.x * 2,
-                       ImGui::GetCursorScreenPos().y));
+                       hintLineY));
             ImGui::TextDisabled("%s", hints);
         }
     }

@@ -12,6 +12,7 @@
 #include "Menu.h"
 #include "MenuTypes.h"
 
+#include <chrono>
 #include <map>
 
 namespace ssb64 {
@@ -45,6 +46,12 @@ class PortMenu : public Ship::Menu {
   private:
     bool mShowReextractMessage = false;
     bool mMenuElementsInitialized = false;
+    /* Display-change auto-revert ("Keep these settings?" countdown modal).
+     * Armed when the user toggles fullscreen; on timeout the change is
+     * reverted so a black/incompatible display mode can't strand them —
+     * the timeout also fires with the menu closed (Draw runs per-frame). */
+    bool mDisplayRevertArmed = false;
+    std::chrono::steady_clock::time_point mDisplayRevertDeadline{};
 };
 
 } // namespace ssb64

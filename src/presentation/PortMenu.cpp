@@ -7,6 +7,7 @@
 
 #include "PortMenu.h"
 
+#include "Toasts.h"
 #include "Compat.h"
 #include "application/app_paths.h"
 #include "gameplay/enhancements.h"
@@ -39,6 +40,8 @@ namespace ssb64 { void MountModsDir(); void UnmountMissingMods(); }
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <chrono>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 
@@ -401,6 +404,33 @@ static const char* const kNetplayStages[] = { "Peach's Castle", "Sector Z", "Kon
                                               "Hyrule Castle", "Yoshi's Island", "Dream Land", "Saffron City",
                                               "Mushroom Kingdom" };
 
+// Room codes: 6 chars from the unambiguous alphabet used by netlobby.cpp
+// (no 0/O/1/I). Sanitize keeps only alphabet chars, uppercased — so pasted
+// "abc-123" or "ABC 123" both collapse to "ABC123".
+constexpr size_t kRoomCodeLen = 6;
+static void SanitizeRoomCode(const char* in, char* out, size_t outSize) {
+    size_t n = 0;
+    for (const char* p = in; *p != '\0' && n + 1 < outSize && n < kRoomCodeLen; p++) {
+        const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(*p)));
+        if ((c >= 'A' && c <= 'Z') || (c >= '2' && c <= '9')) {
+            out[n++] = c;
+        }
+    }
+    out[n] = '\0';
+}
+
+// "ABC123" -> "ABC 123" for display.
+static std::string GroupRoomCode(const char* code) {
+    std::string grouped;
+    for (size_t i = 0; code[i] != '\0'; i++) {
+        if (i == kRoomCodeLen / 2) {
+            grouped += ' ';
+        }
+        grouped += code[i];
+    }
+    return grouped;
+}
+
 static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
     static char serverBuf[128] = {};
     static char codeBuf[8] = {};
@@ -462,9 +492,25 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
             CVarSetInteger("gNetplay.Delay", delay);
             save();
         }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Frames of input delay before rollback kicks in. 2 suits most connections;\n"
-                              "raise it on high-ping links to reduce visible rollbacks.");
+        ImGui::TextDisabled("Recommended: 2 for most connections. Raise it on high-ping "
+                            "links to reduce visible rollbacks; everyone in the room "
+                            "plays with the host's value.");
+        {
+            const int ping = port_netlobby_ping_ms();
+            if (ping >= 0) {
+                // ~16.6ms per frame: cover the round trip plus jitter margin.
+                const int recommended = ping < 30 ? 1 : ping < 70 ? 2 : ping < 110 ? 3 : 4;
+                if (recommended != delay) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Use recommended")) {
+                        delay = recommended;
+                        CVarSetInteger("gNetplay.Delay", delay);
+                        save();
+                    }
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(%d frames at %d ms)", recommended, ping);
+                }
+            }
         }
         if (UIWidgets::Button("Host", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
             port_netlobby_host(serverBuf, fighter, stage, stocks, itemsOn ? 1 : 0, delay);
@@ -472,14 +518,39 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
 
         ImGui::SeparatorText("Join a match");
         ImGui::TextUnformatted("Room code");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputText("##NetplayCode", codeBuf, sizeof(codeBuf), ImGuiInputTextFlags_CharsUppercase);
+        ImGui::SetNextItemWidth(-80.0f);
+        const bool codeEnter = ImGui::InputText("##NetplayCode", codeBuf, sizeof(codeBuf),
+                                                ImGuiInputTextFlags_CharsUppercase |
+                                                    ImGuiInputTextFlags_EnterReturnsTrue);
+        // Always run the sanitizer — paste via Ctrl+V lands in one edit, but
+        // a programmatic write shouldn't leave invalid chars behind either.
+        SanitizeRoomCode(codeBuf, codeBuf, sizeof(codeBuf));
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Paste")) {
+            SanitizeRoomCode(ImGui::GetClipboardText(), codeBuf, sizeof(codeBuf));
+        }
+        const size_t codeLen = std::strlen(codeBuf);
+        if (codeLen > 0 && codeLen < kRoomCodeLen) {
+            ImGui::TextDisabled("%d of %d characters", static_cast<int>(codeLen),
+                                static_cast<int>(kRoomCodeLen));
+        }
+        const bool codeValid = (codeLen == kRoomCodeLen);
+        if (codeEnter && codeValid) {
+            port_netlobby_join(serverBuf, codeBuf, fighter);
+        }
+        ImGui::BeginDisabled(!codeValid);
         if (UIWidgets::Button("Join", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
             port_netlobby_join(serverBuf, codeBuf, fighter);
         }
         ImGui::SameLine();
         if (UIWidgets::Button("Spectate")) {
             port_netlobby_spectate(serverBuf, codeBuf);
+        }
+        ImGui::EndDisabled();
+        if (!codeValid && codeLen == 0) {
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Enter the 6-character room code shared by the host.");
+            }
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Watch the room's match live without playing - the spectator never\n"
@@ -527,10 +598,11 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
     ImGui::TextWrapped("%s", port_netlobby_status());
 
     if (port_netlobby_code()[0] != '\0' && port_netlobby_is_host() && !idle) {
-        ImGui::Text("Room code: %s", port_netlobby_code());
+        ImGui::Text("Room code: %s", GroupRoomCode(port_netlobby_code()).c_str());
         ImGui::SameLine();
         if (ImGui::SmallButton("Copy")) {
             ImGui::SetClipboardText(port_netlobby_code());
+            ToastSuccess("Room code copied to clipboard");
         }
     }
     if (state == PORT_NETLOBBY_CONNECTED || state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH) {
@@ -558,7 +630,20 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
         }
         int ping = port_netlobby_ping_ms();
         if (ping >= 0) {
-            ImGui::Text("Ping: %d ms%s", ping, port_netlobby_is_relay() ? " (relayed)" : "");
+            const char* quality = ping < 50 ? "Good" : ping < 100 ? "Fair" : "Poor";
+            const ImVec4 qualityColor = ping < 50   ? ImVec4(0.35f, 0.85f, 0.45f, 1.0f)
+                                        : ping < 100 ? ImVec4(0.95f, 0.75f, 0.25f, 1.0f)
+                                                     : ImVec4(0.95f, 0.35f, 0.30f, 1.0f);
+            ImGui::Text("Connection: ");
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::TextColored(qualityColor, "%s", quality);
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::TextDisabled(" — %d ms, %s", ping,
+                                port_netlobby_is_relay() ? "relayed" : "direct");
+        }
+        if (port_netlobby_is_host()) {
+            ImGui::TextDisabled("Input delay: %d frames (applies to all players)",
+                                CVarGetInteger("gNetplay.Delay", 2));
         }
     }
     if (port_netlobby_is_host() && state == PORT_NETLOBBY_CONNECTED) {
@@ -652,7 +737,13 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
             CVarSetInteger("gHiResTextures.Enabled", 1);
             CVarSave();
             ssb64::hires::HiResPack::Get().Init();
+            ToastSuccess("Texture pack installed and enabled");
+        } else {
+            ToastSuccess("Pack installed");
         }
+    } else if (phase == ModPackInstallPhase::Error &&
+               s_prevPhase != ModPackInstallPhase::Error) {
+        ToastError("Pack install failed");
     }
     s_prevPhase = phase;
 
@@ -1168,6 +1259,34 @@ void PortMenu::AddMenuSettings() {
                      "Allows controller input to be picked up by the game even when the window is not focused.")
                      .DefaultValue(true));
 
+    AddWidget(path, "Menu Background", WIDGET_CUSTOM)
+        .RaceDisable(false)
+        .CustomFunction([](WidgetInfo&) {
+            // Readability presets on top of the raw opacity slider below:
+            // pick a preset or drag the slider for a custom value.
+            const float opacity = CVarGetFloat(CVAR_SETTING("Menu.BackgroundOpacity"), 0.85f);
+            int preset = 3; // Custom
+            if (opacity <= 0.45f) {
+                preset = 0;
+            } else if (opacity <= 0.8f) {
+                preset = 1;
+            } else if (opacity >= 0.99f) {
+                preset = 2;
+            }
+            static const char* const kPresets[] = { "Transparent", "Dim", "Opaque", "Custom" };
+            ImGui::TextUnformatted("Menu background");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::Combo("##MenuBgPreset", &preset, kPresets, IM_ARRAYSIZE(kPresets))) {
+                static const float kValues[] = { 0.40f, 0.75f, 1.0f, 0.85f };
+                CVarSetFloat(CVAR_SETTING("Menu.BackgroundOpacity"), kValues[preset]);
+                CVarSave();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("How solid the menu backdrop is. Opaque hides the running game "
+                                  "entirely — best for readability and reduced motion.");
+            }
+        });
+
     AddWidget(path, "Menu Background Opacity", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_SETTING("Menu.BackgroundOpacity"))
         .RaceDisable(false)
@@ -1218,8 +1337,15 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Display", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Toggle Fullscreen", WIDGET_BUTTON)
         .RaceDisable(false)
-        .Callback([](WidgetInfo&) { Ship::Context::GetInstance()->GetWindow()->ToggleFullscreen(); })
-        .Options(ButtonOptions().Tooltip("Toggles fullscreen on or off."));
+        .Callback([this](WidgetInfo&) {
+            Ship::Context::GetInstance()->GetWindow()->ToggleFullscreen();
+            /* Auto-revert: fullscreen can leave the picture unusable on some
+             * monitor/renderer pairs, so confirm or undo after 15 s. */
+            mDisplayRevertArmed = true;
+            mDisplayRevertDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        })
+        .Options(ButtonOptions().Tooltip("Toggles fullscreen on or off. You'll be asked to confirm "
+                                         "the new mode — if it can't be seen, it reverts in 15 s."));
 
     path.sidebarName = "Image Quality";
     AddSidebarEntry("Settings", "Image Quality", 1);
@@ -1606,6 +1732,10 @@ void PortMenu::AddMenuSettings() {
                     info.options->disabledTooltip = "Enable NRage Analog Stick Remap to adjust this.";
                 }
             })
+            .DisabledAction("Enable NRage Remap", [enableCVar] {
+                CVarSetInteger(enableCVar, 1);
+                CVarSave();
+            })
             .Options(FloatSliderOptions()
                          .Min(0.0f).Max(0.99f).DefaultValue(0.10f)
                          .IsPercentage()
@@ -1621,6 +1751,10 @@ void PortMenu::AddMenuSettings() {
                     info.options->disabled = true;
                     info.options->disabledTooltip = "Enable NRage Analog Stick Remap to adjust this.";
                 }
+            })
+            .DisabledAction("Enable NRage Remap", [enableCVar] {
+                CVarSetInteger(enableCVar, 1);
+                CVarSave();
             })
             .Options(FloatSliderOptions()
                          .Min(0.5f).Max(1.5f).DefaultValue(1.0f)
@@ -2073,6 +2207,7 @@ void PortMenu::AddMenuMods() {
             // --- Action bar -------------------------------------------------
             if (ImGui::Button("Hot Reload")) {
                 DoHotReload(); // re-snapshots s_modList when it finishes
+                ToastInfo("Reloading script mods...");
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Unload + recompile + re-init all TCC mods.\n"
@@ -2081,6 +2216,7 @@ void PortMenu::AddMenuMods() {
             ImGui::SameLine();
             if (ImGui::Button("Rescan")) {
                 RefreshModList();
+                ToastInfo("Mod list refreshed");
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Re-read the mods/ folder without reloading the mods.");
@@ -2104,6 +2240,10 @@ void PortMenu::AddMenuMods() {
                     s_prevPhase != ModPackInstallPhase::Done &&
                     GetLastInstalledPackKind() == ModPackInstalledKind::ScriptMod) {
                     DoHotReload(); // re-snapshots s_modList when it finishes
+                    ToastSuccess("Mod installed — reloading");
+                } else if (phase == ModPackInstallPhase::Error &&
+                           s_prevPhase != ModPackInstallPhase::Error) {
+                    ToastError("Mod install failed");
                 }
                 s_prevPhase = phase;
             }
@@ -2436,25 +2576,55 @@ void PortMenu::InitElement() {
             "Not available on DirectX" } },
         { DISABLE_FOR_MATCH_REFRESH_RATE_ON,
           { [](disabledInfo&) -> bool { return CVarGetInteger(PORT_INTERP_CVAR_MATCH_DISPLAY, 0); },
-            "Match Display Refresh Rate is enabled" } },
+            "Match Display Refresh Rate is enabled", false, 0,
+            "Disable it",
+            [] {
+                CVarSetInteger(PORT_INTERP_CVAR_MATCH_DISPLAY, 0);
+                CVarSave();
+            } } },
         { DISABLE_FOR_ADVANCED_RESOLUTION_ON,
           { [](disabledInfo&) -> bool { return CVarGetInteger(CVAR_PREFIX_ADVANCED_RESOLUTION ".Enabled", 0); },
-            "Advanced Resolution enabled" } },
+            "Advanced Resolution enabled", false, 0,
+            "Disable Advanced Resolution",
+            [] {
+                CVarSetInteger(CVAR_PREFIX_ADVANCED_RESOLUTION ".Enabled", 0);
+                CVarSave();
+            } } },
         { DISABLE_FOR_VERTICAL_RES_TOGGLE_ON,
           { [](disabledInfo&) -> bool {
                return CVarGetInteger(CVAR_PREFIX_ADVANCED_RESOLUTION ".VerticalResolutionToggle", 0);
            },
-            "Vertical Resolution Toggle enabled" } },
+            "Vertical Resolution Toggle enabled", false, 0,
+            "Disable it",
+            [] {
+                CVarSetInteger(CVAR_PREFIX_ADVANCED_RESOLUTION ".VerticalResolutionToggle", 0);
+                CVarSave();
+            } } },
         { DISABLE_FOR_LOW_RES_MODE_ON,
-          { [](disabledInfo&) -> bool { return CVarGetInteger(CVAR_LOW_RES_MODE, 0); }, "N64 mode enabled" } },
+          { [](disabledInfo&) -> bool { return CVarGetInteger(CVAR_LOW_RES_MODE, 0); }, "N64 mode enabled", false, 0,
+            "Disable N64 mode",
+            [] {
+                CVarSetInteger(CVAR_LOW_RES_MODE, 0);
+                CVarSave();
+            } } },
         { DISABLE_FOR_ADVANCED_RESOLUTION_OFF,
           { [](disabledInfo&) -> bool { return !CVarGetInteger(CVAR_PREFIX_ADVANCED_RESOLUTION ".Enabled", 0); },
-            "Advanced Resolution is disabled" } },
+            "Advanced Resolution is disabled", false, 0,
+            "Enable Advanced Resolution",
+            [] {
+                CVarSetInteger(CVAR_PREFIX_ADVANCED_RESOLUTION ".Enabled", 1);
+                CVarSave();
+            } } },
         { DISABLE_FOR_VERTICAL_RESOLUTION_OFF,
           { [](disabledInfo&) -> bool {
                return !CVarGetInteger(CVAR_PREFIX_ADVANCED_RESOLUTION ".VerticalResolutionToggle", 0);
            },
-            "Vertical Resolution Toggle is off" } },
+            "Vertical Resolution Toggle is off", false, 0,
+            "Enable it",
+            [] {
+                CVarSetInteger(CVAR_PREFIX_ADVANCED_RESOLUTION ".VerticalResolutionToggle", 1);
+                CVarSave();
+            } } },
     };
 }
 
@@ -2463,6 +2633,14 @@ void PortMenu::UpdateElement() {
 }
 
 void PortMenu::Draw() {
+    /* Auto-revert fires even with the menu closed: the whole point is that
+     * the screen may be unusable, in which case the modal can't be seen
+     * either — revert silently once the deadline passes. */
+    if (mDisplayRevertArmed && !IsVisible() &&
+        std::chrono::steady_clock::now() > mDisplayRevertDeadline) {
+        Ship::Context::GetInstance()->GetWindow()->ToggleFullscreen();
+        mDisplayRevertArmed = false;
+    }
     Ship::Menu::Draw();
 }
 
@@ -2489,6 +2667,39 @@ void PortMenu::DrawElement() {
         ImGui::Spacing();
         if (ImGui::Button("OK", ImVec2(120, 0))) {
             ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    /* Display-change auto-revert: countdown modal after toggling fullscreen.
+     * Keep commits the new mode; timeout or Revert undoes the toggle. */
+    if (mDisplayRevertArmed) {
+        ImGui::OpenPopup("Keep this display mode?");
+    }
+    ImGui::SetNextWindowPos(viewportCenter, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Keep this display mode?", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        const float secondsLeft =
+            -std::chrono::duration<float>(std::chrono::steady_clock::now() - mDisplayRevertDeadline)
+                 .count();
+        if (secondsLeft <= 0) {
+            Ship::Context::GetInstance()->GetWindow()->ToggleFullscreen();
+            mDisplayRevertArmed = false;
+            ImGui::CloseCurrentPopup();
+        } else {
+            ImGui::TextWrapped("The display mode was changed. Reverting automatically in %d seconds "
+                               "if it isn't confirmed.", static_cast<int>(std::ceil(secondsLeft)));
+            ImGui::Spacing();
+            if (ImGui::Button("Keep", ImVec2(140, 0))) {
+                mDisplayRevertArmed = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Revert now", ImVec2(140, 0))) {
+                Ship::Context::GetInstance()->GetWindow()->ToggleFullscreen();
+                mDisplayRevertArmed = false;
+                ImGui::CloseCurrentPopup();
+            }
         }
         ImGui::EndPopup();
     }

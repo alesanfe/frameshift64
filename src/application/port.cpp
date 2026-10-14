@@ -51,6 +51,7 @@
 #include "first_run.h"
 #include "presentation/UpdatePrompt.h"
 #include "presentation/OnlineStatus.h"
+#include "presentation/Toasts.h"
 #include "presentation/PortMenu.h"
 #ifdef PORT_HIRES_ENABLED
 #include "resources/loading/textures/hires/HiResHook.h"
@@ -1059,6 +1060,7 @@ static int PortInitImpl(int argc, char* argv[]) {
 			gui->AddGuiWindow(std::make_shared<ssb64::UpdatePromptWindow>());
 			gui->AddGuiWindow(std::make_shared<ssb64::OnlineStatusWindow>());
 #endif
+			gui->AddGuiWindow(std::make_shared<ssb64::ToastsWindow>());
 		}
 
 #if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)

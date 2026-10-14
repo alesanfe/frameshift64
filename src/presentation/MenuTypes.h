@@ -123,6 +123,11 @@ struct WidgetInfo {
     // "Experimental", "Advanced", ...). Kept out of `name` so it neither
     // pollutes search results nor widens the control itself.
     const char* tag = nullptr;
+    // Widget-level recovery action, rendered as a small button next to the
+    // control when it ends up disabled. Takes precedence over any
+    // disabledInfo action carried by activeDisables.
+    const char* disabledActionLabel = nullptr;
+    std::function<void()> disabledAction = nullptr;
     bool isHidden = false;
     bool sameLine = false;
     bool raceDisable = true;
@@ -237,6 +242,12 @@ struct WidgetInfo {
         return *this;
     }
 
+    WidgetInfo& DisabledAction(const char* label, std::function<void()> action) {
+        disabledActionLabel = label;
+        disabledAction = std::move(action);
+        return *this;
+    }
+
     void ResetDisables() {
         isHidden = false;
         options->disabled = false;
@@ -262,6 +273,11 @@ struct disabledInfo {
     const char* reason;
     bool active = false;
     int32_t value = 0;
+    // Optional one-click recovery rendered next to the disabled control —
+    // e.g. "[Disable Advanced Resolution]" or "[Leave Room]" — so the UI
+    // doesn't just say why it's blocked, it offers the way out.
+    const char* actionLabel = nullptr;
+    std::function<void()> action = nullptr;
 };
 
 // Contains the name displayed in the sidebar (label), the number of columns to use in drawing (columnCount; for visual

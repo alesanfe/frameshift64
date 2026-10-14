@@ -87,54 +87,57 @@ Servicios
 
 | ID | Sev. | Conf. | Clase | Subsistema | Resumen |
 |----|------|-------|-------|-----------|---------|
-| AUD-01 | CRÍTICA | CONFIRMADO | Bug + debt | build/.gitignore | `assets/configuration/` ignorado: clone fresco no configura |
-| AUD-02 | ALTA | CONFIRMADO | Bug | CI release.yml | Job Android con rutas pre-reorg (2 fallos) |
-| AUD-03 | ALTA | CONFIRMADO | Bug | platforms/android | `repoRoot` resuelve a `platforms/` no al root |
-| AUD-04 | ALTA | CONFIRMADO | Bug | CI android.yml | `working-directory: android` obsoleto |
-| AUD-05 | ALTA | CONFIRMADO | Bug | CI build-uwp.yml | Staging con rutas `tools/`/`yamls/` viejas |
-| AUD-06 | ALTA | CONFIRMADO | Bug | packaging | ROOT una carpeta corto + rutas internas viejas (linux+mac) |
-| AUD-07 | ALTA | CONFIRMADO | Bug | packaging | windows.ps1: tool movido + string mangleado + yamls/ |
-| AUD-08 | MEDIA | CONFIRMADO | Bug | packaging | Comentario tras `\` inyecta arg extra en los 3 packagers |
-| AUD-09 | ALTA | CONFIRMADO | Bug | lobby prod | `role=spec` rechazado (400) en edge fetch → spec roto en prod |
-| AUD-10 | ALTA | CONFIRMADO | Seguridad | lobby | `role=host` cross-version resetea sala viva (kill sin auth) |
-| AUD-11 | ALTA | CONFIRMADO | Seguridad | lobby+cliente | Spec→host binario sin filtro; `SSBL ` smuggled ejecuta `fail()` del lobby. Generaliza: PICK con versión mala de CUALQUIER peer mata la sala |
-| AUD-12 | MEDIA | CONFIRMADO | Seguridad | lobby | Frames oversize no cuentan al rate limiter |
-| AUD-13 | MEDIA | CONFIRMADO | Bug | audio/bridge | Parsers .ctl/.tbl/.sbk confían en counts/offsets → OOB via mod |
-| AUD-14 | MEDIA | CONFIRMADO | Bug | bridge/reloc | Sprite fixup confía en nbitmaps/geometría → OOB write |
-| AUD-15 | MEDIA | CONFIRMADO | Bug | compat/tasks | DP_FULL_SYNC fantasma por audio task → completa gfx antes |
-| AUD-16 | MEDIA | CONFIRMADO | Bug | core/save | Escritura SRAM no atómica + errores invisibles al juego |
-| AUD-17 | MEDIA | CONFIRMADO | Bug | core/log | `sLogFile` race + UAF de fclose vs threads detached |
-| AUD-18 | ALTA | PROBABLE | Bug | rollback | Mispredict en tick no-snapshotable (pause/countdown) → desync sin recuperación |
-| AUD-19 | MEDIA | CONFIRMADO | Bug | lobby/cliente | `fail()` por versión/compat de un peer mata todo el lobby |
-| AUD-20 | MEDIA | PROBABLE | Riesgo | netplay/compat | Handshake solo hashea mods script-Loaded; mods de assets/reloc evaden |
-| AUD-21 | MEDIA | CONFIRMADO | Bug | decomp FP | `-ffp-contract=off` solo en sinf/cosf → FMA en ARM64 diverge vs x64 |
-| AUD-22 | BAJA | CONFIRMADO | Bug | decomp FP | MSVC: sinf/cosf bare siguen yendo a UCRT libm |
-| AUD-23 | MED-BAJA | CONFIRMADO | Seguridad | lobby | Sin reaper: sockets zombie retienen slots y DO billable |
-| AUD-24 | BAJA | CONFIRMADO | Seguridad | lobby | Budget de joins = exactamente una sala llena; atacante la mantiene cerrada |
-| AUD-25 | BAJA | CONFIRMADO | Seguridad | lobby | Oráculo de existencia de sala sin throttle entre códigos |
-| AUD-26 | MED-BAJA | PROBABLE | Bug | netplay LAN | HELLO no autenticado: endpoint arbitrario reclama slots 1-3 |
-| AUD-27 | MED-BAJA | PROBABLE | Bug | rollback | Coroutines huerfanas al rebobinar sobre spawn de GObjThread |
-| AUD-28 | MEDIA | CONFIRMADO | Deuda | semgrep | Reglas no cubren `src/netplay/` (paths.include `net/*` viejo) |
-| AUD-29 | MED-BAJA | CONFIRMADO | Deuda | codegen | Targets phony reescriben salidas cada build → relink churn + ventana de borrado en generate_yamls |
-| AUD-30 | MED-BAJA | CONFIRMADO | Deuda | tests | Scripts: sleeps fijos, defaults de build dir obsoletos |
-| AUD-31 | MED-BAJA | CONFIRMADO | Bug | features | ShaderDownloader: worker sin cancelación → .glsl truncado, fase Done tras cancel |
-| AUD-32 | MED-BAJA | CONFIRMADO | Seguridad | features | Updater Linux/macOS sin verificación de integridad (Windows sí) |
-| AUD-33 | BAJA | CONFIRMADO | Bug | presentation | `InsertSidebarSearch` .at(size()) → crash con CVar obsoleto |
-| AUD-34 | MED-BAJA | PROBABLE | Bug | bridge | Particle bank: validación loguea "absurd" pero usa datos basura igual |
-| AUD-35 | BAJA | PROBABLE | Bug | application | MuteOnFocusLoss persiste MasterVolume=0 tras restart |
-| AUD-36 | BAJA | PROBABLE | Bug | replay | Paths replay/desync truncan a 512/640 chars → dump perdido silente |
-| AUD-37 | BAJA | CONFIRMADO | Deuda | compat | Orden de resume contradictorio con comentario; cap 8 rondas |
-| AUD-38 | BAJA | CONFIRMADO | Deuda | compat | osSendMesg/RecvMesg fallan silente fuera de coroutine |
-| AUD-39 | BAJA | CONFIRMADO | Deuda | compat | Stubs reportan 4 controllers siempre conectados |
-| AUD-40 | BAJA | CONFIRMADO | Deuda | decomp | Canary de stack GObjThread es código muerto en port |
+| AUD-01 | CRÍTICA | RESUELTO | Bug + debt | build/.gitignore | `assets/configuration/` ignorado: clone fresco no configura |
+| AUD-02 | ALTA | RESUELTO | Bug | CI release.yml | Job Android con rutas pre-reorg (2 fallos) |
+| AUD-03 | ALTA | RESUELTO | Bug | platforms/android | `repoRoot` resuelve a `platforms/` no al root |
+| AUD-04 | ALTA | RESUELTO | Bug | CI android.yml | `working-directory: android` obsoleto |
+| AUD-05 | ALTA | RESUELTO | Bug | CI build-uwp.yml | Staging con rutas `tools/`/`yamls/` viejas |
+| AUD-06 | ALTA | RESUELTO | Bug | packaging | ROOT una carpeta corto + rutas internas viejas (linux+mac) |
+| AUD-07 | ALTA | RESUELTO | Bug | packaging | windows.ps1: tool movido + string mangleado + yamls/ |
+| AUD-08 | MEDIA | RESUELTO | Bug | packaging | Comentario tras `\` inyecta arg extra en los 3 packagers |
+| AUD-09 | ALTA | RESUELTO | Bug | lobby prod | `role=spec` rechazado (400) en edge fetch → spec roto en prod |
+| AUD-10 | ALTA | RESUELTO | Seguridad | lobby | `role=host` cross-version resetea sala viva (kill sin auth) |
+| AUD-11 | ALTA | RESUELTO | Seguridad | lobby+cliente | Spec→host binario sin filtro; `SSBL ` smuggled ejecuta `fail()` del lobby. Generaliza: PICK con versión mala de CUALQUIER peer mata la sala |
+| AUD-12 | MEDIA | RESUELTO | Seguridad | lobby | Frames oversize no cuentan al rate limiter |
+| AUD-13 | MEDIA | RESUELTO | Bug | audio/bridge | Parsers .ctl/.tbl/.sbk confían en counts/offsets → OOB via mod |
+| AUD-14 | MEDIA | RESUELTO | Bug | bridge/reloc | Sprite fixup confía en nbitmaps/geometría → OOB write |
+| AUD-15 | MEDIA | RESUELTO | Bug | compat/tasks | DP_FULL_SYNC fantasma por audio task → completa gfx antes |
+| AUD-16 | MEDIA | RESUELTO | Bug | core/save | Escritura SRAM no atómica + errores invisibles al juego |
+| AUD-17 | MEDIA | RESUELTO | Bug | core/log | `sLogFile` race + UAF de fclose vs threads detached |
+| AUD-18 | ALTA | RESUELTO | Bug | rollback | Mispredict en tick no-snapshotable (pause/countdown) → desync sin recuperación |
+| AUD-19 | MEDIA | RESUELTO | Bug | lobby/cliente | `fail()` por versión/compat de un peer mata todo el lobby |
+| AUD-20 | MEDIA | RESUELTO | Riesgo | netplay/compat | Handshake solo hashea mods script-Loaded; mods de assets/reloc evaden |
+| AUD-21 | MEDIA | RESUELTO | Bug | decomp FP | `-ffp-contract=off` solo en sinf/cosf → FMA en ARM64 diverge vs x64 |
+| AUD-22 | BAJA | RESUELTO | Bug | decomp FP | MSVC: sinf/cosf bare siguen yendo a UCRT libm |
+| AUD-23 | MED-BAJA | RESUELTO | Seguridad | lobby | Sin reaper: sockets zombie retienen slots y DO billable |
+| AUD-24 | BAJA | RESUELTO | Seguridad | lobby | Budget de joins = exactamente una sala llena; atacante la mantiene cerrada |
+| AUD-25 | BAJA | RESUELTO | Seguridad | lobby | Oráculo de existencia de sala sin throttle entre códigos |
+| AUD-26 | MED-BAJA | RESUELTO | Bug | netplay LAN | HELLO no autenticado: endpoint arbitrario reclama slots 1-3 |
+| AUD-27 | MED-BAJA | RESUELTO | Bug | rollback | Coroutines huerfanas al rebobinar sobre spawn de GObjThread |
+| AUD-28 | MEDIA | RESUELTO | Deuda | semgrep | Reglas no cubren `src/netplay/` (paths.include `net/*` viejo) |
+| AUD-29 | MED-BAJA | RESUELTO | Deuda | codegen | Targets phony reescriben salidas cada build → relink churn + ventana de borrado en generate_yamls |
+| AUD-30 | MED-BAJA | RESUELTO | Deuda | tests | Scripts: sleeps fijos, defaults de build dir obsoletos |
+| AUD-31 | MED-BAJA | RESUELTO | Bug | features | ShaderDownloader: worker sin cancelación → .glsl truncado, fase Done tras cancel |
+| AUD-32 | MED-BAJA | RESUELTO | Seguridad | features | Updater Linux/macOS sin verificación de integridad (Windows sí) |
+| AUD-33 | BAJA | RESUELTO | Bug | presentation | `InsertSidebarSearch` .at(size()) → crash con CVar obsoleto |
+| AUD-34 | MED-BAJA | RESUELTO | Bug | bridge | Particle bank: validación loguea "absurd" pero usa datos basura igual |
+| AUD-35 | BAJA | RESUELTO | Bug | application | MuteOnFocusLoss persiste MasterVolume=0 tras restart |
+| AUD-36 | BAJA | RESUELTO | Bug | replay | Paths replay/desync truncan a 512/640 chars → dump perdido silente |
+| AUD-37 | BAJA | RESUELTO | Deuda | compat | Orden de resume contradictorio con comentario; cap 8 rondas |
+| AUD-38 | BAJA | RESUELTO | Deuda | compat | osSendMesg/RecvMesg fallan silente fuera de coroutine |
+| AUD-39 | BAJA | RESUELTO | Deuda | compat | Stubs reportan 4 controllers siempre conectados |
+| AUD-40 | BAJA | RESUELTO | Deuda | decomp | Canary de stack GObjThread es código muerto en port |
 | AUD-41 | BAJA | RESUELTO | Deuda | cmake | `coroutine_test` include dir `port/` muerto; 3 CMakeLists de mods con `merge_mod.py` viejo; 2 probes py con root mal — todos corregidos post-reorganización |
-| AUD-42 | BAJA | CONFIRMADO | Deuda | codegen | RelocFileTable embebe ruta absoluta del autor |
-| AUD-43 | BAJA | CONFIRMADO | Deuda | cmake | TorchExternal sin BUILD_ALWAYS → sidecar stale |
-| AUD-44 | BAJA | CONFIRMADO | Deuda | netplay | `token=="none"` rama muerta; hash mod no incluye contenido del archivo |
-| AUD-45 | BAJA | CONFIRMADO | Doc debt | docs/scripts | Rutas pre-reorg en .gitignore comments, BUILDING.md, scripts usage, mods READMEs |
-| AUD-46 | BAJA | CONFIRMADO | Privacidad | lobby | broadcastRoster envía endpoints de players a specs |
+| AUD-42 | BAJA | RESUELTO | Deuda | codegen | RelocFileTable embebe ruta absoluta del autor |
+| AUD-43 | BAJA | RESUELTO | Deuda | cmake | TorchExternal sin BUILD_ALWAYS → sidecar stale |
+| AUD-44 | BAJA | RESUELTO | Deuda | netplay | `token=="none"` rama muerta; hash mod no incluye contenido del archivo |
+| AUD-45 | BAJA | RESUELTO | Doc debt | docs/scripts | Rutas pre-reorg en .gitignore comments, BUILDING.md, scripts usage, mods READMEs |
+| AUD-46 | BAJA | RESUELTO | Privacidad | lobby | broadcastRoster envía endpoints de players a specs |
 | AUD-47 | INFO | CONFIRMADO | Limitación | replay | Takeover: otros slots reciben frames en cero tras agotar el replay |
 | AUD-48 | INFO | CONFIRMADO | Limitación | spec | Spec mid-match no puede reconstruir estado (sin snapshot) — espera siguiente match |
+
+
+> **Status update (post-remediation):** 46/48 findings verified fixed in code. AUD-47 and AUD-48 remain as accepted design limitations (replay takeover zero-frames; no mid-match spectator snapshot).
 
 ## 5. Hallazgos detallados (severidad alta y crítica)
 

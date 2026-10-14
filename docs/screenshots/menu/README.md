@@ -51,3 +51,22 @@ Requires a dev build with `SSB64_TEST_HOOKS` (the script uses
 ## About
 
 ![About / Build](about-build.png)
+
+## Windows & states
+
+| | |
+|---|---|
+| ![Stats](window-stats.png) | ![Console](window-console.png) |
+| Stats overlay | Console |
+| ![Gfx Debugger](window-gfx-debugger.png) | ![Controller Config](window-controller-config.png) |
+| Gfx Debugger | Controller Config |
+| ![Online Status](window-online-status.png) | ![Popout mode](menu-popout.png) |
+| Online Status | Menu in popout window |
+| ![Controller nav](menu-controller-nav.png) | |
+| Menu with controller nav hints | |
+
+## Not capturable automatically
+
+- First-run wizard — requires a real ROM and a clean `%APPDATA%\BattleShip` profile; capture manually.
+- Update prompt — only appears when the updater finds a newer release.
+- Lobby "in room" / "in match" states — need an active netplay session.

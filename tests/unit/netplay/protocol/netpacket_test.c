@@ -237,6 +237,41 @@ static void test_control_rejection(void)
 		   == -NB_NETPACKET_BAD_CHECKSUM); /* checksum first */
 }
 
+/* ── DELAY ──────────────────────────────────────────────────────────── */
+
+static void test_delay_round_trip(void)
+{
+	u8 buf[NB_NETPACKET_DELAY_PACKET_BYTES];
+	u32 delay = 0;
+
+	EXPECT(nbNetPacketBuildDelay(buf, 0xABCD, 3) == NB_NETPACKET_DELAY_PACKET_BYTES);
+	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay) == NB_NETPACKET_OK);
+	EXPECT(delay == 3);
+	/* NULL out-param is a validation-only call. */
+	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, NULL) == NB_NETPACKET_OK);
+}
+
+static void test_delay_rejection(void)
+{
+	u8 buf[NB_NETPACKET_DELAY_PACKET_BYTES];
+	u32 delay;
+
+	nbNetPacketBuildDelay(buf, 0xABCD, 2);
+	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf) - 1, 0xABCD, &delay)
+		   == -NB_NETPACKET_BAD_SIZE);
+	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf) + 1, 0xABCD, &delay)
+		   == -NB_NETPACKET_BAD_SIZE);
+	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD + 1, &delay)
+		   == -NB_NETPACKET_BAD_SESSION);
+	buf[3] ^= 0xFF;
+	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay)
+		   == -NB_NETPACKET_BAD_CHECKSUM);
+	nbNetPacketBuildDelay(buf, 0xABCD, 2);
+	buf[4] ^= 0xFF; /* version byte — checksum still fails first */
+	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay)
+		   == -NB_NETPACKET_BAD_CHECKSUM);
+}
+
 /* ── FORWARD ────────────────────────────────────────────────────────── */
 
 static void test_forward_round_trip(void)
@@ -518,6 +553,8 @@ int main(void)
 	test_input_mutant_flags();
 	test_control_round_trip();
 	test_control_rejection();
+	test_delay_round_trip();
+	test_delay_rejection();
 	test_forward_round_trip();
 	test_forward_rejection();
 	test_bootstrap_prefix();

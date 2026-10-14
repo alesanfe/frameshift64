@@ -51,6 +51,18 @@ SECTIONS = [
     ("About", "AboutSidebarSection", "Build", "about-build"),
 ]
 
+# Floating windows / alternate states — captured by toggling their visibility
+# CVars instead of menu selection. (name, extra cvars dict)
+WINDOWS = [
+    ("window-stats", {"gStatsEnabled": 1}),
+    ("window-console", {"gConsoleEnabled": 1}),
+    ("window-gfx-debugger", {"gGfxDebuggerEnabled": 1}),
+    ("window-controller-config", {"gControllerConfigurationEnabled": 1}),
+    ("window-online-status", {"gOnlineStatus.Visible": 1}),
+    ("menu-popout", {"gSettings.Menu.Popout": 1}),
+    ("menu-controller-nav", {"gControlNav": 1}),
+]
+
 CAPTURE_FRAME = 360   # ~6s at 60fps — past boot/intro with the menu overlaid
 EXIT_FRAME = 400
 
@@ -64,7 +76,8 @@ def set_cvar(cfg: dict, dotted: str, value) -> None:
     node[parts[-1]] = value
 
 
-def write_cfg(cfg_path: Path, header: str, sidebar_cvar: str, sidebar: str) -> None:
+def write_cfg(cfg_path: Path, header: str, sidebar_cvar: str, sidebar: str,
+              extra: dict | None = None) -> None:
     cfg = {}
     if cfg_path.is_file():
         try:
@@ -74,7 +87,22 @@ def write_cfg(cfg_path: Path, header: str, sidebar_cvar: str, sidebar: str) -> N
     set_cvar(cfg, "gOpenPortMenu", 1)
     set_cvar(cfg, "gSettings.Menu.ActiveHeader", header)
     set_cvar(cfg, f"gSettings.Menu.{sidebar_cvar}", sidebar)
+    for k, v in (extra or {}).items():
+        set_cvar(cfg, k, v)
     cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def run_shot(exe: Path, cwd: Path, env: dict, tmp: Path, dest: Path) -> bool:
+    shot = tmp / f"frame_{CAPTURE_FRAME}.png"
+    shot.unlink(missing_ok=True)
+    proc = subprocess.run([str(exe)], cwd=str(cwd), env=env,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          timeout=180)
+    if shot.is_file() and shot.stat().st_size > 10_000:
+        shutil.move(str(shot), str(dest))
+        return True
+    print(f"    (rc={proc.returncode}, shot exists={shot.exists()})")
+    return False
 
 
 def app_cfg_path() -> Path:
@@ -122,19 +150,18 @@ def main() -> int:
             if args.only and name not in args.only:
                 continue
             write_cfg(cfg_path, header, scvar, sidebar)
-            shot = tmp / f"frame_{CAPTURE_FRAME}.png"
-            shot.unlink(missing_ok=True)
-            proc = subprocess.run([str(exe)], cwd=str(args.bin), env=env,
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                  timeout=180)
-            dest = args.out / f"{name}.png"
-            if shot.is_file() and shot.stat().st_size > 10_000:
-                shutil.move(str(shot), str(dest))
-                results.append((name, True))
-                print(f"OK   {name} ({dest.stat().st_size} bytes)")
-            else:
-                results.append((name, False))
-                print(f"FAIL {name} (rc={proc.returncode})")
+            ok = run_shot(exe, args.bin, env, tmp, args.out / f"{name}.png")
+            results.append((name, ok))
+            print(f"{'OK  ' if ok else 'FAIL'} {name}")
+
+        # Floating windows & alt states — menu stays on Settings>General for context
+        for name, extra in WINDOWS:
+            if args.only and name not in args.only:
+                continue
+            write_cfg(cfg_path, "Settings", "SettingsSidebarSection", "General", extra)
+            ok = run_shot(exe, args.bin, env, tmp, args.out / f"{name}.png")
+            results.append((name, ok))
+            print(f"{'OK  ' if ok else 'FAIL'} {name}")
     finally:
         if old_cfg is not None:
             cfg_path.write_bytes(old_cfg)
