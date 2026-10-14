@@ -544,20 +544,24 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # deps don't bloat the SDL-bound game library.
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/android/android_torch_bridge\\.cpp$")
     # Drop features we explicitly disable on Android (no curl-driven
-    # self-updater, no discord-rpc link, no libretro shader downloader).
+    # self-updater — Android updates via APK installs, not in-app binary
+    # replacement — no discord-rpc target, and no ModPackDownloader which
+    # still depends on a killable curl child). ShaderDownloader is NOT
+    # excluded: it fetches through HttpURLConnection (JNI) and extracts
+    # via in-process libzip, so it runs on Android too.
     # The corresponding menu entries are gated with #if !defined(__ANDROID__)
     # in src/presentation/PortMenu.cpp so nothing references the removed symbols.
     # (src/resources/textures/hires/ is NOT dropped here — it compiles on Android but runs
     # opt-in with a reduced LRU budget; see the PORT_HIRES_ENABLED block.)
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
-        "src/features/(Updater|DiscordRichPresence|ShaderDownloader)\\.cpp$")
+        "src/features/(Updater|DiscordRichPresence|ModPackDownloader)\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/port_window_icon\\.cpp$")
 endif()
 if(BATTLESHIP_UWP)
     # Xbox packages are updated as MSIX and cannot use these Win32
     # shell-out/IPC integrations.
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
-        "src/features/(Updater|DiscordRichPresence|ShaderDownloader)\\.cpp$")
+        "src/features/(Updater|DiscordRichPresence|ShaderDownloader|ModPackDownloader)\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/port_window_icon\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/application/first_run\\.cpp$")
 endif()
@@ -1137,6 +1141,13 @@ if (WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt)
 endif()
 
+# In-process zip extraction (src/platform/zip_extract.cpp). libzip is
+# already REQUIRED by libultraship on every target — vcpkg/system on
+# desktop, FetchContent'd on Android — so this only adds a direct link
+# for the executable, no new dependency.
+find_package(libzip REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE libzip::zip)
+
 add_dependencies(ssb64_game GenerateCreditsAssets)
 if (NOT DISABLE_SCRIPTING)
     # funchook hook backend (libultraship is already linked above).
@@ -1607,6 +1618,22 @@ endif()
 ################################################################################
 if (NOT DISABLE_SCRIPTING)
     include(ModO2R)
+
+    # Stage bundled example mods next to the binary so the in-game Mods
+    # panel can offer one-click install (PortMenu copies
+    # bundled-mods/<name>/ into mods/ then hot-reloads). package_mod.py
+    # replicates each mod's own CMakeLists output (build.gen + dist/*.c +
+    # manifest + headers). POST_BUILD keeps the staged copy in sync with
+    # source edits; packagers pick bundled-mods/ up with the rest of the
+    # exe directory.
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/modding/package_mod.py
+            --mod-dir ${CMAKE_CURRENT_SOURCE_DIR}/mods/examples/playertint
+            --out-dir "$<TARGET_FILE_DIR:${PROJECT_NAME}>/bundled-mods/playertint"
+            --repo-root ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Staging bundled mod: playertint"
+        VERBATIM)
 endif()
 
 ################################################################################

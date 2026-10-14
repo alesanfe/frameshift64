@@ -6,6 +6,11 @@ import android.util.Log;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
 import org.libsdl.app.SDLActivity;
 
 /**
@@ -116,6 +121,50 @@ public class BattleShipActivity extends SDLActivity {
             return true; // consume DOWN and UP
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * Blocking HTTP(S) GET for the native shader-pack downloader
+     * (src/platform/http_download.cpp calls in over JNI). Runs on the
+     * caller's worker thread — never the UI thread. Android apps can't
+     * exec curl, so the platform HTTP stack is the conforming backend;
+     * the desktop builds shell out to `curl` instead.
+     *
+     * Returns true only on a 2xx response fully written to destPath.
+     * A failed attempt deletes the partial file so callers never see a
+     * torn payload — same contract as the curl `-f` path on desktop.
+     */
+    public boolean httpDownloadToFile(String url, String destPath) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setInstanceFollowRedirects(true);
+            conn.setConnectTimeout(15_000);
+            conn.setReadTimeout(60_000);
+            conn.setRequestProperty("User-Agent", "BattleShip-Android");
+            final int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                Log.w("ssb64.http", "download " + url + " -> HTTP " + code);
+                return false;
+            }
+            try (InputStream in = conn.getInputStream();
+                 FileOutputStream out = new FileOutputStream(destPath)) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            Log.w("ssb64.http", "download failed: " + url, e);
+            new java.io.File(destPath).delete();
+            return false;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
     }
 
     @Override

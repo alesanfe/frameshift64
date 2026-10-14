@@ -8,6 +8,7 @@
 #include "PortMenu.h"
 
 #include "Compat.h"
+#include "application/app_paths.h"
 #include "features/enhancements.h"
 #include "resources/interpolation/frame_interpolation.h"
 #include "netplay/netlobby.h"
@@ -358,13 +359,11 @@ void RenderPostProcessDiagnostics(WidgetInfo& /*widget*/) {
     }
 }
 
-#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
-// Shader-pack downloader UI is gated off on Android (the libretro
-// catalog fetch + ZIP-extract pipeline doesn't fit Play Store distro;
-// src/features/ShaderDownloader.cpp is not compiled into libmain.so).
-// The matching menu entry under Settings → Graphics is wrapped in the
-// same guard, so this block is dead code on Android — gate the whole
-// definition so the link doesn't reach for the missing symbols.
+#if !defined(BATTLESHIP_UWP)
+// Shader-pack downloader UI is gated off only on UWP (MSIX packages
+// can't fetch/replace content this way). On Android the downloader now
+// runs through HttpURLConnection + in-process libzip, and
+// src/features/ShaderDownloader.cpp is compiled into libmain.so.
 
 // State scoped to the shader-pack modal, mirroring the Low-Res-warn
 // pattern. We keep a "needs to open this frame" flag so the
@@ -624,6 +623,94 @@ void RenderShaderPackDownloader(WidgetInfo& /*widget*/) {
     }
 }
 
+#if defined(PORT_HIRES_ENABLED) && !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
+// Featured texture packs (SSB Reloaded & co): one-click download into
+// mods/ with a pinned SHA-256, then enable + rescan so textures go live
+// without a restart. Desktop-only — ModPackDownloader (curl + libzip
+// audit) is not compiled on Android/UWP.
+void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
+    using namespace ssb64::enhancements;
+
+    const ModPackInstallPhase phase = GetModPackInstallPhase();
+    const bool busy =
+        phase == ModPackInstallPhase::Downloading ||
+        phase == ModPackInstallPhase::Verifying ||
+        phase == ModPackInstallPhase::Validating ||
+        phase == ModPackInstallPhase::Installing;
+
+    // Enable + rescan on the Done edge so the freshly installed pack goes
+    // live without a restart (the user's own toggle choice is preserved —
+    // we only force it on right after they asked us to install a pack).
+    static ModPackInstallPhase s_prevPhase = ModPackInstallPhase::Idle;
+    if (phase == ModPackInstallPhase::Done &&
+        s_prevPhase != ModPackInstallPhase::Done) {
+        CVarSetInteger("gHiResTextures.Enabled", 1);
+        CVarSave();
+        ssb64::hires::HiResPack::Get().Init();
+    }
+    s_prevPhase = phase;
+
+    size_t packCount = 0;
+    const CuratedModPack* packs = GetCuratedModPacks(&packCount);
+    const std::string status = GetModPackInstallStatus();
+
+    for (size_t i = 0; i < packCount; i++) {
+        const CuratedModPack& pack = packs[i];
+        ImGui::PushID(pack.id);
+
+        ImGui::TextWrapped("%s %s", pack.displayName, pack.version);
+        ImGui::TextDisabled("%s", pack.summary);
+
+        const bool installed = IsModPackInstalled(pack);
+        if (installed) {
+            ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "Installed");
+            ImGui::SameLine();
+            if (UIWidgets::Button("Reinstall",
+                                  UIWidgets::ButtonOptions()
+                                      .Size(UIWidgets::Sizes::Inline)
+                                      .Tooltip("Re-download the pack (replaces the installed copy)."))) {
+                StartModPackInstallAsync(pack.id);
+            }
+        } else if (busy) {
+            const uint64_t got = GetModPackDownloadedBytes();
+            const float frac = pack.expectedSize > 0
+                                   ? static_cast<float>(static_cast<double>(got) / pack.expectedSize)
+                                   : 0.0f;
+            ImGui::ProgressBar(frac, ImVec2(-1.0f, 0.0f),
+                               fmt::format("{} ({:.0f} / {:.0f} MB)", status,
+                                           got / 1.0e6, pack.expectedSize / 1.0e6)
+                                   .c_str());
+            if (UIWidgets::Button("Cancel",
+                                  UIWidgets::ButtonOptions().Size(UIWidgets::Sizes::Inline))) {
+                CancelModPackInstall();
+            }
+        } else {
+            const double mb = pack.expectedSize / 1.0e6;
+            // Tooltip stores the pointer — build the text once so it outlives the call.
+            static std::string s_packTooltip =
+                fmt::format("Downloads from {} and verifies the pinned SHA-256 before "
+                            "installing. The pack stays zipped in mods/ — no extraction "
+                            "needed.", pack.upstreamUrl);
+            if (UIWidgets::Button(
+                    fmt::format("Download & Install ({:.0f} MB)", mb).c_str(),
+                    UIWidgets::ButtonOptions()
+                        .Color(UIWidgets::Colors::LightBlue)
+                        .Tooltip(s_packTooltip.c_str()))) {
+                StartModPackInstallAsync(pack.id);
+            }
+        }
+
+        if (!installed && !busy && phase == ModPackInstallPhase::Error && !status.empty()) {
+            ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1.0f), "%s", status.c_str());
+        }
+        ImGui::PopID();
+    }
+
+    ImGui::TextDisabled("Third-party pack by GhostlyDark — downloaded from its own "
+                        "GitHub release page (not redistributed by this project).");
+}
+#endif // PORT_HIRES_ENABLED && desktop
+
 // Drawn from RenderMenuTopLevel each frame so the modal survives the
 // picker combo collapsing. Six conceptual states laid out in one
 // function because they share the same window+title+button layout
@@ -864,7 +951,7 @@ void RenderShaderPackModal() {
 
     ImGui::EndPopup();
 }
-#endif // !__ANDROID__ (shader-pack downloader)
+#endif // !BATTLESHIP_UWP (shader-pack downloader)
 
 // Modal companion to RenderPostProcessShaderPicker. Drawn from
 // RenderMenuTopLevel each frame so the popup survives the picker's
@@ -1132,11 +1219,12 @@ void PortMenu::AddMenuSettings() {
                      .DefaultValue(1));
 #endif
 
-#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
-    // Post-process / CRT shader stack — hidden on Android. The libretro
-    // slang→SPIR-V→backend transpile path hasn't been validated against
-    // GLES on mobile, and the libretro shader catalog download (curl +
-    // ZIP extraction) is a poor fit for a Play Store distribution.
+#if !defined(BATTLESHIP_UWP)
+    // Post-process / CRT shader stack — enabled on Android since the
+    // downloader went in-process (HttpURLConnection + libzip). Note:
+    // the transpile path emits GLSL ES through the same Fast3D GLES
+    // backend, but has had limited device validation — treat shader
+    // load failures on Android as bug reports, not unsupported config.
     AddWidget(path, "Post-Process Shader", WIDGET_CUSTOM)
         .RaceDisable(false)
         .CustomFunction(RenderPostProcessShaderPicker);
@@ -1589,6 +1677,14 @@ void PortMenu::AddMenuAssets() {
               "Files are matched by decoded-RGBA8 CRC32 — no per-PNG configuration needed. "
               "Toggle takes effect on the next texture cache miss.",
               WIDGET_TEXT);
+#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
+    // One-click installs for curated packs (SSB Reloaded). Downloads via
+    // ModPackDownloader on a worker thread with pinned SHA-256 + zip audit;
+    // the desktop-only file is excluded from Android/UWP builds.
+    AddWidget(path, "Featured packs", WIDGET_CUSTOM)
+        .RaceDisable(false)
+        .CustomFunction(RenderCuratedTexturePacks);
+#endif
     AddWidget(path, "Enable Hi-Res Texture Pack", WIDGET_CVAR_CHECKBOX)
         .CVar("gHiResTextures.Enabled")
         .RaceDisable(false)
@@ -1747,6 +1843,84 @@ static void DoHotReload() {
     }
 }
 
+/* Bundled example mods staged next to the binary by the build
+ * (tools/modding/package_mod.py -> <exe>/bundled-mods/<id>/). One-click
+ * install copies the packaged folder into mods/ and hot-reloads so TCC
+ * compiles + ModInit runs immediately — the mod lands already active. */
+struct BundledModSpec {
+    const char* id;           // folder name under bundled-mods/ and mods/
+    const char* manifestName; // manifest "name" as listed in s_modList
+    const char* summary;
+};
+static const BundledModSpec kBundledMods[] = {
+    { "playertint", "Player Tint",
+      "P1 red / P2 blue / P3 green / P4 yellow fighter tint. "
+      "Cosmetic-only — does not affect netplay compatibility." },
+};
+
+static void RenderBundledModRows() {
+    namespace fs = std::filesystem;
+    const fs::path bundleRoot = fs::path(ssb64::RealAppBundlePath()) / "bundled-mods";
+    const fs::path modsRoot   = fs::path(ssb64::RealAppBundlePath()) / "mods";
+
+    ImGui::TextDisabled("Included with BattleShip");
+    for (const BundledModSpec& spec : kBundledMods) {
+        ImGui::PushID(spec.id);
+        const fs::path src = bundleRoot / spec.id;
+        const fs::path dst = modsRoot / spec.id;
+        std::error_code ec;
+        const bool bundled   = fs::is_directory(src, ec);
+        const bool installed = fs::is_directory(dst, ec);
+
+        bool loaded = false;
+        for (const ssb64::mods::ModInfo& m : s_modList) {
+            if (m.name == spec.manifestName &&
+                m.state == ssb64::mods::ModState::Loaded) {
+                loaded = true;
+                break;
+            }
+        }
+
+        ImGui::TextWrapped("%s", spec.manifestName);
+        ImGui::TextDisabled("%s", spec.summary);
+        if (loaded) {
+            ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "Active");
+        } else if (installed) {
+            ImGui::TextDisabled("Installed — not loaded");
+            ImGui::SameLine();
+            if (UIWidgets::Button("Activate",
+                                  UIWidgets::ButtonOptions()
+                                      .Size(UIWidgets::Sizes::Inline)
+                                      .Tooltip("Hot-reloads all mods so this one compiles and starts."))) {
+                DoHotReload();
+            }
+        } else if (bundled) {
+            if (UIWidgets::Button("Install & Enable",
+                                  UIWidgets::ButtonOptions()
+                                      .Color(UIWidgets::Colors::LightBlue)
+                                      .Size(UIWidgets::Sizes::Inline)
+                                      .Tooltip("Copies the bundled mod into mods/ and hot-reloads so it "
+                                               "activates immediately."))) {
+                fs::create_directories(modsRoot, ec);
+                fs::copy(src, dst,
+                         fs::copy_options::recursive | fs::copy_options::overwrite_existing,
+                         ec);
+                if (ec) {
+                    SPDLOG_ERROR("Bundled mod install failed: {} -> {}: {}",
+                                 src.string(), dst.string(), ec.message());
+                } else {
+                    SPDLOG_INFO("Bundled mod installed: {} -> {}", src.string(), dst.string());
+                    DoHotReload(); // mounts, compiles, loads + resnapshots s_modList
+                }
+            }
+        } else {
+            ImGui::TextDisabled("Not bundled in this build");
+        }
+        ImGui::PopID();
+    }
+    ImGui::Separator();
+}
+
 void PortMenu::AddMenuMods() {
     WidgetPath path = { "Assets", "Script Mods", SECTION_COLUMN_1 };
     AddSidebarEntry("Assets", "Script Mods", 1);
@@ -1774,6 +1948,9 @@ void PortMenu::AddMenuMods() {
                 fs::create_directories(modsPath, ec);
                 SDL_OpenURL(std::string("file:///" + fs::absolute(modsPath).string()).c_str());
             }
+
+            ImGui::Spacing();
+            RenderBundledModRows();
 
             // Build the list once on first view; thereafter only on demand.
             if (!s_modListLoaded) {
@@ -2095,7 +2272,7 @@ void PortMenu::DrawElement() {
     }
 
     RenderPostProcessLowResWarnModal();
-#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
+#if !defined(BATTLESHIP_UWP)
     RenderShaderPackModal();
 #endif
 }

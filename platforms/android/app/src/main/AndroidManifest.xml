@@ -27,6 +27,11 @@
     <!-- Vibration for damage / smash hits. SDL_HapticRumble routes here. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Netplay (UDP socket transport) + content downloads (shader
+         packs via HttpURLConnection) — same features as desktop. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"

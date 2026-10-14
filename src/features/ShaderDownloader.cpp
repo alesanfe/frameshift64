@@ -23,6 +23,8 @@
 // downloader earns a tree-preserving extraction layout.
 #include "enhancements.h"
 #include "port_log.h"
+#include "platform/http_download.h"
+#include "platform/zip_extract.h"
 
 #include <algorithm>
 #include <atomic>
@@ -301,109 +303,22 @@ bool ReferencesUnsupportedHistoryBinding(const std::string& source) {
     return findUnboundedSemantic("PassPrev") || findUnboundedSemantic("Pass");
 }
 
-// Cross-platform tool requirements for the downloader. Validated
-// against macOS / Windows 10+ / mainstream desktop Linux distros:
+// Platform requirements for the downloader — after the
+// HttpDownloadToFile / ZipExtractToDir refactor there are no external
+// tool dependencies on any target:
 //
-//   * `curl` — on $PATH. macOS (system since 10.x), Windows
-//     (System32 since Win10 1803), Debian/Ubuntu/Fedora/Arch
-//     (default install). Minimal-container Linux may need
-//     `apt install curl`.
-//   * `unzip` OR `tar` (libarchive-backed) — on $PATH. macOS
-//     bsdtar handles zip via `tar -xf`. Win10+ ships tar in
-//     System32 with zip support. Linux ships GNU tar (no zip
-//     support) but `unzip` is universal on desktop installs.
-//   * `temp_directory_path()` resolves to `$TMPDIR` (macOS,
-//     /var/folders/...), `$TMPDIR or /tmp` (Linux), or `%TEMP%`
-//     (Windows, `C:\Users\<u>\AppData\Local\Temp\`). All three
-//     tolerate spaces in the path because we ShellQuote the
-//     argument.
+//   * Download: `curl` on desktop PATH (macOS, Win10+, mainstream
+//     Linux distros) or java.net.HttpURLConnection via JNI on Android
+//     (src/platform/http_download.cpp). INTERNET permission is in the
+//     manifest.
+//   * Extraction: libzip in-process on every platform — libultraship
+//     already builds it everywhere (src/platform/zip_extract.cpp).
+//   * Scratch dir: `temp_directory_path()` on desktop
+//     ($TMPDIR / %TEMP%); on Android there is no reliable /tmp, so we
+//     stage under the app-private files dir via the LUS context.
 //   * `Ship::Context::GetPathRelativeToAppDirectory("shaders")`
-//     resolves per-OS via LUS (macOS `~/Library/Application
-//     Support/BattleShip`, Linux `~/.local/share/BattleShip`,
-//     Windows `%APPDATA%\BattleShip`). Always under the user
-//     home, no admin/root needed.
-//
-// On a system where one of these binaries is missing, popen
-// returns success, fgets reads no output, and pclose reports
-// exit 127 ("command not found"). The status string + per-step
-// SPDLOG_ERROR distinguishes which tool is missing without
-// extra plumbing.
-
-// Run a subprocess and discard its stdout. Returns true on exit code
-// 0. We discard stdout/stderr because we shell out with the silent
-// flags (`-s` on curl, `-q` on unzip) — but the FILE* still needs to
-// be drained so the child doesn't block on a full pipe.
-bool RunSilent(const std::string& cmd) {
-#if defined(_WIN32)
-    FILE* pipe = _popen(cmd.c_str(), "r");
-#else
-    FILE* pipe = popen(cmd.c_str(), "r");
-#endif
-    if (!pipe) {
-        SPDLOG_ERROR("Shader pack: popen failed for `{}`", cmd);
-        return false;
-    }
-    char buf[256];
-    while (fgets(buf, sizeof(buf), pipe) != nullptr) {
-        // discard
-    }
-#if defined(_WIN32)
-    int rc = _pclose(pipe);
-#else
-    int rc = pclose(pipe);
-#endif
-    if (rc != 0) {
-        // 127 = "command not found" on POSIX shells; useful breadcrumb
-        // for users on minimal Linux installs without curl / unzip.
-        SPDLOG_ERROR("Shader pack: command failed (exit={}): `{}`", rc, cmd);
-    }
-    return rc == 0;
-}
-
-// Format a filesystem path for inclusion in a shell command line.
-// `generic_string()` collapses Windows backslashes to forward slashes,
-// which every shell-out tool we care about (curl, tar, unzip) accepts
-// for file arguments and which avoids the well-known cmd.exe pitfall
-// where a path ending in a single backslash escapes the closing quote
-// (`"C:\foo\"` parses as one literal-backslash-then-quote-end).
-std::string ShellQuote(const std::filesystem::path& p) {
-    return "\"" + p.generic_string() + "\"";
-}
-
-// Shell out — every platform we ship has curl on $PATH (macOS,
-// modern Windows, every desktop Linux distro), and the Updater
-// already depends on it.
-bool RunCurlDownload(const std::string& url, const std::filesystem::path& destPath) {
-    std::string cmd = "curl -fLs -o " + ShellQuote(destPath) + " \"" + url + "\"";
-    return RunSilent(cmd);
-}
-
-// We unzip to a scratch directory rather than streaming with libzip
-// to keep this downloader's dependency surface flat (libultraship
-// links libzip privately and re-plumbing it through ssb64.cmake is
-// disproportionate to the once-per-install runtime cost). Per-platform
-// archive tool:
-//   - macOS / Linux: `unzip` is universal. We fall back to `bsdtar
-//     -xf` if unzip is missing — bsdtar is libarchive-backed and
-//     handles zip natively (shipped by default on macOS, available
-//     via `libarchive-tools` on Debian, in `bsdtar` on Fedora/Arch).
-//   - Windows: `tar -xf` understands zip on Win10+; matches the
-//     existing Updater extraction pattern.
-bool RunExtract(const std::filesystem::path& zipPath, const std::filesystem::path& destDir) {
-    const std::string q_zip = ShellQuote(zipPath);
-    const std::string q_dest = ShellQuote(destDir);
-#if defined(_WIN32)
-    return RunSilent("tar -xf " + q_zip + " -C " + q_dest);
-#else
-    if (RunSilent("unzip -q -o " + q_zip + " -d " + q_dest)) {
-        return true;
-    }
-    // Try bsdtar/tar as a fallback — `tar -xf foo.zip -C dir` works
-    // when tar links against libarchive (default on macOS, common on
-    // modern Linux).
-    return RunSilent("tar -xf " + q_zip + " -C " + q_dest);
-#endif
-}
+//     resolves per-OS via LUS — always under user/app storage, no
+//     admin/root needed.
 
 void WriteSidecar(const std::filesystem::path& glslPath, const std::string& label) {
     nlohmann::json json;
@@ -669,8 +584,15 @@ void FetchShaderPackCatalogAsync() {
     std::thread([gen]() {
         SPDLOG_INFO("Shader pack: worker thread started");
         auto cancelled = [gen]() { return s_generation.load() != gen; };
+#if defined(__ANDROID__)
+        // No shared /tmp on Android — stage in the app-private files
+        // dir, which needs no permission and is wiped on uninstall.
+        const std::filesystem::path tempDir = std::filesystem::path(
+            Ship::Context::GetPathRelativeToAppDirectory("shader-pack-tmp"));
+#else
         const std::filesystem::path tempDir = std::filesystem::temp_directory_path() /
                                               "battleship-shader-pack";
+#endif
         const std::filesystem::path zipPath = tempDir / "glsl-shaders.zip";
         const std::filesystem::path extractDir = tempDir / "extract";
 
@@ -693,11 +615,11 @@ void FetchShaderPackCatalogAsync() {
         const std::string url =
             "https://github.com/libretro/glsl-shaders/archive/refs/heads/master.zip";
         SPDLOG_INFO("Shader pack: downloading {} -> {}", url, zipPath.string());
-        if (!RunCurlDownload(url, zipPath)) {
+        if (!HttpDownloadToFile(url, zipPath)) {
             if (cancelled()) {
                 return;
             }
-            SPDLOG_ERROR("Shader pack: curl download failed");
+            SPDLOG_ERROR("Shader pack: download failed");
             SetStatus("Error: download failed");
             WipeTempDir();
             s_phase.store(ShaderPackPhase::Error);
@@ -710,7 +632,7 @@ void FetchShaderPackCatalogAsync() {
         s_phase.store(ShaderPackPhase::ExtractingCatalog);
         SetStatus("Extracting...");
         SPDLOG_INFO("Shader pack: extracting {} -> {}", zipPath.string(), extractDir.string());
-        if (!RunExtract(zipPath, extractDir)) {
+        if (!ZipExtractToDir(zipPath, extractDir)) {
             if (cancelled()) {
                 return;
             }

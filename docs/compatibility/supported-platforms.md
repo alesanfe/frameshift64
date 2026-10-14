@@ -41,24 +41,30 @@ preference; each row names the real blocker and what unifying would cost.
 |---------|-----|-------|-------|---------|-----|--------|---------|
 | Mods (TinyCC + funchook) | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | funchook/TinyCC have no Android/UWP/Switch target (`DISABLE_SCRIPTING`); UWP forbids exec-memory outright |
 | In-app updater | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | shells out to `curl`; Android APKs update via package install, UWP via MSIX |
-| Shader-pack downloader | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | needs external `curl` + `unzip`/`tar` — absent in the Android sandbox; UWP ships packaged shaders |
+| Shader-pack downloader | ✔ | ✔ | ✔ | ✔ | ✘ | ✘ | unified: HTTP via `HttpDownloadToFile` (curl on desktop, HttpURLConnection/JNI on Android) + libzip extraction on all; UWP ships packaged shaders |
 | Discord Rich Presence | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | no discord-rpc target for Android/UWP/Switch |
 | Windowed-fullscreen toggle | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | Android is always fullscreen; meaningless on UWP/Switch |
 | GameCube adapter (libusb) | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | libusb host access needs desktop USB stack (WinUSB driver on Windows) |
 | First-run ROM wizard | ✔ | ✔ | ✔ | ✔* | ✘ | ✘ | *Android extracts on-device via `libtorch_runner.so`; UWP/Switch ship pre-extracted assets |
 | RenderDoc integration | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | desktop dev tooling only |
 
-Gating mechanism: `src/features/{Updater,DiscordRichPresence,ShaderDownloader}.cpp`
+Gating mechanism: `src/features/{Updater,DiscordRichPresence,ModPackDownloader}.cpp`
 are filtered out of `SSB64_SRC_PORT` for Android/UWP in CMakeLists, and the
-menu entries use `#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)` —
-never both (they'd drift). Mods gate on `DISABLE_SCRIPTING` everywhere.
+corresponding menu entries use `#if` guards — never both (they'd drift).
+ShaderDownloader compiles on Android: its transport layer is
+`src/platform/http_download.cpp` (JNI→HttpURLConnection) and extraction is
+`src/platform/zip_extract.cpp` (libzip, already a LUS dep everywhere). Mods
+gate on `DISABLE_SCRIPTING` everywhere.
+
+Note: `android.permission.INTERNET` + `ACCESS_NETWORK_STATE` are declared in
+the manifest — required for both netplay sockets and the downloader.
 
 ### Unification paths, if ever wanted
 
-- **Shader downloader on Android**: replace the `curl`+`unzip` shell-out
-  with libcurl-for-Android + miniz (or an LUS resource fetch), then drop
-  the CMake filter and the PortMenu guard. The hard part is the external
-  tools, not the UI.
+- **Mod-pack downloader on Android**: same shape as the shader downloader —
+  it still shells out to a killable `curl` child for progress/cancel on
+  ~200 MB transfers, so it stays desktop-only until the JNI path grows a
+  cancel/progress callback.
 - **Mods on Android**: needs an arm64 detour backend (funchook has partial
   arm64 support upstream) and a JIT-able mod compiler path (TCC has an
   aarch64 backend; Android also allows `PROT_EXEC` on app-private pages).
