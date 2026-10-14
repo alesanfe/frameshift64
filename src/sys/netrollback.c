@@ -1017,22 +1017,13 @@ static sb32 syNetRollbackSaveTick(u32 tick)
 	return TRUE;
 }
 
-/* Rewinds to the snapshot of `first_tick` and re-runs every tick through
- * `last_tick` with its inputs re-published, re-saving each tick's snapshot
- * on the way (as live rollback must, since resimulated states replace the
- * predicted ones). `hashes`, when set, receives each resimulated tick's
- * hash indexed by tick % SYNETROLLBACK_SLOT_NUM. Returns FALSE (and leaves
- * the state untouched) if the snapshot chain does not cover the range. */
-sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void), SYNetSyncTickHash *hashes)
+/* Snapshot-chain check + rewind used when a resim (re)starts at
+ * `first_tick`. Returns FALSE (state untouched) if the chain does not
+ * cover the tick. */
+static sb32 syNetRollbackResimBegin(u32 first_tick)
 {
-	u32 tick;
-
-	if ((last_tick < first_tick) || (last_tick - first_tick >= SYNETROLLBACK_SLOT_NUM) ||
-	    (first_tick < sSYNetRollbackChainStart))
-	{
-		return FALSE;
-	}
-	if ((sSYNetRollbackStates[first_tick % SYNETROLLBACK_SLOT_NUM].is_valid == FALSE) ||
+	if ((first_tick < sSYNetRollbackChainStart) ||
+	    (sSYNetRollbackStates[first_tick % SYNETROLLBACK_SLOT_NUM].is_valid == FALSE) ||
 	    (sSYNetRollbackSlotTicks[first_tick % SYNETROLLBACK_SLOT_NUM] != first_tick))
 	{
 		return FALSE;
@@ -1048,11 +1039,27 @@ sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void)
 		syUtilsSetRandomSeed(syUtilsRandSeed() ^ 0x3C3C3C3CU);
 	}
 #endif
+	return TRUE;
+}
+
+/* Re-runs ticks [first_tick, last_tick] in place: inputs re-published,
+ * each tick's snapshot re-saved (resimulated states replace the predicted
+ * ones). `hashes`, when set, receives each resimulated tick's hash indexed
+ * by tick % SYNETROLLBACK_SLOT_NUM. Callers must have rewound to
+ * first_tick's snapshot (syNetRollbackResimBegin) — the live state already
+ * sits at first_tick. */
+static void syNetRollbackResimRun(u32 first_tick, u32 last_tick, void (*update)(void),
+                                  SYNetSyncTickHash *hashes)
+{
+	u32 tick;
 
 	sSYNetRollbackIsResimulating = TRUE;
 
 	for (tick = first_tick; tick <= last_tick; tick++)
 	{
+		/* first_tick's pre-update state is the snapshot we just rewound to
+		 * — re-saving it is redundant; every later resimulated pre-update
+		 * state must replace the old predicted snapshot. */
 		if (tick != first_tick)
 		{
 			syNetRollbackSaveTick(tick);
@@ -1074,7 +1081,20 @@ sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void)
 		}
 	}
 	sSYNetRollbackIsResimulating = FALSE;
+}
 
+/* Rewinds to the snapshot of `first_tick` and re-runs every tick through
+ * `last_tick` — the whole rollback in one call (SyncTest path). Returns
+ * FALSE (and leaves the state untouched) if the snapshot chain does not
+ * cover the range. */
+sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void), SYNetSyncTickHash *hashes)
+{
+	if ((last_tick < first_tick) || (last_tick - first_tick >= SYNETROLLBACK_SLOT_NUM) ||
+	    (syNetRollbackResimBegin(first_tick) == FALSE))
+	{
+		return FALSE;
+	}
+	syNetRollbackResimRun(first_tick, last_tick, update, hashes);
 	return TRUE;
 }
 
@@ -1160,38 +1180,37 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
 
 	if (syNetInputTakeMispredictTick(&mispredict_tick) != FALSE)
 	{
-		if (mispredict_tick < tick)
+		if ((mispredict_tick < tick) &&
+		    (syNetRollbackResimulate(mispredict_tick, tick - 1, update, sSYNetRollbackLiveHashes) != FALSE))
 		{
-			if (syNetRollbackResimulate(mispredict_tick, tick - 1, update, sSYNetRollbackLiveHashes) != FALSE)
+			u32 resim;
+
+			for (resim = mispredict_tick; resim < tick; resim++)
 			{
-				u32 resim;
-
-				for (resim = mispredict_tick; resim < tick; resim++)
-				{
-					sSYNetRollbackLiveHashTicks[resim % SYNETROLLBACK_SLOT_NUM] = resim;
-					sSYNetRollbackLiveHashValid[resim % SYNETROLLBACK_SLOT_NUM] = TRUE;
-				}
-				sSYNetRollbackRollbacks++;
-				sSYNetRollbackResimTicks += tick - mispredict_tick;
-
-				if ((tick - mispredict_tick) > sSYNetRollbackMaxRollback)
-				{
-					sSYNetRollbackMaxRollback = tick - mispredict_tick;
-				}
+				sSYNetRollbackLiveHashTicks[resim % SYNETROLLBACK_SLOT_NUM] = resim;
+				sSYNetRollbackLiveHashValid[resim % SYNETROLLBACK_SLOT_NUM] = TRUE;
 			}
-			else
+			sSYNetRollbackRollbacks++;
+			sSYNetRollbackResimTicks += tick - mispredict_tick;
+
+			if ((tick - mispredict_tick) > sSYNetRollbackMaxRollback)
 			{
-				/* Pacing keeps every mispredicted tick inside the snapshot
-				 * window, so this is a bug: the peers will desync. */
-				sSYNetRollbackFailedRollbacks++;
+				sSYNetRollbackMaxRollback = tick - mispredict_tick;
+			}
+		}
+		else if (mispredict_tick < tick)
+		{
+			/* Pacing keeps every mispredicted tick inside the snapshot
+			 * window, so this is a bug: the peers will desync. */
+			sSYNetRollbackFailedRollbacks++;
 #ifdef PORT
-				port_log("SSB64 Rollback: netplay rollback FAILED tick=%u mispredict=%u chain_start=%u\n",
-				         tick, mispredict_tick, sSYNetRollbackChainStart);
+			port_log("SSB64 Rollback: netplay rollback FAILED tick=%u mispredict=%u chain_start=%u\n",
+			         tick, mispredict_tick, sSYNetRollbackChainStart);
 #endif
-			}
 		}
 		syNetInputRepublishTick(tick);
 	}
+
 	if (syNetRollbackSaveTick(tick) == FALSE)
 	{
 		sSYNetRollbackChainStart = tick + 1;

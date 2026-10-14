@@ -70,6 +70,16 @@ extern void port_log(const char *fmt, ...);
 #define SYNETPEER_TIMESYNC_THRESHOLD 2
 #define SYNETPEER_TIMESYNC_INTERVAL 10
 
+/* Adaptive input delay (host-driven): when prediction stalls accumulate
+ * the host raises the delay symmetric via DELAY packets, giving remote
+ * inputs more wire time and breaking the stall->resim->stall treadmill.
+ * Delay stays below the prediction cap; the host re-sends for a few
+ * frames so a lost packet converges instead of leaving peers asymmetric. */
+#define SYNETPEER_MAX_INPUT_DELAY 6
+#define SYNETPEER_DELAY_CHECK_FRAMES 300
+#define SYNETPEER_DELAY_STALL_TRIGGER 30
+#define SYNETPEER_DELAY_REPEAT_FRAMES 10
+
 void syNetPeerReceiveRemoteInput(void);
 void syNetPeerUpdateStartBarrier(void);
 void syNetPeerSendLocalInput(void);
@@ -82,6 +92,8 @@ static void syNetPeerSendForwardPacket(s32 link, s32 src_player, const u8 *buffe
 #define SYNETPEER_PACKET_BATTLE_READY NB_NETPACKET_PACKET_BATTLE_READY
 #define SYNETPEER_PACKET_BATTLE_START NB_NETPACKET_PACKET_BATTLE_START
 #define SYNETPEER_PACKET_FORWARD NB_NETPACKET_PACKET_FORWARD
+#define SYNETPEER_PACKET_DELAY NB_NETPACKET_PACKET_DELAY
+#define SYNETPEER_DELAY_PACKET_BYTES NB_NETPACKET_DELAY_PACKET_BYTES
 
 /* FORWARD packets let the star-topology host relay one client's input
  * datagram to the other clients: [magic][version][type][session]
@@ -156,6 +168,9 @@ u32 sSYNetPeerPacketsDropped;
 u32 sSYNetPeerFramesStaged;
 u32 sSYNetPeerLateFrames;
 u32 sSYNetPeerInputChecksum;
+u32 sSYNetPeerDelayLastStallCheck;
+u32 sSYNetPeerDelayCheckStallBase;
+s32 sSYNetPeerDelayRepeatLeft;
 u32 sSYNetPeerLastLogTick;
 u32 sSYNetPeerSendSeq;
 u32 sSYNetPeerRecvSeqHighWater;
@@ -607,6 +622,99 @@ void syNetPeerSendControlPacket(u16 packet_type)
 }
 
 #ifdef PORT
+/* Symmetric input-delay update: the host bumps it when stalls accumulate,
+ * clients apply what the DELAY packet carries. Bounded both ways so a
+ * forged or stale value can't widen the window past the rollback cap. */
+void syNetPeerApplyInputDelay(u32 delay)
+{
+	if (delay < SYNETPEER_DEFAULT_INPUT_DELAY)
+	{
+		delay = SYNETPEER_DEFAULT_INPUT_DELAY;
+	}
+	if (delay > SYNETPEER_MAX_INPUT_DELAY)
+	{
+		delay = SYNETPEER_MAX_INPUT_DELAY;
+	}
+	if (delay == sSYNetPeerInputDelay)
+	{
+		return;
+	}
+	sSYNetPeerInputDelay = delay;
+	syNetInputSetLocalDelay(delay);
+	port_log("SSB64 NetPeer: input delay -> %u\n", delay);
+}
+
+void syNetPeerSendDelayPacket(u32 delay)
+{
+	u8 buffer[SYNETPEER_DELAY_PACKET_BYTES];
+	s32 player;
+
+	nbNetPacketBuildDelay(buffer, sSYNetPeerSessionID, delay);
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+		if ((remote->player == player) && (remote->dropped == FALSE))
+		{
+			syNetPeerSendBytesTo(remote, buffer, SYNETPEER_DELAY_PACKET_BYTES);
+		}
+	}
+}
+
+void syNetPeerHandleDelayPacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote)
+{
+	u32 delay;
+
+	if (nbNetPacketParseDelay(buffer, size, sSYNetPeerSessionID, &delay) != NB_NETPACKET_OK)
+	{
+		sSYNetPeerPacketsDropped++;
+		return;
+	}
+	if (remote != NULL)
+	{
+		syNetPeerTouchRemote(remote);
+	}
+	syNetPeerApplyInputDelay(delay);
+}
+
+/* Host-side escalation, one step per check window: sustained prediction
+ * stalls mean the remote inputs consistently arrive too late, so bump the
+ * session's delay and re-send for a few frames to converge after loss. */
+void syNetPeerUpdateAdaptiveDelay(void)
+{
+	u32 tick;
+
+	if ((sSYNetPeerBootstrapIsHost == FALSE) || (sSYNetPeerIsRollback == FALSE))
+	{
+		return;
+	}
+	tick = syNetInputGetTick();
+
+	if (sSYNetPeerDelayRepeatLeft > 0)
+	{
+		syNetPeerSendDelayPacket(sSYNetPeerInputDelay);
+		sSYNetPeerDelayRepeatLeft--;
+	}
+	if ((u32)(tick - sSYNetPeerDelayLastStallCheck) < SYNETPEER_DELAY_CHECK_FRAMES)
+	{
+		return;
+	}
+	sSYNetPeerDelayLastStallCheck = tick;
+
+	if (((sSYNetPeerStallFrames - sSYNetPeerDelayCheckStallBase) >= SYNETPEER_DELAY_STALL_TRIGGER) &&
+	    (sSYNetPeerInputDelay < SYNETPEER_MAX_INPUT_DELAY))
+	{
+		syNetPeerApplyInputDelay(sSYNetPeerInputDelay + 1);
+		sSYNetPeerDelayRepeatLeft = SYNETPEER_DELAY_REPEAT_FRAMES;
+		port_log("SSB64 NetPeer: sustained stalls (%u in %u frames) — bumping delay to %u\n",
+		         sSYNetPeerStallFrames - sSYNetPeerDelayCheckStallBase,
+		         SYNETPEER_DELAY_CHECK_FRAMES, sSYNetPeerInputDelay);
+	}
+	sSYNetPeerDelayCheckStallBase = sSYNetPeerStallFrames;
+}
+#endif
+
+#ifdef PORT
 void syNetPeerSendMatchConfigPacket(void)
 {
 	u8 buffer[SYNETPEER_BOOTSTRAP_PACKET_BYTES];
@@ -1042,6 +1150,9 @@ void syNetPeerStartVSSession(void)
 	syNetInputSetLocalDevice(sSYNetPeerLocalPlayer, (sSYNetPeerIsSocketExternal != FALSE) ? 0 : sSYNetPeerLocalPlayer);
 	sSYNetPeerFrameReady = FALSE;
 	sSYNetPeerStallFrames = 0;
+	sSYNetPeerDelayCheckStallBase = 0;
+	sSYNetPeerDelayLastStallCheck = syNetInputGetTick();
+	sSYNetPeerDelayRepeatLeft = 0;
 	sSYNetPeerLockstepStallFrames = 0;
 	sSYNetPeerRemoteAdvantage = 0;
 	sSYNetPeerTimeSyncStallFrames = 0;
@@ -1338,6 +1449,11 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 	if (size == SYNETPEER_CONTROL_PACKET_BYTES)
 	{
 		syNetPeerHandleControlPacket(buffer, size, remote);
+		return;
+	}
+	if (size == SYNETPEER_DELAY_PACKET_BYTES)
+	{
+		syNetPeerHandleDelayPacket(buffer, size, remote);
 		return;
 	}
 #endif
@@ -2141,6 +2257,9 @@ void syNetPeerUpdate(void)
 		sSYNetPeerBattleStartRepeatFrames--;
 	}
 	syNetPeerSendLocalInput();
+#ifdef PORT
+	syNetPeerUpdateAdaptiveDelay();
+#endif
 	syNetPeerLogStats();
 }
 
@@ -2194,6 +2313,9 @@ void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is
 	}
 	sSYNetPeerRemotePlayer = (local_player == 0) ? 1 : 0;
 	sSYNetPeerInputDelay = delay;
+	sSYNetPeerDelayLastStallCheck = 0;
+	sSYNetPeerDelayCheckStallBase = 0;
+	sSYNetPeerDelayRepeatLeft = 0;
 	/* session id comes from the lobby, generated independently of the
 	 * broadcast rng_seed; 0 keeps the legacy seed-derived behavior for
 	 * start packets that predate the field */

@@ -1,6 +1,7 @@
 #include <sys/netinput.h>
 
 #include <sys/netpeer.h>
+#include <sys/netrollback.h>
 #include <sys/taskman.h>
 
 typedef struct SYNetInputSlot
