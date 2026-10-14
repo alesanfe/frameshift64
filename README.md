@@ -122,6 +122,23 @@ Everything below is toggleable in-game from the ESC menu.
 
 Work in progress.
 
+## Screenshots
+
+<details>
+<summary>In-game menu (ESC) — every section</summary>
+
+| | |
+|---|---|
+| ![Settings → General](docs/screenshots/menu/settings-general.png) | ![Settings → Display](docs/screenshots/menu/settings-display.png) |
+| ![Settings → Image Quality](docs/screenshots/menu/settings-image-quality.png) | ![Settings → Shaders](docs/screenshots/menu/settings-shaders.png) |
+| ![Settings → Match Rules](docs/screenshots/menu/settings-match-rules.png) | ![Settings → Accessibility](docs/screenshots/menu/settings-accessibility.png) |
+| ![Online → Netplay](docs/screenshots/menu/online-netplay.png) | ![Game Files → Script Mods](docs/screenshots/menu/gamefiles-script-mods.png) |
+| ![Support → Actions](docs/screenshots/menu/support-actions.png) | ![About → Build](docs/screenshots/menu/about-build.png) |
+
+All 22 sections: [docs/screenshots/menu/](docs/screenshots/menu/README.md)
+
+</details>
+
 ## Author's notes
 
 ### About the project

@@ -33,19 +33,26 @@ Expected exits: `0` always — parse success AND parse rejection both
 return 0 (a rejected input is a pass, not a finding). Any other code is
 a crash; a timeout is flagged as a hang.
 
-## libFuzzer targets (still open)
+## libFuzzer targets
+
+Coverage-guided targets live in `tests/fuzz/` behind
+`-DSSB64_BUILD_FUZZERS=ON` (clang only — `-fsanitize=fuzzer,address,undefined`,
+registered in CTest with the `fuzz` label):
 
     tests/fuzz/
-    ├── net_packet_fuzzer.cpp      # SSNP datagrams → syNetPeerHandlePacket
-    ├── save_file_fuzzer.cpp       # port_save load path
-    ├── config_fuzzer.cpp          # config parse/validate
-    ├── replay_fuzzer.cpp          # replay headers + streams
-    ├── o2r_metadata_fuzzer.cpp    # archive directory/index parse
-    └── mod_manifest_fuzzer.cpp    # manifest.json + registry
+    ├── net_packet_fuzzer.c        # SSNP datagrams → netpacket.c parse entry points
+    ├── mod_manifest_fuzzer.cpp    # manifest.json → Archive::ParseManifestBuffer
+    ├── config_json_fuzzer.cpp     # raw JSON → nlohmann::json::parse + round-trip
+    ├── save_file_fuzzer.cpp       # port_save load path  (still open — file-based)
+    ├── replay_fuzzer.cpp          # replay headers + streams  (covered by driver)
+    └── o2r_metadata_fuzzer.cpp    # archive directory/index parse  (still open)
 
-The run_parser_fuzz driver covers manifest/replay/raw-json today. Real
-libFuzzer targets with coverage feedback remain the endgame for the
-o2r index walk and the save/config load paths.
+Seed corpora live in `tests/fuzz/corpora/<parser>/` — `packet_parser/`
+holds synthesized valid SSNP datagrams (INPUT / CONTROL / FORWARD plus
+truncations). The run_parser_fuzz driver covers manifest/replay/raw-json
+through the real binary; the libFuzzer targets cover the pure codecs with
+coverage feedback. The o2r index walk and save/config file load paths
+(file-based, need game state shims) remain open.
 
 ## Parser requirements for any fuzzable input
 

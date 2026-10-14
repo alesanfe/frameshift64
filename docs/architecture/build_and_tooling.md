@@ -12,6 +12,12 @@
 - Regenerate generated build inputs with:
   - `& 'C:\Program Files\CMake\bin\cmake.exe' --build .\build\x64 --target ExtractAssetHeaders`
 - The executable target is `ssb64`, but the produced binary is `BattleShip`.
+- The port layer is compiled as per-module OBJECT libraries — one
+  `smash_<module>` target per `src/<module>/` subtree — sharing the
+  `ssb64_port_options` INTERFACE (compile defs, include paths, dep usage
+  requirements). Objects still link into the single binary; the split
+  gives each module its own compile surface (TD-002). Inter-module
+  include rules stay enforced by `tools/lint/check_module_deps.py`.
 
 ### ROM version (US / JP)
 
