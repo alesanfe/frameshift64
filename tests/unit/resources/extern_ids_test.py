@@ -103,7 +103,7 @@ def main():
 
         passed += 1
 
-    print(f"\nExternal file ID validation:")
+    print("\nExternal file ID validation:")
     print(f"  Total files: {RELOC_FILE_COUNT}")
     print(f"  Files with extern refs: {files_with_externs}")
     print(f"  Total extern IDs: {total_extern_ids}")

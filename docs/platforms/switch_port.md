@@ -137,13 +137,13 @@ has already ported libultraship for Ship of Harkinian — this plan follows the 
 **Implementation (already done):**
 - `CMakeLists.txt` (root) — Torch section wrapped in `if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")` (Phase 1)
 - `src/application/first_run.cpp` — Switch guards in `ExtractAssetsIfNeeded` + `RunFirstRunWizard` (Phase 4)
-- `cmake/platforms/Switch.cmake` — `BundleSwitch` custom target copies `.nro` + `.o2r` + `gamecontrollerdb.txt` into `switch_sd/` for easy deployment
-- scripts/build-switch.sh (planned) — Full orchestration: native Torch extract → cross-compile → bundle
+- `platforms/switch/cmake/Switch.cmake` — `BundleSwitch` custom target copies `.nro` + `.o2r` + `gamecontrollerdb.txt` into `switch_sd/` for easy deployment
+- scripts/build/build-switch.sh (planned) — Full orchestration: native Torch extract → cross-compile → bundle
 
 **Deploy:**
 ```bash
 # 1. Extract assets (on PC with ROM)
-./scripts/build-switch.sh
+./scripts/build/build-switch.sh
 
 # 2. Copy switch_sd/ to SD card root
 cp -r build-switch/switch_sd/* /path/to/sdcard/
@@ -153,8 +153,8 @@ cp -r build-switch/switch_sd/* /path/to/sdcard/
 ```
 
 **Files:**
-- `cmake/platforms/Switch.cmake` — Switch toolchain, `.nro` packaging, and `BundleSwitch` target
-- scripts/build-switch.sh (planned) — New, ~110 lines
+- `platforms/switch/cmake/Switch.cmake` — Switch toolchain, `.nro` packaging, and `BundleSwitch` target
+- scripts/build/build-switch.sh (planned) — New, ~110 lines
 
 ---
 

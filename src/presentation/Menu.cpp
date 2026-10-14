@@ -388,6 +388,12 @@ void Menu::AddSearchWidget(SearchWidget widget) {
     extraSearchWidgets.push_back(widget);
 }
 
+void Menu::ClearAllEntries() {
+    extraSearchWidgets.clear();
+    menuEntries.clear();
+    menuOrder.clear();
+}
+
 std::unordered_map<uint32_t, disabledInfo>& Menu::GetDisabledMap() {
     return disabledMap;
 }

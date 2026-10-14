@@ -1,6 +1,6 @@
 # Build
-build/
-build-*/
+/build/
+/build-*/
 
 # Switch build artifacts (generated, never committed)
 *.elf
@@ -139,7 +139,6 @@ test.zip
 .venv/
 .venv-lint/
 lint-reports/
-tools/lint/requirements.txt
 scripts/development/configure-lint.bat
 
 # User-provided ROM drops (alternative to root baserom.*.z64)

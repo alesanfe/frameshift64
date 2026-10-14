@@ -1,7 +1,7 @@
 # Netplay lobby protocol (contract summary)
 
-Canonical implementations: `services/netplay-lobby/src/index.js`
-(Cloudflare DO), `services/netplay-lobby/src/node-lobby.js` (local
+Canonical implementations: `services/netplay-lobby/src/infrastructure/cloudflare/worker.js`
+(Cloudflare DO), `services/netplay-lobby/src/infrastructure/local/node-lobby.mjs` (local
 mirror), `src/netplay/session/netlobby.cpp` (client).
 
 Invariants every implementation must keep:

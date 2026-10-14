@@ -33,7 +33,24 @@ SKIP_SCHEMES = ("http://", "https://", "mailto:", "ftp://")
 # if(EXISTS)) and user-supplied inputs.
 OPTIONAL_REFS = {
     "config/release_pubkey.hex",
+    # npm install output — exists after `npm ci`, never committed
+    "services/netplay-lobby/node_modules/ws",
+    # build-time generated CSS icon PNGs (tools/asset-pipeline output dir)
+    "assets/source/",
 }
+
+
+def _submodule_prefixes() -> list[str]:
+    """Submodule paths from .gitmodules — not checked out in lint CI, so
+    doc refs into them can't be validated locally."""
+    gm = ROOT / ".gitmodules"
+    if not gm.exists():
+        return []
+    return [m.group(1) for m in
+            re.finditer(r"^\s*path\s*=\s*(\S+)", gm.read_text(), re.M)]
+
+
+SUBMODULE_PREFIXES = _submodule_prefixes()
 
 
 def _iter_markdown():
@@ -72,7 +89,9 @@ def check_file(path: Path):
         ref = re.sub(r"\$\{[^}]*\}", "*", ref)
         # 'file.h/.cpp' shorthand -> the first variant is authoritative
         ref = re.sub(r"(\.[A-Za-z0-9]+)/\.[A-Za-z0-9]+$", r"\1", ref)
-        if "<" in ref or not ref or ref in OPTIONAL_REFS:
+        if ("<" in ref or not ref or ref in OPTIONAL_REFS
+                or ref.startswith(tuple(p + "/" for p in SUBMODULE_PREFIXES))
+                or ref in SUBMODULE_PREFIXES):
             continue
 
         def _resolves(r):

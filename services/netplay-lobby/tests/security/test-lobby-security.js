@@ -35,7 +35,7 @@ const closed = (ws) => Promise.race([
 ]);
 
 async function main() {
-  const srv = spawn("node", [path.join(__dirname, "..", "src", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
+  const srv = spawn("node", [path.join(__dirname, "..", "..", "src", "infrastructure", "local", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
   await sleep(700);
 
   // --- setup: host + 2 clients on a v2 room ---

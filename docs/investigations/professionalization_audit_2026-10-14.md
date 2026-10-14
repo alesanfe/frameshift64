@@ -127,7 +127,7 @@ flowchart TB
     subgraph port[src/]
         APP[application\nport.cpp, gameloop, first_run]
         BRG[bridge\nlbreloc, hooks, modding]
-        NET[netplay\nnetlobby, port_udp, port_ws, netrules]
+        NET[netplay\nnetlobby, udp_transport, websocket_transport, netrules]
         CORE[core\nport_save, symbols]
         FEAT[features\nUpdater, enhancements]
         PRES[presentation\nPortMenu 2103 LOC, ImGui]
@@ -185,7 +185,7 @@ No new layers. Three targeted extractions only:
 ```
 src/netplay/
 ├── protocol/     # wire layout, serialize/parse/validate — pure functions, no I/O
-├── transport/    # port_udp, port_ws — socket code only
+├── transport/    # udp_transport, websocket_transport — socket code only
 ├── rollback/     # snapshot/resim glue calling into decomp
 └── lobby/        # netlobby, netrules
 ```
@@ -250,7 +250,7 @@ Severity: **C**ritical **H**igh **M**edium **L**ow **I**nfo. Effort: S/M/L.
 | F-001 | H | updater | `src/distribution/updater/Updater.cpp:463,551` | sha256 digest + zip both come from the same GitHub release; a forged/compromised release supplies both → integrity-against-corruption only, not tamper-resistance. Windows zip unsigned (macOS codesign exists, release.yml:91-146). | Verify GitHub artifact attestation (`gh attestation verify` semantics embedded via Sigstore bundle) or sign a release manifest with an offline key; document residual risk in `docs/security/update-security.md` | V |
 | F-002 | H | test hooks | `netpeer.c` (MUTANT/PACKETFUZZ), `netlobby.cpp` (`SSB64_COMPAT_TOKEN` env override) | Mutant hooks that accept bad sessions/checksums + a compat-token override are reachable via env vars in any build that ships them | `#ifdef` them out in Release (`NDEBUG`-gated or explicit `SSB64_TEST_HOOKS` compile flag) | V |
 | F-003 | H | boundary | `decomp/src/sys/netpeer.c` 2516 LOC | Protocol/security-critical port code lives in the decomp submodule: every protocol bump = fork branch + pointer bump; contributes nothing to decomp fidelity | Move to `src/netplay/` (or src/netplay/protocol/); the decomp include path can export the small header | V |
-| F-004 | M | CI | `tools/lint/check_docs.py`, `services/netplay-lobby/tests/test-lobby-*.js` | Doc checker + lobby security/fuzz tests exist but **no workflow runs them** — regression risk invisible | Add a `lint-docs` job + a `lobby-tests` job (node, no ROM needed) | V |
+| F-004 | M | CI | `tools/lint/check_docs.py`, `services/netplay-lobby/tests/*/test-lobby-*.js` | Doc checker + lobby security/fuzz tests exist but **no workflow runs them** — regression risk invisible | Add a `lint-docs` job + a `lobby-tests` job (node, no ROM needed) | V |
 | F-005 | M | deps | `CMakeLists.txt:233,891` | Two FetchContent deps pinned by **tag** (`v1.1.3`, `v3.4.0`) — mutable; third already SHA-pinned | Pin to commit SHA, keep tag comment | V |
 | F-006 | M | lobby | worker `index.js` + `node-lobby.js` | Two hand-maintained implementations of the same lobby protocol; one was already patched twice in parallel (spec routing). Drift = security bugs | Shared conformance test suite run against both (they share wire format), or generate shared validator module | V |
 | F-007 | M | netplay | `docs/security/network-threat-model.md` | Lobby compromise not defended (no E2E, session id server-issued); documented residual | Optional: session MAC keyed by lobby-issued upkey; defer, documented | V(documented) |

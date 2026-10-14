@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 LOBBY_HEALTH = "http://127.0.0.1:{port}/health"
-LOBBY_NODE = ROOT / "services" / "netplay-lobby" / "src" / "node-lobby.mjs"
+LOBBY_NODE = ROOT / "services" / "netplay-lobby" / "src" / "infrastructure" / "local" / "node-lobby.mjs"
 LOBBY_SVC = ROOT / "services" / "netplay-lobby"
 DEFAULT_BUILD_DIR = ROOT / "out" / "build" / "windows-release" / "Release"
 GAME_EXE = "BattleShip.exe" if sys.platform == "win32" else "BattleShip"

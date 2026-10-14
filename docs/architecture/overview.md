@@ -38,7 +38,7 @@ src/              — Modern C++ port layer, by responsibility:
   netplay/
     domain/       netrules — match rules in the PICK handshake
     session/      netlobby — rooms, host-star, compat tokens, spectators
-    transport/    port_udp (UDP+LAN+relay+sim), port_ws (WebSocket)
+    transport/    udp_transport (UDP+LAN+relay+sim), websocket_transport (WebSocket)
     rollback/     netrollback_seg.h (forced-include for rollback-seg decomp TUs)
   features/       player-visible toggles only: gameplay/ audio/ social/
                   cosmetics/ internal/ + enhancements.h registry
@@ -66,7 +66,7 @@ services/netplay-lobby/ — Cloudflare worker + local node lobby:
                     index.js (DO adapter), node-lobby.mjs (Node adapter)
 mods/             — mod SDK skeleton, examples, templates
 platforms/        — per-platform entry-point READMEs + android/, uwp/ wrappers;
-                    cmake/platforms/*.cmake holds the CMake side
+                    platforms/<os>/cmake/*.cmake holds the CMake side
 specs/            — consumable contracts (lobby protocol, mod manifest,
                     save format, release manifest)
 tests/            — unit/, fixtures/, golden/, e2e via scripts/testing/

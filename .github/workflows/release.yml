@@ -8,7 +8,7 @@ name: Release
 # where applicable. Windows emits exactly two packages: US and JP. The US
 # package includes scripting/modding support by default; JP keeps scripting
 # disabled until the TCC mod API is region-aware. Desktop jobs build through
-# the corresponding scripts/packaging/package-*.sh|.ps1
+# the corresponding platforms/<os>/packaging/package-*.sh|.ps1
 # helper (SSB64_VERSION selects the region). A final `release` job stitches
 # the artifacts into a GitHub Release attached to the tag.
 #
@@ -161,7 +161,7 @@ jobs:
           MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
           MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
           MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
-        run: bash scripts/packaging/package-macos.sh
+        run: bash platforms/macos/packaging/package-macos.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         # The .dmg is the standard drag-to-Applications installer macOS
         # users expect. We don't ship the loose .app zip anymore — anyone
@@ -265,7 +265,7 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           SSB64_VERSION: ${{ matrix.version }}
-        run: bash scripts/packaging/package-linux.sh
+        run: bash platforms/linux/packaging/package-linux.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: BattleShip-linux-${{ matrix.version }}
@@ -437,7 +437,7 @@ jobs:
         env:
           SSB64_VERSION: ${{ matrix.version }}
           SSB64_ENABLE_SCRIPTING: ${{ matrix.enable_scripting }}
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/packaging/package-windows.ps1
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File platforms/windows/packaging/package-windows.ps1
         shell: pwsh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:

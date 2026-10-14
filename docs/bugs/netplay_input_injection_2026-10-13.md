@@ -22,7 +22,7 @@ Three missing checks combined into a full spoofing chain:
 
 ## Fix
 
-- `services/netplay-lobby/src/index.js`, `services/netplay-lobby/src/node-lobby.mjs`: per-slot
+- `services/netplay-lobby/src/infrastructure/cloudflare/worker.js`, `services/netplay-lobby/src/infrastructure/local/node-lobby.mjs`: per-slot
   `upkey` issued in `welcome`, required on the uplink upgrade; star
   topology enforced (clients → slot 0 only, host → client slots only);
   relayed binary only flows on links the owner marked `relay`;
@@ -32,7 +32,7 @@ Three missing checks combined into a full spoofing chain:
   links other than the host link, and when the inner `src_player` has a
   direct link; `session_id` is now a lobby-generated token independent
   of `rng_seed` (0 = legacy seed fallback for old peers).
-- `src/netplay/transport/port_udp.cpp`: `link_of` validates the relayed frame's slot
+- `src/netplay/transport/udp_transport.cpp`: `link_of` validates the relayed frame's slot
   byte against an active relay-backed link.
 - `src/netplay/session/netlobby.cpp`: `upkey` from `welcome` sent as `&key=` on the
   uplink; session id generated on match start and carried in
@@ -40,7 +40,7 @@ Three missing checks combined into a full spoofing chain:
 
 ## Verification
 
-`node services/netplay-lobby/tests/test-lobby-security.js` — 15/15 checks covering uplink key
+`node services/netplay-lobby/tests/security/test-lobby-security.js` — 15/15 checks covering uplink key
 accept/reject, client→client drops, relay-flag gating in both
 directions, `from_slot` stamping and the join/text rate limits.
 

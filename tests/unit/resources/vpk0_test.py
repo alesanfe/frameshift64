@@ -8,7 +8,6 @@ Also runnable through pytest (wrapped by test_native_scripts.py,
 marked requires-rom).
 """
 
-import ctypes
 import os
 import struct
 import subprocess
@@ -43,9 +42,9 @@ def build_vpk0_test_exe():
             bf.write('@echo off\n')
             bf.write('call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1\n')
             bf.write(f'cl /O2 /Fe:"{exe_path}" "{test_c}" "{vpk0_c}" /I "{os.path.join(repo_root, "torch", "lib")}" >nul 2>&1\n')
-            bf.write(f'echo BUILD_RESULT=%ERRORLEVEL%\n')
+            bf.write('echo BUILD_RESULT=%ERRORLEVEL%\n')
 
-        result = subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, cwd=tmp_dir)
+        result = subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, cwd=tmp_dir, check=False)
     else:
         for compiler in ["gcc", "clang", "cc"]:
             try:
@@ -163,11 +162,10 @@ def main():
         print("\nBuilding native test executable...")
         exe_path, tmp_dir = build_vpk0_test_exe()
         print("  Build succeeded!")
-        print(f"\nRunning full decompression test (native)...")
+        print("\nRunning full decompression test (native)...")
         result = subprocess.run(
             [exe_path, rom_path],
-            capture_output=True, text=True, timeout=120
-        )
+            capture_output=True, text=True, timeout=120, check=False)
         print(result.stdout)
         if result.stderr:
             print(result.stderr)

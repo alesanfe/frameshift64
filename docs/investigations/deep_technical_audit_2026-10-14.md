@@ -49,7 +49,7 @@ Hallazgos totales: **11 confirmados de severidad alta/crítica**, ~20 medios,
   StormLib contiene una clave pública MPQ conocida (vendored, sin riesgo).
 - Submodules: `libultraship` (ssb64), `torch` (ssb64), `decomp` (decomp →
   frameshift64). Ninguno modificado por esta auditoría.
-- Hotspots de historia (últimos commits): `netlobby.cpp`, `port_udp.cpp`,
+- Hotspots de historia (últimos commits): `netlobby.cpp`, `udp_transport.cpp`,
   `index.js`, `node-lobby.js` — todo netplay, coherente con el trabajo
   reciente.
 - Tests: no existe `ctest`/`enable_testing` en el proyecto raíz; todo el
@@ -64,8 +64,8 @@ Hallazgos totales: **11 confirmados de severidad alta/crítica**, ~20 medios,
 Cliente (ssb64.exe)
 ├─ src/presentation/      PortMenu, OnlineStatus, Menu (sidebar)
 ├─ src/netplay/session/   netlobby (SSBL, peers, LAN, spec)
-├─ src/netplay/transport/  port_udp (link table 0..7, framing relay)
-│                          port_ws (control socket + uplink)
+├─ src/netplay/transport/  udp_transport (link table 0..7, framing relay)
+│                          websocket_transport (control socket + uplink)
 ├─ src/persistence/       port_save (SRAM + replays dir)
 ├─ src/observability/     port_log
 ├─ src/integration/decomp/  audio_bridge, lbreloc_byteswap, particle_bank
@@ -636,7 +636,7 @@ tests, cancelación shader install, verificación updater), AUD-34-36
   en esta auditoría.
 - **Producción real del worker:** el deploy apunta a `smash-netplay
   .workers.dev` versión `e98a112c`; no se verificó que el código desplegado
-  coincida con `services/netplay-lobby/src/index.js` local —
+  coincida con `services/netplay-lobby/src/infrastructure/cloudflare/worker.js` local —
   AUD-09/10 asumen que sí (el push nunca se confirmó).
 - **macOS/Linux/Android builds:** no compilados en este entorno (Windows sí —
   `BattleShip.exe` Debug linka; ver §12e). Los fallos de path macOS/Linux/

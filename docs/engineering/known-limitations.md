@@ -6,7 +6,7 @@
 - **Mods are trusted code.** No sandbox; a malicious mod has full process
   rights (`docs/security/mod-security.md`).
 - **`wrangler dev` drops binary frames** under relay load — use
-  `services/netplay-lobby/src/node-lobby.mjs` for local protocol testing
+  `services/netplay-lobby/src/infrastructure/local/node-lobby.mjs` for local protocol testing
   (`docs/bugs/` → `netplay_relay_wrangler_dev_drop`).
 - **Room codes are bearer tokens.** Anyone with the 6-char code can
   attempt joins at the bounded rate; the upkey prevents slot theft but

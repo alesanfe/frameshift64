@@ -16,7 +16,7 @@ context from the initial plan.
 ## 1. Problem
 
 The Windows modding package trips antivirus (Microsoft Defender false
-positives, per `scripts/packaging/package-windows.ps1` header). Two distinct detection
+positives, per `platforms/windows/packaging/package-windows.ps1` header). Two distinct detection
 layers are in play:
 
 1. **Static signatures on the TCC binaries.** Malware families bundle TinyCC
@@ -123,12 +123,12 @@ tinycc FetchContent setup:
      remove them from the `tcc -ar` bundling too).
 3. Linux/macOS staging blocks are already header+libtcc1-only; no change
    beyond the static-link switch.
-4. `scripts/packaging/package-windows.ps1`: the "Staging TCC scripting runtime" step
+4. `platforms/windows/packaging/package-windows.ps1`: the "Staging TCC scripting runtime" step
    still copies `.tcc/` — confirm the staged tree contains **no PE
    executables** afterward (`Get-ChildItem -Recurse .tcc | Where Extension
    -in '.dll','.exe'` must be empty). Update the header comment describing
    the Defender rationale.
-5. `scripts/packaging/package-macos.sh` + `.github/workflows/release.yml`: no
+5. `platforms/macos/packaging/package-macos.sh` + `.github/workflows/release.yml`: no
    structural change expected; keep the standard/modding split **until the
    test protocol below passes**, then folding modding back into the standard
    package becomes a follow-up decision.

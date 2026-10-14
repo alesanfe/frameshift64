@@ -154,7 +154,8 @@ def build_checks(args) -> list:
 
     checks += [
         Check("lizard", [resolve("lizard"), "-l", "cpp", "-C", "15",
-                         "-L", "120", "-a", "6", "-w"] + dirs,
+                         "-L", "120", "-a", "6", "-w",
+                         "-x", "*/node_modules/*"] + dirs,
               "lizard.txt", required=False),
         Check("cmake-lint", [resolve("cmake-lint")] + find_cmake_files(),
               "cmake-lint.txt", required=False),

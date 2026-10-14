@@ -38,8 +38,15 @@ jobs:
         env:
           # The Actions installation token cannot read stargazer timestamps.
           # This repository secret is a PAT with read access to the repository.
+          # When it is not configured (forks, missing secret) the step no-ops
+          # instead of failing the run — the charts just stay stale.
           GITHUB_TOKEN: ${{ secrets.README_STATS_TOKEN }}
-        run: python3 tools/codegen/generate_readme_stats.py --repo "$GITHUB_REPOSITORY"
+        run: |
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "README_STATS_TOKEN is not configured on this repository; skipping chart generation."
+            exit 0
+          fi
+          python3 tools/codegen/generate_readme_stats.py --repo "$GITHUB_REPOSITORY"
       - name: Commit chart updates
         run: |
           git config user.name "github-actions[bot]"

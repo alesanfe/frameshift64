@@ -9,8 +9,8 @@ import http from "node:http";
 import { WebSocketServer } from "ws";
 import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
-} from "./domain/protocol.mjs";
-import { LobbyRoom } from "./domain/room.mjs";
+} from "../../domain/protocol.mjs";
+import { LobbyRoom } from "../../domain/room.mjs";
 
 const rooms = new Map();    // code -> LobbyRoom
 const allowIpJoin = makeJoinLimiter();  // cross-code scan throttle (AUD-25)

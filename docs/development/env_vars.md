@@ -10,7 +10,7 @@ classified. Three categories:
 - **Test hook (gated)** — test-harness knobs that alter gameplay, inject
   traffic, weaken validation, or hijack boot. Compiled only when
   `-DSSB64_TEST_HOOKS=ON` (default ON for dev builds, forced OFF by
-  `scripts/packaging/package-*`).
+  `platforms/*/packaging/package-*`).
 
 This file is enforced by `tools/lint/check_env_vars.py` (wired into
 `repo-checks.yml`): any env read whose literal `SSB64_*` name is not listed
@@ -70,8 +70,9 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_NETPLAY_MUTANT` | `accept_bad_session` / `accept_bad_checksum` / `no_forward_guard` |
 | `SSB64_NETPLAY_PACKETFUZZ` | inject hostile datagrams through real parser |
 | `SSB64_NETPLAY_TEST_DESYNC` | RNG corruption at tick N |
+| `SSB64_NETPLAY_DROP_MS` | override remote-drop timeout (10s default) for same-machine rigs |
 | `SSB64_NETPLAY_FUZZ` | deterministic synthetic inputs on local slots |
-| `SSB64_NETPLAY_SIM_{LATENCY_MS,JITTER_MS,LOSS_PCT,DUP_PCT,REORDER_PCT,REORDER_WINDOW_MS,CORRUPT_PCT,SEED}` | seeded impairment sim in `port_udp` |
+| `SSB64_NETPLAY_SIM_{LATENCY_MS,JITTER_MS,LOSS_PCT,DUP_PCT,REORDER_PCT,REORDER_WINDOW_MS,CORRUPT_PCT,SEED}` | seeded impairment sim in `udp_transport` |
 | `SSB64_COMPAT_TOKEN` | forge lobby compat token |
 | `SSB64_ROLLBACK_{AUTOVS,SYNCTEST,SEED,STAGE,FIGHTERS,MINUTES,MUTANT}` | rollback/determinism rig |
 | `SSB64_RIG_EXIT` | exit code = test verdict |

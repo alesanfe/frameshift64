@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from smash_test.processes import run_script  # noqa: E402
+from smash_test.processes import run_script
 
 
 @pytest.mark.integration

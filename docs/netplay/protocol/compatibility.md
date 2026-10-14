@@ -24,4 +24,4 @@
 | Bad magic/version/session/checksum dropped | `scripts/testing/netplay_localtest.ps1 -PacketFuzz` |
 | Every validation removable = caught | `scripts/testing/netplay_mutation_suite.ps1` |
 | Release ≡ Debug traces | `determinism.yml` cross-build job |
-| Lobby security invariants | `services/netplay-lobby/tests/test-lobby-security.js` |
+| Lobby security invariants | `services/netplay-lobby/tests/security/test-lobby-security.js` |

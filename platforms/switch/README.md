@@ -3,7 +3,7 @@
 | Piece | Location |
 |-------|----------|
 | Runtime init + services | `src/platform/switch/` |
-| CMake logic + libultraship backend gate | `cmake/platforms/Switch.cmake` |
+| CMake logic + libultraship backend gate | `platforms/switch/cmake/Switch.cmake` |
 | Build script | `scripts/build/build-switch.sh` → `out/build/switch/` |
 
 Requires devkitPro (`DEVKITPRO`, `nacptool`, `elf2nro`). Configure

@@ -2222,6 +2222,110 @@ void PortMenu::AddMenuMods() {
 }
 #endif
 
+void PortMenu::AddMenuSupport() {
+    AddMenuEntry("Support", CVAR_SETTING("Menu.SupportSidebarSection"));
+
+    WidgetPath path = { "Support", "Actions", SECTION_COLUMN_1 };
+    AddSidebarEntry("Support", "Actions", 1);
+    AddWidget(path, "Actions", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(path, "Close Menu", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([this](WidgetInfo&) { ToggleVisibility(); })
+        .Options(ButtonOptions().Tooltip("Close this menu and return to the game.").Size(Sizes::Inline));
+
+    AddWidget(path, "Restart Game", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([](WidgetInfo&) {
+            std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
+                Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
+                ->Dispatch("reset");
+        })
+        .Options(ButtonOptions().Tooltip("Reload the game process state (same as the console reset command).")
+                     .Size(Sizes::Inline));
+
+#ifndef __ANDROID__
+    AddWidget(path, "Quit BattleShip", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([](WidgetInfo&) { Ship::Context::GetInstance()->GetWindow()->Close(); })
+        .Options(ButtonOptions().Tooltip("Exit the application entirely.").Size(Sizes::Inline));
+#endif
+
+#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
+    // BUILT-IN UPDATER — hidden on Android. App updates come through the
+    // Play Store on mobile; a curl-driven GitHub-releases updater can't
+    // replace a system-managed installation, and the curl shell-out
+    // (Updater.cpp) isn't built on Android in the first place.
+    // The background check still fires when the menu loads.
+    ssb64::enhancements::CheckForUpdatesAsync(false);
+
+    path.sidebarName = "Updates";
+    AddSidebarEntry("Support", "Updates", 1);
+    AddWidget(path, "Updates", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Version: " + std::string(BATTLESHIP_CURRENT_VERSION), WIDGET_TEXT);
+
+    // 1. "Checking for updates..." Text
+    AddWidget(path, "Checking for updates...", WIDGET_TEXT)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = !ssb64::enhancements::IsCheckingForUpdates();
+        });
+
+    // 2. "Download Update" Button
+    AddWidget(path, "Download Update", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = ssb64::enhancements::IsCheckingForUpdates() ||
+                            ssb64::enhancements::IsDownloading() ||
+                            ssb64::enhancements::IsDownloadComplete() ||
+                            !ssb64::enhancements::IsUpdateAvailable();
+
+            if (!info.isHidden) {
+                // One click: download, verify, install, restart (Updater.cpp).
+                info.name = "Update now to " + ssb64::enhancements::GetLatestVersion();
+            }
+        })
+        .Callback([](WidgetInfo&) {
+            ssb64::enhancements::StartGameUpdate();
+        });
+
+    // 3. "Downloading... XX%" Text (Also handles the "Complete" text)
+    AddWidget(path, "Download Status", WIDGET_TEXT)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = ssb64::enhancements::GetDownloadStatus().empty();   // progress, success or error
+            if (!info.isHidden) {
+                // Pipe the curl progress bar or completion string straight to the UI
+                info.name = ssb64::enhancements::GetDownloadStatus();
+            }
+        });
+
+    // 4. Update result text
+    AddWidget(path, "Update Status", WIDGET_TEXT)
+        .PreFunc([](WidgetInfo& info) {
+            const std::string status = ssb64::enhancements::GetUpdateStatus();
+            info.isHidden = ssb64::enhancements::IsCheckingForUpdates() ||
+                            ssb64::enhancements::IsUpdateAvailable() ||
+                            status.empty();
+            if (!info.isHidden) {
+                info.name = status;
+            }
+        });
+
+    // 5. "Check for Updates" Manual Button
+    AddWidget(path, "Check for Updates", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            // Hide this button while checking or downloading so they can't spam it
+            info.isHidden = ssb64::enhancements::IsCheckingForUpdates() ||
+                            ssb64::enhancements::IsDownloading() ||
+                            ssb64::enhancements::IsDownloadComplete();
+        })
+        .Callback([](WidgetInfo&) {
+            // Pass true to bypass the single-session lock
+            ssb64::enhancements::CheckForUpdatesAsync(true);
+        });
+#endif // !__ANDROID__ (Updater)
+}
+
 void PortMenu::AddMenuAbout() {
     AddMenuEntry("About", CVAR_SETTING("Menu.AboutSidebarSection"));
 
@@ -2246,79 +2350,6 @@ void PortMenu::AddMenuAbout() {
     AddWidget(path, "ElBateSoli: Raphnet Playtesting", WIDGET_TEXT);
     AddWidget(path, "MickleMoose: C Modding Toolkit Developer", WIDGET_TEXT);
     AddWidget(path, "Zorkats: C Modding Documentation", WIDGET_TEXT);
-
-
-#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
-    // BUILT-IN UPDATER — hidden on Android. App updates come through the
-    // Play Store on mobile; a curl-driven GitHub-releases updater can't
-    // replace a system-managed installation, and the curl shell-out
-    // (Updater.cpp) isn't built on Android in the first place.
-    // The background check still fires when the menu loads
-    ssb64::enhancements::CheckForUpdatesAsync(false);
-
-    AddWidget(path, "Updates", WIDGET_SEPARATOR_TEXT);
-    AddWidget(path, "Version: " + std::string(BATTLESHIP_CURRENT_VERSION), WIDGET_TEXT);
-
-    // 1. "Checking for updates..." Text
-    AddWidget(path, "Checking for updates...", WIDGET_TEXT)
-    .PreFunc([](WidgetInfo& info) {
-        info.isHidden = !ssb64::enhancements::IsCheckingForUpdates();
-    });
-
-    // 2. "Download Update" Button
-    AddWidget(path, "Download Update", WIDGET_BUTTON)
-    .RaceDisable(false)
-    .PreFunc([](WidgetInfo& info) {
-        info.isHidden = ssb64::enhancements::IsCheckingForUpdates() ||
-        ssb64::enhancements::IsDownloading() ||
-        ssb64::enhancements::IsDownloadComplete() ||
-        !ssb64::enhancements::IsUpdateAvailable();
-
-        if (!info.isHidden) {
-            // One click: download, verify, install, restart (Updater.cpp).
-            info.name = "Update now to " + ssb64::enhancements::GetLatestVersion();
-        }
-    })
-    .Callback([](WidgetInfo&) {
-        ssb64::enhancements::StartGameUpdate();
-    });
-
-    // 3. "Downloading... XX%" Text (Also handles the "Complete" text)
-    AddWidget(path, "Download Status", WIDGET_TEXT)
-    .PreFunc([](WidgetInfo& info) {
-        info.isHidden = ssb64::enhancements::GetDownloadStatus().empty();   // progress, success or error
-        if (!info.isHidden) {
-            // Pipe the curl progress bar or completion string straight to the UI
-            info.name = ssb64::enhancements::GetDownloadStatus();
-        }
-    });
-
-    // 4. Update result text
-    AddWidget(path, "Update Status", WIDGET_TEXT)
-    .PreFunc([](WidgetInfo& info) {
-        const std::string status = ssb64::enhancements::GetUpdateStatus();
-        info.isHidden = ssb64::enhancements::IsCheckingForUpdates() ||
-                        ssb64::enhancements::IsUpdateAvailable() ||
-                        status.empty();
-        if (!info.isHidden) {
-            info.name = status;
-        }
-    });
-
-    // 5. "Check for Updates" Manual Button
-    AddWidget(path, "Check for Updates", WIDGET_BUTTON)
-    .RaceDisable(false)
-    .PreFunc([](WidgetInfo& info) {
-        // Hide this button while checking or downloading so they can't spam it
-        info.isHidden = ssb64::enhancements::IsCheckingForUpdates() ||
-        ssb64::enhancements::IsDownloading() ||
-        ssb64::enhancements::IsDownloadComplete();
-    })
-    .Callback([](WidgetInfo&) {
-        // Pass true to bypass the single-session lock
-        ssb64::enhancements::CheckForUpdatesAsync(true);
-    });
-#endif // !__ANDROID__ (Updater)
 }
 
 void PortMenu::AddMenuOnline() {
@@ -2335,8 +2366,7 @@ void PortMenu::RebuildMenu() {
     if (menuEntries.contains("Settings")) {
         RemoveSidebarSearch();
     }
-    menuEntries.clear();
-    menuOrder.clear();
+    ClearAllEntries();
     AddMenuElements();
 }
 
@@ -2347,14 +2377,20 @@ void PortMenu::AddMenuElements() {
 #ifndef DISABLE_SCRIPTING
     AddMenuMods();
 #endif
+    AddMenuSupport();
     AddMenuAbout();
 
     if (CVarGetInteger(CVAR_SETTING("Menu.SidebarSearch"), 0)) {
         InsertSidebarSearch();
     }
 
-    for (auto& initFunc : MenuInit::GetInitFuncs()) {
-        initFunc();
+    /* Registered init funcs are one-shot (they typically install hooks or
+     * populate static registries) — re-running them on RebuildMenu would
+     * double-register. */
+    if (!mMenuElementsInitialized) {
+        for (auto& initFunc : MenuInit::GetInitFuncs()) {
+            initFunc();
+        }
     }
 
     mMenuElementsInitialized = true;

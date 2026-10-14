@@ -16,7 +16,7 @@ Tracks the 2026-10 repository reorganization.
 - `mods/examples/` → `mods/examples` + `mods/templates`
 - `android/`, `uwp/` → `platforms/`
 - `config/` for lint/semgrep/cppcheck config; `out/` for all generated
-  output; `CMakePresets.json`; `cmake/` modules + `cmake/platforms/`
+  output; `CMakePresets.json`; `cmake/` modules + `platforms/<os>/cmake/`
   per-platform fragments (Windows, Linux, Switch, macOS)
 - `docs/` categorized; ADRs seeded under `docs/decisions/`
 - `docs/compatibility/`, `docs/netplay/protocol/`, `docs/security/`,

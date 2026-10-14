@@ -40,7 +40,7 @@ upstream comment style.
   `WIZARD_AUTOCANCEL`.
 - Release-binary check enforced: `tools/lint/check_release_binary.py`
   derives the denylist from `env_vars.md` and runs inside all three
-  `scripts/packaging/package-*` scripts (fails the package if a gated
+  `platforms/*/packaging/package-*` scripts (fails the package if a gated
   env name appears in the binary).
 - Env-var catalog: `docs/development/env_vars.md` enumerates all 103
   `SSB64_*` reads; `tools/lint/check_env_vars.py` fails CI on

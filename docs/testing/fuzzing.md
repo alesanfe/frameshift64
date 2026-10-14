@@ -4,7 +4,7 @@
 
 - `-PacketFuzz` in `netplay_localtest.ps1` — seeded hostile datagrams
   through the real UDP parser; asserted non-crash + drop accounting.
-- `services/netplay-lobby/tests/test-lobby-fuzz.js` — lobby message fuzzing.
+- `services/netplay-lobby/tests/fuzz/test-lobby-fuzz.js` — lobby message fuzzing.
 - Mutation suite — proves each individual validation rejects its attack.
 
 ## Binary-level parser fuzzing (TD-010)

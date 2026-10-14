@@ -6,7 +6,7 @@ launch. Issue is a placeholder; no logs, no specific error yet.
 
 **Status:** Not fixed. Examined the build pipeline
 (`.github/workflows/release.yml` build-linux job +
-`scripts/packaging/package-linux.sh`) and the runtime path resolution in
+`platforms/linux/packaging/package-linux.sh`) and the runtime path resolution in
 libultraship's `Context.cpp`. There are several real, separate
 problems any one of which can prevent the AppImage from running.
 Listed in rough order of likelihood.
@@ -15,7 +15,7 @@ Listed in rough order of likelihood.
 
 CI job `build-linux` runs on **`ubuntu-24.04`** (glibc 2.39),
 installs apt deps, builds with `clang`, then runs
-`scripts/packaging/package-linux.sh` which:
+`platforms/linux/packaging/package-linux.sh` which:
 
 1. `cmake -B build-bundle-linux -DCMAKE_BUILD_TYPE=Release -DNON_PORTABLE=ON`
 2. `cmake --build build-bundle-linux` (Ninja-style implicit, since
@@ -32,7 +32,7 @@ installs apt deps, builds with `clang`, then runs
 
 ### A — No `.so` bundling. AppImage relies on the user's distro libs
 
-`scripts/packaging/package-linux.sh` doesn't run `linuxdeploy` (or any
+`platforms/linux/packaging/package-linux.sh` doesn't run `linuxdeploy` (or any
 equivalent) to bundle the binary's runtime dependencies into
 `AppDir/usr/lib/`. The shipped AppImage links dynamically against:
 

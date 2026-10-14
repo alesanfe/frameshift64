@@ -115,4 +115,4 @@ When editing `decomp/src/sys/netpeer.c`:
 
 ## Packaging Note
 
-`scripts/packaging/package-linux.sh` currently includes host DT_RELR handling for AppImage packaging. If Linux AppImage generation stops before creating `dist/BattleShip.AppDir/AppRun`, inspect the DT_RELR probe and avoid early-exit pipelines under `set -euo pipefail`.
+`platforms/linux/packaging/package-linux.sh` currently includes host DT_RELR handling for AppImage packaging. If Linux AppImage generation stops before creating `dist/BattleShip.AppDir/AppRun`, inspect the DT_RELR probe and avoid early-exit pipelines under `set -euo pipefail`.

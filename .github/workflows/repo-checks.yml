@@ -47,9 +47,9 @@ jobs:
         working-directory: services/netplay-lobby
         run: npm ci
       - name: Security suite
-        run: node services/netplay-lobby/tests/test-lobby-security.js
+        run: node services/netplay-lobby/tests/security/test-lobby-security.js
       - name: Fuzz suite
-        run: node services/netplay-lobby/tests/test-lobby-fuzz.js 400
+        run: node services/netplay-lobby/tests/fuzz/test-lobby-fuzz.js 400
 
   hygiene:
     name: Repo hygiene

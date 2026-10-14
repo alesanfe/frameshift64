@@ -32,8 +32,8 @@
  *                                             one even when the seed is reused.
  *   SSBL GO <seed>                            client accepted the start packet */
 #include "netlobby.h"
-#include "port_udp.h"
-#include "port_ws.h"
+#include "udp_transport.h"
+#include "websocket_transport.h"
 #include "port_log.h"
 #include "netrules.h"
 
@@ -83,6 +83,24 @@ constexpr unsigned int kPickMs = 250;
 constexpr unsigned int kIdlePingMs = 2000;
 constexpr unsigned int kStartRetryMs = 250;
 constexpr unsigned int kPeerTimeoutMs = 10000;
+
+#ifdef SSB64_TEST_HOOKS
+/* Test rigs may need a longer leash: several same-machine peers can stall
+ * a process past the default 10s (rollback resims blocking the netloop on
+ * starved CPU) without the peer actually being dead. SSB64_NETPLAY_DROP_MS
+ * overrides this and the netpeer pacing-drop timeout together. */
+unsigned int peer_timeout_ms() {
+    if (const char *env = std::getenv("SSB64_NETPLAY_DROP_MS")) {
+        int v = std::atoi(env);
+        if (v > 0) {
+            return static_cast<unsigned int>(v);
+        }
+    }
+    return kPeerTimeoutMs;
+}
+#else
+constexpr unsigned int peer_timeout_ms() { return kPeerTimeoutMs; }
+#endif
 constexpr int kMaxRemotePeers = 7;    /* room slots 1..3 are players, 4..7 spectators */
 constexpr int kLanDefaultPort = 41700;
 

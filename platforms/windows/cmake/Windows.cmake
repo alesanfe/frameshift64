@@ -7,7 +7,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT BATTLESHIP_UWP)
     # Game DMA code is no-opped via #ifdef PORT in dma.c, so no /FORCE needed.
     target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
     # Embed the application icon (Explorer / taskbar / window). The .rc
-    # is generated per-region from src/platform/ssb64.rc.in: US embeds
+    # is generated per-region from platforms/windows/resources/ssb64.rc.in: US embeds
     # assets/icon.ico, JP embeds assets/icon-jp.ico. The icon also
     # surfaces as the .exe's Explorer thumbnail because RC resources
     # carry over to the PE's icon group.
@@ -16,7 +16,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT BATTLESHIP_UWP)
         set(SSB64_RC_ICON_PATH "${CMAKE_SOURCE_DIR}/assets/icon-jp.ico")
     endif()
     configure_file(
-        ${CMAKE_SOURCE_DIR}/src/platform/ssb64.rc.in
+        ${CMAKE_SOURCE_DIR}/platforms/windows/resources/ssb64.rc.in
         ${CMAKE_BINARY_DIR}/src/platform/ssb64.rc
         @ONLY)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/src/platform/ssb64.rc)

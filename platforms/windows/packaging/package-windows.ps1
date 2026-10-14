@@ -185,7 +185,7 @@ Copy-Item (Join-Path $Root "config\project\config.yml") $StageDir
 Copy-Item (Join-Path $Root "assets\configuration\extraction\$Ver\*") (Join-Path $StageDir "yamls\$Ver") -Recurse
 # Standalone .ico for shortcut/installer use — the icon is also embedded
 # directly in BattleShip.exe via the generated ssb64.rc (from
-# src/platform/ssb64.rc.in, per-region), so Explorer picks it up
+# platforms/windows/resources/ssb64.rc.in, per-region), so Explorer picks it up
 # without this file. Keep it bundled for future installer work.
 # Region-aware: JP picks assets\icon-jp.ico, US keeps assets\icon.ico.
 $IcoSrc = if ($Ver -eq "jp") { Join-Path $Root "assets\icon-jp.ico" }

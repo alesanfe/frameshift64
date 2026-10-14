@@ -7,7 +7,7 @@ rules, lobby session, packet transports, rollback handshake.
 |--------|----------|
 | `domain/`    | `netrules` — match rules negotiated in the PICK handshake (stage, stocks, items, team/FFA, simulation-affecting CVars). |
 | `session/`   | `netlobby` — room lifecycle, host-star topology, peer forwarding, compat token handshake, spectators, rematch. |
-| `transport/` | `port_udp` (direct UDP + LAN + relay hooks + network sim) and `port_ws` (WebSocket fallback path). |
+| `transport/` | `udp_transport` (direct UDP + LAN + relay hooks + network sim) and `websocket_transport` (WebSocket fallback path). |
 | `rollback/`  | `netrollback_seg.h` — forced-included header isolating the rollback segment's decomp TUs (`netrollback.c`, `netinput.c`, ...). |
 
 ## Allowed dependencies

@@ -7,10 +7,10 @@ audit criteria. Ordered by severity.
 ## Confirmed findings
 
 ### SEC-1 (P0): Worker routes binary frames to ANY slot — star not enforced
-`services/netplay-lobby/src/index.js` `webSocketMessage`: `const target =
+`services/netplay-lobby/src/infrastructure/cloudflare/worker.js` `webSocketMessage`: `const target =
 this.socketForSlot(bytes[0])`. The comment says "Clients only address
 slot 0 (star)", but nothing enforces it — a client can relay a binary
-frame to another client. On the receiver, `link_of` (port_udp.cpp)
+frame to another client. On the receiver, `link_of` (udp_transport.cpp)
 returns `bytes[0]` as the link index, and `syNetPeerCheckForwardPacket`
 runs **before** link attribution in `syNetPeerReceiveRemoteInput`.
 
@@ -66,7 +66,7 @@ FNV-1a, not MACs: fine for corruption detection, not for authentication.
 Any auth story (SEC-2 fix) can't rely on them.
 
 ### REL-1 (P1): `link_of` for framed relay traffic trusts `bytes[0]`
-`port_udp.cpp`: `return bytes[0] < PORT_UDP_LINK_MAX ? bytes[0] : -1`.
+`udp_transport.cpp`: `return bytes[0] < PORT_UDP_LINK_MAX ? bytes[0] : -1`.
 The slot byte is whatever the Worker stamped — combined with SEC-1 a
 sender slot ≠ configured link can route frames onto an arbitrary link
 index on the receiver. At minimum verify `sLinks[bytes[0]].active &&
@@ -139,11 +139,11 @@ end-to-end` (outer `5d3b0e8`, decomp `3fef14e` on
   (49f339d + 3fef14e) and the outer tree is committed; nothing netplay
   is left uncommitted.
 
-Verified: `node services/netplay-lobby/tests/test-lobby-security.js` — 15/15 checks (uplink
+Verified: `node services/netplay-lobby/tests/security/test-lobby-security.js` — 15/15 checks (uplink
 key accept/reject paths, client→client drop, relay-flag gating both
 directions, from_slot stamping, join/text flood limits). The C++ builds
 clean (MSVC Release); the final link needs BattleShip.exe instances to
-be closed. Same hardening mirrored in `services/netplay-lobby/src/node-lobby.mjs` so local
+be closed. Same hardening mirrored in `services/netplay-lobby/src/infrastructure/local/node-lobby.mjs` so local
 tests match production.
 
 ### Residual limitations

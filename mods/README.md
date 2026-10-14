@@ -21,7 +21,7 @@ The in-engine runtime (hook manager, registry, symbol resolver, mod bridge) live
 - **Curated texture packs**: *Assets → Mods* offers **Download & Install**
   for SSB Reloaded 2.0.1 (GhostlyDark's HD pack,
   [upstream](https://github.com/GhostlyDark/SSB-Reloaded)). The installer
-  (`src/distribution/ModPackDownloader.cpp`) downloads the release zip into
+  (`src/distribution/downloads/ModPackDownloader.cpp`) downloads the release zip into
   `mods/` over a `.part` staging file, verifies a compile-time-pinned
   SHA-256, audits the archive (PNG-only, no traversal/manifest), then
   installs atomically. The pack is downloaded from upstream — it is not

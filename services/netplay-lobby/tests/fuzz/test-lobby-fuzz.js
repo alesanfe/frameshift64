@@ -1,6 +1,6 @@
 // Lobby protocol fuzz driver (testplan §11): hammers node-lobby with
 // malformed text/binary frames — the server must never crash, hang, or
-// corrupt unrelated rooms. Run: node services/netplay-lobby/tests/test-lobby-fuzz.js [iterations]
+// corrupt unrelated rooms. Run: node services/netplay-lobby/tests/fuzz/test-lobby-fuzz.js [iterations]
 const path = require("path");
 const http = require("http");
 const crypto = require("crypto");
@@ -29,7 +29,7 @@ const TEXT_VECTORS = [
 ];
 
 async function main() {
-  const srv = spawn("node", [path.join(__dirname, "..", "src", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
+  const srv = spawn("node", [path.join(__dirname, "..", "..", "src", "infrastructure", "local", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
   let srvDead = false;
   srv.on("exit", (code) => { srvDead = true; console.log(`lobby exited code=${code}`); });
   await sleep(700);

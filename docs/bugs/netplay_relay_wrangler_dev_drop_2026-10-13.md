@@ -33,22 +33,22 @@ against a local `wrangler dev` Durable Object stalled a few seconds in:
 bridge that drops binary frames under sustained load and intermittently resets
 the DO (observed: binary counters restarting mid-run, "Network connection lost"
 errors in wrangler output). The exact same client build and protocol work
-flawlessly against `services/netplay-lobby/src/node-lobby.mjs` — a standalone Node implementation of
+flawlessly against `services/netplay-lobby/src/infrastructure/local/node-lobby.mjs` — a standalone Node implementation of
 the same wire protocol — with zero code changes in between.
 
 **Audit hook:** when ws traffic "succeeds" at the sender but never arrives, and
 only under `wrangler dev`, suspect the dev proxy before the protocol. Use
-`services/netplay-lobby/src/node-lobby.mjs` (or a deployed Worker) for local relay testing.
+`services/netplay-lobby/src/infrastructure/local/node-lobby.mjs` (or a deployed Worker) for local relay testing.
 
 ## What changed anyway
 
-- `services/netplay-lobby/src/index.js`: Durable Object uses the non-hibernating
+- `services/netplay-lobby/src/infrastructure/cloudflare/worker.js`: Durable Object uses the non-hibernating
   WebSocket API (simpler state model, no hibernation edge cases; required for
   in-memory room maps) — kept, it's the safer production shape.
-- `services/netplay-lobby/src/node-lobby.mjs` (new): local lobby for tests; the test script
+- `services/netplay-lobby/src/infrastructure/local/node-lobby.mjs` (new): local lobby for tests; the test script
   auto-prefers it over wrangler when `services/netplay-lobby/node_modules/ws`
   exists.
-- `port_ws.cpp`: send-only **uplink** ws connection (`/ws?...&up=1&slot=N`) for
+- `websocket_transport.cpp`: send-only **uplink** ws connection (`/ws?...&up=1&slot=N`) for
   all outbound binary game frames. Isolating directions sidesteps the dev-proxy
   issue class entirely and is harmless in production (wrangler still drops
   uplink frames in dev mode; real Cloudflare + node-lobby do not).

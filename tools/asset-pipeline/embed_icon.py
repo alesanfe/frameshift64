@@ -28,7 +28,7 @@ def main() -> int:
     arr = ",\n    ".join(rows)
 
     header = f"""// Auto-generated from {Path(src).name} by tools/embed_icon.py.
-// Do not edit by hand. See src/platform/port_window_icon.cpp for the consumer.
+// Do not edit by hand. See src/platform/window/port_window_icon.cpp for the consumer.
 #pragma once
 
 #include <cstddef>

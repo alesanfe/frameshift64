@@ -74,7 +74,7 @@ def main() -> int:
         cmd += ["-n", args.workers]
     cmd += args.extra
     print("+", " ".join(cmd))
-    return subprocess.run(cmd, cwd=ROOT).returncode
+    return subprocess.run(cmd, cwd=ROOT, check=False).returncode
 
 
 if __name__ == "__main__":

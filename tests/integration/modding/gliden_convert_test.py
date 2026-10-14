@@ -1,6 +1,6 @@
 """
 Unit test for tools/modding/convert_gliden64_pack.py — the CLI twin of the
-in-game GLideN64 converter (src/distribution/ModPackDownloader.cpp). Both
+in-game GLideN64 converter (src/distribution/downloads/ModPackDownloader.cpp). Both
 re-key "<prefix>#<crc8>#<fmt>#<siz>[#<palCRC8>]_<tag>.png" files into the
 port's "#<ourHash8>#<fmt>#<siz>.png" grammar using the vendored hash map
 (tools/modding/vendor/battleship.json). This test keeps the CLI honest on
@@ -26,6 +26,7 @@ def run_convert(pack: Path, out: Path) -> subprocess.CompletedProcess:
         [sys.executable, str(CONVERT), "--pack", str(pack), "--out", str(out)],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 

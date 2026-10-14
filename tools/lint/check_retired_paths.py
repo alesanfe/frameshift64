@@ -60,6 +60,10 @@ RETIRED_REF = re.compile(
     r'|"resources/(?:audio|css_icons|shaders|textures)/'
     r'|src/integration/decomp/ssb64_reloc_rebuild\.(?:us|jp)\.cpp'
     r'|include/reloc_data\.(?:us|jp)\.h'
+    # platforms/ physical layout (per-platform cmake/packaging/resources):
+    r'|cmake/platforms/'
+    r'|scripts/packaging/'
+    r'|src/platform/ssb64\.rc'
     # test-tree reorg (level-based tests/): the flat unit/ names and the
     # seeds/ corpus dir are retired — new paths under tests/<level>/<domain>
     r'|tests/unit/test_(?:extraction_recipes|extern_ids|vpk0|package_mod)'

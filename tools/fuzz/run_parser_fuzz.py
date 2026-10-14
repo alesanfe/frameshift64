@@ -124,7 +124,7 @@ def run_one(binary: Path, parser: str, data: bytes, timeout: float) -> int:
     env["SSB64_FUZZ_PARSER"] = parser
     env["SSB64_FUZZ_INPUT"] = path
     try:
-        proc = subprocess.run([str(binary)], env=env, timeout=timeout,
+        proc = subprocess.run([str(binary)], env=env, timeout=timeout, check=False,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         rc = proc.returncode
     except subprocess.TimeoutExpired:

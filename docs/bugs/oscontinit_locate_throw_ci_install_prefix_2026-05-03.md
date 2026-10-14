@@ -29,7 +29,7 @@ Two compounding bugs.
 
 ### 1. CI bakes the runner workspace path into `install_config.h`
 
-`scripts/packaging/package-windows.ps1` invokes:
+`platforms/windows/packaging/package-windows.ps1` invokes:
 
 ```powershell
 cmake -DNON_PORTABLE=ON -DCMAKE_INSTALL_PREFIX=BattleShip -B build-bundle-win

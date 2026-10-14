@@ -3,7 +3,7 @@ Unit test for tools/modding/package_mod.py — the driver that turns a mod
 source folder (manifest.json + src/*.c + include/) into the packaged
 layout the runtime loader mounts (manifest + build.gen + dist/*.c).
 
-Run:  python tests/unit/test_package_mod.py
+Run:  python tests/integration/modding/mod_package_test.py
 """
 
 import json
@@ -56,6 +56,7 @@ def run_packager(mod_dir: Path, out_dir: Path) -> subprocess.CompletedProcess:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 

@@ -63,7 +63,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 | Seam | Mechanism | Enables |
 |------|-----------|---------|
 | Packet parser | `syNetPeerHandlePacket`/`HandleForwardPacket` are call paths over byte buffers; `SSB64_NETPLAY_PACKETFUZZ` proves injected datagrams reach them | codec unit/fuzz tests — codec extracted to `src/netplay/protocol/netpacket.*`, covered by `netpacket_test` |
-| Network sim | `SIM_{LATENCY,JITTER,LOSS,DUP,REORDER,CORRUPT}_PCT` + `SIM_SEED` in `port_udp.cpp` | impairment matrix, replayable failures |
+| Network sim | `SIM_{LATENCY,JITTER,LOSS,DUP,REORDER,CORRUPT}_PCT` + `SIM_SEED` in `udp_transport.cpp` | impairment matrix, replayable failures |
 | Headless run | `SSB64_ROLLBACK_AUTOVS` + `SSB64_MAX_FRAMES` + `SSB64_MUTE` + `SSB64_RIG_EXIT` | `smash-classic-sim` target is mostly packaging |
 | Deterministic inputs | `SSB64_NETPLAY_FUZZ` per-tick hash inputs | replayable matches |
 | Traces | `CONFIRMED_TRACE` (per-tick hash file), `SYNC_VERIFY` (field-grouped subsystem hashes) | first-divergent-frame + subsystem attribution |
@@ -77,7 +77,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 
 | Component | Problem | Minimal seam (no over-engineering) |
 |-----------|---------|----------------------------------|
-| `port_udp` transport | real sockets in unit tests | extract `send_routed` behind a vtable `NetTransport` {send,recv,poll}; loopback fake = 60 lines |
+| `udp_transport` transport | real sockets in unit tests | extract `send_routed` behind a vtable `NetTransport` {send,recv,poll}; loopback fake = 60 lines |
 | Updater | shells out to curl + powershell; hits github API | `UpdateTransport` interface (fetch json/fetch file); `FakeUpdaterServer` = local static dir over `http://127.0.0.1` |
 | Save system | `port_save.cpp` writes via direct file IO, unversioned | `SaveStore` {read,write,list} + in-memory fake; also the fix for F-011 |
 | Config (LUS CVars) | global registry, no unknown-key handling | in-memory CVar snapshot/restore helper for tests; don't rebuild LUS |

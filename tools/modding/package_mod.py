@@ -28,8 +28,8 @@ mod sources include against.
 import argparse
 import json
 import shutil
-import subprocess
 import struct
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -82,7 +82,7 @@ def sign_checksum(checksum: str, secret_key: Path, pubkey_path: Path) -> tuple[s
     try:
         result = subprocess.run(
             ["minisign", "-S", "-l", "-s", str(secret_key), "-m", str(msg_path)],
-            capture_output=True, text=True
+            capture_output=True, text=True, check=False
         )
         if result.returncode != 0:
             raise RuntimeError(f"minisign failed: {result.stderr}")
@@ -157,7 +157,7 @@ def main() -> int:
             "--includes", *[str(d) for d in include_dirs],
             "--srcs", str(src),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             print(f"package_mod: merge_mod failed for {src}:\n{result.stdout}{result.stderr}",
                   file=sys.stderr)

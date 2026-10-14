@@ -8,8 +8,8 @@
 
 import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
-} from "./domain/protocol.mjs";
-import { LobbyRoom } from "./domain/room.mjs";
+} from "../../domain/protocol.mjs";
+import { LobbyRoom } from "../../domain/room.mjs";
 
 // Per-isolate IP join accounting (approximate — isolates aren't shared,
 // and that's fine: this bounds scanning cost, it isn't a security

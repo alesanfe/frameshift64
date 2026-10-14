@@ -1224,7 +1224,7 @@ else()
     target_link_libraries(${PROJECT_NAME} PRIVATE libultraship discord-rpc)
 endif()
 if (WIN32)
-    # src/diagnostics/port_symbolize.cpp (SyncTest diagnostics), src/netplay/transport/port_udp.cpp, src/netplay/transport/port_ws.cpp
+    # src/diagnostics/port_symbolize.cpp (SyncTest diagnostics), src/netplay/transport/udp_transport.cpp, src/netplay/transport/websocket_transport.cpp
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt)
 endif()
 
@@ -1309,15 +1309,15 @@ else()
 endif()
 
 ################################################################################
-# Platform-specific settings — per-platform files under cmake/platforms/,
+# Platform-specific settings — per-platform files under platforms/<os>/cmake/,
 # each internally guarded (safe to include on every host).
 #   Windows.cmake — subsystem/entry point, .rc icon embed, shell32
 #   Linux.cmake   — -Wl,-export-dynamic
 #   Switch.cmake  — devkitPro toolchain, .nro packaging, BundleSwitch
 #   macOS.cmake   — CoreFoundation link, Mach-O rwx + ad-hoc re-sign
 ################################################################################
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/platforms/Windows.cmake)
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/platforms/Linux.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/platforms/windows/cmake/Windows.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/platforms/linux/cmake/Linux.cmake)
 
 ################################################################################
 # TCC mod scripting: export the engine's full symbol table so libtcc-compiled
@@ -1424,11 +1424,11 @@ endif()
 
 ################################################################################
 # macOS: JIT-entitlement re-sign for the mod hook backend. Defined in
-# cmake/platforms/macOS.cmake; registered here so it remains the LAST
+# platforms/macos/cmake/macOS.cmake; registered here so it remains the LAST
 # POST_BUILD step (any later binary mutation would invalidate the
 # signature).
 ################################################################################
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/platforms/macOS.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/platforms/macos/cmake/macOS.cmake)
 
 ################################################################################
 # Asset extraction targets (desktop only — Android extracts on-device from
@@ -1770,11 +1770,11 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     VERBATIM)
 
 ################################################################################
-# Switch toolchain settings + SD-card bundling (cmake/platforms/Switch.cmake).
+# Switch toolchain settings + SD-card bundling (platforms/switch/cmake/Switch.cmake).
 # Included late so BundleSwitch can depend on GenerateF3DO2R, which is
 # defined by cmake/RuntimeAssets.cmake above.
 ################################################################################
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/platforms/Switch.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/platforms/switch/cmake/Switch.cmake)
 
 ################################################################################
 # Test harness (tests/). Off by default — enables CTest + smash_add_test

@@ -2,9 +2,9 @@
 
 | Piece | Location |
 |-------|----------|
-| CMake | `cmake/platforms/Linux.cmake` + presets |
-| Packaging | `scripts/packaging/package-linux.sh` (AppImage) |
+| CMake | `platforms/linux/cmake/Linux.cmake` + presets |
+| Packaging | `platforms/linux/packaging/package-linux.sh` (AppImage) |
 | CI | `.github/workflows/{build,release}.yml` |
 
 Downloads/updates use the curl-child `download_service`; SHA-256 is
-in-process (`src/distribution/FileHash.cpp`) — no `sha256sum` needed.
+in-process (`src/distribution/integrity/FileHash.cpp`) — no `sha256sum` needed.

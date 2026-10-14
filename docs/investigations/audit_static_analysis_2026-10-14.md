@@ -4,7 +4,7 @@ Suite instalada en `.venv-lint` (Python 3.12) y ejecutada sobre el árbol
 completo. Configuración reproducible: `tools/lint/requirements.txt`,
 `.clang-tidy`, `config/static-analysis/cppcheck-suppressions.txt`, `.codespellrc`, `.yamllint.yml`,
 `config/semgrep/smash-classic.yml`, `.pre-commit-config.yaml`, `tools/lint/run_project_lint.py`,
-`scripts/development/configure-lint.bat` (vcvars + VCPKG_ROOT → `build-lint/` con Ninja y
+scripts/development/configure-lint.bat (local, gitignored) (vcvars + VCPKG_ROOT → `build-lint/` con Ninja y
 `compile_commands.json`, 833 TUs / 830 ficheros únicos).
 
 Informes crudos en `lint-reports/` (gitignored).
@@ -39,7 +39,7 @@ Informes crudos en `lint-reports/` (gitignored).
    Windows/MSVC o dar fallback.
 4. **`src/presentation/UIWidgets.cpp:969`** — `uninitvar: longest` (cppcheck).
 5. **`src/platform/coroutine/coroutine_posix.cpp:47-51`** — `PortCoroutine` sin inicializadores
-   de miembro; `src/netplay/transport/port_udp.cpp:47` — `PendingPacket::release_ms` sin
+   de miembro; `src/netplay/transport/udp_transport.cpp:47` — `PendingPacket::release_ms` sin
    default (hoy siempre se asigna en el único constructor; frágil).
 6. **`src/resources/loading/textures/hires/HiResHook.cpp:104`, `src/presentation/Menu.cpp:419`,
    `PortMenu.cpp:1689`, `port.cpp:632/1181/1436`, `ShaderDownloader.cpp:747`** —
@@ -61,7 +61,7 @@ Informes crudos en `lint-reports/` (gitignored).
   `port_aobj_fixup_snapshot_*`.
 - 43× `performance-no-int-to-ptr`, 122× narrowing — estructural en un port
   N64; revisar solo los que toquen ticks/slots.
-- `bugprone-random-generator-seed` en `port_udp.cpp:76` — `sSimRng(1)`
+- `bugprone-random-generator-seed` en `udp_transport.cpp` — `sSimRng(1)`
   semilla fija: **es intencional** (SIM_SEED determinista); documentar.
 
 ## Infraestructura ya existente (no rehacer)

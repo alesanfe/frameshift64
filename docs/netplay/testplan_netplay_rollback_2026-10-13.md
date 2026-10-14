@@ -11,7 +11,7 @@ what's missing, in priority order. All env hooks verified in code
 |---|---|
 | DeterministicGameRunner | `SSB64_ROLLBACK_AUTOVS` + `SSB64_RIG_EXIT` + `SSB64_MAX_FRAMES` + `SSB64_MUTE` — unattended headless VS match, exits at a fixed tick (`netrollback.c`, `netplay_auto` path in `port.cpp`) |
 | InputGenerator | `SSB64_NETPLAY_FUZZ` — deterministic per-tick hash-driven synthetic inputs (`netinput.c:298-344`), same on all peers |
-| VirtualNetworkSimulator | `SSB64_NETPLAY_SIM_{LATENCY_MS,JITTER_MS,LOSS_PCT,SEED}` — delay queue in `port_udp.cpp` (`sSimQueue`, seeded `sSimRng`). Missing: reorder, duplication, corruption, bandwidth, cut/route-change |
+| VirtualNetworkSimulator | `SSB64_NETPLAY_SIM_{LATENCY_MS,JITTER_MS,LOSS_PCT,SEED}` — delay queue in `udp_transport.cpp` (`sSimQueue`, seeded `sSimRng`). Missing: reorder, duplication, corruption, bandwidth, cut/route-change |
 | StateRecorder | `SSB64_NETPLAY_CONFIRMED_TRACE` — per-peer confirmed-state trace file; `SSB64_SYNC_TRACE`/`SYNC_VERIFY` — per-tick field-grouped hashes (fighters/joints/items/stage/camera/vars/...) |
 | Oracle | pairwise trace diff in `scripts/testing/netplay_lobbytest*.ps1`, `netplay_localtest.ps1`; `syNetRollbackCheckRemoteConfirmedHash` compares remote hash each tick |
 | Rollback correctness self-test | `SSB64_ROLLBACK_SYNCTEST=N` — every tick is snapshotted, N frames resimulated, hashes compared in-process (`netrollback.c`); `scripts/development/rollback_synctest.ps1` |
@@ -24,7 +24,7 @@ what's missing, in priority order. All env hooks verified in code
 `netplay_localtest.ps1` runs two processes over localhost UDP with sim
 latency/jitter/loss and diffs confirmed traces. Missing variants:
 - **duplication / reorder** — the sim queue can't produce them today
-  (`port_udp.cpp` enqueue only delays). Reorder comes free once jitter >
+  (`udp_transport.cpp` enqueue only delays). Reorder comes free once jitter >
   latency, duplication doesn't exist at all.
 - **relay path** — covered only by `lobbytest_multi -ForceRelay` (real
   worker). No direct↔relay mid-match migration test (NAT-004).
@@ -67,7 +67,7 @@ bitmaps are the known edge; `SSB64_SYNC_VERIFY` divergence is the tripwire.
 ## Implementation order (spec §27, grounded)
 
 **Layer 1 — finish what exists:**
-1. Extend `port_udp.cpp` sim: `SIM_REORDER_PCT`, `SIM_DUP_PCT`,
+1. Extend `udp_transport.cpp` sim: `SIM_REORDER_PCT`, `SIM_DUP_PCT`,
    `SIM_CORRUPT_PCT`, seeded like existing params (~50 lines).
 2. `netplay_localtest.ps1` flags for the new sim params.
 3. Effect-suppression audit: grep every subsystem that mutates observable
@@ -104,7 +104,7 @@ All four layers are implemented. Env hooks are deterministic through
 
 ### Layer 1 — done
 
-- `src/netplay/transport/port_udp.cpp` sim: `SSB64_NETPLAY_SIM_{DUP,REORDER,CORRUPT}_PCT`
+- `src/netplay/transport/udp_transport.cpp` sim: `SSB64_NETPLAY_SIM_{DUP,REORDER,CORRUPT}_PCT`
   plus `SIM_REORDER_WINDOW_MS`. Order of application: loss drop → corrupt a
   copy (never the caller's buffer) → jitter/reorder delay → queue insert →
   optional duplicate twin. Only `send_routed` (game traffic) is affected;
@@ -147,7 +147,7 @@ All four layers are implemented. Env hooks are deterministic through
   `accept_bad_session`, `accept_bad_checksum`, `no_forward_guard`,
   `skip_rng_restore`. Driven by `scripts/testing/netplay_mutation_suite.ps1`:
   baselines must pass, every mutant must produce exit 1.
-- Lobby fuzz: `services/netplay-lobby/tests/test-lobby-fuzz.js` hammers
+- Lobby fuzz: `services/netplay-lobby/tests/fuzz/test-lobby-fuzz.js` hammers
   `node-lobby.mjs` with malformed text/binary frames and hostile connection
   params; asserts the process survives and an untouched control room stays
   functional.

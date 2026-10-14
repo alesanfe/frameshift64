@@ -1,16 +1,19 @@
-# src/features — player-visible gameplay enhancements
+# src/gameplay — player-visible gameplay enhancements
 
 Opt-in enhancements the player can toggle. Infrastructure that only
 *delivers* features (updater, pack downloads, signing) lives in
-`src/distribution/` — not here.
+`src/distribution/` — not here. Non-gameplay feature packs live in their
+own top-level modules: `src/audio/` (music/volume), `src/social/`
+(Discord Rich Presence), `src/input/` (controller remap + stick
+behaviors, `internal/buttons.h`), `src/rendering/` (widescreen, HUD).
 
 | Subdir | Contents |
 |--------|----------|
-| `gameplay/` | Input & rules: Z-cancel assists, C-stick/DPad/tap-jump, comp ruleset, neutral spawns, stage hazards, HUD, classic co-op, CPU L9, unlocks, hitbox view, boot/skip shortcuts. |
-| `audio/`    | Music selection, shuffle, volume. |
-| `social/`   | Discord Rich Presence. |
-| `cosmetics/` | widescreen (has its own include dir). |
-| `internal/` | `buttons.h` shared button definitions. |
+| `assists/`  | Z-cancel assists: `AutoZCancel`, `FailedZCancelFlash`. |
+| `modes/`    | Alternate modes/boot paths: `BonusStages`, `BootToVSCSS`, `ClassicCoop`, `SkipResultsScreen`. |
+| `rules/`    | Match rules: `CompRuleset`, `CpuLevel9`, `DisableStageHazards`, `NeutralSpawns`. |
+| `training/` | Practice tools: `HitboxView`. |
+| `unlocks/`  | `UnlockCheats`. |
 
 `enhancements.h` at this level is the shared registry/menu header every
 feature includes.
@@ -19,4 +22,5 @@ feature includes.
 
 Leaf modules, `integration`, `netplay` (rules handshake). Never
 `application`/`presentation`. New files: put them in the domain
-subdir that fits; do not add new top-level `features/` dumping ground.
+subdir that fits — or in the matching top-level module (`audio/`,
+`input/`, `social/`, `rendering/`) when the feature isn't gameplay.
