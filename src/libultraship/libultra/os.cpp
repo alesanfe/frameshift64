@@ -1,4 +1,5 @@
 #include "libultraship/libultraship.h"
+#include "libultraship/bridge/controllerbridge.h"
 #include <SDL2/SDL.h>
 #include <ratio>
 
@@ -13,7 +14,6 @@ uint64_t __osCurrentTime = 0;
 
 int32_t osContInit(OSMesgQueue* mq, uint8_t* controllerBits, OSContStatus* status) {
     *controllerBits = 0;
-    status->status |= 1;
 
     // Locating + loading gamecontrollerdb.txt is a quality-of-life feature —
     // failure to find or parse it should never crash the controller thread.
@@ -92,6 +92,25 @@ int32_t osContInit(OSMesgQueue* mq, uint8_t* controllerBits, OSContStatus* statu
 
     Ship::Context::GetInstance()->GetControlDeck()->Init(controllerBits);
 
+    /* Report honest per-port connection state. Previously every port
+     * reported errno=0 + CONT_CARD_ON (or was left BSS-zeroed), so the
+     * game always saw 4 controllers and the "no controller" scene could
+     * never trigger. SDL pads may not be enumerated yet at this point —
+     * later refreshes flow through osContGetQuery/osContGetReadData. */
+    if (status != nullptr) {
+        for (int i = 0; i < MAXCONTROLLERS; i++) {
+            bool connected = ControllerPortHasPhysicalDevice(i) != 0;
+            /* NB: this struct spells the field err_no (not errno) — the
+             * decomp-side OSContStatus uses errno, which collides with
+             * MSVC's object-like errno macro. */
+            status[i].err_no = connected ? 0 : CONT_NO_RESPONSE_ERROR;
+            status[i].status = connected ? CONT_CARD_ON : 0;
+            if (connected) {
+                *controllerBits |= (1 << i);
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -131,7 +150,10 @@ void osContGetReadData(OSContPad* pad) {
         out[i].button  = static_cast<uint16_t>(lus_pads[i].button);
         out[i].stick_x = lus_pads[i].stick_x;
         out[i].stick_y = lus_pads[i].stick_y;
-        out[i].err_no  = lus_pads[i].err_no;
+        /* Ports with no routed physical device report NO_RESPONSE, like
+         * an empty socket on hardware — the game can then notice pad
+         * disconnect/reconnect instead of always seeing 4 controllers. */
+        out[i].err_no  = ControllerPortHasPhysicalDevice(i) ? lus_pads[i].err_no : CONT_NO_RESPONSE_ERROR;
     }
 }
 

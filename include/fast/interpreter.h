@@ -335,6 +335,11 @@ struct RDP {
     // logo drawing in front of the model, etc.).
     uint16_t prim_depth_z;
     uint16_t prim_depth_dz;
+    // PORT: G_SETCONVERT K0-K5 (s9 each). Stored for completeness — the YUV
+    // import path decodes with the fixed BT.601 matrix that corresponds to
+    // the hardware-default constants; custom matrices are not yet applied.
+    bool convert_constants_set;
+    int16_t convert_k[6];
     struct RGBA env_color, prim_color, fog_color, blend_color, fill_color, grayscale_color;
     struct XYWidthHeight viewport, scissor;
     bool viewport_or_scissor_changed;
@@ -533,6 +538,7 @@ class Interpreter {
     void ImportTextureIA16(int tile, bool importReplacement);
     void ImportTextureI4(int tile, bool importReplacement);
     void ImportTextureI8(int tile, bool importReplacement);
+    void ImportTextureYuv(int tile, bool importReplacement);
     void ImportTextureCi4(int tile, bool importReplacement);
     void ImportTextureCi8(int tile, bool importReplacement);
     void ImportTextureRaw(int tile, bool importReplacement);

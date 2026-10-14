@@ -94,6 +94,9 @@ void Archive::ParseManifest() {
         if (j.contains("game-version") && j["game-version"].is_number_integer()) {
             mManifest.GameVersion = j["game-version"].get<uint32_t>();
         }
+        if (j.contains("simulation") && j["simulation"].is_boolean()) {
+            mManifest.Simulation = j["simulation"].get<bool>();
+        }
         if (j.contains("main") && j["main"].is_string()) {
             mManifest.Main = j["main"].get<std::string>();
         }

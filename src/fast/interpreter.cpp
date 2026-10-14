@@ -2465,6 +2465,109 @@ void Interpreter::ImportTextureRaw(int tile, bool importReplacement) {
     mRapi->UploadTexture(mTexUploadBuffer, resultNewLineSize / 4, resultNewHeight);
 }
 
+// PORT: N64 YUV16 (4:2:2). Even texels store {Y, U}, odd texels store
+// {Y, V}; each horizontal pair shares one chroma pair. On hardware the
+// texture filter converts to RGB before the color combiner sees it —
+// SSB64 sprites pair G_IM_FMT_YUV with G_CC_DECALRGBA (and never issue
+// gDPSetConvert), so decoding to RGBA8 here with the default K0-K5
+// conversion (BT.601) matches what the CC receives on console.
+void Interpreter::ImportTextureYuv(int tile, bool importReplacement) {
+    const RawTexMetadata* metadata = &mRdp->loaded_texture[mRdp->texture_tile[tile].tmem_index].raw_tex_metadata;
+    const uint8_t* addr =
+        importReplacement && (metadata->resource != nullptr)
+            ? GetMaskedReplacementData(mMaskedTextures, GetBaseTexturePath(metadata->resource->GetInitData()->Path))
+            : mRdp->loaded_texture[mRdp->texture_tile[tile].tmem_index].addr;
+
+    if (addr == nullptr) {
+        SPDLOG_ERROR("ImportTextureYuv: null texture address for tile {}", tile);
+        return;
+    }
+
+    uint32_t sizeBytes = mRdp->loaded_texture[mRdp->texture_tile[tile].tmem_index].size_bytes;
+    uint32_t fullImageLineSizeBytes =
+        mRdp->loaded_texture[mRdp->texture_tile[tile].tmem_index].full_image_line_size_bytes;
+    uint32_t line_size_bytes = mRdp->loaded_texture[mRdp->texture_tile[tile].tmem_index].line_size_bytes;
+
+    uint32_t widthBytes = GetEffectiveLineSize(line_size_bytes, fullImageLineSizeBytes, sizeBytes,
+                                               mRdp->texture_tile[tile].line_size_bytes);
+    // See ImportTextureRgba16 for the naturalWidth / ClampUploadWidthToTile
+    // rationale — identical 16-bit texel layout applies here.
+    uint32_t naturalWidth = widthBytes / 2;
+    uint32_t width = naturalWidth;
+    uint32_t height = widthBytes > 0 ? sizeBytes / widthBytes : 0;
+
+    uint32_t tile_w = (uint32_t)((mRdp->texture_tile[tile].lrs - mRdp->texture_tile[tile].uls + 4) / 4);
+    uint32_t tile_h = (uint32_t)((mRdp->texture_tile[tile].lrt - mRdp->texture_tile[tile].ult + 4) / 4);
+    if (tile_w > 0 && tile_w < width) {
+        width = tile_w;
+    }
+    if (tile_h > 0 && tile_h < height) {
+        height = tile_h;
+    }
+
+    if (mRdp->texture_tile[tile].masks > 0) {
+        uint32_t mask_w = 1u << mRdp->texture_tile[tile].masks;
+        if (mask_w > 0 && mask_w < width) {
+            width = mask_w;
+        }
+    }
+    if (mRdp->texture_tile[tile].maskt > 0) {
+        uint32_t mask_h = 1u << mRdp->texture_tile[tile].maskt;
+        if (mask_h > 0 && mask_h < height) {
+            height = mask_h;
+        }
+    }
+
+    if (fullImageLineSizeBytes == sizeBytes) {
+        fullImageLineSizeBytes = naturalWidth * 2;
+    }
+
+    uint32_t i = 0;
+
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t rowBase = y * (fullImageLineSizeBytes / 2);
+            uint32_t pairBase = x & ~1u;
+
+            int32_t yv = addr[2 * (rowBase + x)];
+            int32_t cb = (int32_t)addr[2 * (rowBase + pairBase) + 1] - 128;
+            // The chroma-V texel sits at pairBase + 1; past the row edge of
+            // an odd-width image there is no partner, so use neutral chroma.
+            int32_t cr = (pairBase + 1 < naturalWidth)
+                             ? (int32_t)addr[2 * (rowBase + pairBase + 1) + 1] - 128
+                             : 0;
+
+            // BT.601 in 8.8 fixed point: R = Y + 1.402 Cr,
+            // G = Y - 0.344 Cb - 0.714 Cr, B = Y + 1.772 Cb.
+            int32_t r = yv + ((cr * 359) >> 8);
+            int32_t g = yv - ((cb * 88) >> 8) - ((cr * 183) >> 8);
+            int32_t b = yv + ((cb * 454) >> 8);
+
+            mTexUploadBuffer[4 * i + 0] = (uint8_t)std::clamp(r, 0, 255);
+            mTexUploadBuffer[4 * i + 1] = (uint8_t)std::clamp(g, 0, 255);
+            mTexUploadBuffer[4 * i + 2] = (uint8_t)std::clamp(b, 0, 255);
+            mTexUploadBuffer[4 * i + 3] = 255;
+
+            i++;
+        }
+    }
+
+    Ssb64RenderDiagLogUpload("YUV16", metadata, addr, tile, mRdp->texture_tile[tile].tmem_index, width, height);
+    if (!importReplacement) {
+        if (GfxHiResHookFn hook = gHiResHook) {
+            const uint8_t* packBuf = nullptr;
+            uint16_t packW = 0, packH = 0;
+            if (hook(G_IM_FMT_YUV, G_IM_SIZ_16b, mTexUploadBuffer, (uint16_t)width, (uint16_t)height,
+                     &packBuf, &packW, &packH)
+                && packBuf != nullptr && packW > 0 && packH > 0) {
+                mRapi->UploadTexture(packBuf, packW, packH);
+                return;
+            }
+        }
+    }
+    mRapi->UploadTexture(mTexUploadBuffer, width, height);
+}
+
 void Interpreter::ImportTexture(int i, int tile, bool importReplacement) {
     uint8_t fmt = mRdp->texture_tile[tile].fmt;
     uint8_t siz = mRdp->texture_tile[tile].siz;
@@ -2724,7 +2827,11 @@ void Interpreter::ImportTexture(int i, int tile, bool importReplacement) {
             }
             break;
         case G_IM_FMT_YUV:
-            SPDLOG_ERROR("YUV Textures not supported");
+            if (siz == G_IM_SIZ_16b) {
+                ImportTextureYuv(tile, importReplacement);
+            } else {
+                SPDLOG_ERROR("YUV Texture with unexpected size = {}", siz);
+            }
             break;
         default:
             SPDLOG_ERROR("Invalid texture format. Fmt = {}", fmt);
@@ -4994,11 +5101,14 @@ void Interpreter::Gfxs2dexBg1cyc(F3DuObjBg* bg) {
         data = (uintptr_t) reinterpret_cast<char*>(tex->ImageData);
     }
 
-    // TODO: Implement bg scaling correctly
     s16 uls = bg->b.imageX >> 2;
     s16 lrs = bg->b.imageW >> 2;
 
-    s16 dsdxRect = 1 << 10;
+    // scaleW/scaleH are u5.10 texels-per-pixel — the same units
+    // GfxDpTextureRectangle expects for dsdx/dtdy (s5.10). scaleW == 0 is
+    // the S2DEX "unscaled" convention; fall back to identity.
+    s16 dsdxRect = bg->s.scaleW != 0 ? (s16)bg->s.scaleW : (s16)(1 << 10);
+    s16 dtdyRect = bg->s.scaleH != 0 ? (s16)bg->s.scaleH : (s16)(1 << 10);
     s16 ulsRect = bg->b.imageX << 3;
     // Flip flag only flips horizontally
     if (bg->b.imageFlip == G_BG_FLAG_FLIPS) {
@@ -5014,8 +5124,12 @@ void Interpreter::Gfxs2dexBg1cyc(F3DuObjBg* bg) {
                  bg->b.imagePal, 0, 0, 0, 0, 0, 0);
     GfxDpSetTileSize(G_TX_RENDERTILE, 0, 0, bg->b.imageW, bg->b.imageH);
 
-    GfxDpTextureRectangle(bg->b.frameX, bg->b.frameY, bg->b.frameW, bg->b.frameH, G_TX_RENDERTILE, ulsRect,
-                          bg->b.imageY << 3, dsdxRect, 1 << 10, false);
+    // frameX/frameY/frameW/frameH are s10.2/u10.2 rect coords — the lower-right
+    // corner is frameX + frameW, not frameW itself (identical when frameX == 0,
+    // which is why the unscaled path worked).
+    GfxDpTextureRectangle(bg->b.frameX, bg->b.frameY, bg->b.frameX + bg->b.frameW - 4,
+                          bg->b.frameY + bg->b.frameH - 4, G_TX_RENDERTILE, ulsRect,
+                          bg->b.imageY << 3, dsdxRect, dtdyRect, false);
 }
 
 void Interpreter::Gfxs2dexRecyCopy(F3DuObjSprite* spr) {
@@ -5151,8 +5265,38 @@ bool gfx_load_ucode_handler_f3dex2(F3DGfx** cmd) {
     return false;
 }
 
-bool gfx_cull_dl_handler_f3dex2(F3DGfx** cmd) {
-    // TODO:
+bool gfx_cull_dl_handler_f3dex2(F3DGfx** cmd0) {
+    Interpreter* gfx = mInstance.lock().get();
+    F3DGfx* cmd = *cmd0;
+
+    // gSPCullDisplayList(v0, vn): vertex indices are stored doubled in w0
+    // (v0 << 17 | vn << 1); w1 is the display list called only when the
+    // vertex range is not trivially rejected. Rejection mirrors the RSP:
+    // the whole range is outside iff every vertex shares at least one
+    // clip-rejection plane (the AND of per-vertex clip_rej flags).
+    uint32_t v0 = C0(16, 8) / 2;
+    uint32_t vn = C0(0, 16) / 2;
+    if (vn >= MAX_VERTICES + 4) {
+        vn = MAX_VERTICES + 3;
+    }
+    if (v0 > vn) {
+        v0 = vn;
+    }
+
+    uint32_t clip_cross = 0x3f;
+    for (uint32_t i = v0; i <= vn; i++) {
+        clip_cross &= gfx->mRsp->loaded_vertices[i].clip_rej;
+        if (clip_cross == 0) {
+            break;
+        }
+    }
+
+    if (clip_cross == 0) {
+        F3DGfx* subGFX = (F3DGfx*)gfx->SegAddr(cmd->words.w1);
+        if (subGFX != nullptr) {
+            g_exec_stack.call(*cmd0, subGFX);
+        }
+    }
     return false;
 }
 
@@ -5827,6 +5971,31 @@ bool gfx_set_prim_depth_handler_rdp(F3DGfx** cmd0) {
     // consumption when a draw uses other_mode_l & G_ZS_PRIM.
     gfx->mRdp->prim_depth_z = (uint16_t)((cmd->words.w1 >> 16) & 0xFFFF);
     gfx->mRdp->prim_depth_dz = (uint16_t)(cmd->words.w1 & 0xFFFF);
+    return false;
+}
+
+// G_SETCONVERT packs six s9 constants (K0-K5): k0 at w0[21:13], k1 at
+// w0[12:4], k2 split across w0[3:0] (high bits) and w1[31:27] (low bits),
+// k3 at w1[26:18], k4 at w1[17:9], k5 at w1[8:0].
+bool gfx_set_convert_handler_rdp(F3DGfx** cmd0) {
+    Interpreter* gfx = mInstance.lock().get();
+    F3DGfx* cmd = *cmd0;
+
+    uint32_t w0 = (uint32_t)cmd->words.w0;
+    uint32_t w1 = (uint32_t)cmd->words.w1;
+    int32_t raw[6] = {
+        (int32_t)((w0 >> 13) & 0x1FF),
+        (int32_t)((w0 >> 4) & 0x1FF),
+        (int32_t)(((w0 & 0xF) << 5) | (w1 >> 27)),
+        (int32_t)((w1 >> 18) & 0x1FF),
+        (int32_t)((w1 >> 9) & 0x1FF),
+        (int32_t)(w1 & 0x1FF),
+    };
+    for (int i = 0; i < 6; i++) {
+        // sign-extend s9
+        gfx->mRdp->convert_k[i] = (int16_t)(raw[i] >= 0x100 ? raw[i] - 0x200 : raw[i]);
+    }
+    gfx->mRdp->convert_constants_set = true;
     return false;
 }
 
@@ -6583,7 +6752,7 @@ static constexpr UcodeHandler rdpHandlers = {
     { RDP_G_RDPFULLSYNC, { "mRdpFULLSYNC", gfx_stubbed_command_handler } },          // mRdpFULLSYNC (-23)
     { RDP_G_SETSCISSOR, { "G_SETSCISSOR", gfx_SetScissor_handler_rdp } },            // G_SETSCISSOR (-19)
     { RDP_G_SETPRIMDEPTH, { "G_SETPRIMDEPTH", gfx_set_prim_depth_handler_rdp } },    // G_SETPRIMDEPTH (-18)
-    { RDP_G_SETCONVERT, { "G_SETCONVERT", gfx_stubbed_command_handler } },            // G_SETCONVERT (-20)
+    { RDP_G_SETCONVERT, { "G_SETCONVERT", gfx_set_convert_handler_rdp } },            // G_SETCONVERT (-20)
     { RDP_G_RDPSETOTHERMODE, { "mRdpSETOTHERMODE", gfx_rdp_set_other_mode_rdp } },   // mRdpSETOTHERMODE (-17)
     { RDP_G_LOADTLUT, { "G_LOADTLUT", gfx_load_tlut_handler_rdp } },                 // G_LOADTLUT (-16)
     { RDP_G_SETTILESIZE, { "G_SETTILESIZE", gfx_set_tile_size_handler_rdp } },       // G_SETTILESIZE (-14)

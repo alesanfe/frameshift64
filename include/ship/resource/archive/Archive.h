@@ -38,6 +38,15 @@ struct ArchiveManifest {
     uint32_t CodeVersion = 0; ///< API version of compiled script modules bundled with this archive.
     uint32_t GameVersion = 0; ///< Numeric game version this archive targets.
 
+    /** @brief Whether this archive can affect gameplay simulation (hitboxes,
+     * physics, movesets). `false` declares a cosmetic-only mod (textures,
+     * audio); such mods are excluded from the netplay compatibility hash.
+     * Defaults to true — the conservative choice when the field is absent:
+     * an undeclared archive is assumed to affect the simulation. This is a
+     * mod-author contract, not a sandbox: a mod that lies and still shadows
+     * gameplay data will desync netplay peers. */
+    bool Simulation = true;
+
     std::string Main;                                      ///< Entry-point script path within the archive.
     std::unordered_map<std::string, std::string> Binaries; ///< Platform → binary path map for bundled native libs.
     std::vector<std::string> Dependencies;                 ///< Archive names that must be loaded before this one.
