@@ -134,7 +134,7 @@ Post-fix: Pokeball/Capsule/Egg/MSBomb route through `ftCommonItemThrowSetStatus`
 - `decomp/src/it/itmanager.c` — surgical fix for `ip->type` decode (PORT guard).
 - `decomp/src/ft/ftcommon/ftcommonitemshoot.c` — added `default:` case safety net.
 - `decomp/src/ft/ftmain.c` — `status_id < 0` diagnostic guard at `ftMainSetStatus` entry.
-- `src/application/port_watchdog.cpp`, `src/application/port_watchdog.h` — `port_dump_backtrace()` C wrapper.
+- `src/application/port_watchdog.cpp`, `src/platform/port_watchdog.h` — `port_dump_backtrace()` C wrapper.
 
 ## Related
 

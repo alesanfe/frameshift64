@@ -9,7 +9,7 @@
 
 #include "Toasts.h"
 #include "Compat.h"
-#include "application/app_paths.h"
+#include "app_paths.h"
 #include "gameplay/enhancements.h"
 #include "resources/interpolation/frame_interpolation.h"
 #include "netplay/session/netlobby.h"
@@ -24,11 +24,7 @@
 #include <ship/window/gui/Gui.h>
 #include <ship/window/gui/ConsoleWindow.h>
 #ifndef DISABLE_SCRIPTING
-#include <ship/scripting/ScriptLoader.h>
-#include "integration/modding/HookManager.h"
-#include "integration/modding/ModRegistry.h"
-
-namespace ssb64 { void MountModsDir(); void UnmountMissingMods(); }
+#include "app_mods.h"
 #endif
 
 #include <imgui.h>
@@ -2066,7 +2062,7 @@ void PortMenu::AddMenuAssets() {
 // Cached, read-only mod list for the Mods panel. The set of installed mods
 // only changes on a reload or restart, so we snapshot on demand (first view,
 // Rescan, and after a Hot Reload) rather than re-scanning every frame.
-static std::vector<ssb64::mods::ModInfo> s_modList;
+static std::vector<ssb64::appmods::ModEntry> s_modList;
 static bool s_modListLoaded = false;
 
 static void RefreshModList() {
@@ -2074,48 +2070,13 @@ static void RefreshModList() {
     // added or deleted at runtime: drop archives whose folder is gone, pick up
     // newly dropped ones. New mods appear as "not loaded" until a Hot Reload
     // compiles them; this only refreshes the inventory, it does not recompile.
-    ssb64::UnmountMissingMods();
-    ssb64::MountModsDir();
-    s_modList = ssb64::mods::ModRegistry::Snapshot();
+    s_modList = ssb64::appmods::Snapshot();
     s_modListLoaded = true;
 }
 
 static void DoHotReload() {
-    auto scripting = Ship::Context::GetInstance()->GetScriptLoader();
-    if (!scripting) {
-        return;
-    }
-    try {
-        /* Unload: ModExit fires, then HookManager uninstalls every
-         * hook owned by that mod (postExit callback runs BEFORE
-         * FreeLibrary so trampolines into the about-to-be-freed mod
-         * code get cleanly removed). Then recompile + reload with the
-         * SetCurrentOwner wrapper so new Install calls re-tag with
-         * the right owner. */
-        scripting->UnloadAll(
-            /*preExit=*/std::nullopt,
-            /*postExit=*/[](const std::string& mod) {
-                ssb64::mods::HookManager::UninstallHooksForOwner(mod.c_str());
-            });
-        /* Now that every script is unloaded, drop archives whose mod folder
-         * was deleted at runtime — otherwise it stays mounted and gets
-         * recompiled below as if it were still installed. Then pick up any
-         * new folders/archives that landed in mods/ since the last load
-         * (idempotent: already-mounted archives are skipped). */
-        ssb64::UnmountMissingMods();
-        ssb64::MountModsDir();
-        scripting->CompileAll();
-        scripting->LoadAll(
-            /*preInit=*/[](const std::string& mod) {
-                ssb64::mods::HookManager::SetCurrentOwner(mod.c_str());
-            },
-            /*postInit=*/[](const std::string&) {
-                ssb64::mods::HookManager::ClearCurrentOwner();
-            });
-        RefreshModList();
-    } catch (const std::exception& e) {
-        SPDLOG_ERROR("Mod reload failed: {}", e.what());
-    }
+    ssb64::appmods::HotReload();
+    RefreshModList();
 }
 
 /* Bundled example mods staged next to the binary by the build
@@ -2151,9 +2112,9 @@ static void RenderBundledModRows() {
         const bool installed = fs::is_directory(dst, ec);
 
         bool loaded = false;
-        for (const ssb64::mods::ModInfo& m : s_modList) {
+        for (const ssb64::appmods::ModEntry& m : s_modList) {
             if (m.name == spec.manifestName &&
-                m.state == ssb64::mods::ModState::Loaded) {
+                m.state == ssb64::appmods::ModStatus::Loaded) {
                 loaded = true;
                 break;
             }
@@ -2277,7 +2238,7 @@ void PortMenu::AddMenuMods() {
                 return s;
             };
             const std::string needle = toLower(filter);
-            auto matches = [&](const ssb64::mods::ModInfo& mod) {
+            auto matches = [&](const ssb64::appmods::ModEntry& mod) {
                 return needle.empty() ||
                        toLower(mod.name).find(needle) != std::string::npos ||
                        toLower(mod.author).find(needle) != std::string::npos;
@@ -2288,11 +2249,11 @@ void PortMenu::AddMenuMods() {
             int issueCount = 0;
             int shown = 0;
             for (const auto& mod : s_modList) {
-                using ssb64::mods::ModState;
-                if (mod.state == ModState::Loaded) {
+                using ssb64::appmods::ModStatus;
+                if (mod.state == ModStatus::Loaded) {
                     loadedCount++;
                 }
-                if (mod.state == ModState::InvalidManifest) {
+                if (mod.state == ModStatus::InvalidManifest) {
                     issueCount++;
                 }
                 if (!matches(mod)) {
@@ -2303,13 +2264,13 @@ void PortMenu::AddMenuMods() {
                 ImGui::PushID(mod.archivePath.c_str()); // unique id per card
 
                 switch (mod.state) {
-                    case ModState::Loaded:
+                    case ModStatus::Loaded:
                         ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.40f, 1.0f), "LOADED");
                         break;
-                    case ModState::NotLoaded:
+                    case ModStatus::NotLoaded:
                         ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.65f, 1.0f), "not loaded");
                         break;
-                    case ModState::InvalidManifest:
+                    case ModStatus::InvalidManifest:
                         ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.20f, 1.0f), "manifest issue");
                         break;
                 }
@@ -2325,15 +2286,15 @@ void PortMenu::AddMenuMods() {
                 }
 
                 ImGui::SameLine();
-                using ssb64::mods::ModSignature;
+                using ssb64::appmods::SignatureStatus;
                 switch (mod.signature) {
-                    case ModSignature::Valid:
+                    case SignatureStatus::Valid:
                         ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.40f, 1.0f), "[signed]");
                         break;
-                    case ModSignature::Invalid:
+                    case SignatureStatus::Invalid:
                         ImGui::TextColored(ImVec4(0.95f, 0.30f, 0.25f, 1.0f), "[signature invalid]");
                         break;
-                    case ModSignature::None:
+                    case SignatureStatus::None:
                         break;
                 }
 

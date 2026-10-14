@@ -61,7 +61,14 @@ WINDOWS = [
     ("window-online-status", {"gOnlineStatus.Visible": 1}),
     ("menu-popout", {"gSettings.Menu.Popout": 1}),
     ("menu-controller-nav", {"gControlNav": 1}),
+    ("menu-opaque-bg", {"gSettings.Menu.BackgroundOpacity": 1.0}),
+    ("toasts", {}),  # needs SSB64_TOAST_DEMO=1 — handled in run() via name
 ]
+
+# Extra env vars per capture name (on top of SSB64_SCREENSHOT_*/MAX_FRAMES).
+EXTRA_ENV = {
+    "toasts": {"SSB64_TOAST_DEMO": "1"},
+}
 
 CAPTURE_FRAME = 360   # ~6s at 60fps — past boot/intro with the menu overlaid
 EXIT_FRAME = 400
@@ -159,7 +166,9 @@ def main() -> int:
             if args.only and name not in args.only:
                 continue
             write_cfg(cfg_path, "Settings", "SettingsSidebarSection", "General", extra)
-            ok = run_shot(exe, args.bin, env, tmp, args.out / f"{name}.png")
+            shot_env = dict(env)
+            shot_env.update(EXTRA_ENV.get(name, {}))
+            ok = run_shot(exe, args.bin, shot_env, tmp, args.out / f"{name}.png")
             results.append((name, ok))
             print(f"{'OK  ' if ok else 'FAIL'} {name}")
     finally:

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <deque>
 #include <utility>
 
@@ -103,6 +104,21 @@ void ToastsWindow::DrawElement() {
 void ToastsWindow::Draw() {
     auto& q = Queue();
     const auto now = std::chrono::steady_clock::now();
+
+#ifdef SSB64_TEST_HOOKS
+    /* SSB64_TOAST_DEMO=1 seeds one toast of each level once — lets the
+     * menu-screenshot tool capture the overlay without a live action. */
+    if (std::getenv("SSB64_TOAST_DEMO") != nullptr && q.empty()) {
+        static bool seeded = false;
+        if (!seeded) {
+            seeded = true;
+            PushToast(ToastLevel::Info, "Room code copied to clipboard");
+            PushToast(ToastLevel::Success, "Texture pack installed and enabled");
+            PushToast(ToastLevel::Warning, "Mod signature invalid");
+            PushToast(ToastLevel::Error, "Pack install failed");
+        }
+    }
+#endif
 
     while (!q.empty() && std::chrono::duration<float>(now - q.front().created).count() > q.front().lifetime) {
         q.pop_front();

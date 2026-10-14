@@ -1,6 +1,6 @@
 /* exe_dir.h — directory containing the running executable.
  *
- * Platform primitive shared by every layer: application/app_paths.h's
+ * Platform primitive shared by every layer: app_paths.h's
  * RealAppBundlePath builds on it, and distribution modules (which may
  * not depend on application/) use it to find files staged next to the
  * binary (bundled-mods/, bundled-data/). */

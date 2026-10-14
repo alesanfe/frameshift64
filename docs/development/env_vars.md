@@ -42,6 +42,7 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_NETPLAY_DEBUG_STAGES` | stage-gated packet logs |
 | `SSB64_NETPLAY_CONFIRMED_TRACE` | per-tick confirmed-state trace file |
 | `SSB64_ROLLBACK_TRACE_TICK` | rollback trace window |
+| `SSB64_ROLLBACK_SNAPSHOT_STRIDE` | keep a rollback snapshot every N ticks (default 1); mispredicts rewind to the nearest earlier snapshot and replay the extra ticks — halves snapshot memcpy cost at N=2 |
 | `SSB64_SAVE_PATH` | save location override (CI/debug) |
 | `SSB64_NO_UPDATE_CHECK` | disable updater |
 | `SSB64_LOG_PATH` | log destination |
@@ -86,6 +87,7 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_ADDR_JITTER` | shift process heap layout for local-peer tests |
 | `SSB64_MAX_FRAMES` | auto-shutdown after N frames |
 | `SSB64_HEADLESS` | run full sim + netplay without rendering (display lists dropped, 60 Hz timer pacing) — multi-instance rigs |
+| `SSB64_TOAST_DEMO` | seed one toast of each level once (screenshot/demo aid) |
 | `SSB64_WIZARD_AUTOCANCEL` | auto-cancel the first-run wizard at frame N |
 | `SSB64_SYNTH_SELFTEST` | deblob synthesis validation harness; exits before game boot |
 | `SSB64_FUZZ_{PARSER,INPUT}` | parser fuzz entry (manifest/replay/json); parse file then exit — driven by `tools/fuzz/run_parser_fuzz.py` |
