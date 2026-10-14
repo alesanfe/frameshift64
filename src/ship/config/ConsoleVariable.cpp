@@ -240,6 +240,15 @@ void ConsoleVariable::CopyVariable(const char* from, const char* to) {
     }
 }
 
+std::vector<std::string> ConsoleVariable::GetVariableNames() const {
+    std::vector<std::string> names;
+    names.reserve(mVariables.size());
+    for (const auto& variable : mVariables) {
+        names.push_back(variable.first);
+    }
+    return names;
+}
+
 void ConsoleVariable::Save() {
     std::shared_ptr<Config> conf = Context::GetInstance()->GetConfig();
 

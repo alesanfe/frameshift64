@@ -78,6 +78,10 @@ void CVarCopy(const char* from, const char* to) {
     Ship::Context::GetInstance()->GetConsoleVariables()->CopyVariable(from, to);
 }
 
+bool CVarExists(const char* name) {
+    return Ship::Context::GetInstance()->GetConsoleVariables()->Get(name) != nullptr;
+}
+
 void CVarLoad() {
     Ship::Context::GetInstance()->GetConsoleVariables()->Load();
 }

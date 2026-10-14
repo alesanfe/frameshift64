@@ -80,11 +80,31 @@ class Archive : public std::enable_shared_from_this<Archive> {
     /** @brief Returns the parsed archive manifest. Default-initialised if no manifest.json was present. */
     const ArchiveManifest& GetManifest();
 
-    /** @brief Returns true if the archive carries a digital signature. Currently always false (stub). */
+    /** @brief Parses manifest.json content into `out` without mounting an
+     * archive — the pure-parse entry point the fuzz harness and manifest
+     * linters use. Returns true when the JSON parsed (unknown/mistyped
+     * fields are ignored, matching ParseManifest's tolerant policy). */
+    static bool ParseManifestBuffer(const char* data, size_t size, ArchiveManifest* out);
+
+    /** @brief Verifies `signature` (minisign base64 SigStruct) over the
+     * declared `checksum` with `public-key` (minisign base64 PubkeyStruct),
+     * via the app-registered verifier — and only after IsChecksumValid()
+     * passes, so the signature provably binds the shipped bytes. Returns
+     * false when no verifier is registered or any field is missing. */
     bool IsSigned();
 
-    /** @brief Returns true if the archive's checksum matches its declared value. Currently always false (stub). */
+    /** @brief Recomputes the archive content checksum and compares it to
+     * the manifest's `checksum` field ("fnv1a64:<16hex>" — FNV-1a over
+     * name+size+bytes of every file except manifest.json, name-sorted). */
     bool IsChecksumValid();
+
+    /** @brief Signature verifier the application registers at boot (keeps
+     * ed25519 out of the engine). Receives (message, signature_b64,
+     * pubkey_b64); returns true on a valid signature. */
+    using SignatureVerifierFn =
+        bool (*)(const std::string& message, const std::string& signature_b64,
+                 const std::string& pubkey_b64);
+    static void SetSignatureVerifier(SignatureVerifierFn fn);
 
     const std::string& GetPath();
     bool IsLoaded();

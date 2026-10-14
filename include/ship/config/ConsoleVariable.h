@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Ship {
 typedef enum class ConsoleVariableType { Integer, Float, String, Color, Color24 } ConsoleVariableType;
@@ -58,6 +59,11 @@ class ConsoleVariable {
 
     void Save();
     void Load();
+
+    /* All registered variable names (unordered). Needed by the config
+     * schema validator to flag unknown keys in user-edited config files
+     * — the map is otherwise write-only from outside. */
+    std::vector<std::string> GetVariableNames() const;
 
   protected:
     void LoadFromPath(std::string path,

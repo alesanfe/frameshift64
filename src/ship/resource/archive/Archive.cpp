@@ -13,6 +13,11 @@
 #include <nlohmann/json.hpp>
 #include <tinyxml2.h>
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+
 namespace Ship {
 Archive::Archive(const std::string& path)
     : mIsLoaded(false), mHasGameVersion(false), mGameVersion(0xFFFFFFFF), mPath(path) {
@@ -64,67 +69,81 @@ void Archive::ParseManifest() {
         return;
     }
 
+    const auto& buf = *file->Buffer;
+    ArchiveManifest parsed;
+    if (ParseManifestBuffer(buf.data(), buf.size(), &parsed)) {
+        mManifest = std::move(parsed);
+    } else {
+        SPDLOG_WARN("Archive \"{}\" has malformed manifest.json", GetPath());
+    }
+}
+
+bool Archive::ParseManifestBuffer(const char* data, size_t size, ArchiveManifest* out) {
+    if (out == nullptr || data == nullptr || size == 0) {
+        return false;
+    }
     try {
-        nlohmann::json j = nlohmann::json::parse(file->Buffer->begin(), file->Buffer->end());
+        nlohmann::json j = nlohmann::json::parse(data, data + size);
 
         if (j.contains("name") && j["name"].is_string()) {
-            mManifest.Name = j["name"].get<std::string>();
+            out->Name = j["name"].get<std::string>();
         }
         if (j.contains("icon") && j["icon"].is_string()) {
-            mManifest.Icon = j["icon"].get<std::string>();
+            out->Icon = j["icon"].get<std::string>();
         }
         if (j.contains("author") && j["author"].is_string()) {
-            mManifest.Author = j["author"].get<std::string>();
+            out->Author = j["author"].get<std::string>();
         }
         if (j.contains("version") && j["version"].is_string()) {
-            mManifest.Version = j["version"].get<std::string>();
+            out->Version = j["version"].get<std::string>();
         }
         if (j.contains("website") && j["website"].is_string()) {
-            mManifest.Website = j["website"].get<std::string>();
+            out->Website = j["website"].get<std::string>();
         }
         if (j.contains("description") && j["description"].is_string()) {
-            mManifest.Description = j["description"].get<std::string>();
+            out->Description = j["description"].get<std::string>();
         }
         if (j.contains("license") && j["license"].is_string()) {
-            mManifest.License = j["license"].get<std::string>();
+            out->License = j["license"].get<std::string>();
         }
         if (j.contains("code-version") && j["code-version"].is_number_integer()) {
-            mManifest.CodeVersion = j["code-version"].get<uint32_t>();
+            out->CodeVersion = j["code-version"].get<uint32_t>();
         }
         if (j.contains("game-version") && j["game-version"].is_number_integer()) {
-            mManifest.GameVersion = j["game-version"].get<uint32_t>();
+            out->GameVersion = j["game-version"].get<uint32_t>();
         }
         if (j.contains("simulation") && j["simulation"].is_boolean()) {
-            mManifest.Simulation = j["simulation"].get<bool>();
+            out->Simulation = j["simulation"].get<bool>();
         }
         if (j.contains("main") && j["main"].is_string()) {
-            mManifest.Main = j["main"].get<std::string>();
+            out->Main = j["main"].get<std::string>();
         }
         if (j.contains("binaries") && j["binaries"].is_object()) {
             for (auto& [key, value] : j["binaries"].items()) {
                 if (value.is_string()) {
-                    mManifest.Binaries[key] = value.get<std::string>();
+                    out->Binaries[key] = value.get<std::string>();
                 }
             }
         }
         if (j.contains("dependencies") && j["dependencies"].is_array()) {
             for (const auto& dep : j["dependencies"]) {
                 if (dep.is_string()) {
-                    mManifest.Dependencies.push_back(dep.get<std::string>());
+                    out->Dependencies.push_back(dep.get<std::string>());
                 }
             }
         }
         if (j.contains("checksum") && j["checksum"].is_string()) {
-            mManifest.Checksum = j["checksum"].get<std::string>();
+            out->Checksum = j["checksum"].get<std::string>();
         }
         if (j.contains("signature") && j["signature"].is_string()) {
-            mManifest.Signature = j["signature"].get<std::string>();
+            out->Signature = j["signature"].get<std::string>();
         }
         if (j.contains("public-key") && j["public-key"].is_string()) {
-            mManifest.PublicKey = j["public-key"].get<std::string>();
+            out->PublicKey = j["public-key"].get<std::string>();
         }
-    } catch (const std::exception& e) {
-        SPDLOG_WARN("Archive \"{}\" has malformed manifest.json: {}", GetPath(), e.what());
+        return true;
+    } catch (const std::exception&) {
+        return false;
     }
 }
 
@@ -132,14 +151,67 @@ const ArchiveManifest& Archive::GetManifest() {
     return mManifest;
 }
 
+namespace {
+Archive::SignatureVerifierFn sSignatureVerifier = nullptr;
+
+void fnv1a_accum(uint64_t& h, const void* data, size_t n) {
+    const uint8_t* p = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < n; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+}
+} // namespace
+
+void Archive::SetSignatureVerifier(SignatureVerifierFn fn) {
+    sSignatureVerifier = fn;
+}
+
 bool Archive::IsSigned() {
-    // TODO: implement signature verification (mManifest.Signature + .PublicKey + .Checksum).
-    return false;
+    if (sSignatureVerifier == nullptr || mManifest.Signature.empty() ||
+        mManifest.PublicKey.empty() || mManifest.Checksum.empty()) {
+        return false;
+    }
+    /* The signature binds the *declared* checksum, so verify the bytes
+     * actually match it first — otherwise a tampered archive could keep a
+     * valid-looking signature while carrying different payloads. */
+    if (!IsChecksumValid()) {
+        return false;
+    }
+    return sSignatureVerifier(mManifest.Checksum, mManifest.Signature,
+                              mManifest.PublicKey);
 }
 
 bool Archive::IsChecksumValid() {
-    // TODO: implement checksum verification (recompute + compare against mManifest.Checksum).
-    return false;
+    constexpr const char* kPrefix = "fnv1a64:";
+    if (mManifest.Checksum.rfind(kPrefix, 0) != 0) {
+        return false;
+    }
+    uint64_t h = 1469598103934665603ULL;   /* FNV-1a 64 offset basis */
+    std::vector<std::string> names;
+    names.reserve(mHashes->size());
+    for (const auto& [hash, name] : *mHashes) {
+        /* manifest.json carries the checksum itself — excluding it also
+         * keeps the value stable across re-saves. */
+        if (name != "manifest.json") {
+            names.push_back(name);
+        }
+    }
+    std::sort(names.begin(), names.end());
+    for (const std::string& name : names) {
+        auto file = LoadFile(name);
+        if (file == nullptr || !file->IsLoaded || file->Buffer == nullptr) {
+            return false;
+        }
+        const uint64_t sz = file->Buffer->size();
+        fnv1a_accum(h, name.data(), name.size());
+        fnv1a_accum(h, &sz, sizeof(sz));
+        fnv1a_accum(h, file->Buffer->data(), file->Buffer->size());
+    }
+    char text[32];
+    std::snprintf(text, sizeof(text), "%016llx",
+                  static_cast<unsigned long long>(h));
+    return mManifest.Checksum.substr(std::strlen(kPrefix)) == text;
 }
 
 void Archive::Unload() {
