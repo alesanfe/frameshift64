@@ -1628,7 +1628,9 @@ const char *syNetSyncGetColumnName(s32 column)
 
 void syNetSyncInitDebugEnv(void)
 {
-#ifdef PORT
+	/* Trace capture, verify oracle and state dumps are the determinism test
+	 * rig — compiled in only for test builds (-DSSB64_TEST_HOOKS=ON). */
+#if defined(PORT) && defined(SSB64_TEST_HOOKS)
 	sSYNetSyncTracePath = getenv("SSB64_SYNC_TRACE");
 	sSYNetSyncVerifyPath = getenv("SSB64_SYNC_VERIFY");
 	sSYNetSyncIsTraceEnabled = (sSYNetSyncTracePath != NULL) ? TRUE : FALSE;
@@ -1779,6 +1781,7 @@ void syNetSyncStartVSSession(void)
 		free(sSYNetSyncVerifyRecords);
 		sSYNetSyncVerifyRecords = NULL;
 	}
+#ifdef SSB64_TEST_HOOKS
 	if ((sSYNetSyncIsTraceEnabled != FALSE) && (sSYNetSyncIsVerifyEnabled != FALSE) &&
 		(syNetSyncPathsEqual(sSYNetSyncTracePath, sSYNetSyncVerifyPath) != FALSE))
 	{
@@ -1786,6 +1789,7 @@ void syNetSyncStartVSSession(void)
 		port_log("SSB64 SyncTrace: SSB64_SYNC_TRACE and SSB64_SYNC_VERIFY name the same file; trace disabled\n");
 		sSYNetSyncIsTraceEnabled = FALSE;
 	}
+#endif
 	if (sSYNetSyncIsTraceEnabled != FALSE)
 	{
 		sSYNetSyncTraceFile = fopen(sSYNetSyncTracePath, "w");

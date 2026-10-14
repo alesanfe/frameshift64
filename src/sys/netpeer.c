@@ -961,18 +961,27 @@ void syNetPeerInitDebugEnv(void)
 	bootstrap_seed_env = getenv("SSB64_NETPLAY_SEED");
 	{
 		char *rollback_env = getenv("SSB64_NETPLAY_ROLLBACK");
-		char *fuzz_env = getenv("SSB64_NETPLAY_FUZZ");
-		const char *mutant_env = getenv("SSB64_NETPLAY_MUTANT");
 
 		sSYNetPeerIsRollback = ((rollback_env == NULL) || (atoi(rollback_env) != 0)) ? TRUE : FALSE;
-		sSYNetPeerFuzzSeed = (fuzz_env != NULL) ? (u32)atoi(fuzz_env) : 0;
-		if (mutant_env != NULL)
+#ifdef SSB64_TEST_HOOKS
+		/* Packet fuzzing and mutants weaken validation on purpose; they are
+		 * compiled in only for test builds (-DSSB64_TEST_HOOKS=ON) and must
+		 * never ship. */
 		{
-			sSYNetPeerMutantBadSession = (strcmp(mutant_env, "accept_bad_session") == 0) ? TRUE : FALSE;
-			sSYNetPeerMutantBadChecksum = (strcmp(mutant_env, "accept_bad_checksum") == 0) ? TRUE : FALSE;
-			sSYNetPeerMutantNoForwardGuard = (strcmp(mutant_env, "no_forward_guard") == 0) ? TRUE : FALSE;
-			port_log("SSB64 NetPeer: MUTANT %s active (test harness only)\n", mutant_env);
+			char *fuzz_env = getenv("SSB64_NETPLAY_FUZZ");
+			const char *mutant_env = getenv("SSB64_NETPLAY_MUTANT");
+
+			sSYNetPeerFuzzSeed = (fuzz_env != NULL) ? (u32)atoi(fuzz_env) : 0;
+
+			if (mutant_env != NULL)
+			{
+				sSYNetPeerMutantBadSession = (strcmp(mutant_env, "accept_bad_session") == 0) ? TRUE : FALSE;
+				sSYNetPeerMutantBadChecksum = (strcmp(mutant_env, "accept_bad_checksum") == 0) ? TRUE : FALSE;
+				sSYNetPeerMutantNoForwardGuard = (strcmp(mutant_env, "no_forward_guard") == 0) ? TRUE : FALSE;
+				port_log("SSB64 NetPeer: MUTANT %s active (test harness only)\n", mutant_env);
+			}
 		}
+#endif
 	}
 
 	if (local_player_env != NULL)
@@ -1788,8 +1797,12 @@ void syNetPeerReceiveRemoteInput(void)
 	 * detector via the tick-hash check. Test harness only. */
 	if (sSYNetPeerPacketFuzzLeft == -2)
 	{
+#ifdef SSB64_TEST_HOOKS
 		const char *fuzz_env = getenv("SSB64_NETPLAY_PACKETFUZZ");
 		sSYNetPeerPacketFuzzLeft = (fuzz_env != NULL) ? atoi(fuzz_env) : 0;
+#else
+		sSYNetPeerPacketFuzzLeft = 0;
+#endif
 		if ((sSYNetPeerPacketFuzzLeft == 0) &&
 			((sSYNetPeerMutantBadSession != FALSE) || (sSYNetPeerMutantBadChecksum != FALSE) ||
 			 (sSYNetPeerMutantNoForwardGuard != FALSE)))
@@ -2348,7 +2361,9 @@ void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is
 	 * start packets that predate the field */
 	sSYNetPeerSessionID = (session_id != 0) ? session_id : metadata->rng_seed;
 	sSYNetPeerIsRollback = TRUE;
+#ifdef SSB64_TEST_HOOKS
 	sSYNetPeerFuzzSeed = (getenv("SSB64_NETPLAY_FUZZ") != NULL) ? (u32)atoi(getenv("SSB64_NETPLAY_FUZZ")) : 0;
+#endif
 	sSYNetPeerBootstrapIsEnabled = TRUE;    // enables the in-battle start barrier
 	sSYNetPeerBootstrapIsHost = is_host;
 	sSYNetPeerBootstrapSeed = metadata->rng_seed;

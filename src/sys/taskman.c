@@ -1461,12 +1461,16 @@ void syTaskmanStartTask(SYTaskmanSetup *tsetup)
 
 		if (sPortSceneHeapFreeMode < 0)
 		{
+#ifdef SSB64_TEST_HOOKS
 			const char *env = getenv("SSB64_SCENE_HEAP_FREE");
 			sPortSceneHeapFreeMode = (env != NULL && env[0] == '1') ? 1 : 0;
 			if (sPortSceneHeapFreeMode)
 			{
 				port_log("SSB64: SSB64_SCENE_HEAP_FREE=1 — scene arena free+malloc per transition (sanitizer mode)\n");
 			}
+#else
+			sPortSceneHeapFreeMode = 0;
+#endif
 		}
 
 		if (gPortSceneHeap != NULL)

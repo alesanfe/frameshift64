@@ -154,6 +154,20 @@ extern signed short sins(unsigned short angle);
 extern signed short coss(unsigned short angle);
 extern float sqrtf(float value);
 
+#ifdef PORT
+/* On IDO, `#pragma weak sinf = __sinf` in gu/sinf.c aliases every bare
+ * sinf()/cosf() call to SGI's deterministic polynomial implementation.
+ * MSVC ignores that pragma entirely, so on Windows those ~94 call sites
+ * silently resolved to the host UCRT libm — producing different results
+ * than GCC/Clang builds (which DO honor the alias) and guaranteeing
+ * desyncs in Windows<->Linux/macOS/Switch netplay. Redirect at the
+ * preprocessor level so all ports route to __sinf/__cosf. */
+extern float __sinf(float);
+extern float __cosf(float);
+#define sinf __sinf
+#define cosf __cosf
+#endif
+
 /*
  *  Dump routines for low-level display lists
  */

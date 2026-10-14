@@ -912,6 +912,8 @@ void scManagerRunLoop(sb32 arg)
 	 * The co-op CSS rewrites this on every Classic entry. */
 	gSCManagerSceneData.coop_player2 = SCCOMMON_COOP_NO_PLAYER2;
 	{
+		/* Boot/scene override rig — test builds only (-DSSB64_TEST_HOOKS=ON). */
+#ifdef SSB64_TEST_HOOKS
 		const char *env = getenv("SSB64_START_SCENE");
 		if (env != NULL)
 		{
@@ -959,6 +961,7 @@ void scManagerRunLoop(sb32 arg)
 			port_log("SSB64: SSB64_COOP_P2 override → P2 port=%d fkind=%d\n",
 			         (int)gSCManagerSceneData.coop_player2, (int)gSCManagerSceneData.coop_fkind2);
 		}
+#endif /* SSB64_TEST_HOOKS */
 		syNetSyncInitDebugEnv();
 		syNetReplayInitDebugEnv();
 		syNetPeerInitDebugEnv();

@@ -1,7 +1,7 @@
 #include <ft/fighter.h>
 
 #ifdef PORT
-#include <enhancements/enhancements.h>
+#include <features/enhancements.h>
 #endif
 
 // // // // // // // // // // // //

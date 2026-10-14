@@ -3416,6 +3416,7 @@ void mnPlayers1PGameSetSceneData(void)
 	/* The stock 1P CSS always starts a solo run — scrub any P2 left over
 	 * from an earlier Classic Co-op session this boot. */
 	gSCManagerSceneData.coop_player2 = SCCOMMON_COOP_NO_PLAYER2;
+#ifdef SSB64_TEST_HOOKS
 	{
 		const char *stage_env = getenv("SSB64_SPGAME_STAGE");
 		if (stage_env != NULL)
@@ -3423,6 +3424,7 @@ void mnPlayers1PGameSetSceneData(void)
 			gSCManagerSceneData.spgame_stage = (u8)atoi(stage_env);
 		}
 	}
+#endif
 #endif
 	gSCManagerBackupData.spgame_stock_count = sMNPlayers1PGameStockValue;
 

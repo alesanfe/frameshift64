@@ -4961,6 +4961,7 @@ void mnPlayersVSSetSceneDataClassicCoop(void)
 	gSCManagerSceneData.costume = sMNPlayersVSSlots[p1_human].costume;
 	gSCManagerSceneData.spgame_stage = 0;
 
+#ifdef SSB64_TEST_HOOKS
 	{
 		const char *stage_env = getenv("SSB64_SPGAME_STAGE");
 		if (stage_env != NULL)
@@ -4968,6 +4969,7 @@ void mnPlayersVSSetSceneDataClassicCoop(void)
 			gSCManagerSceneData.spgame_stage = (u8)atoi(stage_env);
 		}
 	}
+#endif
 
 	if (p2_partner != -1)
 	{

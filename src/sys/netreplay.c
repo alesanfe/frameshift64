@@ -43,7 +43,7 @@ const char *sSYNetReplayPlayPath;
 sb32 sSYNetReplayAutoSave;
 sb32 sSYNetReplayIsAutoRecording;
 
-const char *syNetReplayMakeAutoPath(char *out, size_t capacity);
+char *syNetReplayMakeAutoPath(void);  /* malloc'd — caller frees */
 u32 sSYNetReplayRecordFrameLimit = SYNETREPLAY_DEFAULT_RECORD_FRAMES;
 u32 sSYNetReplayLoadedFrameCount;
 u32 sSYNetReplayLoadedInputChecksum;
@@ -191,7 +191,10 @@ void syNetReplayApplyBattleMetadata(const SYNetInputReplayMetadata *metadata)
 
 void syNetReplayInitDebugEnv(void)
 {
-#ifdef PORT
+	/* Replay record/play/takeover are a test harness: they boot straight
+	 * into scripted matches and can disable verification. Compiled in only
+	 * for test builds (-DSSB64_TEST_HOOKS=ON); never shipped. */
+#if defined(PORT) && defined(SSB64_TEST_HOOKS)
 	const char *frame_limit_env;
 
 	sSYNetReplayRecordPath = getenv("SSB64_REPLAY_RECORD");
@@ -349,7 +352,7 @@ void syNetReplayUpdate(void)
 		sSYNetReplayIsPlaybackVerified = TRUE;
 		sSYNetReplayIsPlaybackActive = FALSE;
 
-#ifdef PORT
+#if defined(PORT) && defined(SSB64_TEST_HOOKS)
 		if (sSYNetReplayRigExit != FALSE)
 		{
 			/* Batch/rig mode: report through the exit code. port_exit_process()
@@ -402,7 +405,7 @@ void syNetReplayFinishVSSession(void)
 		sSYNetReplayIsPlaybackVerified = TRUE;
 		sSYNetReplayIsPlaybackActive = FALSE;
 
-#ifdef PORT
+#if defined(PORT) && defined(SSB64_TEST_HOOKS)
 		if (sSYNetReplayRigExit != FALSE)
 		{
 			/* Batch/rig mode: report through the exit code. port_exit_process()
@@ -424,17 +427,19 @@ void syNetReplayFinishVSSession(void)
 	}
 	if ((sSYNetReplayIsRecording != FALSE) && (sSYNetReplayIsRecordWritten == FALSE))
 	{
-		char path[640];
 		const char *target = sSYNetReplayRecordPath;
+		char *auto_path = NULL;
 
 		if ((target == NULL) && (sSYNetReplayIsAutoRecording != FALSE))
 		{
-			target = syNetReplayMakeAutoPath(path, sizeof(path));
+			auto_path = syNetReplayMakeAutoPath();
+			target = auto_path;
 		}
 		if (target != NULL)
 		{
 			syNetReplayWriteDebugFile(target);
 		}
+		free(auto_path);
 		syNetInputSetRecordingEnabled(FALSE);
 		sSYNetReplayIsRecording = FALSE;
 		sSYNetReplayIsRecordWritten = TRUE;
@@ -443,23 +448,36 @@ void syNetReplayFinishVSSession(void)
 
 /* <save dir>/replays/<YYYYMMDD>-<HHMMSS>-<seed hex>.ssr — created under the
  * same directory convention as ssb64_save.bin. */
-const char *syNetReplayMakeAutoPath(char *out, size_t capacity)
+char *syNetReplayMakeAutoPath(void)
 {
 #ifdef PORT
 	SYNetInputReplayMetadata metadata;
-	char dir[512];
+	const char *save_dir;
+	char *path;
+	size_t path_len;
 	time_t now = time(NULL);
 	struct tm *tm_info = localtime(&now);
 	char stamp[32];
 
 	strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", tm_info);
-	snprintf(dir, sizeof(dir), "%s/replays", port_save_get_dir());
-	port_mkdir_p(dir);
+	save_dir = port_save_get_dir();
+	/* Heap-size everything: a deep save dir (long SHIP_HOME, unicode
+	 * usernames) must not silently truncate the replay dump. */
+	path_len = strlen(save_dir) + sizeof("/replays/replay-") + sizeof(stamp)
+	           + sizeof("-00000000.ssr") + 8;
+	path = (char *)malloc(path_len);
+	if (path == NULL)
+	{
+		port_log("SSB64 Replay: out of memory building auto path\n");
+		return NULL;
+	}
+	snprintf(path, path_len, "%s/replays", save_dir);
+	port_mkdir_p(path);
 	syNetInputGetReplayMetadata(&metadata);
-	snprintf(out, capacity, "%s/replay-%s-%08X.ssr", dir, stamp, metadata.rng_seed);
-	return out;
+	snprintf(path, path_len, "%s/replays/replay-%s-%08X.ssr", save_dir,
+	         stamp, metadata.rng_seed);
+	return path;
 #else
-	(void)out; (void)capacity;
 	return NULL;
 #endif
 }
@@ -472,39 +490,59 @@ void syNetReplayWriteDesyncPackage(u32 tick, u32 local_hash, u32 remote_hash)
 {
 #ifdef PORT
 	SYNetInputReplayMetadata metadata;
-	char dir[512], path[640];
+	const char *save_dir;
+	char *dir, *path;
+	size_t dir_len;
 	time_t now = time(NULL);
 	struct tm *tm_info = localtime(&now);
 	char stamp[32];
 	FILE *fp;
 	s32 player;
 
+	memset(&metadata, 0, sizeof(metadata));
 	strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", tm_info);
-	snprintf(dir, sizeof(dir), "%s/desync/%s-%08X", port_save_get_dir(), stamp,
+	save_dir = port_save_get_dir();
+	/* Heap-size the paths: deep save dirs must not silently drop the
+	 * desync package. */
+	dir_len = strlen(save_dir) + sizeof("/desync/") + sizeof(stamp) + sizeof("-00000000") + 8;
+	dir = (char *)malloc(dir_len);
+	path = (char *)malloc(dir_len + sizeof("/replay.ssr"));
+	if ((dir == NULL) || (path == NULL))
+	{
+		port_log("SSB64 Replay: out of memory building desync path\n");
+		free(dir);
+		free(path);
+		return;
+	}
+	snprintf(dir, dir_len, "%s/desync/%s-%08X", save_dir, stamp,
 	         (syNetInputGetReplayMetadata(&metadata) != FALSE) ? metadata.rng_seed : 0);
 	if (port_mkdir_p(dir) != 0)
 	{
+		free(dir);
+		free(path);
 		return;
 	}
-	snprintf(path, sizeof(path), "%s/replay.ssr", dir);
+	snprintf(path, dir_len + sizeof("/replay.ssr"), "%s/replay.ssr", dir);
 	syNetReplayWriteDebugFile(path);
-	snprintf(path, sizeof(path), "%s/info.txt", dir);
+	snprintf(path, dir_len + sizeof("/replay.ssr"), "%s/info.txt", dir);
 	fp = fopen(path, "w");
-	if (fp == NULL)
+	if (fp != NULL)
 	{
-		return;
+		fprintf(fp, "desync_tick=%u\nlocal_hash=%08X\nremote_hash=%08X\n",
+		        tick, local_hash, remote_hash);
+		fprintf(fp, "stage=%u seed=%u players=%u stocks=%u items=%u\n",
+		        metadata.stage_kind, metadata.rng_seed, metadata.player_count,
+		        metadata.stocks, metadata.item_switch);
+		for (player = 0; player < MAXCONTROLLERS; player++)
+		{
+			fprintf(fp, "p%d fkind=%u costume=%u\n", player,
+			        metadata.fighter_kinds[player], metadata.costumes[player]);
+		}
+		fclose(fp);
 	}
-	fprintf(fp, "desync_tick=%u\nlocal_hash=%08X\nremote_hash=%08X\n", tick, local_hash, remote_hash);
-	fprintf(fp, "stage=%u seed=%u players=%u stocks=%u items=%u\n",
-	        metadata.stage_kind, metadata.rng_seed, metadata.player_count,
-	        metadata.stocks, metadata.item_switch);
-	for (player = 0; player < MAXCONTROLLERS; player++)
-	{
-		fprintf(fp, "p%d fkind=%u costume=%u\n", player,
-		        metadata.fighter_kinds[player], metadata.costumes[player]);
-	}
-	fclose(fp);
 	port_log("SSB64 Replay: desync package written to %s\n", dir);
+	free(dir);
+	free(path);
 #else
 	(void)tick; (void)local_hash; (void)remote_hash;
 #endif

@@ -7,7 +7,7 @@
  * gateway into rapid jab). Resolve the synth's PARENT kind first via the
  * FighterParentKindResolveEvent query; with no listener (or for a non-synth
  * fighter) the payload comes back unchanged and the vanilla gates apply. */
-#include "hooks/Events.h"
+#include "bridge/hooks/Events.h"
 static s32 ftCommonAttack1ResolveParentKind(s32 fkind)
 {
     CALL_EVENT(FighterParentKindResolveEvent, fkind, fkind);

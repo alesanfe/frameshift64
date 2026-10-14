@@ -5,7 +5,7 @@
 #include <sys/malloc.h>
 
 #ifdef PORT
-#include <enhancements/enhancements.h>
+#include <features/enhancements.h>
 #endif
 
 extern SYMallocRegion gSYTaskmanGraphicsHeap;

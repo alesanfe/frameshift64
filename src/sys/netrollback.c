@@ -25,6 +25,8 @@ extern void port_exit_process(int code);
 extern size_t port_aobj_fixup_snapshot_size(void);
 extern size_t port_aobj_fixup_snapshot_save(void *dst, size_t capacity);
 extern void port_aobj_fixup_snapshot_load(const void *src, size_t size);
+extern u32 port_coroutine_serial_now(void);
+extern void port_coroutine_reap_after(u32 serial);
 extern char *getenv(const char *name);
 extern int atoi(const char *s);
 #endif
@@ -88,6 +90,7 @@ typedef struct SYNetRollbackState
 	size_t arena_size;
 	SYMallocRegion heap;
 	u32 spawn_serial;
+	u32 coroutine_serial;
 	u8 *aobj_fixup;
 	size_t aobj_fixup_size;
 	size_t aobj_fixup_capacity;
@@ -206,10 +209,12 @@ static s32 syNetRollbackGetEnvInt(const char *name, s32 fallback)
 	return (env != NULL) ? atoi(env) : fallback;
 }
 
+#ifdef SSB64_TEST_HOOKS
 /* SSB64_ROLLBACK_AUTOVS=1: skip the menus into a 4-CPU (level 9) VS match so
  * SyncTest runs unattended. Optional: SSB64_ROLLBACK_STAGE (gkind),
  * SSB64_ROLLBACK_FIGHTERS ("fkind,fkind,fkind,fkind"), SSB64_ROLLBACK_SEED,
- * SSB64_ROLLBACK_MINUTES (default 1). */
+ * SSB64_ROLLBACK_MINUTES (default 1). Test harness only — compiled out
+ * unless -DSSB64_TEST_HOOKS=ON. */
 static void syNetRollbackSetupAutoVS(void)
 {
 	SCBattleState battle_state = dSCManagerDefaultBattleState;
@@ -259,46 +264,53 @@ static void syNetRollbackSetupAutoVS(void)
 	         metadata.stage_kind, metadata.fighter_kinds[0], metadata.fighter_kinds[1],
 	         metadata.fighter_kinds[2], metadata.fighter_kinds[3], seed, metadata.time_limit);
 }
+#endif /* SSB64_TEST_HOOKS */
 #endif
 
 void syNetRollbackInitDebugEnv(void)
 {
 #ifdef PORT
-	const char *synctest_env = getenv("SSB64_ROLLBACK_SYNCTEST");
 	const char *netplay_env = getenv("SSB64_NETPLAY");
 
-	sSYNetRollbackIsSyncTest = ((synctest_env != NULL) && (atoi(synctest_env) > 0)) ? TRUE : FALSE;
-	sSYNetRollbackSyncTestDistance = (sSYNetRollbackIsSyncTest != FALSE) ? (u32)atoi(synctest_env) : 0;
-
-	if (sSYNetRollbackSyncTestDistance > SYNETROLLBACK_SLOT_NUM)
+	/* SyncTest / AutoVS / rig-exit / mutants are the determinism test rig;
+	 * they are compiled in only for test builds (-DSSB64_TEST_HOOKS=ON) and
+	 * must never ship. Diagnostic trace vars below stay available. */
+#ifdef SSB64_TEST_HOOKS
 	{
-		sSYNetRollbackSyncTestDistance = SYNETROLLBACK_SLOT_NUM;
-	}
+		const char *synctest_env = getenv("SSB64_ROLLBACK_SYNCTEST");
+		const char *mutant_env = getenv("SSB64_ROLLBACK_MUTANT");
 
-	if ((sSYNetRollbackIsSyncTest != FALSE) && (SYNETROLLBACK_HAS_SECTIONS == FALSE))
-	{
-		port_log("SSB64 Rollback: SyncTest needs MSVC section grouping; disabled on this toolchain\n");
-		sSYNetRollbackIsSyncTest = FALSE;
+		sSYNetRollbackIsSyncTest = ((synctest_env != NULL) && (atoi(synctest_env) > 0)) ? TRUE : FALSE;
+		sSYNetRollbackSyncTestDistance = (sSYNetRollbackIsSyncTest != FALSE) ? (u32)atoi(synctest_env) : 0;
+
+		if (sSYNetRollbackSyncTestDistance > SYNETROLLBACK_SLOT_NUM)
+		{
+			sSYNetRollbackSyncTestDistance = SYNETROLLBACK_SLOT_NUM;
+		}
+
+		if ((sSYNetRollbackIsSyncTest != FALSE) && (SYNETROLLBACK_HAS_SECTIONS == FALSE))
+		{
+			port_log("SSB64 Rollback: SyncTest needs MSVC section grouping; disabled on this toolchain\n");
+			sSYNetRollbackIsSyncTest = FALSE;
+		}
+		sSYNetRollbackIsRigExit = (syNetRollbackGetEnvInt("SSB64_RIG_EXIT", 0) != 0) ? TRUE : FALSE;
+		/* SSB64_ROLLBACK_MUTANT=skip_rng_restore: pretend the snapshot missed
+		 * the RNG — after a snapshot load the live (post-rollback) seed stays
+		 * in place. SyncTest must FAIL, proving RNG state is snapshot-covered. */
+		sSYNetRollbackMutantSkipRNG = ((mutant_env != NULL) && (strcmp(mutant_env, "skip_rng_restore") == 0)) ? TRUE : FALSE;
 	}
+#endif /* SSB64_TEST_HOOKS */
+
 	/* The original match timer counts VI retraces. Resimulation runs several
 	 * ticks inside one VI, so any rollback-capable session counts sim ticks
 	 * instead. Offline play keeps the retrace-driven timer (1:1 with N64). */
 	sSYNetRollbackIsTickTimer = ((sSYNetRollbackIsSyncTest != FALSE) || ((netplay_env != NULL) && (atoi(netplay_env) != 0))) ? TRUE : FALSE;
 	sSYNetRollbackIsTickTimerDefault = sSYNetRollbackIsTickTimer;
 
-	sSYNetRollbackIsRigExit = (syNetRollbackGetEnvInt("SSB64_RIG_EXIT", 0) != 0) ? TRUE : FALSE;
-	/* SSB64_ROLLBACK_MUTANT=skip_rng_restore: pretend the snapshot missed the
-	 * RNG — after a snapshot load the live (post-rollback) seed stays in
-	 * place. SyncTest must FAIL, proving RNG state is snapshot-covered.
-	 * Test harness only. */
-	{
-		const char *mutant_env = getenv("SSB64_ROLLBACK_MUTANT");
-
-		sSYNetRollbackMutantSkipRNG = ((mutant_env != NULL) && (strcmp(mutant_env, "skip_rng_restore") == 0)) ? TRUE : FALSE;
-	}
 	sSYNetRollbackConfirmedTracePath = getenv("SSB64_NETPLAY_CONFIRMED_TRACE");
 	sSYNetRollbackTraceTick = (u32)syNetRollbackGetEnvInt("SSB64_ROLLBACK_TRACE_TICK", 0);
 
+#ifdef SSB64_TEST_HOOKS
 	if (syNetRollbackGetEnvInt("SSB64_ROLLBACK_AUTOVS", 0) != 0)
 	{
 		syNetRollbackSetupAutoVS();
@@ -314,6 +326,7 @@ void syNetRollbackInitDebugEnv(void)
 			port_log("SSB64 Rollback: symbolizer probe -> %s\n", (sym != NULL) ? sym : "(unavailable)");
 		}
 	}
+#endif /* SSB64_TEST_HOOKS */
 #endif
 }
 
@@ -571,8 +584,27 @@ sb32 syNetRollbackCheckCanSave(void)
 	{
 		return FALSE;
 	}
-	if ((gSCManagerBattleState == NULL) || (gSCManagerBattleState->game_status != nSCBattleGameStatusGo))
+	if (gSCManagerBattleState == NULL)
 	{
+		return FALSE;
+	}
+	/* AUD-18: pause and unpause ticks are snapshot-safe — the pause menu
+	 * runs as GObj func processes on the game thread (no GObjThread is
+	 * alive; the sGCThreadsActive check below still guards that), and all
+	 * of its state (pause kind, camera origin, restore wait) lives in BSS.
+	 * Remote inputs DO matter during pause (the pausing peer's unpause
+	 * START / quit A+B+R+Z), so excluding these ticks left a hole in the
+	 * snapshot chain: a mispredict landing there could never resimulate,
+	 * and the peers diverged permanently (one unpauses, the other doesn't).
+	 * End/BossDefeat/Set still reject — those sequences spawn GObjThreads
+	 * and no longer consume meaningful inputs anyway. */
+	switch (gSCManagerBattleState->game_status)
+	{
+	case nSCBattleGameStatusGo:
+	case nSCBattleGameStatusPause:
+	case nSCBattleGameStatusUnpause:
+		break;
+	default:
 		return FALSE;
 	}
 	if (sGCThreadsActive != 0)
@@ -632,6 +664,7 @@ static sb32 syNetRollbackSaveState(SYNetRollbackState *state)
 	state->arena_size = arena_size;
 	state->heap = gSYTaskmanGeneralHeap;
 	state->spawn_serial = syNetSyncGetSpawnSerial();
+	state->coroutine_serial = port_coroutine_serial_now();
 	state->is_valid = TRUE;
 
 	if (arena_size > sSYNetRollbackMaxArenaBytes)
@@ -677,6 +710,13 @@ void syNetRollbackLoad(s32 slot)
 	syNetSyncSetSpawnSerial(state->spawn_serial);
 
 #ifdef PORT
+	/* Reap coroutines spawned during the timeline being discarded — the
+	 * arena/BSS restore just reverted the OSThread structs that owned their
+	 * pointers, so without this they leak (host stack + context each).
+	 * Snapshots are only taken with sGCThreadsActive == 0, so every restored
+	 * pointer is an immortal service-thread coroutine with an older serial
+	 * and is never touched here. */
+	port_coroutine_reap_after(state->coroutine_serial);
 	port_aobj_fixup_snapshot_load(state->aobj_fixup, state->aobj_fixup_size);
 #endif
 #endif
@@ -1158,7 +1198,9 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
 	}
 #ifdef PORT
 	/* SSB64_NETPLAY_TEST_DESYNC=<tick>: corrupt this peer's RNG once, to
-	 * prove the in-band desync detector fires. Test harness only. */
+	 * prove the in-band desync detector fires. Test harness only —
+	 * compiled out unless -DSSB64_TEST_HOOKS=ON. */
+#ifdef SSB64_TEST_HOOKS
 	{
 		static s32 sInjectTick = -2;
 
@@ -1173,7 +1215,8 @@ static void syNetRollbackRunNetplayUpdate(void (*update)(void))
 			sInjectTick = -1;
 		}
 	}
-#endif
+#endif /* SSB64_TEST_HOOKS */
+#endif /* PORT */
 	update();
 	syNetRollbackStoreLiveHash(tick);
 #ifdef PORT

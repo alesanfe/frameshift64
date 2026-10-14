@@ -654,20 +654,29 @@ s32 itMainSearchRandomWeight(s32 random, ITRandomWeights *weights, u32 min, u32 
  *   13=Hammer  14=MSBomb  15=BombHei  16=NBumper(item)  17=GShell
  *   18=RShell  19=MBall
  * Empty / unset = no override. */
+/* Test-only item overrides — compiled out unless -DSSB64_TEST_HOOKS=ON. */
 static int port_forced_item_kind(void) {
     static int s = -2;
+#ifdef SSB64_TEST_HOOKS
     if (s == -2) {
         const char *env = getenv("SSB64_FORCE_ITEM_KIND");
         s = env ? atoi(env) : -1;
     }
+#else
+    s = -1;
+#endif
     return s;
 }
 static int port_forced_container_kind(void) {
     static int s = -2;
+#ifdef SSB64_TEST_HOOKS
     if (s == -2) {
         const char *env = getenv("SSB64_FORCE_CONTAINER_DROP");
         s = env ? atoi(env) : -1;
     }
+#else
+    s = -1;
+#endif
     return s;
 }
 #endif

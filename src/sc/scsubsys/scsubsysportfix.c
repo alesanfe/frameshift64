@@ -148,10 +148,12 @@ void scSubsysMotionLinkRelocTargets(void)
 	 * operands stubbed (the pre-fix behavior — scripts die at their first
 	 * Subroutine/Goto). Lets a bisect separate "the scripts now run" from
 	 * everything else without a rebuild. */
+#ifdef SSB64_TEST_HOOKS
 	if (getenv("SSB64_NO_MOTIONFIX") != NULL)
 	{
 		return;
 	}
+#endif
 
 	for (i = 0; i < ARRAY_COUNT(sSCSubsysMotionLinks); i++)
 	{

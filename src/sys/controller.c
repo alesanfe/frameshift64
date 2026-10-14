@@ -242,7 +242,14 @@ void syControllerUpdateGlobalData(void)
     }
     syControllerUpdateDeviceIndexes();
 
+#ifdef PORT
+    /* With every port reporting NO_RESPONSE (possible now that the port
+     * reports honest connection state), statuses[0] is -1 — index 0 keeps
+     * the shared "menu player" reads in-bounds instead of OOB on BSS. */
+    players = &gSYControllerDevices[(gSYControllerDeviceStatuses[0] >= 0) ? gSYControllerDeviceStatuses[0] : 0];
+#else
     players = &gSYControllerDevices[gSYControllerDeviceStatuses[0]];
+#endif
 
     sys->button_tap = players->button_tap;
     sys->button_hold = players->button_hold;
