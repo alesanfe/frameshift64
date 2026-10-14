@@ -28,6 +28,7 @@ extern "C"
 	extern void* memcpy(void*, const void*, size_t);
 	extern void* memset(void*, int, size_t);
 	extern char* strchr(const char*, int);
+	extern int strcmp(const char*, const char*);
 	extern size_t strlen(const char*);
 
 #ifdef __cplusplus
