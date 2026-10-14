@@ -272,6 +272,39 @@ static void test_delay_rejection(void)
 		   == -NB_NETPACKET_BAD_CHECKSUM);
 }
 
+/* ── SPEC_PROGRESS ──────────────────────────────────────────────────── */
+
+static void test_spec_progress_round_trip(void)
+{
+	u8 buf[NB_NETPACKET_DELAY_PACKET_BYTES];
+	u32 tick = 0;
+
+	EXPECT(nbNetPacketBuildSpecProgress(buf, 0xABCD, 12345) == NB_NETPACKET_DELAY_PACKET_BYTES);
+	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, &tick) == NB_NETPACKET_OK);
+	EXPECT(tick == 12345);
+	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, NULL) == NB_NETPACKET_OK);
+	/* a SPEC_PROGRESS datagram must not validate as DELAY and vice versa */
+	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &tick)
+		   == -NB_NETPACKET_BAD_TYPE);
+}
+
+static void test_spec_progress_rejection(void)
+{
+	u8 buf[NB_NETPACKET_DELAY_PACKET_BYTES];
+	u32 tick;
+
+	nbNetPacketBuildSpecProgress(buf, 0xABCD, 7);
+	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf) - 1, 0xABCD, &tick)
+		   == -NB_NETPACKET_BAD_SIZE);
+	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf) + 1, 0xABCD, &tick)
+		   == -NB_NETPACKET_BAD_SIZE);
+	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD + 1, &tick)
+		   == -NB_NETPACKET_BAD_SESSION);
+	buf[3] ^= 0xFF;
+	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, &tick)
+		   == -NB_NETPACKET_BAD_CHECKSUM);
+}
+
 /* ── FORWARD ────────────────────────────────────────────────────────── */
 
 static void test_forward_round_trip(void)
@@ -555,6 +588,8 @@ int main(void)
 	test_control_rejection();
 	test_delay_round_trip();
 	test_delay_rejection();
+	test_spec_progress_round_trip();
+	test_spec_progress_rejection();
 	test_forward_round_trip();
 	test_forward_rejection();
 	test_bootstrap_prefix();

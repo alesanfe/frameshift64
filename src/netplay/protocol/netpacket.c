@@ -278,6 +278,56 @@ s32 nbNetPacketParseDelay(const u8 *buffer, s32 size, u32 session_id, u32 *out_d
 	return NB_NETPACKET_OK;
 }
 
+u32 nbNetPacketBuildSpecProgress(u8 *buffer, u32 session_id, u32 tick)
+{
+	u8 *cursor = buffer;
+
+	nbNetPacketWritePrefix(&cursor, NB_NETPACKET_PACKET_SPEC_PROGRESS, session_id);
+	nbNetPacketWriteU32(&cursor, tick);
+	nbNetPacketWriteU32(&cursor, nbNetPacketChecksumBytes(buffer, (u32)(cursor - buffer)));
+	return NB_NETPACKET_DELAY_PACKET_BYTES;
+}
+
+s32 nbNetPacketParseSpecProgress(const u8 *buffer, s32 size, u32 session_id, u32 *out_tick)
+{
+	const u8 *cursor = buffer;
+	const u8 *check_cursor;
+	u32 checksum;
+
+	if (size != NB_NETPACKET_DELAY_PACKET_BYTES)
+	{
+		return -(s32)NB_NETPACKET_BAD_SIZE;
+	}
+	check_cursor = buffer + NB_NETPACKET_DELAY_PACKET_BYTES - 4;
+	checksum = nbNetPacketReadU32(&check_cursor);
+	if (nbNetPacketChecksumBytes(buffer, NB_NETPACKET_DELAY_PACKET_BYTES - 4)
+	    != checksum)
+	{
+		return -(s32)NB_NETPACKET_BAD_CHECKSUM;
+	}
+	if (nbNetPacketReadU32(&cursor) != NB_NETPACKET_MAGIC)
+	{
+		return -(s32)NB_NETPACKET_BAD_MAGIC;
+	}
+	if (nbNetPacketReadU16(&cursor) != NB_NETPACKET_VERSION)
+	{
+		return -(s32)NB_NETPACKET_BAD_VERSION;
+	}
+	if (nbNetPacketReadU16(&cursor) != NB_NETPACKET_PACKET_SPEC_PROGRESS)
+	{
+		return -(s32)NB_NETPACKET_BAD_TYPE;
+	}
+	if (nbNetPacketReadU32(&cursor) != session_id)
+	{
+		return -(s32)NB_NETPACKET_BAD_SESSION;
+	}
+	if (out_tick != NULL)
+	{
+		*out_tick = nbNetPacketReadU32(&cursor);
+	}
+	return NB_NETPACKET_OK;
+}
+
 u32 nbNetPacketBuildForward(u8 *buffer, u32 buffer_size,
 							const u8 *inner, u32 inner_size,
 							u8 src_player, u32 session_id)

@@ -83,6 +83,20 @@ def set_cvar(cfg: dict, dotted: str, value) -> None:
     node[parts[-1]] = value
 
 
+def del_cvar(cfg: dict, dotted: str) -> None:
+    node = cfg.get("CVars", {})
+    parts = dotted.split(".")
+    for part in parts[:-1]:
+        node = node.get(part, {}) if isinstance(node, dict) else {}
+    if isinstance(node, dict):
+        node.pop(parts[-1], None)
+
+
+# Every cvar any WINDOWS entry may set — cleared before each shot so extras
+# from a previous capture don't leak into the next one.
+EXTRA_KEYS = [k for _name, extra in WINDOWS for k in extra]
+
+
 def write_cfg(cfg_path: Path, header: str, sidebar_cvar: str, sidebar: str,
               extra: dict | None = None) -> None:
     cfg = {}
@@ -91,6 +105,8 @@ def write_cfg(cfg_path: Path, header: str, sidebar_cvar: str, sidebar: str,
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             cfg = {}
+    for k in EXTRA_KEYS:
+        del_cvar(cfg, k)
     set_cvar(cfg, "gOpenPortMenu", 1)
     set_cvar(cfg, "gSettings.Menu.ActiveHeader", header)
     set_cvar(cfg, f"gSettings.Menu.{sidebar_cvar}", sidebar)

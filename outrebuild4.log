@@ -1,0 +1,1670 @@
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...
+-- BattleShip updater version: v1.4.1
+-- BattleShip build sha: a6baf64ce7
+-- SSB64 ROM version: us
+-- Using Vcpkg triplet 'x64-windows'
+-- Auto-updating vcpkg in C:\Users\alex0\PycharmProjects\smash-classic\out\build\verify\libultraship\vcpkg
+Already up to date.
+-- Automate VCPKG status:
+--   VCPKG_ROOT.....: C:\Users\alex0\PycharmProjects\smash-classic\out\build\verify\libultraship\vcpkg
+--   VCPKG_EXEC.....: C:\Users\alex0\PycharmProjects\smash-classic\out\build\verify\libultraship\vcpkg/vcpkg.exe
+--   VCPKG_BOOTSTRAP: C:\Users\alex0\PycharmProjects\smash-classic\out\build\verify\libultraship\vcpkg/bootstrap-vcpkg.bat
+-- Installing/Updating the following vcpkg-packages: 
+Computing installation plan...
+The following packages are already installed:
+    bzip2[core,tool]:x64-windows@1.0.8#6
+    glew:x64-windows@2.3.1
+    libzip[core,default-aes,bzip2]:x64-windows@1.11.4
+    nlohmann-json:x64-windows@3.12.0#2
+    sdl2:x64-windows@2.32.10#1
+    spdlog[core,tz-offset,fmt]:x64-windows@1.17.0#1
+    tinyxml2:x64-windows@11.0.0
+    zlib:x64-windows@1.3.2#2
+Total install time: 683 us
+All requested installations completed successfully in: 683 us
+-- spirv-tools not linked - illegal SPIRV may be generated for HLSL
+CMake Deprecation Warning at out/build/ninja-verify/_deps/spirv_cross-src/CMakeLists.txt:22 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- SPIRV-Cross: Finding Git version for SPIRV-Cross.
+-- SPIRV-Cross: Git hash: vulkan-sdk-1.4.304.0
+CMake Deprecation Warning at out/build/ninja-verify/_deps/prism-src/CMakeLists.txt:2 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+x64 architecture in use
+CMake Deprecation Warning at out/build/ninja-verify/_deps/hidapi-src/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- Building usb-1.0 for: Windows
+-- GameCube adapter: libusb built from source (libusb-cmake)
+CMake Deprecation Warning at out/build/ninja-verify/_deps/funchook-src/CMakeLists.txt:2 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- SSB64 app identity: BattleShip
+-- SSB64 asset recipe hash: bf47c42ba978435e74ed32bb168f4c72f2b8c314
+CMake Deprecation Warning at out/build/ninja-verify/_deps/discord_rpc-src/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+patch-discord-rapidjson: already patched
+CMake Warning (dev) at C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/share/cmake-3.31/Modules/FetchContent.cmake:1953 (message):
+  Calling FetchContent_Populate(ed25519) is deprecated, call
+  FetchContent_MakeAvailable(ed25519) instead.  Policy CMP0169 can be set to
+  OLD to allow FetchContent_Populate(ed25519) to be called directly for now,
+  but the ability to call it with declared details will be removed completely
+  in a future version.
+Call Stack (most recent call first):
+  CMakeLists.txt:1345 (FetchContent_Populate)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Configuring done (14.6s)
+-- Generating done (2.0s)
+-- Build files have been written to: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify
+[0/4] Re-checking globbed directories...
+[1/657] Building C object libultraship\CMakeFiles\stb.dir\__\_deps\stb\stb_impl.c.obj
+[2/657] Performing build step for 'TorchExternal'
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+[3/656] Linking C static library libultraship\stb.lib
+[4/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\FastMouseStateManager.cpp.obj
+[5/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\bridge\gfxbridge.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\libultraship\bridge\gfxbridge.cpp(14): warning C4244: 'argumento': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\libultraship\bridge\gfxbridge.cpp(14): warning C4244: 'argumento': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+[6/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\bridge\resourcebridge.cpp.obj
+[7/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_cache.cpp.obj
+[8/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\bridge\windowbridge.cpp.obj
+[9/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\backends\gfx_sdl2.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_sdl2.cpp(489): warning C4267: '=': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_sdl2.cpp(646): warning C4244: '=': conversi¢n de 'Sint32' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_sdl2.cpp(647): warning C4244: '=': conversi¢n de 'Sint32' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_sdl2.cpp(745): warning C4018: '<': no coinciden signed/unsigned
+[10/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\controller\controldevice\controller\Controller.cpp.obj
+[11/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\controller\controldeck\ControlDeck.cpp.obj
+[12/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\backends\gfx_dxgi.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(123): warning C4838: la conversi¢n de 'UINT' en 'LONG' requiere una conversi¢n de restricci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(123): warning C4838: la conversi¢n de 'UINT' en 'LONG' requiere una conversi¢n de restricci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(340): warning C4267: 'inicializando': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(469): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(472): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(515): warning C4305: 'argumento': truncamiento de 'int' a 'uint16_t'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(515): warning C4309: 'argumento': truncamiento de valor constante
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(524): warning C4305: 'argumento': truncamiento de 'int' a 'uint16_t'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(524): warning C4309: 'argumento': truncamiento de valor constante
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(602): warning C4838: la conversi¢n de 'uint32_t' en 'LONG' requiere una conversi¢n de restricci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(602): warning C4838: la conversi¢n de 'uint32_t' en 'LONG' requiere una conversi¢n de restricci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(767): warning C4244: 'argumento': conversi¢n de 'double' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(860): warning C4244: 'argumento': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(878): warning C4244: 'inicializando': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(898): warning C4244: '=': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(908): warning C4244: 'inicializando': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(909): warning C4244: 'inicializando': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+[13/656] Performing install step for 'TorchExternal'
+[0/2] Re-checking globbed directories...
+[0/2] Install the project...
+-- Install configuration: "Debug"
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/tinyxml2.lib
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/cmake/tinyxml2/tinyxml2-static-targets.cmake
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/cmake/tinyxml2/tinyxml2-static-targets-debug.cmake
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/cmake/tinyxml2/tinyxml2-config.cmake
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/cmake/tinyxml2/tinyxml2-config-version.cmake
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/include/tinyxml2.h
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/pkgconfig/tinyxml2.pc
+[14/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\bridge\controllerbridge.cpp.obj
+[15/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\postprocess\PostProcessSourceLoader.cpp.obj
+[16/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\Fast3dWindow.cpp.obj
+[17/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\libultraship\libultra\os.cpp(176): warning C4244: 'return': conversi¢n de '_Rep' a 'uint32_t'; posible p‚rdida de datos
+        with
+        [
+            _Rep=__int64
+        ]
+[18/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\backends\gfx_opengl.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\_deps\prism-src\src\prism/processor.h(154): warning C4099: 'prism::Node': nombre de tipo visto anteriormente usando 'struct' ahora se ve usando 'class'
+C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\_deps\prism-src\src\prism/processor.h(154): note: vea la declaraci¢n de 'prism::Node'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(63): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLsizei'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(532): warning C4267: '=': conversi¢n de 'size_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(533): warning C4267: '=': conversi¢n de 'size_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(730): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLsizei'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(983): warning C4267: 'return': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(1223): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLuint'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2093): warning C4244: 'inicializando': conversi¢n de 'const _Ty1' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty1=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2094): warning C4244: 'inicializando': conversi¢n de 'const _Ty2' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty2=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2107): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLsizei'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2122): warning C4244: 'inicializando': conversi¢n de 'const _Ty1' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty1=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2123): warning C4244: 'inicializando': conversi¢n de 'const _Ty2' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty2=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2127): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLint'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2127): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLint'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2136): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLsizei'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2146): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLuint'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2165): warning C4312: 'reinterpret_cast': conversi¢n de 'int' a 'void *' de mayor tama¤o
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2187): warning C4068: pragma "clang" desconocida
+[19/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\backends\gfx_direct3d11.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\_deps\prism-src\src\prism/processor.h(154): warning C4099: 'prism::Node': nombre de tipo visto anteriormente usando 'struct' ahora se ve usando 'class'
+C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\_deps\prism-src\src\prism/processor.h(154): note: vea la declaraci¢n de 'prism::Node'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(512): warning C4018: '<': no coinciden signed/unsigned
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(553): warning C4267: '=': conversi¢n de 'size_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(672): warning C4244: '=': conversi¢n de 'int' a 'FLOAT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(673): warning C4244: '=': conversi¢n de 'int' a 'FLOAT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(674): warning C4244: '=': conversi¢n de 'int' a 'FLOAT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(675): warning C4244: '=': conversi¢n de 'int' a 'FLOAT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(720): warning C4805: '!=': combinaci¢n no segura del tipo 'int8_t' y el tipo 'const bool' en la operaci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(837): warning C4267: 'argumento': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1232): warning C4267: '=': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1244): warning C4267: '=': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1251): warning C4267: '=': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1262): warning C4267: '=': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1292): warning C4244: '=': conversi¢n de 'const _Ty1' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty1=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1295): warning C4244: '=': conversi¢n de '_Ty2' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty2=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1308): warning C4267: 'argumento': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274): warning C4244: 'inicializando': conversi¢n de '_Ty' a '_Ty2'; posible p‚rdida de datos
+        with
+        [
+            _Ty=float
+        ]
+        and
+        [
+            _Ty2=uint16_t
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274): note: el contexto de creaci¢n de instancias de la plantilla (el m s antiguo primero) es
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1316): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "std::pair<std::_List_iterator<std::_List_val<std::_List_simple_types<_Ty>>>,bool> std::_Hash<std::_Umap_traits<_Kty,unsigned short,std::_Uhash_compare<_Kty,_Hasher,_Keyeq>,_Alloc,false>>::emplace<const std::pair<float,float>&,float>(const std::pair<float,float> &,float &&)" que se est  compilando
+        with
+        [
+            _Ty=std::pair<const std::pair<float,float>,uint16_t>,
+            _Kty=std::pair<float,float>,
+            _Hasher=Fast::hash_pair_ff,
+            _Keyeq=std::equal_to<std::pair<float,float>>,
+            _Alloc=std::allocator<std::pair<const std::pair<float,float>,uint16_t>>
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1316): note: vea la primera referencia a "std::_Hash<std::_Umap_traits<_Kty,_Ty,std::_Uhash_compare<_Kty,_Hasher,_Keyeq>,_Alloc,false>>::emplace" en "Fast::GfxRenderingAPIDX11::GetPixelDepth"
+        with
+        [
+            _Kty=std::pair<float,float>,
+            _Ty=uint16_t,
+            _Hasher=Fast::hash_pair_ff,
+            _Keyeq=std::equal_to<std::pair<float,float>>,
+            _Alloc=std::allocator<std::pair<const std::pair<float,float>,uint16_t>>
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xhash(618): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "std::_List_node_emplace_op2<std::allocator<std::_List_node<std::pair<const std::pair<float,float>,uint16_t>,std::_Default_allocator_traits<_Alloc>::void_pointer>>>::_List_node_emplace_op2<const std::pair<float,float>&,_Ty>(_Alnode &,const std::pair<float,float> &,_Ty &&)" que se est  compilando
+        with
+        [
+            _Alloc=std::allocator<std::pair<const std::pair<float,float>,uint16_t>>,
+            _Ty=float,
+            _Alnode=std::allocator<std::_List_node<std::pair<const std::pair<float,float>,uint16_t>,std::_Default_allocator_traits<std::allocator<std::pair<const std::pair<float,float>,uint16_t>>>::void_pointer>>
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\list(595): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "void std::_Default_allocator_traits<_Alloc>::construct<_Ty,const std::pair<float,float>&,float>(_Alloc &,_Objty *const ,const std::pair<float,float> &,float &&)" que se est  compilando
+        with
+        [
+            _Alloc=std::allocator<std::_List_node<std::pair<const std::pair<float,float>,uint16_t>,std::_Default_allocator_traits<std::allocator<std::pair<const std::pair<float,float>,uint16_t>>>::void_pointer>>,
+            _Ty=std::pair<const std::pair<float,float>,uint16_t>,
+            _Objty=std::pair<const std::pair<float,float>,uint16_t>
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xmemory(730): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "_Ty *std::construct_at<_Objty,const std::pair<float,float>&,float>(_Ty *const ,const std::pair<float,float> &,float &&) noexcept" que se est  compilando
+        with
+        [
+            _Ty=std::pair<const std::pair<float,float>,uint16_t>,
+            _Objty=std::pair<const std::pair<float,float>,uint16_t>
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xutility(463): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "std::pair<const std::pair<float,float>,uint16_t>::pair<const std::pair<float,float>&,_Ty,0>(_Other1,_Other2 &&) noexcept" que se est  compilando
+        with
+        [
+            _Ty=float,
+            _Other1=const std::pair<float,float> &,
+            _Other2=float
+        ]
+[20/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\interpreter.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1): warning C4005: 'NOMINMAX': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1): note: 'NOMINMAX' declarado previamente en la l¡nea de comandos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1878): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1877): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1937): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1936): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2058): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2057): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2180): warning C4244: '*=': conversi¢n de 'const float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2295): warning C4244: '*=': conversi¢n de 'const float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2424): warning C4244: 'inicializando': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2425): warning C4244: 'inicializando': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2729): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2729): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2729): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2728): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2742): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2742): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2741): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2741): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2754): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2754): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2754): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2753): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3041): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3042): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3146): warning C4244: '+=': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3147): warning C4244: '+=': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3148): warning C4244: '+=': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3249): warning C4244: '=': conversi¢n de 'float' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3566): warning C4554: "<<": compruebe la prioridad de operador para posibles errores; utilice par‚ntesis para indicar la prioridad
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3817): warning C4554: "<<": compruebe la prioridad de operador para posibles errores; utilice par‚ntesis para indicar la prioridad
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3903): warning C4244: '=': conversi¢n de 'float' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3905): warning C4244: '=': conversi¢n de 'float' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3968): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3969): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3970): warning C4244: '*=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3971): warning C4244: '*=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3982): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3983): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3984): warning C4244: '*=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3985): warning C4244: '*=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3997): warning C4244: '=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3998): warning C4244: '=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3999): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4000): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4051): warning C4244: '=': conversi¢n de 'uintptr_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4176): warning C4244: '=': conversi¢n de 'uintptr_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4219): warning C4244: '=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4220): warning C4244: '=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4221): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4222): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4241): warning C4244: '+=': conversi¢n de 'const float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4242): warning C4244: '=': conversi¢n de 'const float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4447): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4448): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4556): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4557): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4558): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4559): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4602): warning C4244: '=': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4603): warning C4244: '=': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4604): warning C4244: '=': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4605): warning C4244: '=': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4711): warning C4244: 'inicializando': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4712): warning C4244: 'inicializando': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4713): warning C4244: 'inicializando': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4714): warning C4244: 'inicializando': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4846): warning C4244: 'inicializando': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4847): warning C4244: 'inicializando': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4892): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4893): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4894): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4895): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4896): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4897): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4898): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4899): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4910): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4911): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(5151): warning C4244: 'inicializando': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(5152): warning C4244: 'inicializando': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(5156): warning C4244: 'argumento': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(5156): warning C4244: 'argumento': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(6475): warning C4244: '=': conversi¢n de 'uintptr_t' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(7820): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(7821): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(7843): warning C4554: ">>": compruebe la prioridad de operador para posibles errores; utilice par‚ntesis para indicar la prioridad
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(7901): warning C4554: ">>": compruebe la prioridad de operador para posibles errores; utilice par‚ntesis para indicar la prioridad
+[21/656] Completed 'TorchExternal'
+[22/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_vi.cpp.obj
+[23/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_mesg.cpp.obj
+[24/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_pi.cpp.obj
+[25/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_eeprom.cpp.obj
+[26/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\audio\Audio.cpp.obj
+[27/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\window\gui\GfxDebuggerWindow.cpp.obj
+[28/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\Context.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\Context.cpp(504): warning C4267: 'argumento': conversi¢n de 'size_t' a 'DWORD'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\Context.cpp(509): warning C4267: 'inicializando': conversi¢n de 'size_t' a 'unsigned long'; posible p‚rdida de datos
+[29/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_vm.cpp.obj
+[30/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\Controller.cpp.obj
+[31/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldeck\ControlDeck.cpp.obj
+[32/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\ControllerButton.cpp.obj
+[33/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\GyroMappingFactory.cpp.obj
+[34/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\keyboard\KeyboardKeyToAnyMapping.cpp.obj
+[35/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\AxisDirectionMappingFactory.cpp.obj
+[36/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\ControllerRumble.cpp.obj
+[37/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\ControllerStick.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\controller\controldevice\controller\ControllerStick.cpp(278): warning C4244: '=': conversi¢n de 'double' a 'int8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\controller\controldevice\controller\ControllerStick.cpp(279): warning C4244: '=': conversi¢n de 'double' a 'int8_t'; posible p‚rdida de datos
+[38/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\LEDMappingFactory.cpp.obj
+[39/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\ButtonMappingFactory.cpp.obj
+[40/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\RumbleMappingFactory.cpp.obj
+[41/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\gcadapter\GCAdapterMappings.cpp.obj
+[42/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\keyboard\KeyboardKeyToButtonMapping.cpp.obj
+[43/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\MouseButtonToAxisDirectionMapping.cpp.obj
+[44/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\MouseButtonToButtonMapping.cpp.obj
+[45/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\keyboard\KeyboardKeyToAxisDirectionMapping.cpp.obj
+[46/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\MouseWheelToAxisDirectionMapping.cpp.obj
+[47/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\WheelHandler.cpp.obj
+[48/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLAxisDirectionToAxisDirectionMapping.cpp.obj
+[49/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\MouseWheelToButtonMapping.cpp.obj
+[50/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLAxisDirectionToButtonMapping.cpp.obj
+[51/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLButtonToAxisDirectionMapping.cpp.obj
+[52/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLButtonToButtonMapping.cpp.obj
+[53/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLLEDMapping.cpp.obj
+[54/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLRumbleMapping.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\controller\controldevice\controller\mapping\sdl\SDLRumbleMapping.cpp(35): warning C4244: '=': conversi¢n de 'float' a 'uint16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\controller\controldevice\controller\mapping\sdl\SDLRumbleMapping.cpp(40): warning C4244: '=': conversi¢n de 'float' a 'uint16_t'; posible p‚rdida de datos
+[55/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLGyroMapping.cpp.obj
+[56/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\physicaldevice\SDLAddRemoveDeviceEventHandler.cpp.obj
+[57/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\config\Config.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\config\Config.cpp(321): warning C4101: 'backend': variable local sin referencia
+[58/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\FileDropMgr.cpp.obj
+[59/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\MouseStateManager.cpp.obj
+[60/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\resource\GuiTexture.cpp.obj
+[61/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\config\ConsoleVariable.cpp.obj
+[62/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ef\efdisplay.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[63/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\Window.cpp.obj
+[64/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\GameOverlay.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\GameOverlay.cpp(37): warning C4267: 'argumento': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\GameOverlay.cpp(56): warning C4267: 'argumento': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+[65/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ef\efground.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[66/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\resource\GuiTextureFactory.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\resource\GuiTextureFactory.cpp(20): warning C4267: 'argumento': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+[67/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\ConsoleWindow.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\ConsoleWindow.cpp(476): warning C4267: 'argumento': conversi¢n de 'size_t' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=int
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\ConsoleWindow.cpp(481): warning C4267: '=': conversi¢n de 'size_t' a 'int32_t'; posible p‚rdida de datos
+[68/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ef\efmanager.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[69/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ef\efparticle.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[70/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\GuiMenuBar.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\GuiMenuBar.cpp(36): warning C4805: '!=': combinaci¢n no segura del tipo 'int32_t' y el tipo 'bool' en la operaci¢n
+[71/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftanim.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[72/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\GuiWindow.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\GuiWindow.cpp(51): warning C4805: '!=': combinaci¢n no segura del tipo 'int32_t' y el tipo 'bool' en la operaci¢n
+[73/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftanimend.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[74/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\Gui.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1): warning C4005: 'NOMINMAX': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1): note: 'NOMINMAX' declarado previamente en la l¡nea de comandos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(513): warning C4244: 'argumento': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(513): warning C4244: 'argumento': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(649): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(655): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(830): warning C4244: 'argumento': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(830): warning C4244: 'argumento': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1012): warning C4244: '*=': conversi¢n de 'const float' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=uint8_t
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1013): warning C4244: '*=': conversi¢n de 'const float' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=uint8_t
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1014): warning C4244: '*=': conversi¢n de 'const float' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=uint8_t
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1015): warning C4244: '*=': conversi¢n de 'const float' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=uint8_t
+        ]
+[75/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftboss.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[76/656] Staging extraction recipes and Torch next to the game
+[77/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossappear.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[78/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossdeadcenter.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[79/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosscommon.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[80/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossdefault.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[81/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossdeadright.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[82/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossdeadleft.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[83/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossgootsubusuend.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[84/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossgootsubusuup.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[85/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossgootsubusudown.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[86/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossdrill.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[87/656] Packaging Fast3D shaders into f3d.o2r
+[88/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosshippataku.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[89/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossgootsubusuwait.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[90/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossmove.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[91/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossharau.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[92/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokuhikouki3.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[93/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokuhikouki2.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[94/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokuhikouki1.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[95/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokupunch1.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[96/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokukouki.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[97/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokupunch3.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[98/656] Running utility command for StageRuntimeAssets
+[99/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokupunch2.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[100/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokutsubushistart.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[101/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossokutsubushi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[102/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosstsutsuku1.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[103/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\InputEditorWindow.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\InputEditorWindow.cpp(51): warning C4244: '=': conversi¢n de 'float' a 'int32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\InputEditorWindow.cpp(71): warning C4244: '=': conversi¢n de 'float' a 'int32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\InputEditorWindow.cpp(878): warning C4244: '=': conversi¢n de 'float' a 'int32_t'; posible p‚rdida de datos
+[104/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosswalkloop.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[105/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosstsutsuku3.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[106/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosswalkshoot.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[107/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosswalk.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[108/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosstsutsuku2.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[109/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosswalkwait.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[110/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossyubideppou1.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[111/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossyubideppou2.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[112/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbosswait.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[113/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftcaptain\ftcaptain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[114/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftboss\ftbossyubideppou3.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[115/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftcaptain\ftcaptainspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[116/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftcaptain\ftcaptainspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[117/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\resource\archive\O2rArchive.cpp.obj
+[118/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeythrowfwait.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[119/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeythrowfkneebend.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[120/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeythrowflanding.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[121/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeyspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[122/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeythrowfdamage.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[123/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkey.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[124/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeythrowff.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[125/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeythrowfturn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[126/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeyspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[127/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftcaptain\ftcaptainspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[128/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeyspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[129/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeythrowfwalk.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[130/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftdonkey\ftdonkeythrowffall.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[131/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftfox\ftfox.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[132/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftfox\ftfoxspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[133/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftfox\ftfoxspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[134/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopyfoxspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[135/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopycaptainspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[136/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopylinkspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[137/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftgdonkey\ftgdonkey.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[138/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbyspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[139/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopypurinspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[140/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbythrowf.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[141/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftfox\ftfoxspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[142/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopyyoshispecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[143/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbyspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[144/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopydonkeyspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[145/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopysamusspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[146/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopynessspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[147/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirby.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[148/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopymariospecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[149/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbyspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[150/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftkirby\ftkirbycopypikachuspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[151/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftlink\ftlink.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[152/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftluigi\ftluigi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[153/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftlink\ftlinkspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[154/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftmario\ftmariospeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[155/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftncaptain\ftncaptain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[156/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftmario\ftmario.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[157/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftmmario\ftmmario.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[158/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftmario\ftmariospecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[159/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftlink\ftlinkspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[160/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftlink\ftlinkspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[161/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftndonkey\ftndonkey.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[162/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftness\ftness.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[163/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftmario\ftmariospecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[164/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnpurin\ftnpurin.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[165/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnpikachu\ftnpikachu.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[166/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnfox\ftnfox.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[167/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnsamus\ftnsamus.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[168/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnlink\ftnlink.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[169/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftness\ftnessspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[170/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnyoshi\ftnyoshi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[171/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnmario\ftnmario.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[172/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnness\ftnness.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[173/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftpikachu\ftpikachu.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[174/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnkirby\ftnkirby.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[175/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftnluigi\ftnluigi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[176/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftness\ftnessspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[177/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftness\ftnessspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[178/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftpikachu\ftpikachuspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[179/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftpikachu\ftpikachuspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[180/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftpurin\ftpurinspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[181/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftpurin\ftpurin.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[182/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftpikachu\ftpikachuspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[183/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftyoshi\ftyoshi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[184/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftsamus\ftsamus.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[185/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftyoshi\ftyoshispeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[186/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftsamus\ftsamusspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[187/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftpurin\ftpurinspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[188/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftpurin\ftpurinspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[189/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftsamus\ftsamusspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[190/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftsamus\ftsamusspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[191/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftyoshi\ftyoshispecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[192/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftchar\ftyoshi\ftyoshispecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[193/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonappeal.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[194/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattack100.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[195/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattackair.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[196/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattack1.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[197/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattacklw3.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[198/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattackhi3.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[199/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncapturepulled.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[200/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncapture.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[201/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattackhi4.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[202/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattacklw4.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[203/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattacks3.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[204/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattackdash.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[205/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonattacks4.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[206/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncapturecaptain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[207/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncapturekirby.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[208/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncatch2.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[209/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncapturewait.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[210/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncliffattack.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[211/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncatch1.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[212/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncaptureyoshi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[213/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondownforwardback.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[214/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondamagefall.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[215/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondownattack.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[216/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondash.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[217/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncliffcatchwait.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[218/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncliffclimb.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[219/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommoncliffescape.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[220/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondokan.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[221/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondead.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[222/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondamage.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[223/656] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\resource\archive\Archive.cpp.obj
+[224/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonfall.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[225/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonescape.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[226/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondownwaitbounce.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[227/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommondownstand.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[228/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonentry.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[229/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonfallspecial.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[230/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonfurafura.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[231/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonhammerwalk.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[232/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonitemshoot.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[233/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonguard2.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[234/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonget.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[235/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonhammerturn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[236/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonfurasleep.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[237/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonguard1.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[238/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonhammerkneebend.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[239/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonhammerfall.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[240/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonhammerlanding.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[241/656] Linking CXX static library libultraship\src\libultraship.lib
+[242/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonitemswing.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[243/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonjumpaerial.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[244/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonitemthrow.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[245/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonjump.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[246/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonkneebend.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[247/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonlanding.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[248/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonlandingair.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[249/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonottotto.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[250/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonpass.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[251/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonpassive.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[252/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonpassivestand.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[253/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonrebirth.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[254/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonrebound.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[255/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonrun.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[256/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonrunbrake.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[257/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonshieldbreakdown.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[258/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonshieldbreakfall.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[259/656] Building CXX object CMakeFiles\smash_distribution.dir\src\distribution\integrity\ReleaseSig.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[260/656] Building CXX object CMakeFiles\smash_compatibility.dir\src\compatibility\port_aobj_fixup.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[261/656] Building CXX object CMakeFiles\smash_diagnostics.dir\src\diagnostics\port_symbolize.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[262/656] Building CXX object CMakeFiles\smash_application.dir\src\application\port_watchdog.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[263/656] Building CXX object CMakeFiles\smash_distribution.dir\src\distribution\integrity\FileHash.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[264/656] Building CXX object CMakeFiles\smash_application.dir\src\application\focus.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[265/656] Building CXX object CMakeFiles\smash_audio.dir\src\audio\volume.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[266/656] Building CXX object CMakeFiles\smash_distribution.dir\src\distribution\updater\UpdaterStubs.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[267/656] Building CXX object CMakeFiles\smash_audio.dir\src\audio\ShuffleMusic.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[268/656] Building CXX object CMakeFiles\smash_diagnostics.dir\src\diagnostics\crash_bundle.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[269/656] Building CXX object CMakeFiles\smash_game.dir\src\game\fighter_registry.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[270/656] Building CXX object CMakeFiles\smash_diagnostics.dir\src\diagnostics\renderdoc_trigger.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[271/656] Building CXX object CMakeFiles\smash_audio.dir\src\audio\MusicSelection.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[272/656] Building CXX object CMakeFiles\smash_application.dir\src\application\app_mods.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[273/656] Building CXX object CMakeFiles\smash_distribution.dir\src\distribution\downloads\ShaderDownloader.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[274/656] Building CXX object CMakeFiles\smash_distribution.dir\src\distribution\downloads\ModPackDownloader.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[275/656] Building CXX object CMakeFiles\smash_config.dir\src\config\schema.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[276/656] Building CXX object CMakeFiles\smash_application.dir\src\application\gameloop.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[277/656] Building CXX object CMakeFiles\smash_application.dir\src\application\first_run.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[278/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\assists\AutoZCancel.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[279/656] Building CXX object CMakeFiles\smash_application.dir\src\application\port.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[280/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\modes\BootToVSCSS.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[281/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\modes\BonusStages.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[282/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\modes\ClassicCoop.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[283/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\assists\FailedZCancelFlash.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[284/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\rules\CpuLevel9.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[285/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\modes\SkipResultsScreen.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[286/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\rules\DisableStageHazards.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[287/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\rules\CompRuleset.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[288/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\rules\NeutralSpawns.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[289/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\training\HitboxView.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[290/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\hooks\Events.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[291/656] Building CXX object CMakeFiles\smash_distribution.dir\src\distribution\updater\Updater.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[292/656] Building CXX object CMakeFiles\smash_gameplay.dir\src\gameplay\unlocks\UnlockCheats.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[293/656] Building CXX object CMakeFiles\smash_input.dir\src\input\DPadJump.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[294/656] Building CXX object CMakeFiles\smash_input.dir\src\input\CStickSmash.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[295/656] Building CXX object CMakeFiles\smash_netplay.dir\src\netplay\domain\netrules.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[296/656] Building C object CMakeFiles\smash_netplay.dir\src\netplay\protocol\netpacket.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[297/656] Building CXX object CMakeFiles\smash_input.dir\src\input\TapJump.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[298/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\modding\mod_bridge.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[299/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\modding\HookManager.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[300/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\modding\SymbolResolver.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[301/656] Building C object CMakeFiles\smash_observability.dir\src\observability\port_log.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[302/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\decomp\lbreloc_byteswap.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[303/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\decomp\audio_bridge.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[304/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\android\android_torch_bridge.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[305/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\coroutine\coroutine_android.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[306/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\android\android_touch_overlay.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[307/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\coroutine\coroutine_posix.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[308/656] Building CXX object CMakeFiles\smash_netplay.dir\src\netplay\transport\websocket_transport.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[309/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\coroutine\coroutine_switch.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[310/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\decomp\lbreloc_bridge.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[311/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\switch\SwitchImpl.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[312/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\window\port_window_icon.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[313/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\decomp\framebuffer_capture.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[314/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\coroutine\coroutine_win32.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[315/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\decomp\particle_bank_bridge.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[316/656] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\OnlineStatus.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[317/656] Building CXX object CMakeFiles\smash_netplay.dir\src\netplay\transport\udp_transport.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[318/656] Building CXX object CMakeFiles\smash_input.dir\src\input\AnalogRemap.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[319/656] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\UpdatePrompt.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[320/656] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\native_dialog.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[321/656] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\Toasts.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[322/656] Building C object CMakeFiles\smash_resources.dir\src\resources\loading\audio\audio_dma.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[323/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\http\download_service.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[324/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\http\http_download.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[325/656] Building CXX object CMakeFiles\smash_rendering.dir\src\rendering\port_dl_ranges.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[326/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\filesystem\zip_extract.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[327/656] Building C object CMakeFiles\smash_resources.dir\src\resources\loading\audio\mixer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[328/656] Building CXX object CMakeFiles\smash_netplay.dir\src\netplay\session\netlobby.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[329/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\audio\audio_playback.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[330/656] Building CXX object CMakeFiles\smash_integration.dir\src\integration\modding\ModRegistry.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[331/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\css_icons\port_css_arrow.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[332/656] Building CXX object CMakeFiles\smash_rendering.dir\src\rendering\cosmetics\DisableHUD.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[333/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\relocation\RelocFile.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[334/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\relocation\RelocFileFactory.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[335/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonshieldbreakfly.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[336/656] Building CXX object CMakeFiles\smash_rendering.dir\src\rendering\widescreen\widescreen.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[337/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\shaders\fast3d_shader_manifest.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[338/656] Building CXX object CMakeFiles\smash_persistence.dir\src\persistence\port_save.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[339/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\filesystem\exe_dir.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[340/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\relocation\RelocPointerTable.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[341/656] Building CXX object CMakeFiles\smash_platform.dir\src\platform\filesystem\app_paths.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[342/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonshieldbreakstand.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[343/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonsleep.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[344/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonspecialhi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[345/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonspecialair.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[346/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonspeciallw.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[347/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonspecialn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[348/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonsquat.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[349/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonstopceil.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[350/656] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\UIWidgets.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[351/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommontarucann.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[352/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonthrow.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[353/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommontwister.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[354/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonturn.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[355/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonthrown1.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[356/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonwalldamage.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[357/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonwait.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\ft\ftcommon\ftcommonwait.c(12): warning C4552: "!": el resultado de la expresi¢n no se usa
+[358/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonturnrun.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[359/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonthrown2.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[360/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommon\ftcommonwalk.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[361/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftdata.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[362/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcommondata.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[363/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftdisplaymain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[364/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftdisplaylights.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[365/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftkey.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[366/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftcomputer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[367/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftmain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[368/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\fthammer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[369/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftparam.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[370/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftmanager.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[371/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftport.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[372/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftshadow.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[373/656] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\Menu.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[374/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftphysics.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[375/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\interpolation\frame_interpolation.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[376/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gm\gmcolscripts.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[377/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gm\gmcamera.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[378/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gm\gmcommon.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[379/656] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\PortMenu.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[380/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gm\gmrumble.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[381/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\grcastle.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[382/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\grinishie.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[383/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\ft\ftpublic.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[384/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grbonus\grbonus3.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[385/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\grjungle.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[386/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gm\gmcollision.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[387/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\gryamabuki.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[388/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\grhyrule.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[389/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\grpupupu.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[390/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\gryoster.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[391/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\grsector.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[392/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommon\grzebes.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[393/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\relocation\SyntheticReloc.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[394/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grdisplay.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[395/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grcommonsetup.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[396/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grmodelsetup.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[397/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grwallpaper.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[398/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\gr\grmainsetup.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[399/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\if\ifscreenflash.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[400/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\if\ifcommon.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[401/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itegg.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[402/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itgshell.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[403/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itfflower.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[404/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itbox.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[405/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itcapsule.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[406/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itbat.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[407/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itbombhei.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[408/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itheart.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[409/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\ithammer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[410/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\textures\hires\HiResHook.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[411/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itmball.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[412/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itharisen.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[413/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itlgun.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[414/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\css_icons\port_css_stage_assets.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[415/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itsword.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[416/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itnbumper.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[417/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itrshell.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[418/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\ittomato.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[419/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itfighter\itlinkbomb.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[420/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itstar.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[421/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\ittaru.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[422/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itmsbomb.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[423/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itdisplay.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[424/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itfighter\itnesspkfire.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[425/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itcommon\itstarrod.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[426/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\itfushigibana.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[427/656] Building CXX object CMakeFiles\smash_social.dir\src\social\DiscordRichPresence.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[428/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\itgbumper.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[429/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\ithitokage.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[430/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itdogas.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[431/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\itpakkun.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[432/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\ittarubomb.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[433/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itiwark.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[434/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmap.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[435/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itkabigon.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[436/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itkamex.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[437/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\itglucky.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[438/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\itpowerblock.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[439/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\itmarumine.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[440/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[441/656] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\textures\hires\HiResPack.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[442/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmanager.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[443/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\itporygon.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[444/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itground\ittarget.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[445/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itmew.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[446/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itlizardon.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[447/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itnyars.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[448/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itpippi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[449/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\lb\lbbackup.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[450/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itmlucky.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[451/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itvisuals.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[452/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\lb\lbfade.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[453/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\ittosakinto.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[454/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itsawamura.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[455/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itspear.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[456/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itmonster\itstarmie.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[457/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\lb\lbreloc.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[458/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\it\itprocess.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[459/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\lb\lbcommon.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\lb\lbcommon.c(2522): warning C4312: 'conversi¢n de tipo': conversi¢n de 'u32' a 'void *' de mayor tama¤o
+[460/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\lb\lbparticle.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[461/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\lb\lbtransition.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[462/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mn1pmode\mn1pmode.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[463/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mnnocontrollerfiles.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[464/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mnnocontroller.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[465/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mnstartup.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[466/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mnmodeselect.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[467/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mn1pmode\mn1pcontinue.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[468/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mntitlefiles.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[469/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mncongra.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[470/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mnunusedfighters.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[471/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mndata\mndata.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[472/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mntitle.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[473/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mncommon\mnmessage.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[474/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnoption\mnbackupclear.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[475/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mndata\mncharacters.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[476/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mndata\mnsoundtest.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[477/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnoption\mnoption.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[478/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnoption\mnscreenadjust.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[479/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mndata\mnvsrecord.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[480/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnmaps\mnmaps.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[481/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnvsmode\mnvsmode.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[482/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnplayers\mnplayers1pbonus.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[483/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnplayers\mnplayers1pgame.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[484/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnplayers\mnplayers1ptraining.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[485/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvending\mvending.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[486/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningcliff.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[487/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mp\mpcollision.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[488/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mp\mpprocess.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[489/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningfox.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[490/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningnewcomers.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[491/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnvsmode\mnvsitemswitch.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[492/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningjungle.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[493/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnvsmode\mnvsresults.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\mn\mnvsmode\mnvsresults.c(3140) : warning C4700: se utiliz¢ la variable local 'first_man' sin inicializar
+[494/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningdonkey.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[495/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningclash.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[496/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mp\mpcommon.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[497/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeninglink.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[498/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnvsmode\mnvsoptions.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[499/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningkirby.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[500/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningpikachu.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[501/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningmario.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[502/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mn\mnplayers\mnplayersvs.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[503/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1pbonusstagefiles.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[504/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningsector.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[505/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningportraits.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[506/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1pchallenger.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[507/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningyamabuki.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[508/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningrun.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[509/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvunknownmario.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[510/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningstandoff.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[511/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningyoster.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[512/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningroom.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[513/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningsamus.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[514/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\mv\mvopening\mvopeningyoshi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[515/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1pbonusstage.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[516/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1pgame.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[517/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sccommon\scautodemofiles.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[518/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sccommon\scvsbattlefiles.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[519/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1pgameboss.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[520/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sccommon\scexplainfiles.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[521/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1pstageclear.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[522/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1ptrainingmode.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[523/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1pmanager.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[524/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sccommon\scstaffroll.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[525/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sccommon\scautodemo.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[526/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sccommon\scexplain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[527/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sccommon\scvsbattle.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[528/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsyscontroller.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[529/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdataboss.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[530/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatadonkey.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[531/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdata.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[532/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatacaptain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[533/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatagdonkey.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[534/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatafox.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[535/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatakirby.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[536/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\sc1pmode\sc1pintro.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[537/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatamario.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[538/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdataluigi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[539/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatammario.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[540/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatalink.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[541/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatancaptain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[542/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatandonkey.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[543/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdataness.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[544/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scmanager.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[545/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatanfox.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[546/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatanness.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[547/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatanluigi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[548/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatanmario.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[549/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatanlink.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[550/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatankirby.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[551/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatanpikachu.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[552/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatansamus.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[553/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatapikachu.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[554/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatanpurin.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[555/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatanyoshi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[556/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\framebuffer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[557/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatayoshi.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[558/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatasamus.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[559/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysportfix.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[560/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysfighter.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[561/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysdatapurin.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[562/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sc\scsubsys\scsubsysunused.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[563/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\maindevice.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[564/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\interp.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[565/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\main.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[566/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\controller.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[567/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\malloc.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[568/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\dma.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\sys\dma.c(452): warning C4068: pragma "GLOBAL_ASM" desconocida
+[569/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\netinput.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[570/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\audio.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[571/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\matrix.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[572/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\debug.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\sys\debug.c(666): warning C4311: 'conversi¢n de tipo': truncamiento de puntero de 'u8 *' a 'u32'
+[573/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\netpeer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[574/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\sintable.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[575/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\objhelper.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[576/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\objman.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[577/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\objanim.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[578/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\vector.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[579/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\netreplay.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[580/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\objscript.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[581/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\taskman.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\sys\taskman.c(701): warning C4311: 'conversi¢n de tipo': truncamiento de puntero de 'char *' a 'u32'
+[582/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\netrollback.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[583/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\rdp.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[584/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\utils.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[585/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\video.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[586/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\unref.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[587/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\scheduler.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[588/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\netsync.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[589/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\zbuffer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[590/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\objdisplay.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\include\libc/math.h(6): warning C4005: 'M_PI': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\include\PR/gu.h(36): note: vea la definici¢n anterior de "M_PI"
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\include\libc/math.h(7): warning C4005: 'M_DTOR': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\include\PR/gu.h(37): note: vea la definici¢n anterior de "M_DTOR"
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\include\libc/math.h(35): warning C4163: 'fabsf': no est  disponible como funci¢n intr¡nseca
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\sys\objdisplay.c(1475): warning C4113: 'sb32 (__cdecl *)()' es distinto en las listas de par metros de 'sb32 (__cdecl *)(Mtx *,DObj *,Gfx **)'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\sys\objdisplay.c(4081): warning C4068: pragma "GCC" desconocida
+[591/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpboss\wpbossbullet.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[592/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpkirby\wpkirbycutter.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[593/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpdisplay.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[594/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpmap.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[595/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wplink\wplinkspinattack.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[596/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpmario\wpmariofireball.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[597/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpfox\wpfoxblaster.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[598/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpness\wpnesspkthunder.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[599/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wppikachu\wppikachuthunder.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[600/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wplink\wplinkboomerang.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[601/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpness\wpnesspkfire.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[602/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpmain.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[603/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wppikachu\wppikachuthunderjolt.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[604/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpprocess.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[605/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpmanager.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[606/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpsamus\wpsamusbomb.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[607/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\gu\mtxxfmf.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[608/656] Building C object CMakeFiles\ssb64_game.dir\src\compatibility\segment_symbols.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[609/656] Building C object CMakeFiles\ssb64_game.dir\src\compatibility\libc_compat.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[610/656] Building C object CMakeFiles\ssb64_game.dir\src\compatibility\debug_stubs.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[611/656] Building C object CMakeFiles\ssb64_game.dir\src\compatibility\audio_stubs.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[612/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\gu\cosf.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[613/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpsamus\wpsamuschargeshot.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[614/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\gu\normalize.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[615/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\gu\sinf.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[616/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synaddplayer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[617/656] Building C object CMakeFiles\ssb64_game.dir\src\compatibility\port_diag_stubs.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[618/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\gu\mtxutil.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[619/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\gu\mtxcatf.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[620/656] Building C object CMakeFiles\ssb64_game.dir\src\compatibility\n64_stubs.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\src\compatibility\n64_stubs.c(412): warning C4005: 'OS_NUM_EVENTS': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\include\PR/os.h(357): note: vea la definici¢n anterior de "OS_NUM_EVENTS"
+[621/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synallocfx.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[622/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_env.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\include\assert.h(25): warning C4274: #ident omitido; vea la documentaci¢n de #pragma comment(exestr, 'string')
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\libultra\n_audio\n_env.c(1333): warning C4312: 'conversi¢n de tipo': conversi¢n de 's32' a 'void *' de mayor tama¤o
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\libultra\n_audio\n_env.c(1343): warning C4312: 'conversi¢n de tipo': conversi¢n de 's32' a 'void *' de mayor tama¤o
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\libultra\n_audio\n_env.c(1836): warning C4005: 'RANGE': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\libultra\n_audio\n_env.c(611): note: vea la definici¢n anterior de "RANGE"
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\libultra\n_audio\n_env.c(2023): warning C4005: 'LENGTH': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\libultra\n_audio\n_env.c(628): note: vea la definici¢n anterior de "LENGTH"
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\src\libultra\n_audio\n_env.c(2066): warning C4311: 'conversi¢n de tipo': truncamiento de puntero de 's16 *' a 's32'
+[623/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpyoshi\wpyoshieggthrow.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[624/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\wp\wpyoshi\wpyoshistar.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[625/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_cspsetbank.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[626/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_cspsetfxmix.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[627/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synsetfxmix.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[628/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synsetpitch.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[629/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synstopvoice.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[630/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synstartvoiceparam.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[631/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synsetpan.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[632/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_syndelete.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[633/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_cspsetpriority.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[634/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synsetvol.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[635/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synsetpriority.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[636/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synallocvoice.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[637/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_cspplay.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[638/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_synfreevoice.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[639/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_cspsetvol.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[640/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_cspsetseq.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[641/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_cspstop.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[642/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_seq.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[643/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\audio\cents2ratio.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[644/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_seqpgetvol.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[645/656] Building CXX object CMakeFiles\ssb64.dir\generated\src\us\RelocFileTable.us.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[646/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_seqpgetchlvol.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[647/656] Building C object CMakeFiles\ssb64.dir\tools\debugging\acmd_trace\acmd_trace.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[648/656] Building C object CMakeFiles\ssb64.dir\tools\debugging\acmd_trace\acmd_decoder.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[649/656] Building C object CMakeFiles\ssb64.dir\tools\debugging\gbi_trace\gbi_trace.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[650/656] Building C object CMakeFiles\ssb64.dir\tools\debugging\gbi_trace\gbi_decoder.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\tools\debugging\gbi_trace\gbi_decoder.c(91): warning C4090: 'funci¢n': calificadores 'const' diferentes
+[651/656] Building C object CMakeFiles\ssb64_game.dir\decomp\src\libultra\n_audio\n_seqplayer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\decomp\include\assert.h(25): warning C4274: #ident omitido; vea la documentaci¢n de #pragma comment(exestr, 'string')
+[652/656] Building CXX object CMakeFiles\ssb64.dir\generated\src\us\ssb64_reloc_rebuild.us.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[653/656] Linking CXX executable BattleShip.exe
+package_mod: playertint -> C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\bundled-mods\playertint (1 source unit(s))

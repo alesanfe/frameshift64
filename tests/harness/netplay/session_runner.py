@@ -19,7 +19,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[3]
 LOBBY_HEALTH = "http://127.0.0.1:{port}/health"
 LOBBY_NODE = ROOT / "services" / "netplay-lobby" / "src" / "infrastructure" / "local" / "node-lobby.mjs"
 LOBBY_SVC = ROOT / "services" / "netplay-lobby"

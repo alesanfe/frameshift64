@@ -106,16 +106,25 @@ void ToastsWindow::Draw() {
     const auto now = std::chrono::steady_clock::now();
 
 #ifdef SSB64_TEST_HOOKS
-    /* SSB64_TOAST_DEMO=1 seeds one toast of each level once — lets the
-     * menu-screenshot tool capture the overlay without a live action. */
-    if (std::getenv("SSB64_TOAST_DEMO") != nullptr && q.empty()) {
-        static bool seeded = false;
-        if (!seeded) {
-            seeded = true;
-            PushToast(ToastLevel::Info, "Room code copied to clipboard");
-            PushToast(ToastLevel::Success, "Texture pack installed and enabled");
-            PushToast(ToastLevel::Warning, "Mod signature invalid");
-            PushToast(ToastLevel::Error, "Pack install failed");
+    /* SSB64_TOAST_DEMO=1 keeps one toast of each level on screen — lets the
+     * menu-screenshot tool capture the overlay without a live action.
+     * Re-seeds each level independently since their lifetimes differ. */
+    if (std::getenv("SSB64_TOAST_DEMO") != nullptr) {
+        static const struct {
+            ToastLevel level;
+            const char* message;
+        } kDemo[] = {
+            { ToastLevel::Info, "Room code copied to clipboard" },
+            { ToastLevel::Success, "Texture pack installed and enabled" },
+            { ToastLevel::Warning, "Mod signature invalid" },
+            { ToastLevel::Error, "Pack install failed" },
+        };
+        for (const auto& demo : kDemo) {
+            const bool present =
+                std::any_of(q.begin(), q.end(), [&](const Toast& t) { return t.level == demo.level; });
+            if (!present) {
+                PushToast(demo.level, demo.message);
+            }
         }
     }
 #endif
@@ -146,7 +155,11 @@ void ToastsWindow::Draw() {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
         ImGui::TextColored(style.color, "%s", style.icon);
         ImGui::SameLine();
+        /* AlwaysAutoResize + TextWrapped collapses to a one-char column —
+         * pin the wrap point so toasts keep a readable width. */
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 220.0f);
         ImGui::TextWrapped("%s", it->message.c_str());
+        ImGui::PopTextWrapPos();
         if (shown + 1 < std::min(q.size(), kMaxVisible)) {
             ImGui::Separator();
         }

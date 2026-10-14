@@ -1188,12 +1188,27 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     # The smash_* OBJECT libraries compile with the toolchain default (/MD)
     # unless told otherwise; mixing them into the static-CRT binary leaves
     # __imp_ externals unresolved (LNK2019). Same runtime for every module.
-    foreach(mod IN LISTS SSB64_MODULE_DIRS)
-        if(TARGET smash_${mod})
-            set_target_properties(smash_${mod} PROPERTIES
-                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-        endif()
-    endforeach()
+    # MSBuild runs several cl.exe instances in parallel inside a project;
+    # without /FS they all write the project PDB unserialized and lose the
+    # race intermittently (C1041 "cannot open program database").
+    if(MSVC)
+        target_compile_options(ssb64_game PRIVATE /FS)
+        target_compile_options(${PROJECT_NAME} PRIVATE /FS)
+        foreach(mod IN LISTS SSB64_MODULE_DIRS)
+            if(TARGET smash_${mod})
+                set_target_properties(smash_${mod} PROPERTIES
+                    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+                target_compile_options(smash_${mod} PRIVATE /FS)
+            endif()
+        endforeach()
+    else()
+        foreach(mod IN LISTS SSB64_MODULE_DIRS)
+            if(TARGET smash_${mod})
+                set_target_properties(smash_${mod} PROPERTIES
+                    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+            endif()
+        endforeach()
+    endif()
 endif()
 
 ################################################################################
@@ -1503,6 +1518,23 @@ if(NOT DISABLE_SCRIPTING)
             VERBATIM
         )
     endif()
+endif()
+
+################################################################################
+# Windows: stage the vcpkg runtime DLLs next to the binary. Under the VS
+# generator vcpkg does this via applocal.ps1; Ninja (and other non-VS
+# generators) get a bare executable that fails to launch with
+# STATUS_DLL_NOT_FOUND (0xC0000135), so copy them explicitly here.
+################################################################################
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMENT "Staging vcpkg runtime DLLs next to the executable..."
+        COMMAND ${CMAKE_COMMAND}
+            "-DSRC=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin"
+            "-DDST=$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyDirIfExists.cmake"
+        VERBATIM
+    )
 endif()
 
 ################################################################################

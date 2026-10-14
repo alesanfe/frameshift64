@@ -1,0 +1,527 @@
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...
+-- BattleShip updater version: v1.4.1
+-- BattleShip build sha: a6baf64ce7
+-- SSB64 ROM version: us
+-- Using Vcpkg triplet 'x64-windows'
+-- Auto-updating vcpkg in C:\Users\alex0\PycharmProjects\smash-classic\out\build\verify\libultraship\vcpkg
+Already up to date.
+-- Automate VCPKG status:
+--   VCPKG_ROOT.....: C:\Users\alex0\PycharmProjects\smash-classic\out\build\verify\libultraship\vcpkg
+--   VCPKG_EXEC.....: C:\Users\alex0\PycharmProjects\smash-classic\out\build\verify\libultraship\vcpkg/vcpkg.exe
+--   VCPKG_BOOTSTRAP: C:\Users\alex0\PycharmProjects\smash-classic\out\build\verify\libultraship\vcpkg/bootstrap-vcpkg.bat
+-- Installing/Updating the following vcpkg-packages: 
+Computing installation plan...
+The following packages are already installed:
+    bzip2[core,tool]:x64-windows@1.0.8#6
+    glew:x64-windows@2.3.1
+    libzip[core,default-aes,bzip2]:x64-windows@1.11.4
+    nlohmann-json:x64-windows@3.12.0#2
+    sdl2:x64-windows@2.32.10#1
+    spdlog[core,tz-offset,fmt]:x64-windows@1.17.0#1
+    tinyxml2:x64-windows@11.0.0
+    zlib:x64-windows@1.3.2#2
+Total install time: 675 us
+All requested installations completed successfully in: 675 us
+-- spirv-tools not linked - illegal SPIRV may be generated for HLSL
+CMake Deprecation Warning at out/build/ninja-verify/_deps/spirv_cross-src/CMakeLists.txt:22 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- SPIRV-Cross: Finding Git version for SPIRV-Cross.
+-- SPIRV-Cross: Git hash: vulkan-sdk-1.4.304.0
+CMake Deprecation Warning at out/build/ninja-verify/_deps/prism-src/CMakeLists.txt:2 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+x64 architecture in use
+CMake Deprecation Warning at out/build/ninja-verify/_deps/hidapi-src/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- Building usb-1.0 for: Windows
+-- GameCube adapter: libusb built from source (libusb-cmake)
+CMake Deprecation Warning at out/build/ninja-verify/_deps/funchook-src/CMakeLists.txt:2 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- SSB64 app identity: BattleShip
+-- SSB64 asset recipe hash: bf47c42ba978435e74ed32bb168f4c72f2b8c314
+CMake Deprecation Warning at out/build/ninja-verify/_deps/discord_rpc-src/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+patch-discord-rapidjson: already patched
+CMake Warning (dev) at C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/share/cmake-3.31/Modules/FetchContent.cmake:1953 (message):
+  Calling FetchContent_Populate(ed25519) is deprecated, call
+  FetchContent_MakeAvailable(ed25519) instead.  Policy CMP0169 can be set to
+  OLD to allow FetchContent_Populate(ed25519) to be called directly for now,
+  but the ability to call it with declared details will be removed completely
+  in a future version.
+Call Stack (most recent call first):
+  CMakeLists.txt:1330 (FetchContent_Populate)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Configuring done (87.0s)
+-- Generating done (2.0s)
+-- Build files have been written to: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify
+[0/4] Re-checking globbed directories...
+[1/101] Building C object libultraship\CMakeFiles\stb.dir\__\_deps\stb\stb_impl.c.obj
+[2/101] Performing build step for 'TorchExternal'
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+[3/100] Linking C static library libultraship\stb.lib
+[4/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\FastMouseStateManager.cpp.obj
+[5/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\bridge\gfxbridge.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\libultraship\bridge\gfxbridge.cpp(14): warning C4244: 'argumento': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\libultraship\bridge\gfxbridge.cpp(14): warning C4244: 'argumento': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+[6/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\bridge\resourcebridge.cpp.obj
+[7/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\bridge\windowbridge.cpp.obj
+[8/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\controller\controldeck\ControlDeck.cpp.obj
+[9/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\bridge\controllerbridge.cpp.obj
+[10/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\libultraship\libultra\os.cpp(176): warning C4244: 'return': conversi¢n de '_Rep' a 'uint32_t'; posible p‚rdida de datos
+        with
+        [
+            _Rep=__int64
+        ]
+[11/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\controller\controldevice\controller\Controller.cpp.obj
+[12/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_cache.cpp.obj
+[13/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\backends\gfx_sdl2.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_sdl2.cpp(489): warning C4267: '=': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_sdl2.cpp(646): warning C4244: '=': conversi¢n de 'Sint32' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_sdl2.cpp(647): warning C4244: '=': conversi¢n de 'Sint32' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_sdl2.cpp(745): warning C4018: '<': no coinciden signed/unsigned
+[14/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\backends\gfx_dxgi.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(123): warning C4838: la conversi¢n de 'UINT' en 'LONG' requiere una conversi¢n de restricci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(123): warning C4838: la conversi¢n de 'UINT' en 'LONG' requiere una conversi¢n de restricci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(340): warning C4267: 'inicializando': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(469): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(472): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(515): warning C4305: 'argumento': truncamiento de 'int' a 'uint16_t'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(515): warning C4309: 'argumento': truncamiento de valor constante
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(524): warning C4305: 'argumento': truncamiento de 'int' a 'uint16_t'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(524): warning C4309: 'argumento': truncamiento de valor constante
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(602): warning C4838: la conversi¢n de 'uint32_t' en 'LONG' requiere una conversi¢n de restricci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(602): warning C4838: la conversi¢n de 'uint32_t' en 'LONG' requiere una conversi¢n de restricci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(767): warning C4244: 'argumento': conversi¢n de 'double' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(860): warning C4244: 'argumento': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(878): warning C4244: 'inicializando': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(898): warning C4244: '=': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(908): warning C4244: 'inicializando': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_dxgi.cpp(909): warning C4244: 'inicializando': conversi¢n de 'double' a 'uint64_t'; posible p‚rdida de datos
+[15/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\Fast3dWindow.cpp.obj
+[16/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\postprocess\PostProcessSourceLoader.cpp.obj
+[17/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\backends\gfx_direct3d11.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\_deps\prism-src\src\prism/processor.h(154): warning C4099: 'prism::Node': nombre de tipo visto anteriormente usando 'struct' ahora se ve usando 'class'
+C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\_deps\prism-src\src\prism/processor.h(154): note: vea la declaraci¢n de 'prism::Node'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(512): warning C4018: '<': no coinciden signed/unsigned
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(553): warning C4267: '=': conversi¢n de 'size_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(672): warning C4244: '=': conversi¢n de 'int' a 'FLOAT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(673): warning C4244: '=': conversi¢n de 'int' a 'FLOAT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(674): warning C4244: '=': conversi¢n de 'int' a 'FLOAT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(675): warning C4244: '=': conversi¢n de 'int' a 'FLOAT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(720): warning C4805: '!=': combinaci¢n no segura del tipo 'int8_t' y el tipo 'const bool' en la operaci¢n
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(837): warning C4267: 'argumento': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1232): warning C4267: '=': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1244): warning C4267: '=': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1251): warning C4267: '=': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1262): warning C4267: '=': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1292): warning C4244: '=': conversi¢n de 'const _Ty1' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty1=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1295): warning C4244: '=': conversi¢n de '_Ty2' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty2=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1308): warning C4267: 'argumento': conversi¢n de 'size_t' a 'UINT'; posible p‚rdida de datos
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274): warning C4244: 'inicializando': conversi¢n de '_Ty' a '_Ty2'; posible p‚rdida de datos
+        with
+        [
+            _Ty=float
+        ]
+        and
+        [
+            _Ty2=uint16_t
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274): note: el contexto de creaci¢n de instancias de la plantilla (el m s antiguo primero) es
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1316): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "std::pair<std::_List_iterator<std::_List_val<std::_List_simple_types<_Ty>>>,bool> std::_Hash<std::_Umap_traits<_Kty,unsigned short,std::_Uhash_compare<_Kty,_Hasher,_Keyeq>,_Alloc,false>>::emplace<const std::pair<float,float>&,float>(const std::pair<float,float> &,float &&)" que se est  compilando
+        with
+        [
+            _Ty=std::pair<const std::pair<float,float>,uint16_t>,
+            _Kty=std::pair<float,float>,
+            _Hasher=Fast::hash_pair_ff,
+            _Keyeq=std::equal_to<std::pair<float,float>>,
+            _Alloc=std::allocator<std::pair<const std::pair<float,float>,uint16_t>>
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_direct3d11.cpp(1316): note: vea la primera referencia a "std::_Hash<std::_Umap_traits<_Kty,_Ty,std::_Uhash_compare<_Kty,_Hasher,_Keyeq>,_Alloc,false>>::emplace" en "Fast::GfxRenderingAPIDX11::GetPixelDepth"
+        with
+        [
+            _Kty=std::pair<float,float>,
+            _Ty=uint16_t,
+            _Hasher=Fast::hash_pair_ff,
+            _Keyeq=std::equal_to<std::pair<float,float>>,
+            _Alloc=std::allocator<std::pair<const std::pair<float,float>,uint16_t>>
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xhash(618): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "std::_List_node_emplace_op2<std::allocator<std::_List_node<std::pair<const std::pair<float,float>,uint16_t>,std::_Default_allocator_traits<_Alloc>::void_pointer>>>::_List_node_emplace_op2<const std::pair<float,float>&,_Ty>(_Alnode &,const std::pair<float,float> &,_Ty &&)" que se est  compilando
+        with
+        [
+            _Alloc=std::allocator<std::pair<const std::pair<float,float>,uint16_t>>,
+            _Ty=float,
+            _Alnode=std::allocator<std::_List_node<std::pair<const std::pair<float,float>,uint16_t>,std::_Default_allocator_traits<std::allocator<std::pair<const std::pair<float,float>,uint16_t>>>::void_pointer>>
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\list(595): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "void std::_Default_allocator_traits<_Alloc>::construct<_Ty,const std::pair<float,float>&,float>(_Alloc &,_Objty *const ,const std::pair<float,float> &,float &&)" que se est  compilando
+        with
+        [
+            _Alloc=std::allocator<std::_List_node<std::pair<const std::pair<float,float>,uint16_t>,std::_Default_allocator_traits<std::allocator<std::pair<const std::pair<float,float>,uint16_t>>>::void_pointer>>,
+            _Ty=std::pair<const std::pair<float,float>,uint16_t>,
+            _Objty=std::pair<const std::pair<float,float>,uint16_t>
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xmemory(730): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "_Ty *std::construct_at<_Objty,const std::pair<float,float>&,float>(_Ty *const ,const std::pair<float,float> &,float &&) noexcept" que se est  compilando
+        with
+        [
+            _Ty=std::pair<const std::pair<float,float>,uint16_t>,
+            _Objty=std::pair<const std::pair<float,float>,uint16_t>
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xutility(463): note: Vea la referencia a la creaci¢n de una instancia de la funci¢n plantilla "std::pair<const std::pair<float,float>,uint16_t>::pair<const std::pair<float,float>&,_Ty,0>(_Other1,_Other2 &&) noexcept" que se est  compilando
+        with
+        [
+            _Ty=float,
+            _Other1=const std::pair<float,float> &,
+            _Other2=float
+        ]
+[18/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\backends\gfx_opengl.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\_deps\prism-src\src\prism/processor.h(154): warning C4099: 'prism::Node': nombre de tipo visto anteriormente usando 'struct' ahora se ve usando 'class'
+C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\_deps\prism-src\src\prism/processor.h(154): note: vea la declaraci¢n de 'prism::Node'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(63): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLsizei'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(532): warning C4267: '=': conversi¢n de 'size_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(533): warning C4267: '=': conversi¢n de 'size_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(730): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLsizei'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(983): warning C4267: 'return': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(1223): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLuint'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2093): warning C4244: 'inicializando': conversi¢n de 'const _Ty1' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty1=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2094): warning C4244: 'inicializando': conversi¢n de 'const _Ty2' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty2=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2107): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLsizei'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2122): warning C4244: 'inicializando': conversi¢n de 'const _Ty1' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty1=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2123): warning C4244: 'inicializando': conversi¢n de 'const _Ty2' a 'int'; posible p‚rdida de datos
+        with
+        [
+            _Ty2=float
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2127): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLint'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2127): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLint'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2136): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLsizei'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2146): warning C4267: 'argumento': conversi¢n de 'size_t' a 'GLuint'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2165): warning C4312: 'reinterpret_cast': conversi¢n de 'int' a 'void *' de mayor tama¤o
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\backends\gfx_opengl.cpp(2187): warning C4068: pragma "clang" desconocida
+[19/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\fast\interpreter.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1): warning C4005: 'NOMINMAX': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1): note: 'NOMINMAX' declarado previamente en la l¡nea de comandos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1878): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1877): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1937): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(1936): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2058): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2057): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2180): warning C4244: '*=': conversi¢n de 'const float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2295): warning C4244: '*=': conversi¢n de 'const float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2424): warning C4244: 'inicializando': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2425): warning C4244: 'inicializando': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2729): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2729): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2729): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2728): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2742): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2742): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2741): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2741): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2754): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2754): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2754): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(2753): warning C4244: 'argumento': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3041): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3042): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3146): warning C4244: '+=': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3147): warning C4244: '+=': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3148): warning C4244: '+=': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3249): warning C4244: '=': conversi¢n de 'float' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3566): warning C4554: "<<": compruebe la prioridad de operador para posibles errores; utilice par‚ntesis para indicar la prioridad
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3817): warning C4554: "<<": compruebe la prioridad de operador para posibles errores; utilice par‚ntesis para indicar la prioridad
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3903): warning C4244: '=': conversi¢n de 'float' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3905): warning C4244: '=': conversi¢n de 'float' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3968): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3969): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3970): warning C4244: '*=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3971): warning C4244: '*=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3982): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3983): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3984): warning C4244: '*=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3985): warning C4244: '*=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3997): warning C4244: '=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3998): warning C4244: '=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(3999): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4000): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4051): warning C4244: '=': conversi¢n de 'uintptr_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4176): warning C4244: '=': conversi¢n de 'uintptr_t' a 'uint8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4219): warning C4244: '=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4220): warning C4244: '=': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4221): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4222): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4241): warning C4244: '+=': conversi¢n de 'const float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4242): warning C4244: '=': conversi¢n de 'const float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4447): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4448): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4556): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4557): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4558): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4559): warning C4244: '*=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4602): warning C4244: '=': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4603): warning C4244: '=': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4604): warning C4244: '=': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4605): warning C4244: '=': conversi¢n de 'uint32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4711): warning C4244: 'inicializando': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4712): warning C4244: 'inicializando': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4713): warning C4244: 'inicializando': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4714): warning C4244: 'inicializando': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4846): warning C4244: 'inicializando': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4847): warning C4244: 'inicializando': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4892): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4893): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4894): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4895): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4896): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4897): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4898): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4899): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4910): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(4911): warning C4244: '=': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(5151): warning C4244: 'inicializando': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(5152): warning C4244: 'inicializando': conversi¢n de 'float' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(5156): warning C4244: 'argumento': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(5156): warning C4244: 'argumento': conversi¢n de 'float' a 'int16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(6475): warning C4244: '=': conversi¢n de 'uintptr_t' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(7820): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(7821): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(7843): warning C4554: ">>": compruebe la prioridad de operador para posibles errores; utilice par‚ntesis para indicar la prioridad
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\fast\interpreter.cpp(7901): warning C4554: ">>": compruebe la prioridad de operador para posibles errores; utilice par‚ntesis para indicar la prioridad
+[20/100] Performing install step for 'TorchExternal'
+[0/2] Re-checking globbed directories...
+[0/2] Install the project...
+-- Install configuration: "Debug"
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/tinyxml2.lib
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/cmake/tinyxml2/tinyxml2-static-targets.cmake
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/cmake/tinyxml2/tinyxml2-static-targets-debug.cmake
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/cmake/tinyxml2/tinyxml2-config.cmake
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/cmake/tinyxml2/tinyxml2-config-version.cmake
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/include/tinyxml2.h
+-- Up-to-date: C:/Users/alex0/PycharmProjects/smash-classic/out/build/ninja-verify/torch-install/lib/pkgconfig/tinyxml2.pc
+[21/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_mesg.cpp.obj
+[22/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_eeprom.cpp.obj
+[23/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_vi.cpp.obj
+[24/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_vm.cpp.obj
+[25/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\libultra\os_pi.cpp.obj
+[26/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\audio\Audio.cpp.obj
+[27/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\ControllerStick.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\controller\controldevice\controller\ControllerStick.cpp(278): warning C4244: '=': conversi¢n de 'double' a 'int8_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\controller\controldevice\controller\ControllerStick.cpp(279): warning C4244: '=': conversi¢n de 'double' a 'int8_t'; posible p‚rdida de datos
+[28/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldeck\ControlDeck.cpp.obj
+[29/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\Context.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\Context.cpp(504): warning C4267: 'argumento': conversi¢n de 'size_t' a 'DWORD'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\Context.cpp(509): warning C4267: 'inicializando': conversi¢n de 'size_t' a 'unsigned long'; posible p‚rdida de datos
+[30/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\ControllerButton.cpp.obj
+[31/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\ControllerRumble.cpp.obj
+[32/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\GyroMappingFactory.cpp.obj
+[33/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\Controller.cpp.obj
+[34/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\LEDMappingFactory.cpp.obj
+[35/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\libultraship\window\gui\GfxDebuggerWindow.cpp.obj
+[36/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\ButtonMappingFactory.cpp.obj
+[37/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\AxisDirectionMappingFactory.cpp.obj
+[38/100] Completed 'TorchExternal'
+[39/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\keyboard\KeyboardKeyToAnyMapping.cpp.obj
+[40/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\factories\RumbleMappingFactory.cpp.obj
+[41/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\gcadapter\GCAdapterMappings.cpp.obj
+[42/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\keyboard\KeyboardKeyToButtonMapping.cpp.obj
+[43/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\keyboard\KeyboardKeyToAxisDirectionMapping.cpp.obj
+[44/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\WheelHandler.cpp.obj
+[45/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\MouseButtonToAxisDirectionMapping.cpp.obj
+[46/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\MouseButtonToButtonMapping.cpp.obj
+[47/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLAxisDirectionToButtonMapping.cpp.obj
+[48/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\MouseWheelToButtonMapping.cpp.obj
+[49/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLButtonToAxisDirectionMapping.cpp.obj
+[50/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\mouse\MouseWheelToAxisDirectionMapping.cpp.obj
+[51/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLAxisDirectionToAxisDirectionMapping.cpp.obj
+[52/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLButtonToButtonMapping.cpp.obj
+[53/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLGyroMapping.cpp.obj
+[54/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLLEDMapping.cpp.obj
+[55/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\resource\GuiTexture.cpp.obj
+[56/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\physicaldevice\SDLAddRemoveDeviceEventHandler.cpp.obj
+[57/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\controller\controldevice\controller\mapping\sdl\SDLRumbleMapping.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\controller\controldevice\controller\mapping\sdl\SDLRumbleMapping.cpp(35): warning C4244: '=': conversi¢n de 'float' a 'uint16_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\controller\controldevice\controller\mapping\sdl\SDLRumbleMapping.cpp(40): warning C4244: '=': conversi¢n de 'float' a 'uint16_t'; posible p‚rdida de datos
+[58/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\MouseStateManager.cpp.obj
+[59/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\FileDropMgr.cpp.obj
+[60/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\config\Config.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\config\Config.cpp(321): warning C4101: 'backend': variable local sin referencia
+[61/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\resource\GuiTextureFactory.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\resource\GuiTextureFactory.cpp(20): warning C4267: 'argumento': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+[62/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\Window.cpp.obj
+[63/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\GameOverlay.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\GameOverlay.cpp(37): warning C4267: 'argumento': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\GameOverlay.cpp(56): warning C4267: 'argumento': conversi¢n de 'size_t' a 'int'; posible p‚rdida de datos
+[64/100] Building C object CMakeFiles\ssb64_game.dir\decomp\src\sys\netpeer.c.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[65/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\GuiMenuBar.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\GuiMenuBar.cpp(36): warning C4805: '!=': combinaci¢n no segura del tipo 'int32_t' y el tipo 'bool' en la operaci¢n
+[66/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\config\ConsoleVariable.cpp.obj
+[67/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\GuiWindow.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\GuiWindow.cpp(51): warning C4805: '!=': combinaci¢n no segura del tipo 'int32_t' y el tipo 'bool' en la operaci¢n
+[68/100] Staging extraction recipes and Torch next to the game
+[69/100] Packaging Fast3D shaders into f3d.o2r
+[70/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\ConsoleWindow.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\ConsoleWindow.cpp(476): warning C4267: 'argumento': conversi¢n de 'size_t' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=int
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\ConsoleWindow.cpp(481): warning C4267: '=': conversi¢n de 'size_t' a 'int32_t'; posible p‚rdida de datos
+[71/100] Running utility command for StageRuntimeAssets
+[72/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\Gui.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1): warning C4005: 'NOMINMAX': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1): note: 'NOMINMAX' declarado previamente en la l¡nea de comandos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(513): warning C4244: 'argumento': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(513): warning C4244: 'argumento': conversi¢n de 'int' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(649): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(655): warning C4244: '=': conversi¢n de 'float' a 'uint32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(830): warning C4244: 'argumento': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(830): warning C4244: 'argumento': conversi¢n de 'int32_t' a 'float'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1012): warning C4244: '*=': conversi¢n de 'const float' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=uint8_t
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1013): warning C4244: '*=': conversi¢n de 'const float' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=uint8_t
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1014): warning C4244: '*=': conversi¢n de 'const float' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=uint8_t
+        ]
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\Gui.cpp(1015): warning C4244: '*=': conversi¢n de 'const float' a '_Ty'; posible p‚rdida de datos
+        with
+        [
+            _Ty=uint8_t
+        ]
+[73/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\window\gui\InputEditorWindow.cpp.obj
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\InputEditorWindow.cpp(51): warning C4244: '=': conversi¢n de 'float' a 'int32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\InputEditorWindow.cpp(71): warning C4244: '=': conversi¢n de 'float' a 'int32_t'; posible p‚rdida de datos
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\src\ship\window\gui\InputEditorWindow.cpp(878): warning C4244: '=': conversi¢n de 'float' a 'int32_t'; posible p‚rdida de datos
+[74/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\resource\archive\O2rArchive.cpp.obj
+[75/100] Building CXX object libultraship\src\CMakeFiles\libultraship.dir\ship\resource\archive\Archive.cpp.obj
+[76/100] Linking CXX static library libultraship\src\libultraship.lib
+[77/100] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\Toasts.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[78/100] Building CXX object CMakeFiles\smash_integration.dir\src\integration\decomp\framebuffer_capture.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[79/100] Building CXX object CMakeFiles\smash_platform.dir\src\platform\filesystem\app_paths.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[80/100] Building CXX object CMakeFiles\smash_integration.dir\src\integration\modding\ModRegistry.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[81/100] Building CXX object CMakeFiles\smash_distribution.dir\src\distribution\updater\Updater.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[82/100] Building CXX object CMakeFiles\smash_input.dir\src\input\AnalogRemap.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[83/100] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\css_icons\port_css_stage_assets.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[84/100] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\UIWidgets.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[85/100] Building CXX object CMakeFiles\smash_application.dir\src\application\gameloop.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[86/100] Building CXX object CMakeFiles\smash_platform.dir\src\platform\filesystem\exe_dir.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[87/100] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\textures\hires\HiResHook.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[88/100] Building CXX object CMakeFiles\smash_application.dir\src\application\first_run.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[89/100] Building CXX object CMakeFiles\smash_application.dir\src\application\app_mods.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[90/100] Building CXX object CMakeFiles\smash_resources.dir\src\resources\interpolation\frame_interpolation.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[91/100] Building CXX object CMakeFiles\smash_persistence.dir\src\persistence\port_save.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[92/100] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\Menu.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[93/100] Building CXX object CMakeFiles\smash_application.dir\src\application\port.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(134): warning C4005: 'GIMMCMD': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\libultraship\libultra/gbi.h(256): note: vea la definici¢n anterior de "GIMMCMD"
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): warning C4005: '_LANGUAGE_C': redefinici¢n de macro
+C:\Users\alex0\PycharmProjects\smash-classic\libultraship\include\fast/lus_gbi.h(803): note: '_LANGUAGE_C' declarado previamente en la l¡nea de comandos
+[94/100] Building CXX object CMakeFiles\smash_presentation.dir\src\presentation\PortMenu.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[95/100] Building CXX object CMakeFiles\smash_social.dir\src\social\DiscordRichPresence.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[96/100] Building CXX object CMakeFiles\smash_resources.dir\src\resources\loading\textures\hires\HiResPack.cpp.obj
+cl : L¡nea de comandos warning D9025 : invalidando '/Ob2' con '/Ob0'
+[97/100] Linking CXX executable BattleShip.exe
+package_mod: playertint -> C:\Users\alex0\PycharmProjects\smash-classic\out\build\ninja-verify\bundled-mods\playertint (1 source unit(s))

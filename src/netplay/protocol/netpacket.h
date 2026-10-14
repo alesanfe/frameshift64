@@ -67,6 +67,10 @@ typedef int32_t s32;
  * packet is in flight only costs prediction budget, never determinism —
  * inputs are addressed by absolute tick. */
 #define NB_NETPACKET_PACKET_DELAY 7
+/* Spectator → host: reports the spec's consumed sim tick so the host can
+ * pace the mid-match catch-up history stream inside the 720-deep remote
+ * ring. Loss only slows the stream — the host resends the gap window. */
+#define NB_NETPACKET_PACKET_SPEC_PROGRESS 8
 
 /* Sentinel for "no confirmed-state hash carried" in the sync trailer. */
 #define NB_NETPACKET_NO_CHECK_TICK 0xFFFFFFFFU
@@ -169,6 +173,14 @@ u32 nbNetPacketBuildDelay(u8 *buffer, u32 session_id, u32 delay);
 /* Validate + return NB_NETPACKET_OK with *out_delay set, or a negative
  * NBNetPacketStatus. */
 s32 nbNetPacketParseDelay(const u8 *buffer, s32 size, u32 session_id, u32 *out_delay);
+
+/* ── SPEC_PROGRESS packet ────────────────────────────────────────────── */
+
+u32 nbNetPacketBuildSpecProgress(u8 *buffer, u32 session_id, u32 tick);
+
+/* Validate + return NB_NETPACKET_OK with *out_tick set, or a negative
+ * NBNetPacketStatus. */
+s32 nbNetPacketParseSpecProgress(const u8 *buffer, s32 size, u32 session_id, u32 *out_tick);
 
 /* ── FORWARD envelope ────────────────────────────────────────────────── */
 

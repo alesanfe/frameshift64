@@ -11,6 +11,9 @@ Parsers covered:
     manifest  mod manifest.json -> Ship::Archive::ParseManifestBuffer
     replay    .ssbreplay file   -> syNetReplayLoadDebugFile (netreplay.c)
     json      raw nlohmann::json::parse — the parser config + manifests share
+    save      ssb64_save.bin    -> port_save_read + checkSaveFormat + .meta
+              sidecar sscanf (SSB64_SAVE_PATH override feeds the image;
+              the same bytes are mirrored into the sidecar)
 
 Requires a build with -DSSB64_TEST_HOOKS=ON (default for dev builds;
 release packaging compiles the hook out — check_release_binary.py verifies).
@@ -71,11 +74,19 @@ def synth_replay(frames: int = 8) -> bytes:
     return header + metadata + bytes(body)
 
 
+def synth_save() -> bytes:
+    """A plausible 32KiB SRAM image — flat chip mirror, no header."""
+    return bytes(0x8000)
+
+
 SEEDS = {
     "manifest": [VALID_MANIFEST, b"{}", b'{"name":"x"}', b"[1,2,3]",
                  b'{"binaries":null,"dependencies":"x"}'],
     "replay":   [synth_replay(8), synth_replay(0), synth_replay(1)[:-1]],
     "json":     [b'{"a":1}', VALID_MANIFEST, b'[0,"x",true,null]', b'{}'],
+    "save":     [synth_save(), synth_save()[:1024],
+                 b"format_version=1\n", b"format_version=999\n",
+                 b"format_version=\xff\xff\xff\xff"],
 }
 
 # ── Mutator ──────────────────────────────────────────────────────────────

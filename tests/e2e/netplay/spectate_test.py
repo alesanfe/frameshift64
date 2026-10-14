@@ -4,6 +4,12 @@ lobby (or --server). The spectator joins with role=spec, must receive the
 STARTM, run the match a few ticks behind, never desync the players, and
 produce a confirmed-state trace identical to the players'.
 
+--spec-delay <s> starts the spectator <s> seconds after the players, i.e.
+mid-match: the host streams its recorded input history (FORWARD-wrapped)
+and the spec resimulates faster than realtime until it lands on the live
+edge. The spec's confirmed-state trace must still cover the whole match
+from tick 0 and match the players' exactly.
+
 Replaces scripts/testing/spectate_test.ps1 (kept as a wrapper).
 Exit: 0 in sync, 1 desync, 2 no match / missing trace.
 """
@@ -23,6 +29,9 @@ def main() -> int:
     ap.add_argument("--seconds", type=int, default=30)
     ap.add_argument("--latency-ms", type=int, default=0)
     ap.add_argument("--jitter-ms", type=int, default=0)
+    ap.add_argument("--spec-delay", type=float, default=0.0,
+                    help="start the spectator N seconds after the players "
+                         "(mid-match catch-up instead of pre-match join)")
     ap.add_argument("--server", default="")
     ap.add_argument("--debug-stages", action="store_true")
     ap.add_argument("--build-dir", type=Path, default=sr.DEFAULT_BUILD_DIR)
@@ -70,11 +79,17 @@ def main() -> int:
 
     procs = [start_peer("host", 0, 111, True, False)]
     time.sleep(3)
-    procs.append(start_peer("spec", 0, 999, False, True))  # before players: must see STARTM
-    time.sleep(0.8)
+    if a.spec_delay <= 0:
+        procs.append(start_peer("spec", 0, 999, False, True))  # before players: must see STARTM
+        time.sleep(0.8)
     for i in range(1, a.players):
         procs.append(start_peer(f"client{i}", i, 200 + i, False, False))
         time.sleep(0.8)
+    if a.spec_delay > 0:
+        # mid-match join: the match has been running for spec_delay
+        # seconds; the spec catches up on the streamed input history
+        time.sleep(a.spec_delay)
+        procs.append(start_peer("spec", 0, 999, False, True))
     time.sleep(a.seconds)
     sr.stop_all(procs)
     sr.kill_tree(server_proc)

@@ -25,6 +25,7 @@
 #include <typeinfo>
 #include <unordered_set>
 
+#include "persistence/port_save.h"
 #include "resources/relocation/ResourceType.h"
 #include "resources/relocation/RelocFileFactory.h"
 #include "resources/relocation/SyntheticReloc.h"
@@ -722,7 +723,7 @@ static int PortInitImpl(int argc, char* argv[]) {
 
 #ifdef SSB64_TEST_HOOKS
 	/* TD-010 — parser fuzz entry point. `tools/fuzz/run_parser_fuzz.py`
-	 * drives this: SSB64_FUZZ_PARSER=<manifest|replay|json> +
+	 * drives this: SSB64_FUZZ_PARSER=<manifest|replay|json|save> +
 	 * SSB64_FUZZ_INPUT=<path> parses the file through the real parser and
 	 * exits. Placed before every other init so a fuzz iteration is a bare
 	 * parse+exit with no SDL/archive/game boot in between. */
@@ -764,9 +765,42 @@ static int PortInitImpl(int argc, char* argv[]) {
 			} catch (const std::exception& e) {
 				port_log("SSB64 Fuzz: json rejected (%s)\n", e.what());
 			}
+		} else if (std::strcmp(fuzz, "save") == 0) {
+			/* File-load coverage: point the SRAM override at the fuzz input
+			 * and mirror it into the .meta sidecar, so checkSaveFormat, the
+			 * sidecar sscanf and the image read path all run on fuzz bytes. */
+#ifdef _WIN32
+			_putenv_s("SSB64_SAVE_PATH", input);
+#else
+			setenv("SSB64_SAVE_PATH", input, 1);
+#endif
+			{
+				std::string meta = input;
+				const size_t dot = meta.find_last_of('.');
+				const size_t sep = meta.find_last_of("/\\");
+				if (dot != std::string::npos && (sep == std::string::npos || dot > sep)) {
+					meta.replace(dot, std::string::npos, ".meta");
+				} else {
+					meta += ".meta";
+				}
+				const std::vector<char> data = read_all(input);
+				if (FILE* f = std::fopen(meta.c_str(), "wb")) {
+					if (!data.empty()) {
+						(void)std::fwrite(data.data(), 1, data.size(), f);
+					}
+					std::fclose(f);
+				}
+			}
+			{
+				char buf[4096];
+				for (uintptr_t off = 0; off < 0x8000; off += sizeof(buf)) {
+					(void)port_save_read(off, buf, sizeof(buf));
+				}
+			}
+			port_log("SSB64 Fuzz: save swept 32KiB\n");
 		} else {
 			port_log("SSB64 Fuzz: unknown parser \"%s\" "
-			         "(manifest|replay|json)\n", fuzz);
+			         "(manifest|replay|json|save)\n", fuzz);
 			port_exit_process(2);
 		}
 		port_exit_process(0);

@@ -133,11 +133,34 @@ Servicios
 | AUD-44 | BAJA | RESUELTO | Deuda | netplay | `token=="none"` rama muerta; hash mod no incluye contenido del archivo |
 | AUD-45 | BAJA | RESUELTO | Doc debt | docs/scripts | Rutas pre-reorg en .gitignore comments, BUILDING.md, scripts usage, mods READMEs |
 | AUD-46 | BAJA | RESUELTO | Privacidad | lobby | broadcastRoster envía endpoints de players a specs |
-| AUD-47 | INFO | CONFIRMADO | Limitación | replay | Takeover: otros slots reciben frames en cero tras agotar el replay |
-| AUD-48 | INFO | CONFIRMADO | Limitación | spec | Spec mid-match no puede reconstruir estado (sin snapshot) — espera siguiente match |
+| AUD-47 | INFO | RESUELTO | Limitación | replay | Takeover: otros slots reciben frames en cero tras agotar el replay → hold-last-input como la predicción remota |
+| AUD-48 | INFO | RESUELTO | Limitación | spec | Spec mid-match sin estado → catch-up por historial de inputs: host streamea `sSYNetInputReplayFrames` FORWARD-wrapped + spec re-simula N ticks/frame |
 
 
-> **Status update (post-remediation):** 46/48 findings verified fixed in code. AUD-47 and AUD-48 remain as accepted design limitations (replay takeover zero-frames; no mid-match spectator snapshot).
+> **Status update (post-remediation):** 48/48 findings verified fixed in code.
+>
+> AUD-47 fix: on replay exhaustion the saved source now republishes the last
+> confirmed frame (`is_predicted=TRUE`) instead of zeros — same "hold last
+> input" policy remote prediction uses — so the taken-over player keeps its
+> last intent rather than going dead-idle.
+>
+> AUD-48 fix: mid-match spectators catch up deterministically instead of
+> waiting for the next match. The host already auto-records every online
+> match (`sSYNetInputReplayFrames`), so `syNetPeerServeSpecHistory` streams
+> the recorded log to the joining spec as FORWARD-wrapped INPUT packets;
+> the spec (`syNetPeerSpectateCatchUp`) runs up to `SSB64_SPEC_CATCHUP_TPF`
+> (16) sim ticks per display frame until it lands on the live edge. Flow
+> control: the spec reports its consumed tick via `SSBL SPECTICK` on the
+> relay-allowed text channel (binary `SPEC_PROGRESS` codec also exists for
+> non-relay links) and the host never streams past `progress + 512`, safely
+> inside the spec's 720-deep remote ring; on progress stalls it rewinds and
+> resends the gap window. Also fixed a latent spec stall bug found while
+> implementing this: `syNetInputFuncRead` used to resolve a predicted frame
+> and advance the tick even when the update was gated off, which would
+> desync/freeze a spec permanently — spectators now hold the tick on stall
+> (they never predict). Kill switch: `SSB64_SPECTATE_CATCHUP` restores the
+> old wait-for-next-match behavior; history is bounded by the 21600-tick
+> recording cap.
 
 ## 5. Hallazgos detallados (severidad alta y crítica)
 
@@ -443,11 +466,13 @@ Resumen (evidencia completa en el análisis de build/CI):
   `docs/architecture/overview.md:45` frase corrupta.
 - **AUD-46** `broadcastRoster` manda `public`/`local` endpoints de players
   a specs — specs son el rol menos confiable y no necesitan IPs.
-- **AUD-47** takeover: tras agotar el replay, slots Saved reciben frames en
-  cero (`netinput.c:401-403`) — el jugador toma control y el resto queda
-  idle. Aceptable para training, documentar.
-- **AUD-48** spec que entra mid-match no recibe snapshot → espera al
-  siguiente match (limitación conocida y deliberada).
+- **AUD-47** takeover: tras agotar el replay, slots Saved recibían frames
+  en cero — ahora republican el último frame confirmado (misma política
+  "hold last input" que la predicción remota). Resuelto.
+- **AUD-48** spec que entra mid-match: catch-up implementado — el host
+  streamea el historial de inputs grabado (auto-recording) FORWARD-wrapped
+  y el spec re-simula hasta el borde vivo con pacing por `SSBL SPECTICK`.
+  Resuelto.
 
 ## 7. Evaluación adversarial por perspectivas
 
