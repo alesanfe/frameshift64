@@ -30,8 +30,13 @@
  * ====================================================================
  */
 
+#ifndef PORT
 #pragma weak fsin = __sinf
 #pragma weak sinf = __sinf
+#endif
+/* PORT: gu.h already redirects sinf -> __sinf at the preprocessor level;
+ * the self-aliasing pragma weak __sinf = __sinf makes clang see a
+ * redefinition of __sinf below. */
 #define	fsin __sinf
 
 /* coefficients for polynomial approximation of sin on +/- pi/2 */

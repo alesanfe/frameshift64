@@ -30,8 +30,13 @@
  * ====================================================================
  */
 
+#ifndef PORT
 #pragma weak fcos = __cosf
 #pragma weak cosf = __cosf
+#endif
+/* PORT: gu.h already redirects cosf -> __cosf at the preprocessor level;
+ * the self-aliasing pragma weak __cosf = __cosf makes clang see a
+ * redefinition of __cosf below. */
 #define fcos __cosf
 
 /* coefficients for polynomial approximation of cos on +/- pi/2 */
