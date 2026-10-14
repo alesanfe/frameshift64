@@ -1,15 +1,17 @@
 """Capture a screenshot of every PortMenu section for docs.
 
-Launches the built binary once per (header, sidebar) pair, pre-seeding
-BattleShip.cfg.json with the menu's selection CVars, and lets the
-built-in backbuffer capture (SSB64_SCREENSHOT_FRAMES) write the PNG.
-SSB64_MAX_FRAMES exits the process after the capture frame.
+Launches the built binary once per (header, sidebar) pair, pre-seeding the
+user config (BattleShip.cfg.json in the app-data dir) with the menu's
+selection CVars, and lets the built-in backbuffer capture
+(SSB64_SCREENSHOT_FRAMES) write the PNG. SSB64_MAX_FRAMES exits the process
+after the capture frame. The pre-existing config file is merged in place and
+restored afterwards.
 
 Usage:
     python tools/testing/shoot_menu_sections.py [--bin out/build/verify/Debug] \
         [--out docs/screenshots/menu] [--only settings-general online-netplay]
 
-Requires a Debug/dev build (SSB64_TEST_HOOKS) for SSB64_MAX_FRAMES.
+Requires a dev/test-hooks build for SSB64_MAX_FRAMES.
 """
 from __future__ import annotations
 
@@ -53,21 +55,35 @@ CAPTURE_FRAME = 360   # ~6s at 60fps — past boot/intro with the menu overlaid
 EXIT_FRAME = 400
 
 
+def set_cvar(cfg: dict, dotted: str, value) -> None:
+    """cfg['CVars'] uses nested objects mirroring the CVar's dot path."""
+    node = cfg.setdefault("CVars", {})
+    parts = dotted.split(".")
+    for part in parts[:-1]:
+        node = node.setdefault(part, {})
+    node[parts[-1]] = value
+
+
 def write_cfg(cfg_path: Path, header: str, sidebar_cvar: str, sidebar: str) -> None:
-    cfg = {
-        "CVars": {
-            "gOpenPortMenu": 1,
-            "gSettings": {
-                "Menu": {
-                    "ActiveHeader": header,
-                    sidebar_cvar: sidebar,
-                    "BackgroundOpacity": 0.92,
-                },
-                "PersistentDescriptions": 1,
-            },
-        }
-    }
+    cfg = {}
+    if cfg_path.is_file():
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cfg = {}
+    set_cvar(cfg, "gOpenPortMenu", 1)
+    set_cvar(cfg, "gSettings.Menu.ActiveHeader", header)
+    set_cvar(cfg, f"gSettings.Menu.{sidebar_cvar}", sidebar)
     cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def app_cfg_path() -> Path:
+    # Port stores config in %APPDATA%/BattleShip on Windows
+    # (Context::GetPathRelativeToAppDirectory).
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return Path(appdata) / "BattleShip" / "BattleShip.cfg.json"
+    return Path.home() / ".config" / "BattleShip" / "BattleShip.cfg.json"
 
 
 def main() -> int:
@@ -78,8 +94,6 @@ def main() -> int:
                     help="Output directory for PNGs")
     ap.add_argument("--only", nargs="*", default=None,
                     help="Capture only these output names (e.g. settings-general)")
-    ap.add_argument("--keep-config", action="store_true",
-                    help="Don't delete the generated BattleShip.cfg.json afterwards")
     args = ap.parse_args()
 
     exe = args.bin / "BattleShip.exe"
@@ -87,7 +101,7 @@ def main() -> int:
         print(f"error: {exe} not found", file=sys.stderr)
         return 2
 
-    cfg_path = args.bin / "BattleShip.cfg.json"
+    cfg_path = app_cfg_path()
     tmp = args.bin / ".menu_shots_tmp"
     args.out.mkdir(parents=True, exist_ok=True)
     tmp.mkdir(exist_ok=True)
@@ -124,7 +138,7 @@ def main() -> int:
     finally:
         if old_cfg is not None:
             cfg_path.write_bytes(old_cfg)
-        elif cfg_path.is_file() and not args.keep_config:
+        elif cfg_path.is_file():
             cfg_path.unlink()
         shutil.rmtree(tmp, ignore_errors=True)
 

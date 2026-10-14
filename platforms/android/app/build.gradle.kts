@@ -79,14 +79,14 @@ val stageGameAssets = tasks.register<Copy>("stageGameAssets") {
     // Resolved at task-config time so we fail before AGP even starts the
     // merge — avoids a half-built APK with missing assets.
     from(findGameArtifact("f3d.o2r"))
-    from(repoRoot.resolve("config.yml"))
+    from(repoRoot.resolve("config/project/config.yml"))
     from(repoRoot.resolve("assets/configuration/extraction")) {
         into("yamls")
     }
 
     doFirst {
-        require(repoRoot.resolve("config.yml").exists()) {
-            "config.yml not found at $repoRoot — agent worktree should " +
+        require(repoRoot.resolve("config/project/config.yml").exists()) {
+            "config/project/config.yml not found at $repoRoot — agent worktree should " +
             "always have this file from git"
         }
     }

@@ -538,12 +538,12 @@ list(APPEND SSB64_SRC_PORT
 # coroutine_test.cpp has its own main(); only built standalone when
 # SSB64_BUILD_COROUTINE_TEST=ON below. Never link it into the game.
 list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "tests/unit/platform/coroutine_test\\.cpp$")
-# ARM coroutine asm shims are Android-only (added explicitly to that target
-# below); MSVC can't assemble .S and produces no .obj, which breaks the
-# exports.def generation at link time.
-if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/coroutine/coroutine_.*\\.S$")
-endif()
+# ARM coroutine asm shims are added explicitly to the Android target below;
+# MSVC can't assemble .S and produces no .obj, which breaks the exports.def
+# generation at link time. Always excluded from the glob: with per-module
+# OBJECT libraries (TD-002) a file living in both smash_platform and the
+# SHARED target would compile twice and produce duplicate symbols.
+list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/coroutine/coroutine_.*\\.S$")
 # Switch asm context-switch is AArch64-only and only appended on Switch
 # below — but the case-insensitive filesystem glob also matches "*.S" on
 # Windows, where MSVC can't assemble it. (The guarded .cpp files compile
@@ -586,23 +586,80 @@ if(BATTLESHIP_UWP)
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/application/first_run\\.cpp$")
 endif()
 # Treat the generated icon header as a source so CMake schedules it ahead
-# of any port TU compilation (port_window_icon.cpp #includes it).
+# of any port TU compilation (port_window_icon.cpp #includes it). The
+# headers are ALSO tracked in SSB64_GEN_HEADER_SRCS: TD-002 compiles
+# src/<module>/ trees as separate OBJECT libraries, and a file-level
+# codegen edge only applies to the target listing the generated file —
+# every module lib gets them as sources so no TU can compile before the
+# headers exist.
+set(SSB64_GEN_HEADER_SRCS "")
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT BATTLESHIP_UWP)
-    list(APPEND SSB64_SRC_PORT ${SSB64_ICON_GEN})
+    list(APPEND SSB64_GEN_HEADER_SRCS ${SSB64_ICON_GEN})
 endif()
 # Arrow + nameplate baked headers — added as sources so CMake schedules their
 # generation before any port TU compilation.  Stage background/icon PNGs are
 # ROM-derived and therefore disk-loaded/o2r-derived at runtime; no baked
 # headers for those.
-list(APPEND SSB64_SRC_PORT
+list(APPEND SSB64_GEN_HEADER_SRCS
     ${SSB64_CSS_ARROW_H}
     ${SSB64_CSS_ARROW_LEFT_H}
     ${SSB64_CSS_NAMEPLATE_HEADERS}
 )
+list(APPEND SSB64_SRC_PORT ${SSB64_GEN_HEADER_SRCS})
+
+# JP drops the hi-res texture pack pipeline entirely (US-ROM CRC32 keying,
+# no JP packs authored); PORT_HIRES_ENABLED is appended to the compile defs
+# below where the rationale comment lives. The source filter must run
+# BEFORE the per-module partition — module OBJECT libraries snapshoot
+# SSB64_SRC_PORT at partition time.
+if(NOT SSB64_VERSION STREQUAL "us")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/resources/loading/textures/hires/")
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     list(APPEND SSB64_SRC_PORT "src/platform/switch/context_switch.s")
 endif()
+
+################################################################################
+# TD-002 — per-module component libraries
+#
+# Compile each src/<module>/ subtree as its own OBJECT library
+# (smash_<module>). Compile-time boundary only: every object still links
+# into the single ${PROJECT_NAME} binary, so no link-order work is needed
+# and cyclic module includes behave exactly as they did with the flat
+# glob. What the split buys: per-module warning/flag scoping, a real
+# target graph mirroring check_module_deps.py's rules, and codegen
+# ordering edges that no longer depend on one shared source list.
+#
+# ssb64_port_options carries the definitions/include paths/link usage
+# requirements every port TU needs; the module libs and the executable
+# all consume it.
+################################################################################
+
+add_library(ssb64_port_options INTERFACE)
+# ${PROJECT_NAME} is SHARED on Android/UWP — propagate PIC so the module
+# objects are built correctly on those targets too.
+set_target_properties(ssb64_port_options PROPERTIES
+    INTERFACE_POSITION_INDEPENDENT_CODE ON)
+
+set(SSB64_MODULE_DIRS
+    application audio compatibility config diagnostics distribution game
+    gameplay input integration netplay observability persistence platform
+    presentation rendering resources social)
+set(SSB64_MODULE_OBJECTS "")
+set(SSB64_SRC_PORT_TOPLEVEL ${SSB64_SRC_PORT})
+foreach(mod IN LISTS SSB64_MODULE_DIRS)
+    set(_mod_srcs ${SSB64_SRC_PORT})
+    list(FILTER _mod_srcs INCLUDE REGEX "/src/${mod}/")
+    if(_mod_srcs)
+        add_library(smash_${mod} OBJECT ${_mod_srcs})
+        target_sources(smash_${mod} PRIVATE ${SSB64_GEN_HEADER_SRCS})
+        target_link_libraries(smash_${mod} PRIVATE ssb64_port_options)
+        add_dependencies(smash_${mod} ExtractAssetHeaders)
+        list(APPEND SSB64_MODULE_OBJECTS $<TARGET_OBJECTS:smash_${mod}>)
+        list(FILTER SSB64_SRC_PORT_TOPLEVEL EXCLUDE REGEX "/src/${mod}/")
+    endif()
+endforeach()
 
 # Debug tools (GBI trace + Acmd trace systems)
 file(GLOB SSB64_DEBUG_TOOLS
@@ -773,9 +830,9 @@ endif()
 # entirely and gate the port.cpp / PortMenu.cpp integration on PORT_HIRES_ENABLED.
 if(SSB64_VERSION STREQUAL "us")
     list(APPEND SSB64_COMPILE_DEFS PORT_HIRES_ENABLED=1)
-else()
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/resources/loading/textures/hires/")
 endif()
+# (the JP-side src filter moved above the TD-002 module partition — it has
+#  to run before SSB64_SRC_PORT is carved into smash_* OBJECT libraries)
 
 if(SSB64_TEST_HOOKS)
     list(APPEND SSB64_COMPILE_DEFS SSB64_TEST_HOOKS=1)
@@ -1057,7 +1114,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # #if-guarded on the target arch (__aarch64__ / __arm__), so only the
     # one matching ANDROID_ABI emits code.
     add_library(${PROJECT_NAME} SHARED
-        ${SSB64_SRC_PORT}
+        ${SSB64_SRC_PORT_TOPLEVEL}
+        ${SSB64_MODULE_OBJECTS}
         ${SSB64_DEBUG_TOOLS}
         $<TARGET_OBJECTS:ssb64_game>
         src/platform/coroutine/coroutine_aarch64.S
@@ -1068,7 +1126,8 @@ elseif(BATTLESHIP_UWP)
     # The UWP CoreApplication executable is a tiny wrapper in uwp/. Keep the
     # existing game entrypoint in a DLL and export SDL_main for that wrapper.
     add_library(${PROJECT_NAME} SHARED
-        ${SSB64_SRC_PORT}
+        ${SSB64_SRC_PORT_TOPLEVEL}
+        ${SSB64_MODULE_OBJECTS}
         ${SSB64_DEBUG_TOOLS}
         $<TARGET_OBJECTS:ssb64_game>
     )
@@ -1077,7 +1136,7 @@ elseif(BATTLESHIP_UWP)
         WINDOWS_EXPORT_ALL_SYMBOLS TRUE
     )
 else()
-    add_executable(${PROJECT_NAME} ${SSB64_SRC_PORT} ${SSB64_DEBUG_TOOLS} $<TARGET_OBJECTS:ssb64_game>)
+    add_executable(${PROJECT_NAME} ${SSB64_SRC_PORT_TOPLEVEL} ${SSB64_MODULE_OBJECTS} ${SSB64_DEBUG_TOOLS} $<TARGET_OBJECTS:ssb64_game>)
 
     # User-facing binary name. The CMake target keeps the historical
     # `ssb64` identifier (matches the repo, build dirs, internal symbols),
@@ -1132,13 +1191,14 @@ endif()
 # Compile definitions
 ################################################################################
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE ${SSB64_COMPILE_DEFS})
+target_compile_definitions(ssb64_port_options INTERFACE ${SSB64_COMPILE_DEFS})
+target_link_libraries(${PROJECT_NAME} PRIVATE ssb64_port_options)
 
 ################################################################################
 # Include paths (no include/ here — port code uses system headers)
 ################################################################################
 
-target_include_directories(${PROJECT_NAME} PRIVATE
+target_include_directories(ssb64_port_options INTERFACE
     # NOTE: Do NOT add decomp/include here. The C decomp shim headers (stdlib.h,
     # stddef.h, ...) shadow the C++ standard library when picked up by src/*.cpp,
     # producing libc++ <cstdlib> errors. Only ssb64_game (C decomp) consumes them.
@@ -1193,14 +1253,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${SSB64_CSS_GEN_DIR}                         # CSS icon baked headers (arrow_data.h)
 )
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT BATTLESHIP_UWP)
-    target_include_directories(${PROJECT_NAME} PRIVATE
+    target_include_directories(ssb64_port_options INTERFACE
         ${SSB64_ICON_GEN_DIR}                         # Generated icon header (port_icon_data.h)
         ${discord_rpc_SOURCE_DIR}/include             # Discord Rich Presence
     )
 else()
     # Android: include the generated dir for CSS icon baked headers.
     # (SSB64_ICON_GEN_DIR is already the same dir; listed explicitly for clarity.)
-    target_include_directories(${PROJECT_NAME} PRIVATE
+    target_include_directories(ssb64_port_options INTERFACE
         ${SSB64_CSS_GEN_DIR}                          # CSS icon baked headers
     )
 endif()
@@ -1222,7 +1282,18 @@ elseif(BATTLESHIP_UWP)
 else()
     add_dependencies(${PROJECT_NAME} libultraship TorchExternal discord-rpc)
     target_link_libraries(${PROJECT_NAME} PRIVATE libultraship discord-rpc)
+    target_link_libraries(ssb64_port_options INTERFACE discord-rpc)
 endif()
+# Engine/dep usage requirements for every port TU (OBJECT libraries get no
+# include dirs from the consuming executable — they inherit them through
+# the shared options interface).
+target_link_libraries(ssb64_port_options INTERFACE libultraship)
+# Codegen ordering: reloc tables/credits headers exist before any module TU.
+foreach(mod IN LISTS SSB64_MODULE_DIRS)
+    if(TARGET smash_${mod})
+        add_dependencies(smash_${mod} libultraship)
+    endif()
+endforeach()
 if (WIN32)
     # src/diagnostics/port_symbolize.cpp (SyncTest diagnostics), src/netplay/transport/udp_transport.cpp, src/netplay/transport/websocket_transport.cpp
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt)
@@ -1234,6 +1305,7 @@ endif()
 # for the executable, no new dependency.
 find_package(libzip REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE libzip::zip)
+target_link_libraries(ssb64_port_options INTERFACE libzip::zip)
 
 # TD-009 — offline-signed release manifest verification. orlp/ed25519 is the
 # small public-domain RFC 8032 implementation; only the verify path is
@@ -1256,11 +1328,13 @@ add_library(ed25519_verify STATIC
     ${ed25519_SOURCE_DIR}/src/verify.c)
 target_include_directories(ed25519_verify PUBLIC ${ed25519_SOURCE_DIR}/src)
 target_link_libraries(${PROJECT_NAME} PRIVATE ed25519_verify)
+target_link_libraries(ssb64_port_options INTERFACE ed25519_verify)
 
 add_dependencies(ssb64_game GenerateCreditsAssets)
 if (NOT DISABLE_SCRIPTING)
     # funchook hook backend (libultraship is already linked above).
     target_link_libraries(${PROJECT_NAME} PRIVATE funchook-static)
+    target_link_libraries(ssb64_port_options INTERFACE funchook-static)
 
     ############################################################################
     # Mod-system linkage requirements
@@ -1279,8 +1353,8 @@ if (NOT DISABLE_SCRIPTING)
     #    for Release builds too, since symbol resolution depends on them.
     ############################################################################
     if (MSVC)
-        target_compile_options(${PROJECT_NAME} PRIVATE /Ob0)
-        target_compile_options(ssb64_game     PRIVATE /Ob0)
+        target_compile_options(ssb64_port_options INTERFACE /Ob0)
+        target_compile_options(ssb64_game         PRIVATE /Ob0)
         # NOTE: do NOT add /OPT:REF or /OPT:ICF here. /OPT:REF strips
         # unreferenced symbols (mods reach in by-name even when nothing
         # in the binary references the function); /OPT:ICF folds
@@ -1289,8 +1363,8 @@ if (NOT DISABLE_SCRIPTING)
         # of the same function exist). Plain /DEBUG is enough; it just
         # tells the linker to emit a full PDB.
     else()
-        target_compile_options(${PROJECT_NAME} PRIVATE -fno-inline-functions)
-        target_compile_options(ssb64_game     PRIVATE -fno-inline-functions)
+        target_compile_options(ssb64_port_options INTERFACE -fno-inline-functions)
+        target_compile_options(ssb64_game         PRIVATE -fno-inline-functions)
     endif()
 endif()
 
@@ -1300,12 +1374,12 @@ endif()
 # The shipped binary is unaffected — packaging splits the debug payload
 # into the per-release symbols archive.
 if (MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /Zi)
-    target_compile_options(ssb64_game     PRIVATE /Zi)
+    target_compile_options(ssb64_port_options INTERFACE /Zi)
+    target_compile_options(ssb64_game         PRIVATE /Zi)
     target_link_options(${PROJECT_NAME}    PRIVATE /DEBUG)
 else()
-    target_compile_options(${PROJECT_NAME} PRIVATE -g)
-    target_compile_options(ssb64_game     PRIVATE -g)
+    target_compile_options(ssb64_port_options INTERFACE -g)
+    target_compile_options(ssb64_game         PRIVATE -g)
 endif()
 
 ################################################################################

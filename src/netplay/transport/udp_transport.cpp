@@ -2,6 +2,7 @@
 #include "udp_transport.h"
 #include "port_log.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdarg>
 #include <cstdint>
@@ -9,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <mutex>
 #include <random>
 #include <string>
 #include <thread>
@@ -54,6 +56,79 @@ struct PendingPacket {
 PortSocket sSocket = kInvalidSocket;
 sockaddr_in sPeer;
 bool sHasPeer = false;
+
+/* Ingress thread: a datagram sitting in the OS socket buffer while the game
+ * thread is stalled (rollback resim, GC pause) is indistinguishable from
+ * remote silence on the wire — the peer's pacing drop fires even though
+ * packets were arriving. Draining the socket on its own thread keeps
+ * ingestion at wire speed; the game thread pops the queue once per tick,
+ * so a slow frame delays *processing* but never *arrival*. */
+struct IngressPacket {
+    sockaddr_in from;
+    int size;
+    uint8_t bytes[2048];
+};
+constexpr size_t kIngressCap = 2048;   /* ~4 MB worst case; inputs are ~50B */
+std::deque<IngressPacket> sIngress;
+std::mutex sIngressMutex;
+std::thread sRecvThread;
+std::atomic<bool> sRecvStop{false};
+unsigned int sIngressDropped = 0;
+
+void recv_thread_main(PortSocket sock)
+{
+    while (!sRecvStop.load(std::memory_order_relaxed)) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(sock, &rfds);
+        timeval tv{};
+        tv.tv_usec = 20000;
+        int ready = select(static_cast<int>(sock) + 1, &rfds, nullptr, nullptr, &tv);
+        if (ready <= 0) {
+            continue;
+        }
+        IngressPacket packet;
+#if defined(_WIN32)
+        int from_len = sizeof(packet.from);
+#else
+        socklen_t from_len = sizeof(packet.from);
+#endif
+        int size = recvfrom(sock, reinterpret_cast<char *>(packet.bytes), sizeof(packet.bytes), 0,
+                            reinterpret_cast<sockaddr *>(&packet.from), &from_len);
+        if (size <= 0) {
+            continue;   /* would-block race or socket error: keep draining */
+        }
+        packet.size = size;
+        {
+            std::lock_guard<std::mutex> lock(sIngressMutex);
+            if (sIngress.size() < kIngressCap) {
+                sIngress.push_back(packet);
+            } else {
+                sIngressDropped++;
+            }
+        }
+    }
+}
+
+void start_recv_thread(void)
+{
+    if (sRecvThread.joinable()) {
+        return;
+    }
+    sRecvStop.store(false, std::memory_order_relaxed);
+    sRecvThread = std::thread(recv_thread_main, sSocket);
+}
+
+void stop_recv_thread(void)
+{
+    if (!sRecvThread.joinable()) {
+        return;
+    }
+    sRecvStop.store(true, std::memory_order_relaxed);
+    sRecvThread.join();     /* select() wakes within 20ms */
+    std::lock_guard<std::mutex> lock(sIngressMutex);
+    sIngress.clear();
+}
 
 /* Relay fallback: game packets travel through the lobby server instead of
  * UDP (src/netplay/session/netlobby.cpp installs WebSocket send/receive hooks). */
@@ -252,26 +327,34 @@ int raw_recv(void *buffer, int capacity, sockaddr_in *from, int *kind)
             return relayed;
         }
     }
-#if defined(_WIN32)
-    int from_len = sizeof(*from);
-#else
-    socklen_t from_len = sizeof(*from);
-#endif
-    /* Receive into a full-size buffer: on Windows a datagram larger than the
-     * caller's buffer fails recvfrom outright (WSAEMSGSIZE) instead of
-     * truncating, which would wedge the socket on one stray packet. */
-    uint8_t bytes[2048];
-    int size = recvfrom(sSocket, reinterpret_cast<char *>(bytes), sizeof(bytes), 0,
-                        reinterpret_cast<sockaddr *>(from), &from_len);
-    if (size < 0) {
-        int err = port_udp_last_error();
-        return port_udp_would_block(err) ? 0 : -1;
+    /* The recv thread already pulled the datagram out of the socket; this
+     * just dequeues it. The socket error path is gone: errors are counted
+     * on the thread, and oversized datagrams can never arrive here since
+     * the thread reads into a full-size buffer (a stray >2KB datagram would
+     * have failed recvfrom outright on Windows rather than truncating and
+     * wedging the socket). */
+    IngressPacket packet;
+    unsigned int dropped;
+    {
+        std::lock_guard<std::mutex> lock(sIngressMutex);
+        if (sIngress.empty()) {
+            return 0;
+        }
+        packet = std::move(sIngress.front());
+        sIngress.pop_front();
+        dropped = sIngressDropped;
+        sIngressDropped = 0;
     }
+    if (dropped != 0) {
+        port_log("SSB64 UDP: ingress queue full — dropped %u datagrams\n", dropped);
+    }
+    *from = packet.from;
+    int size = packet.size;
     *kind = (sHasPeer && same_endpoint(*from, sPeer)) ? 0 : 2;
     if (size > capacity) {
         return -1;  /* not one of ours: every protocol datagram fits its caller's buffer */
     }
-    std::memcpy(buffer, bytes, size);
+    std::memcpy(buffer, packet.bytes, size);
     return size;
 }
 
@@ -384,6 +467,7 @@ extern "C" int port_udp_open(const char *bind_spec)
         return 0;
     }
 #endif
+    start_recv_thread();
     return 1;
 }
 
@@ -400,6 +484,7 @@ extern "C" int port_udp_set_peer(const char *peer_spec)
 
 extern "C" void port_udp_close(void)
 {
+    stop_recv_thread();     /* join before closing: no recv on a dead socket */
     if (sSocket != kInvalidSocket) {
         port_udp_close_socket(sSocket);
         sSocket = kInvalidSocket;
