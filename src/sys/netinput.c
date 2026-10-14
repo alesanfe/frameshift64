@@ -398,10 +398,30 @@ void syNetInputResolveFrame(s32 player, u32 tick, SYNetInputFrame *out_frame)
 		{
 			out_frame->source = nSYNetInputSourceSaved;
 			out_frame->is_predicted = FALSE;
+			sSYNetInputSlots[player].last_confirmed = *out_frame;
 		}
 		else if (syNetInputGetStoredFrame(sSYNetInputSavedHistory, player, tick, out_frame) == FALSE)
 		{
-			syNetInputMakeFrame(out_frame, tick, 0, 0, 0, nSYNetInputSourceSaved, FALSE);
+			/* Replay exhausted: hold the last saved input (the fighter keeps
+			 * walking/shielding) instead of going fully idle. Same "repeat
+			 * last confirmed" rule as remote prediction - a dead-stick frame
+			 * is the worst possible training partner. */
+			SYNetInputFrame *last_saved = &sSYNetInputSlots[player].last_confirmed;
+
+			if (last_saved->is_valid != FALSE)
+			{
+				syNetInputMakeFrame
+				(
+					out_frame,
+					tick,
+					last_saved->buttons,
+					last_saved->stick_x,
+					last_saved->stick_y,
+					nSYNetInputSourceSaved,
+					TRUE
+				);
+			}
+			else syNetInputMakeFrame(out_frame, tick, 0, 0, 0, nSYNetInputSourceSaved, FALSE);
 		}
 		break;
 

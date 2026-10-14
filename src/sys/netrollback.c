@@ -1003,11 +1003,38 @@ static sb32 syNetRollbackCompareTick(u32 tick, const SYNetSyncTickHash *expected
 	return (diff_mask & SYNETSYNC_GATED_COLUMN_MASK) ? TRUE : FALSE;
 }
 
-/* Saves the pre-update state of sim tick `tick` into its ring slot. */
+/* Snapshot cadence: only every Nth tick's pre-update state is kept, so the
+ * per-frame DATA+BSS+arena memcpy amortizes and the 8-slot ring covers
+ * 8*stride ticks of rewind depth. A mispredict rewinds to the last
+ * stride-aligned snapshot at or before it and replays the few extra ticks.
+ * Default 1 keeps per-tick behavior; SSB64_ROLLBACK_SNAPSHOT_STRIDE is a
+ * test-hook override. */
+static u32 syNetRollbackSnapshotStride(void)
+{
+#ifdef SSB64_TEST_HOOKS
+	static s32 stride = -1;
+
+	if (stride < 0)
+	{
+		stride = syNetRollbackGetEnvInt("SSB64_ROLLBACK_SNAPSHOT_STRIDE", 1);
+	}
+	return (u32)((stride > 0) ? stride : 1);
+#else
+	return 1;
+#endif
+}
+
+/* Saves the pre-update state of sim tick `tick` into its ring slot. Ticks
+ * not on the snapshot stride are skipped by design — that is not a chain
+ * break, so TRUE is still returned. */
 static sb32 syNetRollbackSaveTick(u32 tick)
 {
 	s32 slot = tick % SYNETROLLBACK_SLOT_NUM;
 
+	if ((tick % syNetRollbackSnapshotStride()) != 0)
+	{
+		return TRUE;
+	}
 	if (syNetRollbackSave(slot) == FALSE)
 	{
 		return FALSE;
@@ -1020,26 +1047,46 @@ static sb32 syNetRollbackSaveTick(u32 tick)
 /* Snapshot-chain check + rewind used when a resim (re)starts at
  * `first_tick`. Returns FALSE (state untouched) if the chain does not
  * cover the tick. */
-static sb32 syNetRollbackResimBegin(u32 first_tick)
+static sb32 syNetRollbackResimBegin(u32 first_tick, u32 *out_start)
 {
-	if ((first_tick < sSYNetRollbackChainStart) ||
-	    (sSYNetRollbackStates[first_tick % SYNETROLLBACK_SLOT_NUM].is_valid == FALSE) ||
-	    (sSYNetRollbackSlotTicks[first_tick % SYNETROLLBACK_SLOT_NUM] != first_tick))
+	/* Only stride-aligned ticks have snapshots; rewinding to the last
+	 * aligned tick at or before the mispredict replays a few extra ticks —
+	 * RepublishTick feeds them the same corrected inputs, so the result is
+	 * identical. If that aligned tick itself has no snapshot (pause ticks
+	 * are not saveable), keep walking back — the ring spans
+	 * SLOT_NUM*stride ticks, so at most SLOT_NUM-1 steps. */
+	u32 stride = syNetRollbackSnapshotStride();
+	u32 start = first_tick - (first_tick % stride);
+	u32 steps;
+
+	for (steps = 0; steps < SYNETROLLBACK_SLOT_NUM; steps++)
 	{
-		return FALSE;
-	}
-	syNetRollbackLoad(first_tick % SYNETROLLBACK_SLOT_NUM);
+		if ((start >= sSYNetRollbackChainStart) &&
+		    (sSYNetRollbackStates[start % SYNETROLLBACK_SLOT_NUM].is_valid != FALSE) &&
+		    (sSYNetRollbackSlotTicks[start % SYNETROLLBACK_SLOT_NUM] == start))
+		{
+			syNetRollbackLoad(start % SYNETROLLBACK_SLOT_NUM);
+			*out_start = start;
 
 #ifdef PORT
-	/* Mutant skip_rng_restore: the resim runs with the live RNG seed instead
-	 * of the snapshot's — everything that consumed RNG since the rollback
-	 * point diverges. SyncTest must report FAIL. */
-	if (sSYNetRollbackMutantSkipRNG != FALSE)
-	{
-		syUtilsSetRandomSeed(syUtilsRandSeed() ^ 0x3C3C3C3CU);
-	}
+			/* Mutant skip_rng_restore: the resim runs with the live RNG seed
+			 * instead of the snapshot's — everything that consumed RNG
+			 * since the rollback point diverges. SyncTest must report
+			 * FAIL. */
+			if (sSYNetRollbackMutantSkipRNG != FALSE)
+			{
+				syUtilsSetRandomSeed(syUtilsRandSeed() ^ 0x3C3C3C3CU);
+			}
 #endif
-	return TRUE;
+			return TRUE;
+		}
+		if (start < stride)
+		{
+			break;
+		}
+		start -= stride;
+	}
+	return FALSE;
 }
 
 /* Re-runs ticks [first_tick, last_tick] in place: inputs re-published,
@@ -1089,12 +1136,14 @@ static void syNetRollbackResimRun(u32 first_tick, u32 last_tick, void (*update)(
  * cover the range. */
 sb32 syNetRollbackResimulate(u32 first_tick, u32 last_tick, void (*update)(void), SYNetSyncTickHash *hashes)
 {
+	u32 start;
+
 	if ((last_tick < first_tick) || (last_tick - first_tick >= SYNETROLLBACK_SLOT_NUM) ||
-	    (syNetRollbackResimBegin(first_tick) == FALSE))
+	    (syNetRollbackResimBegin(first_tick, &start) == FALSE))
 	{
 		return FALSE;
 	}
-	syNetRollbackResimRun(first_tick, last_tick, update, hashes);
+	syNetRollbackResimRun(start, last_tick, update, hashes);
 	return TRUE;
 }
 
