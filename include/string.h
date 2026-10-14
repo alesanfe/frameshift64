@@ -26,6 +26,7 @@ extern "C"
 #endif
 
 	extern void* memcpy(void*, const void*, size_t);
+	extern int memcmp(const void*, const void*, size_t);
 	extern void* memset(void*, int, size_t);
 	extern char* strchr(const char*, int);
 	extern int strcmp(const char*, const char*);

@@ -72,14 +72,16 @@ extern void port_log(const char *fmt, ...);
 #define SYNETPEER_TIMESYNC_THRESHOLD 2
 #define SYNETPEER_TIMESYNC_INTERVAL 10
 
-/* Adaptive input delay (host-driven): when prediction stalls accumulate
- * the host raises the delay symmetric via DELAY packets, giving remote
- * inputs more wire time and breaking the stall->resim->stall treadmill.
- * Delay stays below the prediction cap; the host re-sends for a few
- * frames so a lost packet converges instead of leaving peers asymmetric. */
+/* Adaptive input delay (any peer may propose): when late remote inputs
+ * accumulate — each is a prediction that may roll back — the observing
+ * peer broadcasts a DELAY bump and everyone applies max(local, received),
+ * giving remote inputs more wire time and breaking the
+ * stall->resim->stall treadmill. Delay stays below the prediction cap
+ * and is monotonic within a match; bumps re-send for a few frames so a
+ * lost packet converges instead of leaving peers asymmetric. */
 #define SYNETPEER_MAX_INPUT_DELAY 6
-#define SYNETPEER_DELAY_CHECK_FRAMES 300
-#define SYNETPEER_DELAY_STALL_TRIGGER 15
+#define SYNETPEER_DELAY_CHECK_FRAMES 60
+#define SYNETPEER_DELAY_STALL_TRIGGER 5
 #define SYNETPEER_DELAY_REPEAT_FRAMES 10
 
 void syNetPeerReceiveRemoteInput(void);
@@ -1410,10 +1412,14 @@ void syNetPeerStartVSSession(void)
 #ifdef PORT
 	if ((sSYNetPeerIsEnabled == FALSE) || (sSYNetPeerIsConfigured == FALSE))
 	{
+		port_log("SSB64 NetPeer: VS session start SKIPPED enabled=%d configured=%d spec=%d\n",
+		         sSYNetPeerIsEnabled, sSYNetPeerIsConfigured, sSYNetPeerIsSpectator);
 		return;
 	}
 	if (syNetPeerOpenSocket() == FALSE)
 	{
+		port_log("SSB64 NetPeer: VS session start SKIPPED socket open failed spec=%d\n",
+		         sSYNetPeerIsSpectator);
 		return;
 	}
 	sSYNetPeerHighestRemoteTick = 0;
@@ -1730,18 +1736,23 @@ void syNetPeerForwardPacket(const SYNetPeerRemote *from, const u8 *buffer, s32 s
 	s32 spec;
 
 	if ((sSYNetPeerIsSocketExternal == FALSE) || (sSYNetPeerBootstrapIsHost == FALSE) ||
-		(sSYNetPeerRemoteCount < 2) || (size <= 0))
+		(size <= 0))
 	{
 		return;
 	}
-	for (player = 0; player < MAXCONTROLLERS; player++)
+	/* RemoteCount < 2 skips only the player fan-out: with a single client
+	 * there is nobody to relay to, but spec links still need the stream. */
+	if (sSYNetPeerRemoteCount >= 2)
 	{
-		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
-
-		if ((remote->player == player) && (remote->dropped == FALSE) &&
-			(remote->link >= 0) && (remote != from))
+		for (player = 0; player < MAXCONTROLLERS; player++)
 		{
-			syNetPeerSendForwardPacket(remote->link, from->player, buffer, size);
+			SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
+
+			if ((remote->player == player) && (remote->dropped == FALSE) &&
+				(remote->link >= 0) && (remote != from))
+			{
+				syNetPeerSendForwardPacket(remote->link, from->player, buffer, size);
+			}
 		}
 	}
 	for (spec = 0; spec < sSYNetPeerSpecLinkCount; spec++)
