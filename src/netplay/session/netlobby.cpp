@@ -68,6 +68,8 @@ extern "C" void syNetPeerStartOnlineSpectate(int player_count, unsigned int dela
                                              const int *fkinds, const int *costumes);
 extern "C" void syNetPeerAddSpecLink(int link);
 extern "C" void syNetPeerRemoveSpecLink(int link);
+extern "C" void syNetPeerBeginSpecCatchUp(int link);
+extern "C" unsigned int syNetInputGetTick(void);
 
 namespace {
 
@@ -1197,11 +1199,27 @@ void on_roster(const std::string &text)
                 if (p != nullptr && !p->connected) {
                     p->connected = port_udp_link_set(slot, "relay") == 1;
                     p->last_heard_ms = p->joined_ms = port_udp_now_ms();
-                    /* mid-match joins wait in the lobby: without snapshot
-                     * catch-up a watcher can't reconstruct the state it
-                     * missed, so it picks up the NEXT match's STARTM */
-                    port_log("SSB64 Lobby: spectator slot %d%s\n", slot,
-                             (sLobby.state == PORT_NETLOBBY_IN_MATCH) ? " joined mid-match - watching next match" : "");
+                    if (sLobby.state == PORT_NETLOBBY_IN_MATCH &&
+                        !sLobby.last_start_payload.empty() &&
+                        std::getenv("SSB64_SPECTATE_CATCHUP") == nullptr &&
+                        syNetInputGetTick() < 21000) {   /* inside the 21600-tick recording cap */
+                        /* mid-match catch-up: hand the spec the current
+                         * match's STARTM so it boots at tick 0, then arm the
+                         * engine's history stream - it resimulates the
+                         * recorded inputs faster than realtime and lands on
+                         * the live edge. */
+                        port_log("SSB64 Lobby: spectator slot %d joined mid-match - catch-up stream armed\n", slot);
+                        send_to_peer(*p, sLobby.last_start_payload.c_str());
+                        /* the engine cleared its spec-link list at match
+                         * start - register this late joiner before arming */
+                        syNetPeerAddSpecLink(p->slot);
+                        syNetPeerBeginSpecCatchUp(p->slot);
+                    } else {
+                        /* catch-up disabled or past the recording cap:
+                         * wait for the NEXT match's STARTM */
+                        port_log("SSB64 Lobby: spectator slot %d%s\n", slot,
+                                 (sLobby.state == PORT_NETLOBBY_IN_MATCH) ? " joined mid-match - watching next match" : "");
+                    }
                 }
             }
         } else if (slot >= 0 && slot <= 3) {
