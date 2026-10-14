@@ -150,6 +150,7 @@ constexpr SchemaEntry kSchema[] = {
     { "gSettings.UIScale",               KeyType::Float, 0.75, 2.5,  false },
     { "gSettings.PersistentDescriptions",KeyType::Bool,  0, 1,  false },
     { "gSettings.HighContrastFocus",     KeyType::Bool,  0, 1,  false },
+    { "gSettings.ReducedMotion",         KeyType::Bool,  0, 1,  false },
     { "gSettings.EnableDevTools",        KeyType::Bool,  0, 1,  false },
     { "gConsoleEnabled",               KeyType::Bool, 0, 1, false },
     { "gControlNav",                   KeyType::Bool, 0, 1, false },

@@ -72,15 +72,15 @@ Cliente (ssb64.exe)
 ├─ src/integration/modding/ ModRegistry/ScriptLoader TCC
 ├─ src/compatibility/     n64_stubs (tasks, coroutines, defer queues)
 ├─ src/distribution/      Updater, ShaderDownloader, ModPackDownloader
-├─ src/features/          widescreen, interp, gameplay/audio/social packs
+├─ src/{gameplay,audio,input,social,rendering}/  widescreen, interp, packs
 └─ decomp/src/sys/        netpeer (star/FORWARD/spec links), netinput
                           (sources: local/remote-confirmed/predicted/saved),
                           netrollback (8 snapshots + resim), netreplay
                           (record/play/desync pkg/takeover), scheduler
 
 Servicios
-└─ services/netplay-lobby/  cloudflare/src/index.js (edge fetch → DO,
-   star routing, upkey auth, spec slots 4-7) + node-lobby.js (mirror local)
+└─ services/netplay-lobby/  src/infrastructure/cloudflare/worker.js (edge fetch → DO,
+   star routing, upkey auth, spec slots 4-7) + infrastructure/local/node-lobby.mjs (mirror local)
 ```
 
 ## 4. Matriz de hallazgos

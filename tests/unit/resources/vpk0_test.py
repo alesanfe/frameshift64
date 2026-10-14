@@ -44,7 +44,7 @@ def build_vpk0_test_exe():
             bf.write(f'cl /O2 /Fe:"{exe_path}" "{test_c}" "{vpk0_c}" /I "{os.path.join(repo_root, "torch", "lib")}" >nul 2>&1\n')
             bf.write('echo BUILD_RESULT=%ERRORLEVEL%\n')
 
-        result = subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, cwd=tmp_dir, check=False)
+        subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, cwd=tmp_dir, check=False)
     else:
         for compiler in ["gcc", "clang", "cc"]:
             try:
@@ -69,7 +69,7 @@ def parse_reloc_table(rom):
     for i in range(RELOC_FILE_COUNT):
         offset = RELOC_TABLE_ROM_ADDR + i * RELOC_TABLE_ENTRY_SIZE
         data = rom[offset:offset + RELOC_TABLE_ENTRY_SIZE]
-        first_word, reloc_intern, compressed_size, reloc_extern, decompressed_size = \
+        first_word, _reloc_intern, compressed_size, _reloc_extern, decompressed_size = \
             struct.unpack(">IHHHH", data)
 
         is_compressed = bool(first_word & 0x80000000)
@@ -170,7 +170,7 @@ def main():
         if result.stderr:
             print(result.stderr)
         full_ok = result.returncode == 0
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"  Native test failed: {e}")
         print("  Skipping full decompression test.")
 
@@ -179,7 +179,7 @@ def main():
         import shutil
         try:
             shutil.rmtree(tmp_dir, ignore_errors=True)
-        except Exception:
+        except OSError:
             pass
 
     print("\n" + "=" * 50)

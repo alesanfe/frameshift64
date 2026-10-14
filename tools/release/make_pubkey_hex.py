@@ -22,7 +22,8 @@ def main() -> int:
     if len(sys.argv) != 2:
         sys.stderr.write(f"usage: {sys.argv[0]} <release.pub>\n")
         return 2
-    lines = [l.strip() for l in open(sys.argv[1], "r", encoding="utf-8")]
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        lines = [l.strip() for l in f]
     body = None
     for i, line in enumerate(lines):
         if line.startswith("untrusted comment:") and i + 1 < len(lines):

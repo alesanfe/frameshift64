@@ -63,7 +63,8 @@ assets/           — source assets; configuration/extraction/<ver>/ (Torch YAML
                     and configuration/controllers/gamecontrollerdb.txt
 services/netplay-lobby/ — Cloudflare worker + local node lobby:
                     src/domain/ (shared room logic — protocol.mjs, room.mjs),
-                    index.js (DO adapter), node-lobby.mjs (Node adapter)
+                    src/infrastructure/cloudflare/worker.js (DO adapter),
+                    src/infrastructure/local/node-lobby.mjs (Node adapter)
 mods/             — mod SDK skeleton, examples, templates
 platforms/        — per-platform entry-point READMEs + android/, uwp/ wrappers;
                     platforms/<os>/cmake/*.cmake holds the CMake side

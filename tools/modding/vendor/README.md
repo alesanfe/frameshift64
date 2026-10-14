@@ -9,7 +9,7 @@ decoded-RGBA8 CRC32 keys this port's `HiResPack` looks up:
 It covers every texture in the retail US ROM (31,228 entries), so **any**
 GLideN64/Rice-PNG texture pack for vanilla SSB64 — not just SSB Reloaded —
 can be re-keyed for BattleShip by renaming its PNGs. The in-game installer
-(`src/distribution/ModPackDownloader.cpp`) and the CLI twin
+(`src/distribution/downloads/ModPackDownloader.cpp`) and the CLI twin
 (`tools/modding/convert_gliden64_pack.py`) both consume this file; the build
 stages it next to the binary as `bundled-data/gliden64-map.json`.
 

@@ -1713,6 +1713,10 @@ void PortMenu::AddMenuSettings() {
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip(
             "Makes the keyboard/controller focus ring near-opaque so the focused control is easy to spot."));
+    AddWidget(path, "Reduce Motion", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.ReducedMotion")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip("Disables blinking/animated UI elements such as the text cursor."));
 
     // --- Cheats ---
     path.sidebarName = "Cheats";
@@ -2353,10 +2357,12 @@ void PortMenu::AddMenuAbout() {
 }
 
 void PortMenu::AddMenuOnline() {
+#if !defined(BATTLESHIP_UWP)
     AddMenuEntry("Online", CVAR_SETTING("Menu.OnlineSidebarSection"));
     WidgetPath path = { "Online", "Netplay", SECTION_COLUMN_1 };
     AddSidebarEntry("Online", "Netplay", 1);
     AddWidget(path, "Netplay Lobby", WIDGET_CUSTOM).RaceDisable(false).CustomFunction(RenderNetplayLobby);
+#endif
 }
 
 void PortMenu::RebuildMenu() {

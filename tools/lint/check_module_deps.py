@@ -195,7 +195,8 @@ def collect() -> list[str]:
 def load_baseline() -> set[str]:
     if not BASELINE.exists():
         return set()
-    return {l.strip() for l in BASELINE.read_text().splitlines()
+    return {l.strip() for l in
+            BASELINE.read_text(encoding='utf-8').splitlines()
             if l.strip() and not l.startswith('#')}
 
 

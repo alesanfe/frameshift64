@@ -750,6 +750,10 @@ void Menu::DrawElement() {
     }
     ImGui::GetIO().FontGlobalScale = uiScale;
 
+    /* Reduced motion — this ImGui build has no widget animation system, so the
+     * only perpetual motion in the menu is the text-input cursor blink. */
+    ImGui::GetIO().ConfigInputTextCursorBlink = !CVarGetInteger("gSettings.ReducedMotion", 0);
+
     mFocusHelpName.clear();
     mFocusHelpText.clear();
 
