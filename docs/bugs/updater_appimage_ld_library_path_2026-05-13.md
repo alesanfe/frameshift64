@@ -4,7 +4,7 @@
 
 **Issue:** [#174 Updater doesn't work in Fedora 44 KDE](https://github.com/JRickey/BattleShip/issues/174)
 
-**Where:** `src/features/Updater.cpp`, `src/presentation/PortMenu.cpp`
+**Where:** `src/distribution/updater/Updater.cpp`, `src/presentation/PortMenu.cpp`
 
 ## Symptom
 

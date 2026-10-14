@@ -95,7 +95,7 @@ other `ImportTexture*`).
   `fullImageLineSizeBytes == sizeBytes → naturalWidth` reassignment that
   was previously absent from CI8.
 
-`src/bridge/lbreloc_byteswap.cpp`:
+`src/integration/decomp/lbreloc_byteswap.cpp`:
 
 - `portFixupSpriteBitmapData` now reads `bitmap->width` (offset 0) in
   addition to `width_img` (offset 2) and includes both in the
@@ -113,7 +113,7 @@ no behavioural change for previously-working sprites.
 ## Files
 
 - `libultraship/src/fast/interpreter.cpp` — decoder fixes.
-- `src/bridge/lbreloc_byteswap.cpp` — log extension.
+- `src/integration/decomp/lbreloc_byteswap.cpp` — log extension.
 - `docs/investigations/sprite_broken_textures_handoff_2026-04-19.md` — fully resolved
   (paired with the 32bpp swizzle fix, every texture listed in that handoff
   is now accounted for).

@@ -45,7 +45,7 @@ Real bank loading through the O2R pipeline.
 - `assets/configuration/extraction/us/particles.yml` already defined 12 BLOB entries (6 script +
   6 texture pairs, plus 3 extra `unk0/1/2` pairs used by fighter-data
   banks). Torch packs them into `ssb64.o2r` under `particles/<name>`.
-- New bridge `src/bridge/particle_bank_bridge.{h,cpp}` exposes
+- New bridge `src/integration/decomp/particle_bank_bridge.{h,cpp}` exposes
   `portParticleLoadBank(scripts_lo, bank_id)`:
   1. Maps `scripts_lo` (the address of `l<Module>ParticleScriptBankLo`
      or `particles_unk{0,1,2}_scb_ROM_START`) to the matching O2R path
@@ -103,8 +103,8 @@ Texture blob:
 
 ## Files touched
 
-- `src/bridge/particle_bank_bridge.h` (new).
-- `src/bridge/particle_bank_bridge.cpp` (new).
+- `src/integration/decomp/particle_bank_bridge.h` (new).
+- `src/integration/decomp/particle_bank_bridge.cpp` (new).
 - `decomp/src/ef/efparticle.c` — PORT guard now calls the bridge; the old
   "register dummy bank" paragraph replaced with a docstring that
   describes the bridge path and the empty-bank fallback.

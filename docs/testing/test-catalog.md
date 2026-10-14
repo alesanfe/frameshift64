@@ -26,7 +26,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 3. Isolation: no ordering, no shared mutable state between cases, no leftover
    files. Per-test working dirs under `out/test-runs/<id>/`.
 4. Hermetic by default: no production lobby, no external network. Lobby tests
-   run `node-lobby.js` or `wrangler dev` locally; updater tests run a local
+   run `node-lobby.mjs` or `wrangler dev` locally; updater tests run a local
    HTTP stub serving a synthetic release manifest.
 5. ROM-dependent tests stay local/`requires-rom` labeled — fixtures derived
    from non-redistributable data are never committed.
@@ -41,9 +41,9 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 | Layer | Form | What exists today | Gap |
 |-------|------|-------------------|-----|
 | Static | clang-tidy, cppcheck, semgrep, check_docs, yamllint | Workflows exist; `check_docs` not in CI (F-004) | wire CI |
-| Unit | gtest (new) | `tests/unit/` = 4 files, no gtest harness | everything |
-| Component | in-proc harnesses + fakes | netpeer parser reachable via PACKETFUZZ path | no pure-codec target |
-| Integration | multi-process scripts | `netplay_localtest/lobbytest/spectate` ✓ | config/save/updater none |
+| Unit | gtest (new) | `tests/unit/` (platform/, resources/) + `tests/integration/`; level-based layout — see tests/README.md, no gtest harness | everything |
+| Component | in-proc harnesses + fakes | netpeer parser reachable via PACKETFUZZ path; pure codec at `src/netplay/protocol/` with `netpacket_test` | no gtest harness (minimal EXPECT harness for now) |
+| Integration | multi-process Python harness (`tests/harness/netplay/` + `tests/e2e/netplay/`; `scripts/testing/*.ps1` are thin wrappers) | `localtest/lobbytest/lobbytest_multi/spectate/lan/compat/soak/mutation/takeover` ✓ | config/save/updater none |
 | System/E2E | headless runs | `AUTOVS` + `MAX_FRAMES` + `RIG_EXIT` | not packaged as one target |
 | Soak/nightly | `determinism.yml` | ROM-gated nightly ✓ | forks get no signal |
 
@@ -62,7 +62,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 
 | Seam | Mechanism | Enables |
 |------|-----------|---------|
-| Packet parser | `syNetPeerHandlePacket`/`HandleForwardPacket` are call paths over byte buffers; `SSB64_NETPLAY_PACKETFUZZ` proves injected datagrams reach them | codec unit/fuzz tests once extracted to src/netplay/protocol (planned) |
+| Packet parser | `syNetPeerHandlePacket`/`HandleForwardPacket` are call paths over byte buffers; `SSB64_NETPLAY_PACKETFUZZ` proves injected datagrams reach them | codec unit/fuzz tests — codec extracted to `src/netplay/protocol/netpacket.*`, covered by `netpacket_test` |
 | Network sim | `SIM_{LATENCY,JITTER,LOSS,DUP,REORDER,CORRUPT}_PCT` + `SIM_SEED` in `port_udp.cpp` | impairment matrix, replayable failures |
 | Headless run | `SSB64_ROLLBACK_AUTOVS` + `SSB64_MAX_FRAMES` + `SSB64_MUTE` + `SSB64_RIG_EXIT` | `smash-classic-sim` target is mostly packaging |
 | Deterministic inputs | `SSB64_NETPLAY_FUZZ` per-tick hash inputs | replayable matches |
@@ -71,7 +71,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 | Desync injector | `SSB64_NETPLAY_TEST_DESYNC=<tick>` (new) | desync detection/diagnostic tests |
 | Replay | `REPLAY_RECORD/PLAY`, `REPLAY_TAKEOVER=<p>:<tick>` (new) | record/replay corpus, takeover determinism |
 | Rollback self-check | `ROLLBACK_SYNCTEST=N` snapshot↔resim per tick | snapshot coverage |
-| Lobby | `node-lobby.js` local + `test-lobby-security.js` (15 cases) + `test-lobby-fuzz.js` | contract + security + fuzz |
+| Lobby | `node-lobby.mjs` local + `test-lobby-security.js` (15 cases) + `test-lobby-fuzz.js` | contract + security + fuzz |
 
 ### Missing seams (needed before certain tests)
 
@@ -112,7 +112,21 @@ Trace: bug doc / issue / ADR / threat-model row
 
 ## D. Test catalog
 
-### D.1 Protocol codec (`NET-PROTO`) — *the first gtest suite; target = pure codec after F-003*
+### D.1 Protocol codec (`NET-PROTO`) — *codec extracted (F-003 done); first native suite landed*
+
+Implemented as `tests/unit/netplay/protocol/netpacket_test.c` (CTest name
+`netpacket_test`, labels `unit;netplay;protocol;deterministic`) over the pure
+codec `src/netplay/protocol/netpacket.*`. `decomp/src/sys/netpeer.c` now calls
+the codec — `SYNETPEER_*`/`syNetPeerRead|Write|Checksum*` names remain as
+aliases; session state, counters, seq/dup/OOO tracking and link authorization
+stay in netpeer. Covered today: LEN-001, LEN-002, MAG-001, VER-001, SES-001,
+CKSM-001, RT-001 (INPUT/CONTROL/FORWARD — BOOTSTRAP vectors pending),
+mutant-bypass flags, BOOTSTRAP prefix round trip (RT-001), TYPE-001 type
+enumeration, CUR-001 valid/invalid corpus, and FUZZ-001 as a seeded in-test
+loop (10k arbitrary + 10k mutated datagrams + every truncation). Pending:
+a real libFuzzer entry point (needs the clang coverage lane — the seeded
+loop is the interim), and the comp-level rows (DUP/OOO/SLOT — stateful,
+live in `tests/e2e/netplay/`).
 
 | ID | Case | Level | Oracle | Tier |
 |----|------|-------|--------|------|

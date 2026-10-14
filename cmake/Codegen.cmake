@@ -55,8 +55,8 @@ add_custom_target(DeblobRegen
 
 add_custom_target(GenerateRelocArtifacts
     BYPRODUCTS
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/reloc_data.${SSB64_VERSION}.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/RelocFileTable.${SSB64_VERSION}.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/${SSB64_VERSION}/reloc_data.${SSB64_VERSION}.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/${SSB64_VERSION}/RelocFileTable.${SSB64_VERSION}.cpp
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen/generate_reloc_stubs.py --version ${SSB64_VERSION}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen/generate_reloc_table.py --version ${SSB64_VERSION}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

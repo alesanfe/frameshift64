@@ -114,7 +114,7 @@ differ in size from US (0xFC40 vs 0xFBA0; 0x2B05E0 vs 0x2DC1E0) — these
 are correct per the JP splat boundaries (verified). So the extraction is
 right; the **audio bridge's CTL parse / ctl→bank mapping is US-tuned and
 mishandles the JP sound-bank-2 layout**. Investigate
-`src/resources/audio/*` (the `audio_bridge: parsed … ctl → sSYAudioSequenceBank*`
+`src/resources/loading/audio/*` (the `audio_bridge: parsed … ctl → sSYAudioSequenceBank*`
 path) for region assumptions about bank ordering / instrument counts.
 
 ## Repro

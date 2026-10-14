@@ -33,41 +33,52 @@ after the deprecation release ships.
 ## Feature parity matrix
 
 Everything not listed here is identical across platforms — same decomp
-simulation, all `src/features/` enhancements, netplay/rollback, hires
+simulation, all `src/gameplay/` enhancements, netplay/rollback, hires
 packs, UI. The gated entries below diverge for *dependency* reasons, not
 preference; each row names the real blocker and what unifying would cost.
 
 | Feature | Win | Linux | macOS | Android | UWP | Switch | Blocker |
 |---------|-----|-------|-------|---------|-----|--------|---------|
-| Mods (TinyCC + funchook) | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | funchook/TinyCC have no Android/UWP/Switch target (`DISABLE_SCRIPTING`); UWP forbids exec-memory outright |
-| In-app updater | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | shells out to `curl`; Android APKs update via package install, UWP via MSIX |
+| Mods (TinyCC + funchook) | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | funchook/TinyCC have no Android/UWP/Switch target (`DISABLE_SCRIPTING`); UWP forbids exec-memory outright. Long-term path is a portable mod backend (declarative/WASM/Lua) — not a port of the native detour model |
+| In-app updater | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | desktop replaces the binary in-place; Android can only do assisted installs (Play In-App Updates via Play Core when Play-distributed, or `PackageInstaller` session for sideloaded APKs — user confirmation required). Unifiable behind an `IUpdateService` interface, not yet implemented |
 | Shader-pack downloader | ✔ | ✔ | ✔ | ✔ | ✘ | ✘ | unified: HTTP via `HttpDownloadToFile` (curl on desktop, HttpURLConnection/JNI on Android) + libzip extraction on all; UWP ships packaged shaders |
-| Discord Rich Presence | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | no discord-rpc target for Android/UWP/Switch |
+| Curated pack downloads | ✔ | ✔ | ✔ | ✔ | ✘ | ✘ | unified: `DownloadService` (killable curl child on desktop, HttpURLConnection task on Android) + in-process SHA-256 + libzip audit on all |
+| Discord Rich Presence | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | discord-rpc is desktop-only, but the Discord Social SDK officially supports Android ≥7 — an `IDiscordIntegration` backend could unify this; not yet integrated |
 | Windowed-fullscreen toggle | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | Android is always fullscreen; meaningless on UWP/Switch |
-| GameCube adapter (libusb) | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | libusb host access needs desktop USB stack (WinUSB driver on Windows) |
+| GameCube adapter (libusb) | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | libusb host access needs desktop USB stack (WinUSB driver on Windows). Android USB-host API could offer experimental support on OTG-capable devices; not implemented |
 | First-run ROM wizard | ✔ | ✔ | ✔ | ✔* | ✘ | ✘ | *Android extracts on-device via `libtorch_runner.so`; UWP/Switch ship pre-extracted assets |
 | RenderDoc integration | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | desktop dev tooling only |
 
-Gating mechanism: `src/features/{Updater,DiscordRichPresence,ModPackDownloader}.cpp`
-are filtered out of `SSB64_SRC_PORT` for Android/UWP in CMakeLists, and the
-corresponding menu entries use `#if` guards — never both (they'd drift).
-ShaderDownloader compiles on Android: its transport layer is
-`src/platform/http_download.cpp` (JNI→HttpURLConnection) and extraction is
-`src/platform/zip_extract.cpp` (libzip, already a LUS dep everywhere). Mods
+Gating mechanism: `src/distribution/updater/Updater.cpp` and `src/social/DiscordRichPresence.cpp` are
+filtered out of `SSB64_SRC_PORT` for Android in CMakeLists (and both
+downloaders plus `first_run.cpp` for UWP), and the corresponding menu
+entries use `#if` guards — never both (they'd drift). Both downloaders
+compile on Android: transport is `src/platform/http/http_download.cpp` +
+`src/platform/http/download_service.cpp` (JNI→HttpURLConnection), extraction is
+`src/platform/filesystem/zip_extract.cpp` (libzip, already a LUS dep everywhere), and
+integrity is the in-process SHA-256 in `src/distribution/integrity/FileHash.cpp`. Mods
 gate on `DISABLE_SCRIPTING` everywhere.
 
 Note: `android.permission.INTERNET` + `ACCESS_NETWORK_STATE` are declared in
-the manifest — required for both netplay sockets and the downloader.
+the manifest — required for both netplay sockets and downloads.
 
 ### Unification paths, if ever wanted
 
-- **Mod-pack downloader on Android**: same shape as the shader downloader —
-  it still shells out to a killable `curl` child for progress/cancel on
-  ~200 MB transfers, so it stays desktop-only until the JNI path grows a
-  cancel/progress callback.
-- **Mods on Android**: needs an arm64 detour backend (funchook has partial
-  arm64 support upstream) and a JIT-able mod compiler path (TCC has an
-  aarch64 backend; Android also allows `PROT_EXEC` on app-private pages).
-  Real work, not a flag flip — treat as its own milestone.
-- **Updater on Android**: do not unify — self-updaters violate the APK
-  distribution model regardless of store policy.
+- **Updater on Android**: an `IUpdateService` interface with a desktop impl
+  (current binary replacement) and two Android impls — Play In-App Updates
+  (Play Core native SDK, requires Play distribution) or a `PackageInstaller`
+  assisted-install session for GitHub-distributed APKs. The latter needs
+  `REQUEST_INSTALL_PACKAGES` + a FileProvider for the downloaded APK.
+  Silent installs are impossible outside managed devices either way.
+- **Discord on Android**: Discord Social SDK has official Android support
+  (C++/Unity/Unreal). Add an `IDiscordIntegration` interface with the
+  existing discord-rpc backend on desktop and a Social SDK backend on
+  Android; the presence model (`state/details/party/timestamps`) is shared.
+- **Mods on Android**: the interesting parity target is not porting
+  funchook/TCC — it is a portable mod backend (declarative packs +
+  WASM/Lua scripting behind a semantic hook API). The manifest already
+  separates `simulation` mods (netplay-hashed) from cosmetic ones, which
+  is the compatibility contract a portable backend would reuse.
+- **GC adapter on Android**: Android USB-host API can reach the adapter on
+  OTG-capable devices (Dolphin does this) — experimental tier, behind the
+  same controller-backend interface as SDL pads.

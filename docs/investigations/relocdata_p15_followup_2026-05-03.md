@@ -1,6 +1,6 @@
 # M3.P15 — Source-compile bitfield-init relocData files
 
-**Status as of 2026-05-04:** 66 of 76 originally-skipped files now byte-identical and source-compiled (FTAttributes 27/27, MPGroundData 39/41). 10 deferred: WPAttributes (8) + 2 MPGroundData edge cases. See tools/struct_byteswap_tables.py for the per-struct field-byteswap tables that drive this; mirrors the runtime helpers in `src/bridge/lbreloc_byteswap.cpp`.
+**Status as of 2026-05-04:** 66 of 76 originally-skipped files now byte-identical and source-compiled (FTAttributes 27/27, MPGroundData 39/41). 10 deferred: WPAttributes (8) + 2 MPGroundData edge cases. See tools/struct_byteswap_tables.py for the per-struct field-byteswap tables that drive this; mirrors the runtime helpers in `src/integration/decomp/lbreloc_byteswap.cpp`.
 
 ## What landed
 

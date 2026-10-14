@@ -220,15 +220,15 @@ The port has three layers and they are kept deliberately separate:
 
 `baserom.us.z64` is never read at runtime. At build time, **Torch** walks the ROM with the YAMLs under `assets/configuration/extraction/us/` and emits `BattleShip.o2r` — a zip-format archive of typed resources (textures, sequences, sample banks, animations, reloc files). At launch, libultraship's resource manager mounts `BattleShip.o2r` + `f3d.o2r` and the port code requests resources by path. This is the same pipeline used by Ship of Harkinian, Starship, SpaghettiKart, etc.
 
-The relocatable-data files (fighter tables, item tables, effects, sprites) are SSB64-specific and required custom factories on the Torch side and a custom loader (`src/resources/RelocFileFactory.cpp`) on the runtime side.
+The relocatable-data files (fighter tables, item tables, effects, sprites) are SSB64-specific and required custom factories on the Torch side and a custom loader (`src/resources/relocation/RelocFileFactory.cpp`) on the runtime side.
 
 ### Build-time codegen
 
 A small amount of generated code lives outside the source tree (gitignored) and is regenerated on every build from `tools/codegen/reloc_data_symbols.us.txt`:
 
-- `include/reloc_data.us.h` — extern declarations for every relocatable symbol
+- `generated/include/us/reloc_data.us.h` — extern declarations for every relocatable symbol
 - `assets/configuration/extraction/us/reloc_*.yml` — Torch extraction configs
-- `src/resources/RelocFileTable.us.cpp` — the runtime symbol table
+- `generated/src/us/RelocFileTable.us.cpp` — the runtime symbol table
 
 If you ever see "undefined reference to `dFooBarReloc`" you regenerated the table without rebuilding, or vice versa.
 
@@ -404,7 +404,7 @@ Source code in this repository (everything outside the `decomp/`, `libultraship/
 The MIT grant covers only the port-specific code (the `src/` port layer, build scripts, tools, docs). It does **not** extend to:
 - Game assets, code, audio, textures, models, or any other content owned by Nintendo / HAL Laboratory — none of which is in this repository.
 - The decompilation vendored as the `decomp/` submodule, sourced from [VetriTheRetri/ssb-decomp-re](https://github.com/VetriTheRetri/ssb-decomp-re). The upstream project does not currently publish an explicit license; this repository makes no copyright claim over the decompiled source and incorporates it by reference. Defer to the upstream project and its contributors for any rights or restrictions on reuse.
-- Decomp-derived content elsewhere in the tree (vendored or auto-generated from the decomp's symbol/file-name tables): `tools/codegen/reloc_data_symbols.us.txt`, `tools/codegen/relocFileDescriptions.us.txt`, `include/reloc_data.us.h`, `src/resources/RelocFileTable.us.cpp`, and `assets/configuration/extraction/us/reloc_*.yml`. These follow the same upstream-deference as the `decomp/` submodule. The generator scripts that produce them (`tools/codegen/generate_*.py`) are port-authored and remain MIT.
+- Decomp-derived content elsewhere in the tree (vendored or auto-generated from the decomp's symbol/file-name tables): `tools/codegen/reloc_data_symbols.us.txt`, `tools/codegen/relocFileDescriptions.us.txt`, `generated/include/us/reloc_data.us.h`, `generated/src/us/RelocFileTable.us.cpp`, and `assets/configuration/extraction/us/reloc_*.yml`. These follow the same upstream-deference as the `decomp/` submodule. The generator scripts that produce them (`tools/codegen/generate_*.py`) are port-authored and remain MIT.
 - The `libultraship` submodule — Copyright (c) 2022 kenix3, MIT-licensed (originated by the Harbour Masters team).
 - The `torch` submodule — Copyright (c) 2023 Lywx (Harbour Masters), MIT-licensed.
 - The bundled menu fonts under `assets/custom/fonts/`, which are licensed under the SIL Open Font License 1.1 (per-font license files in that directory).

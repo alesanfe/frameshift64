@@ -22,7 +22,7 @@ The bus int32 `dry_left_acc[i]` formed a sawtooth waveform with period exactly 1
 
 ## Root cause
 
-`src/resources/audio/mixer.c::ramp_step` is the per-sample envelope ramp consumed by `aEnvMixerImpl`. Each sample it does:
+`src/resources/loading/audio/mixer.c::ramp_step` is the per-sample envelope ramp consumed by `aEnvMixerImpl`. Each sample it does:
 
 ```c
 ramp->value += ramp->step;
@@ -84,7 +84,7 @@ R bus is unaffected because the same voice's `em_rtgt` at extreme L-pan is `em_v
 
 ## Fix
 
-`src/resources/audio/mixer.c::ramp_step` — accumulate through `int64_t`, clamp to int32 range before the existing reach check, and let the reach check catch the overshoot and clamp to target on the same sample:
+`src/resources/loading/audio/mixer.c::ramp_step` — accumulate through `int64_t`, clamp to int32 range before the existing reach check, and let the reach check catch the overshoot and clamp to target on the same sample:
 
 ```c
 int64_t next = (int64_t)ramp->value + (int64_t)ramp->step;

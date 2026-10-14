@@ -8,12 +8,12 @@ carries the per-version RELOC_FILE_COUNT).
 Usage:
     python tools/codegen/generate_reloc_table.py [--version {us,jp}]
 
-  us (default): extraction/us -> src/resources/RelocFileTable.us.{cpp,h}
+  us (default): extraction/us -> generated/src/us/RelocFileTable.us.{cpp,h}
                 (RELOC_FILE_COUNT = 2132)
-  jp          : extraction/jp -> src/resources/RelocFileTable.jp.{cpp,h}
+  jp          : extraction/jp -> generated/src/jp/RelocFileTable.jp.{cpp,h}
                 (RELOC_FILE_COUNT = 2107)
 
-src/resources/RelocFileTable.h is a committed selector shim that
+src/resources/relocation/RelocFileTable.h is a committed selector shim that
 #includes RelocFileTable.<REGION>.h, mirroring the decomp's
 reloc_data.h design so both versions coexist in the source tree.
 """
@@ -37,8 +37,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # Defaults (US) so the module is importable without selecting a version.
 YAML_DIR   = ROOT / VERSIONS["us"]["yaml_dir"]
-OUTPUT     = ROOT / f"src/resources/{VERSIONS['us']['stem']}.cpp"
-OUTPUT_H   = ROOT / f"src/resources/{VERSIONS['us']['stem']}.h"
+OUTPUT     = ROOT / f"generated/src/us/{VERSIONS['us']['stem']}.cpp"
+OUTPUT_H   = ROOT / f"generated/src/us/{VERSIONS['us']['stem']}.h"
 FILE_COUNT = VERSIONS["us"]["file_count"]
 
 
@@ -47,8 +47,8 @@ def select_version(version):
     global YAML_DIR, OUTPUT, OUTPUT_H, FILE_COUNT
     cfg = VERSIONS[version]
     YAML_DIR   = ROOT / cfg["yaml_dir"]
-    OUTPUT     = ROOT / f"src/resources/{cfg['stem']}.cpp"
-    OUTPUT_H   = ROOT / f"src/resources/{cfg['stem']}.h"
+    OUTPUT     = ROOT / f"generated/src/{version}/{cfg['stem']}.cpp"
+    OUTPUT_H   = ROOT / f"generated/src/{version}/{cfg['stem']}.h"
     FILE_COUNT = cfg["file_count"]
 
 

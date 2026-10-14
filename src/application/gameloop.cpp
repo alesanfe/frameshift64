@@ -21,13 +21,13 @@
 
 #include "gameloop.h"
 #include "coroutine.h"
-#include "netplay/netlobby.h"
-#include "features/enhancements.h"
+#include "netplay/session/netlobby.h"
+#include "gameplay/enhancements.h"
 #include "resources/interpolation/frame_interpolation.h"
-#include "features/cosmetics/widescreen/widescreen.h"
+#include "rendering/widescreen/widescreen.h"
 #include "port.h"
 #include "port_watchdog.h"
-#include "bridge/hooks/Events.h"
+#include "integration/hooks/Events.h"
 
 #include <libultraship/libultraship.h>
 #include <libultraship/bridge/eventsbridge.h>
@@ -471,6 +471,47 @@ extern "C" void port_submit_display_list(void *dl)
 	sPendingDisplayList = static_cast<Gfx *>(dl);
 }
 
+/* ========================================================================= */
+/*  Headless mode (test rigs)                                                */
+/* ========================================================================= */
+
+#ifdef SSB64_TEST_HOOKS
+/* SSB64_HEADLESS=1 — run the full game sim + netplay without rendering:
+ * submitted display lists are dropped before Fast3D walks them and
+ * frame pacing comes from an explicit 60 Hz timer instead of the
+ * backend's vsync. Exists so multi-instance netplay rigs can pack more
+ * peers on one machine — the per-instance render walk is the dominant
+ * CPU cost, not the sim. Test hooks only; compiled out of shipped
+ * builds. */
+static int port_headless_enabled(void)
+{
+	static int sHeadless = -1;
+	if (sHeadless < 0) {
+		const char *env = std::getenv("SSB64_HEADLESS");
+		sHeadless = (env != nullptr && env[0] != '\0' && env[0] != '0') ? 1 : 0;
+		if (sHeadless) {
+			port_log("SSB64: headless mode — display lists dropped, frames paced by 60 Hz timer\n");
+		}
+	}
+	return sHeadless;
+}
+#endif
+
+/* Pace the caller to one VI period (16.667 ms) measured from `frameStart`:
+ * coarse-sleep to ~2 ms short of the target, then spin for the rest. */
+static void port_pace_one_vi(std::chrono::steady_clock::time_point frameStart)
+{
+	auto target = frameStart + std::chrono::microseconds(16667);
+	auto coarseTarget = target - std::chrono::microseconds(2000);
+	auto now = std::chrono::steady_clock::now();
+	if (now < coarseTarget) {
+		std::this_thread::sleep_for(coarseTarget - now);
+	}
+	while (std::chrono::steady_clock::now() < target) {
+		/* busy-wait */
+	}
+}
+
 /* Drain any deferred DL on the SDL_main thread. Called from PortPushFrame
  * after port_resume_service_threads — by that point the scheduler coroutine
  * has yielded and we own the OS thread context-switch state, so JNI calls
@@ -481,6 +522,19 @@ extern "C" void port_drain_pending_display_list(void)
 	if (sPendingDisplayList == nullptr) {
 		return;
 	}
+
+#ifdef SSB64_TEST_HOOKS
+	if (port_headless_enabled()) {
+		/* Drop the DL before the Fast3D interpreter walks it — in
+		 * headless mode nothing is presented, so the walk is pure CPU
+		 * cost. Count the submit so per-frame bookkeeping stays correct;
+		 * the frame is paced by port_pace_one_vi in PortPushFrame. */
+		sPendingDisplayList = nullptr;
+		sDLSubmitsThisFrame++;
+		sDLSubmitCount++;
+		return;
+	}
+#endif
 
 	auto context = Ship::Context::GetInstance();
 	if (!context) {
@@ -837,6 +891,15 @@ void PortPushFrame(void)
 	 * 0-submit frames can otherwise hold an older swapchain image. Present
 	 * the cached game framebuffer texture through the normal GUI/window path
 	 * without re-running any display list or touching game memory. */
+#ifdef SSB64_TEST_HOOKS
+	if (port_headless_enabled()) {
+		/* Headless: DrawAndRunGraphicsCommands is skipped, so nothing
+		 * paces the frame — supply the 60 Hz VI cadence explicitly or
+		 * the game clock free-runs ahead of real time (and ahead of its
+		 * netplay peers). */
+		port_pace_one_vi(frameStart);
+	} else
+#endif
 	if (sDLSubmitsThisFrame == 0) {
 		bool idlePresented = false;
 		static int sFreezePacing = -1;
@@ -867,15 +930,7 @@ void PortPushFrame(void)
 				/* Fallback pace to one VI period if there is no cached
 				 * framebuffer yet. Normal idle presents pace through the
 				 * backend's SwapBuffers path. */
-				auto target = frameStart + std::chrono::microseconds(16667);
-				auto coarseTarget = target - std::chrono::microseconds(2000);
-				auto now = std::chrono::steady_clock::now();
-				if (now < coarseTarget) {
-					std::this_thread::sleep_for(coarseTarget - now);
-				}
-				while (std::chrono::steady_clock::now() < target) {
-					/* busy-wait */
-				}
+				port_pace_one_vi(frameStart);
 			}
 		}
 	}

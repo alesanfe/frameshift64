@@ -661,6 +661,31 @@ void Menu::MenuDrawItem(WidgetInfo& widget, uint32_t width, UIWidgets::Colors me
             default:
                 break;
         }
+        /* Focus help capture — the widget just drawn is the "last item", so
+         * reading hover/focus here maps to this control. The focused widget's
+         * name + tooltip feed the persistent help bar at the bottom of the
+         * menu (gamepad/touch users never see hover tooltips). */
+        if (mShowHelpBar &&
+            (ImGui::IsItemFocused() || ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))) {
+            mFocusHelpName = widget.name;
+            const char* tip = widget.options->tooltip;
+            if (widget.options->disabled && !Ship_IsCStringEmpty(widget.options->disabledTooltip)) {
+                tip = widget.options->disabledTooltip;
+            }
+            mFocusHelpText = tip != nullptr ? tip : "";
+        }
+        if (widget.tag != nullptr) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("[%s]", widget.tag);
+        }
+        /* Persistent-descriptions mode: print the tooltip inline under the
+         * control instead of requiring a hover. */
+        if (CVarGetInteger("gSettings.PersistentDescriptions", 0) &&
+            !Ship_IsCStringEmpty(widget.options->tooltip)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
+            ImGui::TextWrapped("%s", widget.options->tooltip);
+            ImGui::PopStyleColor();
+        }
         if (widget.postFunc != nullptr) {
             widget.postFunc(widget);
         }
@@ -708,6 +733,20 @@ void Menu::DrawElement() {
 
     raceDisableActive = CVarGetInteger(CVAR_SETTING("DisableChanges"), 0);
 
+    /* UI scale — ScaleAllSizes only on change (it multiplies), FontGlobalScale
+     * is absolute so it can be re-set every frame. Applied to the shared ImGui
+     * context, so the scale also covers the floating tool windows. */
+    float uiScale = CVarGetFloat("gSettings.UIScale", 1.0f);
+    uiScale = std::clamp(uiScale, 0.75f, 2.5f);
+    if (uiScale != mLastUiScale) {
+        ImGui::GetStyle().ScaleAllSizes(uiScale / mLastUiScale);
+        mLastUiScale = uiScale;
+    }
+    ImGui::GetIO().FontGlobalScale = uiScale;
+
+    mFocusHelpName.clear();
+    mFocusHelpText.clear();
+
     windowHeight = ImGui::GetMainViewport()->WorkSize.y;
     windowWidth = ImGui::GetMainViewport()->WorkSize.x;
     auto windowFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
@@ -739,11 +778,19 @@ void Menu::DrawElement() {
     ImGui::PushStyleColor(ImGuiCol_WindowBg,
                           ImVec4(0, 0, 0, CVarGetFloat(CVAR_SETTING("Menu.BackgroundOpacity"), 0.85f)));
 
+    /* Stronger gamepad/keyboard focus ring than ImGui's stock 0.25-alpha
+     * highlight — the focus must be findable at a glance. The accessibility
+     * toggle pushes it to near-opaque. */
+    ImVec4 navColor = UIWidgets::ColorValues.at(menuThemeIndex);
+    navColor.w = CVarGetInteger("gSettings.HighContrastFocus", 0) ? 0.85f : 0.45f;
+    ImGui::PushStyleColor(ImGuiCol_NavHighlight, navColor);
+
     if (!ImGui::Begin("Main Menu", NULL, windowFlags)) {
         if (!popout) {
             ImGui::PopStyleVar();
         }
         freshOpen = true;
+        ImGui::PopStyleColor();
         ImGui::PopStyleColor();
         ImGui::End();
         return;
@@ -762,6 +809,7 @@ void Menu::DrawElement() {
         CVarSetFloat(CVAR_SETTING("Menu.PoppedPos.y"), poppedSize.y);
         CVarSave();
         ImGui::End();
+        ImGui::PopStyleColor();
         return;
     }
     ImGuiContext& g = *GImGui;
@@ -800,6 +848,7 @@ void Menu::DrawElement() {
 
     pos += window->WorkRect.GetSize() / 2 - menuSize / 2;
     ImGui::SetNextWindowPos(pos);
+    const ImVec2 menuBlockPos = pos;
     ImGui::BeginChild("Menu Block", menuSize,
                       ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
                       ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
@@ -873,51 +922,54 @@ void Menu::DrawElement() {
         ImGui::PopStyleColor();
     }
     ImGui::EndChild();
+    /* Trailing header actions. Quit/Reset are optional — subclasses that move
+     * them into regular menu entries (e.g. a Support sidebar) keep only the
+     * Close button here, so "leave the menu" and "quit the app" can't be
+     * fat-fingered into each other. Android never shows Quit: mobile users
+     * dismiss the app by swiping it away. */
+    bool headerQuit = mShowHeaderQuit;
+    bool headerReset = mShowHeaderReset;
 #if defined(__ANDROID__)
-    // Android: only 2 header-row buttons (Reset + Close Menu) — the Quit
-    // button is skipped because mobile users dismiss the app by swiping
-    // it away. The SameLine offset shifts left by one button-width
-    // accordingly so the remaining two stay flush-right. Pop the
-    // FramePadding from line 745 here so the Reset/Close buttons render
-    // with their default inline sizing (matches the desktop path where
-    // the pop happens between Quit and Reset).
-    ImGui::SameLine(menuSize.x - (buttonSize.x * 2) - (style.ItemSpacing.x * 1));
+    headerQuit = false;
+#endif
+    const int trailingButtons = 1 + (headerReset ? 1 : 0) + (headerQuit ? 1 : 0);
+    ImGui::SameLine(menuSize.x - (buttonSize.x * trailingButtons) - (style.ItemSpacing.x * (trailingButtons - 1)));
     ImGui::PopStyleVar();
-#else
-    ImGui::SameLine(menuSize.x - (buttonSize.x * 3) - (style.ItemSpacing.x * 2));
-    UIWidgets::ButtonOptions options3 = {};
-    options3.color = UIWidgets::Colors::Red;
-    options3.size = UIWidgets::Sizes::Inline;
-    options3.tooltip = "Quit BattleShip";
-    if (UIWidgets::Button(ICON_FA_POWER_OFF, options3)) {
-        std::shared_ptr<Menu> menu =
-            std::static_pointer_cast<Menu>(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetMenu());
-        if (!menu->IsMenuPopped()) {
-            menu->ToggleVisibility();
+    if (headerQuit) {
+        UIWidgets::ButtonOptions options3 = {};
+        options3.color = UIWidgets::Colors::Red;
+        options3.size = UIWidgets::Sizes::Inline;
+        options3.tooltip = "Quit BattleShip";
+        if (UIWidgets::Button(ICON_FA_POWER_OFF, options3)) {
+            std::shared_ptr<Menu> menu =
+                std::static_pointer_cast<Menu>(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetMenu());
+            if (!menu->IsMenuPopped()) {
+                menu->ToggleVisibility();
+            }
+            Ship::Context::GetInstance()->GetWindow()->Close();
         }
-        Ship::Context::GetInstance()->GetWindow()->Close();
+        ImGui::SameLine();
     }
-    ImGui::PopStyleVar();
-    ImGui::SameLine();
-#endif
-    UIWidgets::ButtonOptions options2 = {};
-    options2.color = UIWidgets::Colors::Red;
-    options2.size = UIWidgets::Sizes::Inline;
-    options2.tooltip = "Reset"
+    if (headerReset) {
+        UIWidgets::ButtonOptions options2 = {};
+        options2.color = UIWidgets::Colors::Red;
+        options2.size = UIWidgets::Sizes::Inline;
+        options2.tooltip = "Restart game"
 #ifdef __APPLE__
-                       " (Command-R)"
+                           " (Command-R)"
 #elif !defined(__SWITCH__) && !defined(__WIIU__)
-                       " (Ctrl+R)"
+                           " (Ctrl+R)"
 #else
-                       ""
+                           ""
 #endif
-        ;
-    if (UIWidgets::Button(ICON_FA_UNDO, options2)) {
-        std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
-            ->Dispatch("reset");
+            ;
+        if (UIWidgets::Button(ICON_FA_UNDO, options2)) {
+            std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
+                Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
+                ->Dispatch("reset");
+        }
+        ImGui::SameLine();
     }
-    ImGui::SameLine();
     UIWidgets::ButtonOptions options = {};
     options.size = UIWidgets::Sizes::Inline;
     options.tooltip = "Close Menu (Esc)";
@@ -941,6 +993,20 @@ void Menu::DrawElement() {
     pos.y += style.ItemSpacing.y;
     float sectionHeight = menuSize.y - headerHeight - 4 - style.ItemSpacing.y * 2;
     float columnHeight = sectionHeight - style.ItemSpacing.y * 4;
+
+    /* Footer reservation: the help strip + action-hint bar sit at the bottom
+     * of the menu block, pinned by absolute cursor position later. Always
+     * reserve when enabled so the layout doesn't jump as the help text
+     * appears and disappears. */
+    const float footerLineH = ImGui::GetFontSize() + style.FramePadding.y * 2;
+    float footerH = 0.0f;
+    if (mShowHelpBar) {
+        footerH += footerLineH * 3 + style.ItemSpacing.y;
+    }
+    if (mShowActionBar) {
+        footerH += footerLineH + style.ItemSpacing.y;
+    }
+    columnHeight -= footerH;
     ImGui::SetNextWindowPos(pos + style.ItemSpacing * 2);
 
     // Increase sidebar width on larger screens to accomodate people scaling their menus.
@@ -1066,6 +1132,34 @@ void Menu::DrawElement() {
         ImGui::EndChild();
     }
 
+    /* Footer: pinned to the bottom of the menu block regardless of how tall
+     * the section content ended up. Help strip first, action hints last. */
+    if (mShowHelpBar || mShowActionBar) {
+        ImGui::SetCursorScreenPos(
+            ImVec2(menuBlockPos.x + style.ItemSpacing.x * 2, menuBlockPos.y + menuSize.y - footerH));
+        if (mShowHelpBar && !mFocusHelpName.empty()) {
+            ImGui::Separator();
+            ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(menuThemeIndex));
+            ImGui::Text("%s", mFocusHelpName.c_str());
+            ImGui::PopStyleColor();
+            if (!mFocusHelpText.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::LightGray));
+                ImGui::TextWrapped("%s", UIWidgets::WrappedText(mFocusHelpText, 120).c_str());
+                ImGui::PopStyleColor();
+            }
+        }
+        if (mShowActionBar) {
+            const bool padNav = CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) != 0;
+            const char* hints = padNav ? "[A] Select    [B] Back    [X] Search    [Esc] Close menu"
+                                       : "Enter Select    Esc Close menu    Type in Search box to find settings";
+            ImGui::Separator();
+            ImGui::SetCursorScreenPos(
+                ImVec2(menuBlockPos.x + menuSize.x - ImGui::CalcTextSize(hints).x - style.ItemSpacing.x * 2,
+                       ImGui::GetCursorScreenPos().y));
+            ImGui::TextDisabled("%s", hints);
+        }
+    }
+
     if (standardSmall != nullptr) {
         ImGui::PopFont();
     }
@@ -1082,5 +1176,6 @@ void Menu::DrawElement() {
         freshOpen = false;
     }
     ImGui::End();
+    ImGui::PopStyleColor();
 }
 } // namespace Ship

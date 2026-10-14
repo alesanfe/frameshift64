@@ -143,7 +143,7 @@ Verified: `node services/netplay-lobby/tests/test-lobby-security.js` — 15/15 c
 key accept/reject paths, client→client drop, relay-flag gating both
 directions, from_slot stamping, join/text flood limits). The C++ builds
 clean (MSVC Release); the final link needs BattleShip.exe instances to
-be closed. Same hardening mirrored in `services/netplay-lobby/src/node-lobby.js` so local
+be closed. Same hardening mirrored in `services/netplay-lobby/src/node-lobby.mjs` so local
 tests match production.
 
 ### Residual limitations

@@ -28,10 +28,12 @@ jobs:
         run: python tools/lint/check_module_deps.py
       - name: Retired-path regression guard
         run: python tools/lint/check_retired_paths.py
+      - name: CVar schema coverage (TD-005)
+        run: python tools/lint/check_cvar_schema.py
       - name: Extraction recipes (structure + golden hashes)
         run: |
           pip install pyyaml
-          python tests/unit/test_extraction_recipes.py
+          python tests/integration/assets/extraction_recipes_test.py
 
   lobby:
     name: Lobby security + fuzz

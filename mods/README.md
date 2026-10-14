@@ -11,4 +11,36 @@ Mod SDK and content for the BattleShip mod system (TCC-compiled C hooks).
 
 The in-engine runtime (hook manager, registry, symbol resolver, mod bridge) lives in `src/bridge/modding/`; the event-dispatch hook list in `src/bridge/hooks/`.
 
+## One-click installs (in-game Mods panel)
+
+- **Bundled mods**: the build packages `mods/examples/playertint` into
+  `<exe>/bundled-mods/playertint/` (`tools/modding/package_mod.py`, run as
+  a `POST_BUILD` step). *Assets → Script Mods* shows an **Install & Enable**
+  button that copies it into `mods/` and hot-reloads (compiles + runs
+  `ModInit` immediately).
+- **Curated texture packs**: *Assets → Mods* offers **Download & Install**
+  for SSB Reloaded 2.0.1 (GhostlyDark's HD pack,
+  [upstream](https://github.com/GhostlyDark/SSB-Reloaded)). The installer
+  (`src/distribution/ModPackDownloader.cpp`) downloads the release zip into
+  `mods/` over a `.part` staging file, verifies a compile-time-pinned
+  SHA-256, audits the archive (PNG-only, no traversal/manifest), then
+  installs atomically. The pack is downloaded from upstream — it is not
+  redistributed by this repo.
+- **Install your own**: the same panel accepts a pasted URL, and files or
+  folders can be dropped straight onto the game window. The installer
+  sniffs the payload and does the right thing per kind:
+  - zip/dir with a `manifest.json` (or an `.o2r`/`.otr`) → script mod,
+    installed into `mods/` and activated on the next Hot Reload.
+  - PNGs in the native `#<hash>#<fmt>#<siz>.png` grammar → hi-res texture
+    pack, installed into `mods/` (zips stay zipped — HiResPack indexes
+    members without extracting).
+  - PNGs in the GLideN64/Rice grammar
+    (`<prefix>#<crc8>#<fmt>#<siz>[#<palCRC8>]_<tag>.png`) → converted
+    file-by-file through the vendored hash map
+    (`tools/modding/vendor/battleship.json`, staged as
+    `bundled-data/gliden64-map.json`) into a `mods/` subdir. This makes
+    virtually every emulator-era SSB64 texture pack installable as-is.
+  The same conversion is available offline as a CLI:
+  `python tools/modding/convert_gliden64_pack.py --pack <dir|zip> --out mods/<name>`.
+
 **Note:** the repo root `mods/` dir is also where HiResPack scans for user texture packs on dev launches — everything except `sdk/`, `examples/`, `templates/`, `tests/` and this file is gitignored (see `.gitignore`).

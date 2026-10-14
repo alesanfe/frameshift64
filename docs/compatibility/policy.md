@@ -29,7 +29,7 @@ enforced at its own boundary. The canonical version numbers live in
 | Application | `VERSION` (semver) | release tags | — |
 | Netplay wire protocol | `SMASH_NETPLAY_PROTOCOL_VERSION` (3) | magic+version check in `syNetPeerHandlePacket` | [netplay-protocol.md](netplay-protocol.md) |
 | Lobby signaling | `SMASH_LOBBY_PROTOCOL_VERSION` (2) | `?v=` param, `version-mismatch` reject | [netplay-protocol.md](netplay-protocol.md) |
-| Saves | `SMASH_SAVE_FORMAT_VERSION` (1) | `src/core/port_save.cpp` | [saves.md](saves.md) |
+| Saves | `SMASH_SAVE_FORMAT_VERSION` (1) | `src/persistence/port_save.cpp` | [saves.md](saves.md) |
 | Configuration | `SMASH_CONFIG_FORMAT_VERSION` (1) | CVar store; schema pending | [configuration.md](configuration.md) |
 | Mod API | `SMASH_MOD_API_VERSION` (1) | `manifest.json` + `ModRegistry` | [mods.md](mods.md) |
 | Asset archive | recipe hash today; `SMASH_ASSET_FORMAT_VERSION` reserved | `.recipe` sidecar auto re-extract | [assets.md](assets.md) |

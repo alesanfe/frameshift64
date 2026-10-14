@@ -102,6 +102,16 @@ jobs:
         run: ./scripts/testing/netplay_mutation_suite.ps1 -BuildDir build/Release -Minutes 1 -Seconds 45
         shell: pwsh
 
+      # ── TD-010: manifest/replay/json parsers — mutations must not crash ──
+      - name: Parser fuzz (manifest/replay/json)
+        if: env.BASEROM_B64 != ''
+        run: |
+          foreach ($p in @('manifest','replay','json')) {
+            python tools/fuzz/run_parser_fuzz.py --parser $p --binary build/Release/BattleShip.exe --iters 300 --timeout 15
+            if ($LASTEXITCODE -ne 0) { Write-Error "parser fuzz ($p) found crashes"; exit 1 }
+          }
+        shell: pwsh
+
       - name: Upload traces + logs
         if: env.BASEROM_B64 != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4

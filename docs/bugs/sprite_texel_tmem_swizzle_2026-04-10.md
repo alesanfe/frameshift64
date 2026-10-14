@@ -17,15 +17,15 @@
 
 2. **N64 RDP TMEM line swizzle.** Even with bytes in correct BE order, sprite textures still rendered with a shear because the N64 stores RGBA16 textures in DRAM **pre-swizzled** to avoid TMEM bank conflicts when sampled. The hardware XORs the byte address based on row parity: for 16bpp/IA/CI, odd rows have the byte address XOR'd with 0x4 (i.e., the two 4-byte halves of each 8-byte qword are swapped). `LOAD_BLOCK` with `dxt=0` loads the swizzled data into TMEM as-is; the sampler unscrambles it during reads. Fast3D doesn't emulate TMEM addressing, so it would render the swizzled data linearly and produce a sheared image.
 
-**Fix:** Added `portFixupSpriteBitmapData(sprite, bitmaps)` in `src/bridge/lbreloc_byteswap.cpp`. Walks the bitmap array, resolves each `bm->buf` via `portRelocResolvePointer`, then per bitmap:
+**Fix:** Added `portFixupSpriteBitmapData(sprite, bitmaps)` in `src/integration/decomp/lbreloc_byteswap.cpp`. Walks the bitmap array, resolves each `bm->buf` via `portRelocResolvePointer`, then per bitmap:
 1. Apply BSWAP32 over `width_img × actualHeight × bpp / 8` bytes to restore N64 BE byte order.
 2. For 16bpp textures, apply the inverse TMEM line swizzle: on every odd row of the bitmap, swap the two 4-byte halves within each 8-byte qword. Strip-local row indexing (each LOAD_BLOCK is independent in TMEM).
 
 Idempotent via the existing `sStructU16Fixups` tracking set. Called from `lbCommonMakeSObjForGObj` right after `portFixupBitmapArray`. Sprite struct field offsets read directly with hard-coded byte offsets — `bmsiz` is at `0x31` (not `0x32`): the C struct packs `u8 bmfmt; u8 bmsiz;` followed by 2 bytes of padding before the next u32, and the field offset must match the C compiler's natural placement.
 
 **Files:**
-- `src/bridge/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`
-- `src/bridge/lbreloc_byteswap.h` — declaration + doc
+- `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`
+- `src/integration/decomp/lbreloc_byteswap.h` — declaration + doc
 - `decomp/src/lb/lbcommon.c` — call site in `lbCommonMakeSObjForGObj`
 - `libultraship/include/fast/backends/gfx_direct3d_common.h` — separate DX11 filter-default fix (`FILTER_NONE` → `FILTER_LINEAR`); was hiding the bug because every sample was point-sampled regardless of game request.
 

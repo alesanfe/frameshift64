@@ -2,7 +2,7 @@
 
 One home for the logic every reloc tool needs, pinned to the same semantics
 as torch's SSB64:RELOC factory (torch/src/factories/ssb64/RelocFactory.cpp)
-and the port's chain walker (src/bridge/lbreloc_bridge.cpp:667-840):
+and the port's chain walker (src/integration/decomp/lbreloc_bridge.cpp:667-840):
 
   - per-version reloc table constants (VERSIONS)
   - reloc table reader

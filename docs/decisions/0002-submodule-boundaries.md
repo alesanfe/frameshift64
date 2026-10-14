@@ -6,6 +6,6 @@ Submodules stay at their current paths: `decomp/`, `libultraship/`, `torch/`. Ph
 
 Rules:
 - No port features inside `decomp/` beyond what the `port-patches`/`decomp` branch needs to compile against the port (include-path shims like `port_log.h` are acceptable and load-bearing).
-- No direct patching of `libultraship/` or `torch/` when the change can live in a port-side adapter (`src/bridge/`).
+- No direct patching of `libultraship/` or `torch/` when the change can live in a port-side adapter (`src/integration/decomp/`).
 - Game logic must not depend on Torch internals; Torch is build-time asset extraction only.
 - Any required submodule change is committed on the submodule's own branch and the pointer bumped in the outer tree (`CLAUDE.md` worktree workflow).

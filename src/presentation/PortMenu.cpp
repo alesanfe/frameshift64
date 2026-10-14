@@ -9,11 +9,11 @@
 
 #include "Compat.h"
 #include "application/app_paths.h"
-#include "features/enhancements.h"
+#include "gameplay/enhancements.h"
 #include "resources/interpolation/frame_interpolation.h"
-#include "netplay/netlobby.h"
+#include "netplay/session/netlobby.h"
 #ifdef PORT_HIRES_ENABLED
-#include "resources/textures/hires/HiResPack.h"
+#include "resources/loading/textures/hires/HiResPack.h"
 #endif
 
 #include <fast/backends/gfx_rendering_api.h>
@@ -21,10 +21,11 @@
 #include <ship/Context.h>
 #include <ship/window/Window.h>
 #include <ship/window/gui/Gui.h>
+#include <ship/window/gui/ConsoleWindow.h>
 #ifndef DISABLE_SCRIPTING
 #include <ship/scripting/ScriptLoader.h>
-#include "bridge/modding/HookManager.h"
-#include "bridge/modding/ModRegistry.h"
+#include "integration/modding/HookManager.h"
+#include "integration/modding/ModRegistry.h"
 
 namespace ssb64 { void MountModsDir(); void UnmountMissingMods(); }
 #endif
@@ -363,7 +364,7 @@ void RenderPostProcessDiagnostics(WidgetInfo& /*widget*/) {
 // Shader-pack downloader UI is gated off only on UWP (MSIX packages
 // can't fetch/replace content this way). On Android the downloader now
 // runs through HttpURLConnection + in-process libzip, and
-// src/features/ShaderDownloader.cpp is compiled into libmain.so.
+// src/distribution/downloads/ShaderDownloader.cpp is compiled into libmain.so.
 
 // State scoped to the shader-pack modal, mirroring the Low-Res-warn
 // pattern. We keep a "needs to open this frame" flag so the
@@ -392,7 +393,7 @@ static char s_shaderPackFilter[128] = {};
 // Renders the "Get more shaders…" affordance immediately beneath the
 // picker. Click opens the modal; the modal handles the catalog fetch,
 // the user's selection, and the install in sequence.
-/* Online play: room-code lobby (src/netplay/netlobby.cpp). The host picks the
+/* Online play: room-code lobby (src/netplay/session/netlobby.cpp). The host picks the
  * rules and gets a 6-character code; the other player joins with it. */
 static const char* const kNetplayFighters[] = { "Mario", "Fox", "Donkey Kong", "Samus", "Luigi", "Link",
                                                 "Yoshi", "Captain Falcon", "Kirby", "Pikachu", "Jigglypuff", "Ness" };
@@ -433,95 +434,96 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
     }
     ImGui::EndDisabled();
 
-    ImGui::SeparatorText("Host a match");
-    ImGui::BeginDisabled(!idle);
-    ImGui::TextUnformatted("Stage");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::Combo("##NetplayStage", &stage, kNetplayStages, IM_ARRAYSIZE(kNetplayStages))) {
-        CVarSetInteger("gNetplay.Stage", stage);
-        save();
-    }
-    ImGui::TextUnformatted("Stocks");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::SliderInt("##NetplayStocks", &stocks, 1, 5)) {
-        CVarSetInteger("gNetplay.Stocks", stocks);
-        save();
-    }
-    bool itemsOn = items != 0;
-    if (ImGui::Checkbox("Items", &itemsOn)) {
-        CVarSetInteger("gNetplay.Items", itemsOn ? 1 : 0);
-        save();
-    }
-    ImGui::TextUnformatted("Input delay (frames)");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::SliderInt("##NetplayDelay", &delay, 0, 4)) {
-        CVarSetInteger("gNetplay.Delay", delay);
-        save();
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Frames of input delay before rollback kicks in. 2 suits most connections;\n"
-                          "raise it on high-ping links to reduce visible rollbacks.");
-    }
-    if (UIWidgets::Button("Host", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-        port_netlobby_host(serverBuf, fighter, stage, stocks, itemsOn ? 1 : 0, delay);
-    }
-    ImGui::EndDisabled();
-
-    ImGui::SeparatorText("Join a match");
-    ImGui::BeginDisabled(!idle);
-    ImGui::TextUnformatted("Room code");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputText("##NetplayCode", codeBuf, sizeof(codeBuf), ImGuiInputTextFlags_CharsUppercase);
-    if (UIWidgets::Button("Join", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-        port_netlobby_join(serverBuf, codeBuf, fighter);
-    }
-    ImGui::SameLine();
-    if (UIWidgets::Button("Spectate")) {
-        port_netlobby_spectate(serverBuf, codeBuf);
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Watch the room's match live without playing - the spectator never\n"
-                          "joins the match, so it can't lag or desync the players.");
-    }
-    ImGui::EndDisabled();
-
-    ImGui::SeparatorText("LAN (direct IP)");
-    ImGui::BeginDisabled(!idle);
-    {
-        static char lanAddr[64] = {};
-        static int lanPort = 41700;
-        ImGui::TextUnformatted("Host port");
+    /* Connect view — only while idle. Once you're in a room the panel swaps
+     * to the room/status view below so the creation controls can't be
+     * mistaken for live settings. */
+    if (idle) {
+        ImGui::SeparatorText("Host a match");
+        ImGui::TextUnformatted("Stage");
         ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputInt("##LanPort", &lanPort, 0, 0);
-        if (UIWidgets::Button("Host LAN", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-            port_netlobby_lan_host(lanPort, fighter, stage, stocks, itemsOn ? 1 : 0, delay);
-        }
-        ImGui::TextUnformatted("Host address (ip[:port])");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputText("##LanAddr", lanAddr, sizeof(lanAddr));
-        if (UIWidgets::Button("Join LAN", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-            port_netlobby_lan_join(lanAddr, fighter);
-        }
-    }
-    ImGui::EndDisabled();
-
-    if (ImGui::CollapsingHeader("Advanced")) {
-        ImGui::BeginDisabled(!idle);
-        ImGui::TextUnformatted("Lobby server");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputText("##NetplayServer", serverBuf, sizeof(serverBuf))) {
-            CVarSetString("gNetplay.Server", serverBuf);
+        if (ImGui::Combo("##NetplayStage", &stage, kNetplayStages, IM_ARRAYSIZE(kNetplayStages))) {
+            CVarSetInteger("gNetplay.Stage", stage);
             save();
         }
-        if (ImGui::SmallButton("Use default server")) {
-            std::snprintf(serverBuf, sizeof(serverBuf), "%s", PORT_NETLOBBY_DEFAULT_SERVER);
-            CVarClear("gNetplay.Server");
+        ImGui::TextUnformatted("Stocks");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::SliderInt("##NetplayStocks", &stocks, 1, 5)) {
+            CVarSetInteger("gNetplay.Stocks", stocks);
             save();
         }
-        ImGui::EndDisabled();
+        bool itemsOn = items != 0;
+        if (ImGui::Checkbox("Items", &itemsOn)) {
+            CVarSetInteger("gNetplay.Items", itemsOn ? 1 : 0);
+            save();
+        }
+        ImGui::TextUnformatted("Input delay (frames)");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::SliderInt("##NetplayDelay", &delay, 0, 4)) {
+            CVarSetInteger("gNetplay.Delay", delay);
+            save();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Frames of input delay before rollback kicks in. 2 suits most connections;\n"
+                              "raise it on high-ping links to reduce visible rollbacks.");
+        }
+        if (UIWidgets::Button("Host", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+            port_netlobby_host(serverBuf, fighter, stage, stocks, itemsOn ? 1 : 0, delay);
+        }
+
+        ImGui::SeparatorText("Join a match");
+        ImGui::TextUnformatted("Room code");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputText("##NetplayCode", codeBuf, sizeof(codeBuf), ImGuiInputTextFlags_CharsUppercase);
+        if (UIWidgets::Button("Join", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+            port_netlobby_join(serverBuf, codeBuf, fighter);
+        }
+        ImGui::SameLine();
+        if (UIWidgets::Button("Spectate")) {
+            port_netlobby_spectate(serverBuf, codeBuf);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Watch the room's match live without playing - the spectator never\n"
+                              "joins the match, so it can't lag or desync the players.");
+        }
+
+        ImGui::SeparatorText("LAN (direct IP)");
+        {
+            static char lanAddr[64] = {};
+            static int lanPort = 41700;
+            ImGui::TextUnformatted("Host port");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputInt("##LanPort", &lanPort, 0, 0);
+            if (UIWidgets::Button("Host LAN", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+                port_netlobby_lan_host(lanPort, fighter, stage, stocks, itemsOn ? 1 : 0, delay);
+            }
+            ImGui::TextUnformatted("Host address (ip[:port])");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##LanAddr", lanAddr, sizeof(lanAddr));
+            if (UIWidgets::Button("Join LAN", UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+                port_netlobby_lan_join(lanAddr, fighter);
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Advanced")) {
+            ImGui::TextUnformatted("Lobby server");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::InputText("##NetplayServer", serverBuf, sizeof(serverBuf))) {
+                CVarSetString("gNetplay.Server", serverBuf);
+                save();
+            }
+            if (ImGui::SmallButton("Use default server")) {
+                std::snprintf(serverBuf, sizeof(serverBuf), "%s", PORT_NETLOBBY_DEFAULT_SERVER);
+                CVarClear("gNetplay.Server");
+                save();
+            }
+        }
     }
 
-    ImGui::SeparatorText("Status");
+    if (state == PORT_NETLOBBY_IN_MATCH) {
+        ImGui::SeparatorText("Match in progress");
+    } else {
+        ImGui::SeparatorText("Status");
+    }
     ImGui::TextWrapped("%s", port_netlobby_status());
 
     if (port_netlobby_code()[0] != '\0' && port_netlobby_is_host() && !idle) {
@@ -623,11 +625,11 @@ void RenderShaderPackDownloader(WidgetInfo& /*widget*/) {
     }
 }
 
-#if defined(PORT_HIRES_ENABLED) && !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
+#if defined(PORT_HIRES_ENABLED) && !defined(BATTLESHIP_UWP)
 // Featured texture packs (SSB Reloaded & co): one-click download into
 // mods/ with a pinned SHA-256, then enable + rescan so textures go live
-// without a restart. Desktop-only — ModPackDownloader (curl + libzip
-// audit) is not compiled on Android/UWP.
+// without a restart. Android goes through the same path — the download
+// service uses HttpURLConnection there and FileHash is in-process.
 void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
     using namespace ssb64::enhancements;
 
@@ -636,17 +638,21 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
         phase == ModPackInstallPhase::Downloading ||
         phase == ModPackInstallPhase::Verifying ||
         phase == ModPackInstallPhase::Validating ||
+        phase == ModPackInstallPhase::Converting ||
         phase == ModPackInstallPhase::Installing;
 
     // Enable + rescan on the Done edge so the freshly installed pack goes
-    // live without a restart (the user's own toggle choice is preserved —
-    // we only force it on right after they asked us to install a pack).
+    // live without a restart — only for texture packs; a generic install
+    // that produced a script mod is activated via Hot Reload from the
+    // Script Mods panel instead (its Done edge lives there).
     static ModPackInstallPhase s_prevPhase = ModPackInstallPhase::Idle;
     if (phase == ModPackInstallPhase::Done &&
         s_prevPhase != ModPackInstallPhase::Done) {
-        CVarSetInteger("gHiResTextures.Enabled", 1);
-        CVarSave();
-        ssb64::hires::HiResPack::Get().Init();
+        if (GetLastInstalledPackKind() == ModPackInstalledKind::TexturePack) {
+            CVarSetInteger("gHiResTextures.Enabled", 1);
+            CVarSave();
+            ssb64::hires::HiResPack::Get().Init();
+        }
     }
     s_prevPhase = phase;
 
@@ -708,6 +714,56 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
 
     ImGui::TextDisabled("Third-party pack by GhostlyDark — downloaded from its own "
                         "GitHub release page (not redistributed by this project).");
+
+    // --- Install your own --------------------------------------------------
+    // Generic installer: user-supplied URL or a file/folder dropped on the
+    // window. The worker sniffs the payload — script mod (manifest.json),
+    // native texture pack, or GLideN64/Rice pack (converted via the
+    // bundled hash map).
+    ImGui::Separator();
+    ImGui::TextDisabled("Install your own");
+    ImGui::TextWrapped("Paste a direct link to a texture pack or mod, or drag "
+                       "a .zip / .o2r / .png / folder onto the window. "
+                       "GLideN64/Rice packs (most SSB64 texture packs released "
+                       "for emulators) are converted automatically%s.",
+                       IsGliden64ConverterReady() ? ""
+                                                  : " — NOT available in this build "
+                                                    "(missing bundled-data/gliden64-map.json)");
+
+    static char s_packUrl[512] = "";
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputTextWithHint("##packurl", "https://... (direct .zip link)", s_packUrl,
+                             sizeof(s_packUrl));
+    if (busy) {
+        const uint64_t got = GetModPackDownloadedBytes();
+        ImGui::TextWrapped("%s", got > 0
+                                     ? fmt::format("{} ({:.0f} MB)", status, got / 1.0e6).c_str()
+                                     : status.c_str());
+        if (UIWidgets::Button("Cancel##generic",
+                              UIWidgets::ButtonOptions().Size(UIWidgets::Sizes::Inline))) {
+            CancelModPackInstall();
+        }
+    } else {
+        const bool hasUrl = s_packUrl[0] != '\0';
+        if (UIWidgets::Button(
+                "Download & Install##generic",
+                UIWidgets::ButtonOptions()
+                    .Color(UIWidgets::Colors::LightBlue)
+                    .Tooltip("The download runs in the background. The kind of "
+                             "payload is detected automatically — texture "
+                             "packs go live, mods need a Hot Reload."))) {
+            if (hasUrl) {
+                StartPackInstallFromUrlAsync(s_packUrl);
+                s_packUrl[0] = '\0';
+            }
+        }
+    }
+    if (!busy && phase == ModPackInstallPhase::Error && !status.empty()) {
+        ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1.0f), "%s", status.c_str());
+    }
+    // Register the SDL_DROPFILE consumer once the LUS context is up
+    // (idempotent, cheap — call every frame).
+    RegisterModPackDropHandler();
 }
 #endif // PORT_HIRES_ENABLED && desktop
 
@@ -1074,6 +1130,12 @@ WidgetInfo& PortMenu::AddWidget(WidgetPath& pathInfo, std::string widgetName, Wi
 
 PortMenu::PortMenu()
     : Menu("gOpenPortMenu", "Port Menu", 0, UIWidgets::Colors::LightBlue) {
+    /* Header keeps only Close: Quit/Restart live in Support -> Application so
+     * "leave the menu" can't be confused with "quit the app". */
+    mShowHeaderQuit = false;
+    mShowHeaderReset = false;
+    mShowActionBar = true;
+    mShowHelpBar = true;
 }
 
 void PortMenu::AddMenuSettings() {
@@ -1149,24 +1211,19 @@ void PortMenu::AddMenuSettings() {
         .Options(CheckboxOptions().Tooltip("Adds Discord Rich Presence (DRP)."));
 #endif
 
-    AddWidget(path, "Open App Files Folder", WIDGET_BUTTON)
-        .RaceDisable(false)
-        .Callback([](WidgetInfo&) {
-            std::string filesPath = Ship::Context::GetInstance()->GetAppDirectoryPath();
-            SDL_OpenURL(std::string("file:///" + fs::absolute(filesPath).string()).c_str());
-        })
-        .Options(ButtonOptions().Tooltip("Opens the folder that contains the save, config, and asset files."));
-
-    path.sidebarName = "Graphics";
+    path.sidebarName = "Display";
     path.column = SECTION_COLUMN_1;
-    AddSidebarEntry("Settings", "Graphics", 2);
+    AddSidebarEntry("Settings", "Display", 2);
 
-    AddWidget(path, "Graphics Options", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Display", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Toggle Fullscreen", WIDGET_BUTTON)
         .RaceDisable(false)
         .Callback([](WidgetInfo&) { Ship::Context::GetInstance()->GetWindow()->ToggleFullscreen(); })
         .Options(ButtonOptions().Tooltip("Toggles fullscreen on or off."));
 
+    path.sidebarName = "Image Quality";
+    AddSidebarEntry("Settings", "Image Quality", 1);
+    AddWidget(path, "Image Quality", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Internal Resolution", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_INTERNAL_RESOLUTION)
         .RaceDisable(false)
@@ -1190,7 +1247,9 @@ void PortMenu::AddMenuSettings() {
                      .Min(0.5f)
                      .Max(2.0f));
 
+    path.sidebarName = "Display";
     AddWidget(path, "Low Resolution Mode (Needs reload)", WIDGET_CVAR_COMBOBOX)
+        .Tag("Restart required")
         .CVar("gLowResModePending")
         .RaceDisable(false)
         .Options(ComboboxOptions()
@@ -1205,6 +1264,7 @@ void PortMenu::AddMenuSettings() {
                      .ComboMap(kLowResModeMap)
                      .DefaultIndex(0));
 
+    path.sidebarName = "Image Quality";
 #ifndef __WIIU__
     AddWidget(path, "Anti-aliasing (MSAA)", WIDGET_CVAR_SLIDER_INT)
         .CVar(CVAR_MSAA_VALUE)
@@ -1219,6 +1279,9 @@ void PortMenu::AddMenuSettings() {
                      .DefaultValue(1));
 #endif
 
+    path.sidebarName = "Shaders";
+    AddSidebarEntry("Settings", "Shaders", 1);
+    AddWidget(path, "Shaders", WIDGET_SEPARATOR_TEXT);
 #if !defined(BATTLESHIP_UWP)
     // Post-process / CRT shader stack — enabled on Android since the
     // downloader went in-process (HttpURLConnection + libzip). Note:
@@ -1238,7 +1301,9 @@ void PortMenu::AddMenuSettings() {
         .CustomFunction(RenderPostProcessDiagnostics);
 #endif
 
-    AddWidget(path, "Renderer API (Needs reload)", WIDGET_VIDEO_BACKEND).RaceDisable(false);
+    path.sidebarName = "Display";
+    AddWidget(path, "Renderer API (Needs reload)", WIDGET_VIDEO_BACKEND).RaceDisable(false)
+        .Tag("Restart required");
     AddWidget(path, "Enable Vsync", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_VSYNC_ENABLED)
         .RaceDisable(false)
@@ -1246,6 +1311,7 @@ void PortMenu::AddMenuSettings() {
         .Options(CheckboxOptions().Tooltip("Removes tearing, but can cap the game to the display refresh rate.")
                      .DefaultValue(true));
 
+    path.sidebarName = "Image Quality";
     AddWidget(path, "Enhanced Framerate (Interpolated)", WIDGET_CVAR_COMBOBOX)
         .CVar(PORT_INTERP_CVAR_FPS)
         .RaceDisable(false)
@@ -1275,6 +1341,7 @@ void PortMenu::AddMenuSettings() {
                               "90/120/144/165 Hz phones, TVs, monitors, and Xbox display modes.")
                      .DefaultValue(false));
 
+    path.sidebarName = "Display";
 #if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
     AddWidget(path, "Windowed Fullscreen", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_SDL_WINDOWED_FULLSCREEN)
@@ -1285,7 +1352,11 @@ void PortMenu::AddMenuSettings() {
         .Options(CheckboxOptions().Tooltip("Enables borderless windowed fullscreen mode."));
 #endif
 
+    path.sidebarName = "Advanced";
+    AddSidebarEntry("Settings", "Advanced", 1);
+    AddWidget(path, "Advanced", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Allow multi-windows", WIDGET_CVAR_CHECKBOX)
+        .Tag("Experimental")
         .CVar(CVAR_ENABLE_MULTI_VIEWPORTS)
         .RaceDisable(false)
         .PreFunc([this](WidgetInfo& info) {
@@ -1295,12 +1366,16 @@ void PortMenu::AddMenuSettings() {
                      .Tooltip("Allows multiple ImGui windows to be opened at once. Requires reload to take effect.")
                      .DefaultValue(true));
 
+    path.sidebarName = "Image Quality";
     AddWidget(path, "Texture Filter (Needs reload)", WIDGET_CVAR_COMBOBOX)
+        .Tag("Restart required")
         .CVar(CVAR_TEXTURE_FILTER)
         .RaceDisable(false)
         .Options(ComboboxOptions().Tooltip("Sets the active texture filtering mode.").ComboMap(kTextureFilteringMap));
 
+    path.sidebarName = "Display";
     AddWidget(path, "Widescreen (Needs reload)", WIDGET_CVAR_CHECKBOX)
+        .Tag("Experimental")
         .CVar(enhancements::WidescreenCVarName())
         .RaceDisable(false)
         .Options(CheckboxOptions()
@@ -1318,6 +1393,8 @@ void PortMenu::AddMenuSettings() {
     // libultraship's Gui::DrawGame crops this proportional margin out of the
     // presented framebuffer so the safe area fills the viewport. Takes effect
     // immediately (read every frame at present time, no reload needed).
+    path.column = SECTION_COLUMN_2;
+    AddWidget(path, "Overscan", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Crop Overscan Border", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_PREFIX_ADVANCED_RESOLUTION ".Overscan.Enabled")
         .RaceDisable(false)
@@ -1347,9 +1424,17 @@ void PortMenu::AddMenuSettings() {
                      .Max(32.0f)
                      .DefaultValue(10.0f));
 
-    path.sidebarName = "Gameplay";
     path.column = SECTION_COLUMN_1;
-    AddSidebarEntry("Settings", "Gameplay", 1);
+    path.sidebarName = "Advanced";
+    AddWidget(path, "Enable Developer Tools", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.EnableDevTools")
+        .RaceDisable(false)
+        .Callback([this](WidgetInfo&) { RebuildMenu(); })
+        .Options(CheckboxOptions().Tooltip(
+            "Shows the Developer sidebar in Settings (Stats, Console, Gfx Debugger)."));
+
+    path.sidebarName = "Match Rules";
+    AddSidebarEntry("Settings", "Match Rules", 1);
 
     AddWidget(path, "Disable Stage Hazards", WIDGET_CVAR_CHECKBOX)
         .CVar(enhancements::StageHazardsDisabledCVarName())
@@ -1358,6 +1443,9 @@ void PortMenu::AddMenuSettings() {
             "Disables stage specific hazards such as moving platforms, tornadoes, Arwings, wind, etc."
             "Does not take effect mid-battle, only between battles.")
                      .DefaultValue(false));
+    path.sidebarName = "Classic Mode";
+    AddSidebarEntry("Settings", "Classic Mode", 1);
+    AddWidget(path, "Classic Mode", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Bonus Stages", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::BonusStagesCVarName())
         .RaceDisable(false)
@@ -1367,7 +1455,9 @@ void PortMenu::AddMenuSettings() {
                               "screen. Turn off for the original stage roster. Takes effect "
                               "the next time the stage select screen opens.")
                      .DefaultValue(true));
-    AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT);
+    path.sidebarName = "Practice";
+    AddSidebarEntry("Settings", "Practice", 1);
+    AddWidget(path, "Practice", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Hitbox View", WIDGET_CVAR_COMBOBOX)
         .CVar(enhancements::HitboxViewCVarName())
         .RaceDisable(false)
@@ -1381,7 +1471,7 @@ void PortMenu::AddMenuSettings() {
                      .ComboMap(kHitboxViewMap)
                      .DefaultIndex(0));
 
-    // --- Competitive ruleset (still in Gameplay sidebar) ---
+    path.sidebarName = "Match Rules";
     AddWidget(path, "Competitive Rules", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Use Competitive Ruleset", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::CompRulesetCVarName())
@@ -1397,7 +1487,7 @@ void PortMenu::AddMenuSettings() {
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Forces balanced, opposite-side starting positions for 1v1 and Team Battles."));
 
-    // --- Z-Cancel options ---
+    path.sidebarName = "Practice";
     AddWidget(path, "Z-Cancel Options", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Auto Z-Cancel", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::AutoZCancelCVarName())
@@ -1408,13 +1498,16 @@ void PortMenu::AddMenuSettings() {
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Makes your character temporarily flash in flames on a failed Z-Cancel."));
 
-    // --- Quality-of-Life (still in Gameplay sidebar) ---
-    AddWidget(path, "Quality-of-Life", WIDGET_SEPARATOR_TEXT);
+    path.sidebarName = "Interface";
+    AddSidebarEntry("Settings", "Interface", 1);
+    AddWidget(path, "Interface", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Boot to VS CSS", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::BootToVSCSSCVarName())
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Skips the intro sequences and boots directly to the VS Mode Character Select Screen."));
+    path.sidebarName = "Classic Mode";
     AddWidget(path, "Classic Co-op (Needs reload)", WIDGET_CVAR_CHECKBOX)
+        .Tag("Restart required")
         .CVar(ssb64::enhancements::ClassicCoopCVarName())
         .RaceDisable(false)
         .Options(CheckboxOptions()
@@ -1431,14 +1524,17 @@ void PortMenu::AddMenuSettings() {
                               "original 1P mode's CPU ally could. Off by default; takes effect "
                               "from the next stage.")
                      .DefaultValue(false));
+    path.sidebarName = "Interface";
     AddWidget(path, "Skip Results Screen", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::SkipResultsScreenCVarName())
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Skips the victory podium and returns directly to the Character Select Screen."));
+    path.sidebarName = "Match Rules";
     AddWidget(path, "Force CPU Level 9", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::CpuLevel9CVarName())
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Automatically forces all CPU players to Level 9."));
+    path.sidebarName = "Interface";
     AddWidget(path, "Shuffle Music", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::ShuffleMusicCVarName())
         .RaceDisable(false)
@@ -1448,8 +1544,6 @@ void PortMenu::AddMenuSettings() {
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Allows the player to pick a custom BGM track after the stage selection screen (music shuffling is ignored if this is turned on)."));
 
-    // --- Other ---
-    AddWidget(path, "Other", WIDGET_SEPARATOR_TEXT);
         AddWidget(path, "Disable HUD", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::DisableHUDCVarName())
         .RaceDisable(false)
@@ -1594,6 +1688,32 @@ void PortMenu::AddMenuSettings() {
             .Tooltip("Silences game audio while the window is unfocused. Restores volume on refocus.")
             .DefaultValue(false));
 
+    // --- Accessibility ---
+    path.sidebarName = "Accessibility";
+    path.column = SECTION_COLUMN_1;
+    AddSidebarEntry("Settings", "Accessibility", 1);
+
+    AddWidget(path, "Interface", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "UI Scale", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gSettings.UIScale")
+        .RaceDisable(false)
+        .Options(FloatSliderOptions()
+                     .Tooltip("Scales the menu text and controls. Applies immediately.")
+                     .DefaultValue(1.0f)
+                     .Min(0.75f)
+                     .Max(2.5f)
+                     .IsPercentage());
+    AddWidget(path, "Persistent Descriptions", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.PersistentDescriptions")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip(
+            "Shows each option's help text under the control instead of requiring a hover. Useful with gamepad or touch."));
+    AddWidget(path, "High Contrast Focus", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.HighContrastFocus")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip(
+            "Makes the keyboard/controller focus ring near-opaque so the focused control is easy to spot."));
+
     // --- Cheats ---
     path.sidebarName = "Cheats";
     path.column = SECTION_COLUMN_1;
@@ -1615,61 +1735,78 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Unlock Item Switch Menu", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockItemSwitch").RaceDisable(false);
     AddWidget(path, "Unlock Sound Test Menu", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockSoundTest").RaceDisable(false);
 
-    // --- Tools ---
-    path.sidebarName = "Tools";
-    path.column = SECTION_COLUMN_1;
-    AddSidebarEntry("Settings", "Tools", 1);
+    // --- Developer tools ---
+    // Hidden behind a CVar so the average player doesn't see debugging
+    // tools mixed with normal settings. Toggling the CVar rebuilds the menu.
+    if (CVarGetInteger("gSettings.EnableDevTools", 0)) {
+        path.sidebarName = "Developer";
+        path.column = SECTION_COLUMN_1;
+        AddSidebarEntry("Settings", "Developer", 1);
 
-    AddWidget(path, "Debug Windows", WIDGET_SEPARATOR_TEXT);
-    AddWidget(path, "Stats", WIDGET_WINDOW_BUTTON)
-        .CVar(CVAR_STATS_WINDOW_OPEN)
-        .RaceDisable(false)
-        .WindowName("Stats")
-        .HideInSearch(true)
-        .Options(WindowButtonOptions().Tooltip("Toggles the Stats window."));
-    AddWidget(path, "Console", WIDGET_WINDOW_BUTTON)
-        .CVar(CVAR_CONSOLE_WINDOW_OPEN)
-        .RaceDisable(false)
-        .WindowName("Console")
-        .HideInSearch(true)
-        .Options(WindowButtonOptions().Tooltip("Toggles the Console window."));
-    AddWidget(path, "Gfx Debugger", WIDGET_WINDOW_BUTTON)
-        .CVar(CVAR_GFX_DEBUGGER_WINDOW_OPEN)
-        .RaceDisable(false)
-        .WindowName("GfxDebuggerWindow")
-        .HideInSearch(true)
-        .Options(WindowButtonOptions().Tooltip("Toggles the graphics debugger window."));
+        AddWidget(path, "Debug Windows", WIDGET_SEPARATOR_TEXT);
+        AddWidget(path, "Stats", WIDGET_WINDOW_BUTTON)
+            .CVar(CVAR_STATS_WINDOW_OPEN)
+            .RaceDisable(false)
+            .WindowName("Stats")
+            .HideInSearch(true)
+            .Options(WindowButtonOptions().Tooltip("Toggles the Stats window."));
+        AddWidget(path, "Console", WIDGET_WINDOW_BUTTON)
+            .CVar(CVAR_CONSOLE_WINDOW_OPEN)
+            .RaceDisable(false)
+            .WindowName("Console")
+            .HideInSearch(true)
+            .Options(WindowButtonOptions().Tooltip("Toggles the Console window."));
+        AddWidget(path, "Gfx Debugger", WIDGET_WINDOW_BUTTON)
+            .CVar(CVAR_GFX_DEBUGGER_WINDOW_OPEN)
+            .RaceDisable(false)
+            .WindowName("GfxDebuggerWindow")
+            .HideInSearch(true)
+            .Options(WindowButtonOptions().Tooltip("Toggles the graphics debugger window."));
+    }
 }
 
 void PortMenu::AddMenuAssets() {
-    AddMenuEntry("Assets", CVAR_SETTING("Menu.AssetsSidebarSection"));
+    AddMenuEntry("Game Files", CVAR_SETTING("Menu.AssetsSidebarSection"));
 
-    WidgetPath path = { "Assets", "Extraction", SECTION_COLUMN_1 };
-    AddSidebarEntry("Assets", "Extraction", 1);
+    WidgetPath path = { "Game Files", "Extraction", SECTION_COLUMN_1 };
+    AddSidebarEntry("Game Files", "Extraction", 1);
     AddWidget(path, "Extraction", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, SSB64_O2R_NAME " is generated from your ROM and loaded on launch.", WIDGET_TEXT);
     AddWidget(path, "Schedule Re-extract", WIDGET_BUTTON)
         .RaceDisable(false)
         .Callback([this](WidgetInfo&) {
-            const auto path = Ship::Context::GetPathRelativeToAppDirectory(SSB64_O2R_NAME);
+            const auto o2rPath = Ship::Context::GetPathRelativeToAppDirectory(SSB64_O2R_NAME);
+            const auto bakPath = o2rPath + ".bak";
             std::error_code ec;
-            fs::remove(path, ec);
-            mShowReextractMessage = true;
+            fs::remove(bakPath, ec);
+            fs::rename(o2rPath, bakPath, ec);
+            if (!ec) {
+                mShowReextractMessage = true;
+            }
         })
-        .Options(ButtonOptions().Tooltip("Deletes " SSB64_O2R_NAME " so it is regenerated from the ROM on next launch.")
+        .Options(ButtonOptions().Tooltip("Renames the existing " SSB64_O2R_NAME " to .bak so the next launch regenerates it from your ROM. If the new extraction fails, restore the .bak by deleting the incomplete archive.")
                      .Size(Sizes::Inline));
 
     path.sidebarName = "Paths";
-    AddSidebarEntry("Assets", "Paths", 1);
+    AddSidebarEntry("Game Files", "Paths", 1);
     AddWidget(path, "Runtime Paths", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, fmt::format("App directory: {}", Ship::Context::GetPathRelativeToAppDirectory("")), WIDGET_TEXT);
     AddWidget(path, fmt::format("Main archive: {}", Ship::Context::GetPathRelativeToAppDirectory(SSB64_O2R_NAME)),
               WIDGET_TEXT);
+    AddWidget(path, "Open App Files Folder", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([](WidgetInfo&) {
+            std::string appPath = Ship::Context::GetPathRelativeToAppDirectory("");
+            std::error_code ec;
+            fs::create_directories(appPath, ec);
+            SDL_OpenURL(std::string("file:///" + fs::absolute(appPath).string()).c_str());
+        })
+        .Options(ButtonOptions().Tooltip("Opens the BattleShip app folder. Useful for log files or manual pack installation."));
 
 #ifdef PORT_HIRES_ENABLED
-    path.sidebarName = "Mods";
+    path.sidebarName = "Texture Packs";
     path.column = SECTION_COLUMN_1;
-    AddSidebarEntry("Assets", "Mods", 1);
+    AddSidebarEntry("Game Files", "Texture Packs", 1);
 
     AddWidget(path, "Hi-Res Texture Pack", WIDGET_SEPARATOR_TEXT);
     AddWidget(path,
@@ -1677,10 +1814,10 @@ void PortMenu::AddMenuAssets() {
               "Files are matched by decoded-RGBA8 CRC32 — no per-PNG configuration needed. "
               "Toggle takes effect on the next texture cache miss.",
               WIDGET_TEXT);
-#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
+#if !defined(BATTLESHIP_UWP)
     // One-click installs for curated packs (SSB Reloaded). Downloads via
-    // ModPackDownloader on a worker thread with pinned SHA-256 + zip audit;
-    // the desktop-only file is excluded from Android/UWP builds.
+    // ModPackDownloader on a worker thread with pinned SHA-256 + zip audit —
+    // Android goes through the JNI download service; UWP keeps it out.
     AddWidget(path, "Featured packs", WIDGET_CUSTOM)
         .RaceDisable(false)
         .CustomFunction(RenderCuratedTexturePacks);
@@ -1861,7 +1998,10 @@ static const BundledModSpec kBundledMods[] = {
 static void RenderBundledModRows() {
     namespace fs = std::filesystem;
     const fs::path bundleRoot = fs::path(ssb64::RealAppBundlePath()) / "bundled-mods";
-    const fs::path modsRoot   = fs::path(ssb64::RealAppBundlePath()) / "mods";
+    // The writable mods/ root — same as the pack installer and the second
+    // root MountModsDir scans (the bundle dir is read-only on packaged
+    // builds; in portable mode this resolves back to next-to-exe).
+    const fs::path modsRoot   = Ship::Context::GetPathRelativeToAppDirectory("mods");
 
     ImGui::TextDisabled("Included with BattleShip");
     for (const BundledModSpec& spec : kBundledMods) {
@@ -1922,8 +2062,8 @@ static void RenderBundledModRows() {
 }
 
 void PortMenu::AddMenuMods() {
-    WidgetPath path = { "Assets", "Script Mods", SECTION_COLUMN_1 };
-    AddSidebarEntry("Assets", "Script Mods", 1);
+    WidgetPath path = { "Game Files", "Script Mods", SECTION_COLUMN_1 };
+    AddSidebarEntry("Game Files", "Script Mods", 1);
     AddWidget(path, "mods_panel", WIDGET_CUSTOM)
         .CustomFunction([](WidgetInfo&) {
             // --- Action bar -------------------------------------------------
@@ -1947,6 +2087,21 @@ void PortMenu::AddMenuMods() {
                 std::error_code ec;
                 fs::create_directories(modsPath, ec);
                 SDL_OpenURL(std::string("file:///" + fs::absolute(modsPath).string()).c_str());
+            }
+
+            // A generic install that produced a script mod lands active via
+            // Hot Reload (mounts + compile + ModInit). The texture-pack case
+            // is handled by its own Done edge in RenderCuratedTexturePacks.
+            {
+                using namespace ssb64::enhancements;
+                const ModPackInstallPhase phase = GetModPackInstallPhase();
+                static ModPackInstallPhase s_prevPhase = ModPackInstallPhase::Idle;
+                if (phase == ModPackInstallPhase::Done &&
+                    s_prevPhase != ModPackInstallPhase::Done &&
+                    GetLastInstalledPackKind() == ModPackInstalledKind::ScriptMod) {
+                    DoHotReload(); // re-snapshots s_modList when it finishes
+                }
+                s_prevPhase = phase;
             }
 
             ImGui::Spacing();
@@ -2023,6 +2178,19 @@ void PortMenu::AddMenuMods() {
                 }
                 if (ImGui::IsItemHovered() && !mod.archivePath.empty()) {
                     ImGui::SetTooltip("%s", mod.archivePath.c_str());
+                }
+
+                ImGui::SameLine();
+                using ssb64::mods::ModSignature;
+                switch (mod.signature) {
+                    case ModSignature::Valid:
+                        ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.40f, 1.0f), "[signed]");
+                        break;
+                    case ModSignature::Invalid:
+                        ImGui::TextColored(ImVec4(0.95f, 0.30f, 0.25f, 1.0f), "[signature invalid]");
+                        break;
+                    case ModSignature::None:
+                        break;
                 }
 
                 if (!mod.author.empty()) {
@@ -2158,6 +2326,18 @@ void PortMenu::AddMenuOnline() {
     WidgetPath path = { "Online", "Netplay", SECTION_COLUMN_1 };
     AddSidebarEntry("Online", "Netplay", 1);
     AddWidget(path, "Netplay Lobby", WIDGET_CUSTOM).RaceDisable(false).CustomFunction(RenderNetplayLobby);
+}
+
+void PortMenu::RebuildMenu() {
+    /* A sidebar-shaping CVar flipped — drop every entry and rebuild through
+     * the same path first Init used. RemoveSidebarSearch assumes the
+     * Settings entry still exists, so strip it while the tree is intact. */
+    if (menuEntries.contains("Settings")) {
+        RemoveSidebarSearch();
+    }
+    menuEntries.clear();
+    menuOrder.clear();
+    AddMenuElements();
 }
 
 void PortMenu::AddMenuElements() {

@@ -47,15 +47,15 @@ All of the following compile and link into `ssb64.exe`:
 
 | File | Purpose |
 |------|---------|
-| `src/resources/RelocPointerTable.h` | Token table API: `portRelocRegisterPointer()`, `portRelocResolvePointer()`, `RELOC_RESOLVE()` macro |
-| `src/resources/RelocPointerTable.cpp` | Flat-array implementation, O(1) lookup, 256K initial capacity |
-| `src/resources/RelocFileTable.h` | Maps file_id (0-2131) to .o2r resource path |
-| `src/resources/RelocFileTable.us.cpp` | Auto-generated from assets/configuration/extraction/us/reloc_*.yml (regenerate via `python tools/codegen/generate_reloc_table.py`) |
-| `src/resources/RelocFile.h` | LUS Resource type holding decompressed file data + reloc metadata |
-| `src/resources/RelocFileFactory.h/.cpp` | LUS factory: reads RELO resources from .o2r |
-| `src/resources/ResourceType.h` | SSB64Reloc = 0x52454C4F ("RELO") |
-| `src/bridge/lbreloc_bridge.cpp` | Full replacement of `decomp/src/lb/lbreloc.c` — loads from LUS ResourceManager, token-based relocation |
-| `src/bridge/port_types.h` | Decomp type definitions (u32, s32, etc.) without pulling in `include/` which shadows system headers |
+| `src/resources/relocation/RelocPointerTable.h` | Token table API: `portRelocRegisterPointer()`, `portRelocResolvePointer()`, `RELOC_RESOLVE()` macro |
+| `src/resources/relocation/RelocPointerTable.cpp` | Flat-array implementation, O(1) lookup, 256K initial capacity |
+| `src/resources/relocation/RelocFileTable.h` | Maps file_id (0-2131) to .o2r resource path |
+| `generated/src/us/RelocFileTable.us.cpp` | Auto-generated from assets/configuration/extraction/us/reloc_*.yml (regenerate via `python tools/codegen/generate_reloc_table.py`) |
+| `src/resources/relocation/RelocFile.h` | LUS Resource type holding decompressed file data + reloc metadata |
+| `src/resources/relocation/RelocFileFactory.h/.cpp` | LUS factory: reads RELO resources from .o2r |
+| `src/resources/relocation/ResourceType.h` | SSB64Reloc = 0x52454C4F ("RELO") |
+| `src/integration/decomp/lbreloc_bridge.cpp` | Full replacement of `decomp/src/lb/lbreloc.c` — loads from LUS ResourceManager, token-based relocation |
+| `src/integration/port_types.h` | Decomp type definitions (u32, s32, etc.) without pulling in `include/` which shadows system headers |
 | `decomp/src/lb/lbreloc.c` | Wrapped in `#ifndef PORT` — excluded from port build |
 
 The bridge (`lbreloc_bridge.cpp`):
@@ -251,13 +251,13 @@ Build passes clean on MSVC.
 
 ## Build Strategy for the Bridge
 
-The bridge (`src/bridge/lbreloc_bridge.cpp`) needs both decomp types and LUS C++
+The bridge (`src/integration/decomp/lbreloc_bridge.cpp`) needs both decomp types and LUS C++
 APIs. The `include/` dir shadows system headers, so it can't go on the C++ target's
 include path.
 
 **Solution**: The bridge is a C++ file that includes decomp type headers from `src/`
 (already on the path). For types from `include/` (like `ssb_types.h`), a thin
-`src/bridge/port_types.h` provides the needed typedefs (u32, s32, u16, etc.)
+`src/integration/port_types.h` provides the needed typedefs (u32, s32, u16, etc.)
 using `<cstdint>` — no dependency on the decomp `include/` directory.
 
 The bridge re-declares the structs it needs (LBFileNode, LBRelocSetup, LBInternBuffer,
@@ -266,7 +266,7 @@ in `decomp/src/lb/lbtypes.h`.
 
 ## Known Issues / Future Work
 
-- **Endianness**: RESOLVED — `portRelocByteSwapBlob()` in `src/bridge/lbreloc_byteswap.cpp`
+- **Endianness**: RESOLVED — `portRelocByteSwapBlob()` in `src/integration/decomp/lbreloc_byteswap.cpp`
   performs a two-pass byte-swap on each file blob after memcpy, before the reloc chain walk:
   Pass 1 blanket-swaps every u32 word (fixes DL commands, struct fields, reloc descriptors).
   Pass 2 parses native-endian DL commands to find vertex/texture regions and applies targeted

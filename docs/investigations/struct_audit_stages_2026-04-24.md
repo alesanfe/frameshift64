@@ -184,5 +184,5 @@ No new bitfield-class (A) structs were found in the audited files — the stage-
 - Enumerated per-stage files: `ls decomp/src/gr/grcommon/ decomp/src/gr/grbonus/` (10 stage .c/.h files).
 - Grepped for `portFixupStruct*` in `decomp/src/mp/` and `decomp/src/gr/` — all calls live in `mpcollision.c`.
 - Grepped for `PORT_RESOLVE` + `gr_desc[*].dobjdesc` — 90 resolved, 7 unresolved → the unresolved set is the §1 bug list.
-- Read `src/bridge/lbreloc_byteswap.cpp:985-1017` to confirm `portFixupStructU16` is rotate16 and `portFixupStructU32` is `__builtin_bswap32`.
+- Read `src/integration/decomp/lbreloc_byteswap.cpp:985-1017` to confirm `portFixupStructU16` is rotate16 and `portFixupStructU32` is `__builtin_bswap32`.
 - No rabbitizer disasm needed: no `IS_BIG_ENDIAN` bitfield structs in the audited headers.

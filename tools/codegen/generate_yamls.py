@@ -580,7 +580,7 @@ def main():
     # Per-version generated header (reloc_data.us.h / reloc_data.jp.h);
     # the decomp's selector shim picks the right one by REGION_* at compile.
     header_name = f"reloc_data.{version}.h"
-    header_path = str(repo_root / "include" / header_name)
+    header_path = str(repo_root / "generated" / "include" / version / header_name)
     if not os.path.isfile(header_path):
         print(f"Error: {header_name} not found at {header_path}")
         sys.exit(1)

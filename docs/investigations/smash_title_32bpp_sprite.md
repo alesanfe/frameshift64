@@ -80,7 +80,7 @@ This is correct. No change needed here.
 - decomp/include/PR/gbi.h:455,460` — `G_IM_SIZ_32b_LINE_BYTES=2`, `G_IM_SIZ_32b_LOAD_BLOCK=G_IM_SIZ_32b`
 - `libultraship/src/fast/interpreter.cpp:2143-2173` — `line_size *= 2` for G_IM_SIZ_32b (present, correct)
 - `libultraship/src/fast/interpreter.cpp:863-912` — `ImportTextureRgba32`
-- `src/bridge/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData` (BSWAP + deswizzle logic)
+- `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData` (BSWAP + deswizzle logic)
 
 ## Next Investigation Steps
 

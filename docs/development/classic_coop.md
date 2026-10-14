@@ -3,7 +3,7 @@
 Port feature (2026-06-10): a second human can join the entire Classic (1P
 Game) run. Gated behind **Settings → Gameplay → "Classic Co-op (Needs
 reload)"** — default **ON**, latched once at boot
-(`port_classic_coop_latch()` in `src/features/ClassicCoop.cpp`).
+(`port_classic_coop_latch()` in `src/gameplay/modes/ClassicCoop.cpp`).
 
 ## Design
 
@@ -80,7 +80,7 @@ reload)"** — default **ON**, latched once at boot
 
 ## Files touched
 
-`src/features/ClassicCoop.cpp` (new), `enhancements.h`,
+`src/gameplay/modes/ClassicCoop.cpp` (new), `enhancements.h`,
 `src/presentation/PortMenu.cpp`, `src/application/port.cpp`,
 `decomp/src/sc/sctypes.h`, `decomp/src/sc/scmanager.c`,
 `decomp/src/sc/sc1pmode/sc1pmanager.{c,h}`,

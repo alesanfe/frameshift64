@@ -4,6 +4,7 @@
 
 #include "port_watchdog.h"
 #include "port_log.h"
+#include "diagnostics/crash_bundle.h"
 
 #include <atomic>
 #include <cerrno>
@@ -345,6 +346,11 @@ void CrashSignalHandler(int sig, siginfo_t *info, void *ucontext) {
     pos += FormatHex(line + pos, fa);
     line[pos++] = '\n';
     WriteBoth(line, pos);
+
+    /* Drop the crash marker so next boot's CollectPendingCrashBundle can
+     * package marker + this log into logs/crashes/. open/write/close only
+     * inside — async-signal-safe. */
+    port_diag_write_crash_marker(name, fa);
 
     DumpBacktraceFromContext(ucontext);
 

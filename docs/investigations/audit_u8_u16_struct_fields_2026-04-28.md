@@ -179,7 +179,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 - `decomp/src/lb/lbcommon.c:1054, 1288, 1339` — all call `portFixupMObjSub(mobjsub)` ✓
 - `decomp/src/sys/objanim.c` — fighters/weapons/effects all use shared path ✓
 
-**Helper:** `src/bridge/lbreloc_byteswap.cpp` — `portFixupMObjSub` handles the mixed u16/u8 fields with rotate16 + bswap32 on the color/pad words. ✓
+**Helper:** `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupMObjSub` handles the mixed u16/u8 fields with rotate16 + bswap32 on the color/pad words. ✓
 
 **Risk:** NONE (dedicated helper in use)
 
@@ -284,7 +284,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 - `decomp/src/mn/mncommon/mntitle.c:921` ✓
 - `decomp/src/if/ifcommon.c:36` ✓
 
-**Helper:** `src/bridge/lbreloc_byteswap.cpp` — `portFixupSprite` rotates all s16/u16 pairs and applies BSWAP32 to color + format words. ✓
+**Helper:** `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSprite` rotates all s16/u16 pairs and applies BSWAP32 to color + format words. ✓
 
 **Risk:** NONE (dedicated fixup helper in all loaders)
 
@@ -307,7 +307,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 - `decomp/src/sc/sccommon/scexplain.c:27` ✓
 - etc.
 
-**Helper:** `src/bridge/lbreloc_byteswap.cpp` — `portFixupBitmap` rotates all s16 pairs. ✓
+**Helper:** `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupBitmap` rotates all s16 pairs. ✓
 
 **Risk:** NONE (dedicated fixup helper)
 
@@ -489,7 +489,7 @@ The following structs were checked and confirmed to contain only u32/f32/pointer
   - `decomp/src/wp/wptypes.h` / `decomp/src/wp/wpmanager.c` (inferred)
   - `decomp/src/lb/lbcommon.c`
   - decomp/include/PR/sp.h
-  - `src/bridge/lbreloc_byteswap.h` / `lbreloc_byteswap.cpp`
+  - `src/integration/decomp/lbreloc_byteswap.h` / `lbreloc_byteswap.cpp`
 
 - **Related documentation:**
   - `docs/bugs/mpgrounddata_layer_mask_u8_byteswap_2026-04-22.md`

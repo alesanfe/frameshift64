@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-03
 **Class:** Backend-specific framebuffer-readback orientation
-**Files:** `src/bridge/framebuffer_capture.cpp`
+**Files:** `src/integration/decomp/framebuffer_capture.cpp`
 
 ## Symptom
 
@@ -54,7 +54,7 @@ non-MSAA case the user reproduces. Locked in as the unconditional default.
 
 ## Fix
 
-`src/bridge/framebuffer_capture.cpp`: drop the OpenGL-only Y-flip and the
+`src/integration/decomp/framebuffer_capture.cpp`: drop the OpenGL-only Y-flip and the
 associated `<cstring>` include / `apiName` lookup. Comment captures the
 non-obvious reason (no per-backend branching is needed).
 

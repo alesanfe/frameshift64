@@ -1,6 +1,6 @@
 #include "OnlineStatus.h"
 
-#include "netplay/netlobby.h"
+#include "netplay/session/netlobby.h"
 
 #include <imgui.h>
 

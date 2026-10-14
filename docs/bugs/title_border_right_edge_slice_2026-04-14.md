@@ -1,7 +1,7 @@
 # Title-Screen Border — Missing Right-Edge Slice & MARIO Title-Card Smear
 
 **Date:** 2026-04-14
-**Files touched:** `libultraship/src/fast/interpreter.cpp` (`ImportTextureIA8`, `ImportTextureI4`, new `ClampUploadWidthToTile` helper); `src/bridge/lbreloc_byteswap.cpp` — revert of the ce89700 trailing-column workaround.
+**Files touched:** `libultraship/src/fast/interpreter.cpp` (`ImportTextureIA8`, `ImportTextureI4`, new `ClampUploadWidthToTile` helper); `src/integration/decomp/lbreloc_byteswap.cpp` — revert of the ce89700 trailing-column workaround.
 **Supersedes:** `ce89700` ("Zero sprite trailing columns to kill MARIO title-card bleed") — the workaround is removed because the root cause is fixed in Fast3D.
 **Related:** [sprite_trailing_column_bleed](../investigations/sprite_trailing_column_bleed.md)
 
@@ -65,5 +65,5 @@ With the Fast3D upload clamped, cols `[width, width_img)` of the sprite data are
 ## Files
 
 - `libultraship/src/fast/interpreter.cpp` — `ClampUploadWidthToTile` helper + calls from `ImportTextureIA8`, `ImportTextureI4`.
-- `src/bridge/lbreloc_byteswap.cpp` — trailing-column block removed from `portFixupSpriteBitmapData`.
+- `src/integration/decomp/lbreloc_byteswap.cpp` — trailing-column block removed from `portFixupSpriteBitmapData`.
 - `docs/investigations/sprite_trailing_column_bleed.md` — marked superseded, points here.

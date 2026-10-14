@@ -51,7 +51,7 @@ Three-part defense-in-depth:
    allocation that's `memset(0)` between scenes. Same VA stays mapped+
    writable forever; stale reads on Linux now return zero/stale bytes (like
    macOS) instead of faulting. Calls `port_taskman_evict_arena_caches`
-   (new wrapper in `src/bridge/lbreloc_bridge.cpp`) to clear the four
+   (new wrapper in `src/integration/decomp/lbreloc_bridge.cpp`) to clear the four
    port-side caches that hold pointers into the arena (DL widening,
    texture upload, struct fixup, reloc file ranges).
 
@@ -125,7 +125,7 @@ been observed crashing on Linux yet.
 ## References
 
 - `decomp/src/sys/taskman.c:1316–1352` — Part 1 band-aid
-- `src/bridge/lbreloc_bridge.cpp:146–162` — Part 1 eviction wrapper
+- `src/integration/decomp/lbreloc_bridge.cpp:146–162` — Part 1 eviction wrapper
 - `decomp/src/sys/objdisplay.c:gcDrawDObjTreeDLLinks` — Part 2 guard
 - `libultraship/src/fast/interpreter.cpp:gfx_set_timg_handler_rdp` —
   Part 3 revert

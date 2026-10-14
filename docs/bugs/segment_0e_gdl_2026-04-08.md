@@ -6,4 +6,4 @@
 
 **Fix:** Removed the `isRuntimeSegRef` G_DL exception. All segment 0x0E references (including G_DL) in resource DLs are now resolved to `fileBase + offset` at normalization time. Also replaced `syDebugPrintf` + `while(TRUE)` in DL buffer overflow detection with visible `port_log` output under `#ifdef PORT`.
 
-**Files:** `libultraship/src/fast/interpreter.cpp`, `src/bridge/lbreloc_bridge.cpp`, `decomp/src/sys/taskman.c`
+**Files:** `libultraship/src/fast/interpreter.cpp`, `src/integration/decomp/lbreloc_bridge.cpp`, `decomp/src/sys/taskman.c`

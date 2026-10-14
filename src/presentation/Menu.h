@@ -39,6 +39,21 @@ class Menu : public GuiWindow {
     std::unordered_map<uint32_t, disabledInfo>& GetDisabledMap();
 
   protected:
+    /* Header-action flags — subclasses turn these off when they provide the
+     * same action as a regular menu entry (e.g. a Quit row in a Support
+     * sidebar) instead of a permanent header button. */
+    bool mShowHeaderQuit = true;
+    bool mShowHeaderReset = true;
+    /* Bottom bar with device-appropriate action hints (gamepad buttons when
+     * controller nav is enabled, keyboard otherwise). */
+    bool mShowActionBar = false;
+    /* Persistent help strip above the action bar showing the focused /
+     * hovered widget's tooltip — tooltips alone don't work with gamepad or
+     * touch, so the description needs a fixed home. */
+    bool mShowHelpBar = false;
+    std::string mFocusHelpName;
+    std::string mFocusHelpText;
+
     ImVec2 mOriginalSize;
     std::string mName;
     uint32_t mWindowFlags;
@@ -69,6 +84,7 @@ class Menu : public GuiWindow {
     ImVec2 poppedPos;
     float windowHeight;
     float windowWidth;
+    float mLastUiScale = 1.0f;
     UIWidgets::Colors menuThemeIndex;
 };
 } // namespace Ship

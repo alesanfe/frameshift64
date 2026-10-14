@@ -46,7 +46,7 @@ Makefile does `VERSION=us|jp`.
 ## What already exists (do not rebuild)
 
 - **decomp `port-patches`**: REGION_JP source divergence is already merged.
-  `include/reloc_data.us.h` is a selector shim that includes
+  `generated/include/us/reloc_data.us.h` is a selector shim that includes
   `reloc_data.us.h` or `reloc_data.jp.h` per `REGION_US`/`REGION_JP`.
   JP-excluded startup files `decomp/src/mn/mncommon/{mncongra,mnstartup}.c` are
   present (upstream Makefile filters them out of JP builds).
@@ -68,8 +68,8 @@ Makefile does `VERSION=us|jp`.
 | Reloc table ROM address | `tools/codegen/generate_yamls.py:24` | `RELOC_TABLE_ROM_ADDR = 0x001AC870`, `RELOC_FILE_COUNT = 2132`, `COMPRESSED_FILE_COUNT = 499` |
 | Symbol→fileID table | `tools/codegen/reloc_data_symbols.us.txt` | US file IDs/ordering |
 | File descriptions | `tools/codegen/relocFileDescriptions.us.txt` | US |
-| Generated reloc stubs | `include/reloc_data.us.h` (US, 323 KB) | from `reloc_data_symbols.us.txt` |
-| fileID→resource path table | `tools/codegen/generate_reloc_table.py:15` → `src/resources/RelocFileTable.us.cpp` | `YAML_DIR = assets/configuration/extraction/us` |
+| Generated reloc stubs | `generated/include/us/reloc_data.us.h` (US, 323 KB) | from `reloc_data_symbols.us.txt` |
+| fileID→resource path table | `tools/codegen/generate_reloc_table.py:15` → `generated/src/us/RelocFileTable.us.cpp` | `YAML_DIR = assets/configuration/extraction/us` |
 | Region defines | `CMakeLists.txt:247-248` | `REGION_US=1 VERSION_US=1` (unconditional) |
 | YAML list / copy / config copy | `CMakeLists.txt:122-136, 464, 478-482` | `assets/configuration/extraction/us` literals |
 | Baserom selection | `CMakeLists.txt:496-502` | `baserom.us.<ext>` |
@@ -146,19 +146,19 @@ reused from US.
    Step 0: removed dead `COMPRESSED_FILE_COUNT` from `generate_yamls.py`
    (defined, never used) — keep this its own commit when committing.
 6. ✅ Generated JP artifacts (US sibling files, US paths untouched):
-   - `include/reloc_data.jp.h` — 6000 #defines (3900 FileID), provenance
+   - `generated/include/jp/reloc_data.jp.h` — 6000 #defines (3900 FileID), provenance
      correctly cites `reloc_data_symbols.jp.txt`.
    - `assets/configuration/extraction/jp/reloc_*.yml` — 16 files, **2107 entries** (== JP file
      count). JP names resolve 100% from the header so the US heuristic
      name tables never fire for JP (categorisation differs from US but is
      self-consistent with the JP RelocFileTable).
-   - `src/resources/RelocFileTable.jp.{cpp,h}` — 2107 entries, **0
+   - `generated/src/jp/RelocFileTable.jp.*` — 2107 entries, **0
      MISSING**, `RELOC_FILE_COUNT 2107`. `RelocFileTable.h` is now
      script-generated (was hand-maintained; its own banner already
      claimed it was) so the count is per-version.
 
    **Regression guard:** with default (no-arg) invocation —
-   `generate_reloc_stubs.py` → `include/reloc_data.us.h`,
+   `generate_reloc_stubs.py` → `generated/include/us/reloc_data.us.h`,
    `generate_reloc_table.py` → `RelocFileTable.{cpp,h}` — all **byte-for-byte
    identical** to the committed files (git sees zero change).
    `generate_yamls.py` US output could not be ROM-verified (US ROM absent
@@ -180,16 +180,16 @@ reused from US.
 ### Phase 3 — Build-system version switch — ✅ DONE (2026-05-18)
 
 **Architectural decision (Senior Dev Override):** the port had a flat
-`include/reloc_data.us.h` on the include path *before* `decomp/include/`,
+`generated/include/us/reloc_data.us.h` on the include path *before* `decomp/include/`,
 shadowing the decomp's own US/JP selector shim
-(`include/reloc_data.us.h` → `reloc_data.<region>.h`). Aligned the
+(`generated/include/us/reloc_data.us.h` → `reloc_data.<region>.h`). Aligned the
 port to the decomp's existing design instead of inventing a parallel one:
 
-- Codegen now emits `include/reloc_data.{us,jp}.h` and
-  `src/resources/RelocFileTable.{us,jp}.{cpp,h}`; the flat
-  `include/reloc_data.us.h` and `src/resources/RelocFileTable.us.cpp` were
+- Codegen now emits `generated/include/*/reloc_data.*.h` and
+  `generated/src/us/RelocFileTable.us.*`; the flat
+  `generated/include/us/reloc_data.us.h` and `generated/src/us/RelocFileTable.us.cpp` were
   removed. US content is **byte-identical** to the old flat files (only
-  renamed). `src/resources/RelocFileTable.h` is now a committed selector
+  renamed). `src/resources/relocation/RelocFileTable.h` is now a committed selector
   shim mirroring the decomp's `reloc_data.h` shim. Both versions' headers
   coexist in the source tree → separate build dirs never collide.
 

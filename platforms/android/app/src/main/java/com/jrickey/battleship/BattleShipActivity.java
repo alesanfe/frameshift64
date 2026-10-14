@@ -6,10 +6,13 @@ import android.util.Log;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.libsdl.app.SDLActivity;
 
@@ -165,6 +168,130 @@ public class BattleShipActivity extends SDLActivity {
                 conn.disconnect();
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Cancellable background downloads (src/platform/download_service.cpp)
+    //
+    // The native DownloadService calls these statics over JNI. Each task
+    // streams to the destination file directly so the native side can
+    // poll progress by stat()ing the .part file — no progress plumbing
+    // needed through the JNI boundary. Cancel disconnects the
+    // connection, which makes the blocked read() throw and the task
+    // exits through its cancelled path.
+    //
+    // State encoding shared with download_service.cpp:
+    //   0 running · 1 done · 2 error · 3 cancelled
+    // ------------------------------------------------------------------
+
+    private static final ConcurrentHashMap<Integer, DownloadTask> sDownloads =
+            new ConcurrentHashMap<>();
+    private static final AtomicInteger sNextDownloadId = new AtomicInteger(1);
+
+    private static final class DownloadTask implements Runnable {
+        final String url;
+        final String dest;
+        volatile int state = 0;
+        volatile HttpURLConnection conn;
+
+        DownloadTask(String url, String dest) {
+            this.url = url;
+            this.dest = dest;
+        }
+
+        void cancel() {
+            state = 3;
+            HttpURLConnection c = conn;
+            if (c != null) {
+                c.disconnect();
+            }
+        }
+
+        @Override
+        public void run() {
+            try {
+                conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(15_000);
+                conn.setReadTimeout(60_000);
+                conn.setRequestProperty("User-Agent", "BattleShip-Android");
+                final int code = conn.getResponseCode();
+                if (code < 200 || code >= 300) {
+                    Log.w("ssb64.http", "download " + url + " -> HTTP " + code);
+                    state = 2;
+                    return;
+                }
+                try (InputStream in = conn.getInputStream();
+                     FileOutputStream out = new FileOutputStream(dest)) {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        if (state == 3) {
+                            return; // cancelled mid-transfer
+                        }
+                        out.write(buf, 0, n);
+                    }
+                }
+                if (state == 0) {
+                    state = 1;
+                }
+            } catch (Exception e) {
+                if (state != 3) {
+                    Log.w("ssb64.http", "download failed: " + url, e);
+                    state = 2;
+                }
+            } finally {
+                if (state != 1) {
+                    // Never leave a torn payload under the requested name.
+                    new File(dest).delete();
+                }
+                if (conn != null) {
+                    conn.disconnect();
+                }
+            }
+        }
+    }
+
+    private static final ConcurrentHashMap<Integer, Thread> sDownloadThreads =
+            new ConcurrentHashMap<>();
+
+    /** Start a background download; returns its task id, or -1. */
+    public static int startDownload(String url, String destPath) {
+        DownloadTask task = new DownloadTask(url, destPath);
+        int id = sNextDownloadId.getAndIncrement();
+        sDownloads.put(id, task);
+        Thread t = new Thread(task, "battleship-dl-" + id);
+        sDownloadThreads.put(id, t);
+        t.start();
+        return id;
+    }
+
+    /** Current state for a task id (see the encoding above). */
+    public static int pollDownload(int id) {
+        DownloadTask t = sDownloads.get(id);
+        return t == null ? 2 : t.state;
+    }
+
+    /** Signal cancellation — the worker exits promptly. */
+    public static void cancelDownload(int id) {
+        DownloadTask t = sDownloads.get(id);
+        if (t != null) {
+            t.cancel();
+        }
+    }
+
+    /** Join the worker, remove the task, and return its terminal state. */
+    public static int finishDownload(int id) {
+        Thread t = sDownloadThreads.remove(id);
+        if (t != null) {
+            try {
+                t.join(10_000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        DownloadTask task = sDownloads.remove(id);
+        return task == null ? 2 : task.state;
     }
 
     @Override

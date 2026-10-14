@@ -190,7 +190,7 @@ Both files are **64 bytes** decompressed. `sizeof(WPAttributes)` is **52 bytes**
 
 These are the most promising angles I didn't get to:
 
-1. **Dump the raw Samus Special 1 file from the .o2r archive** *before* pass1 byte-swap and `portFixupStructU16`. Compare to what the port has in memory after both. This decides packed-vs-padded ROM layout unambiguously. The bridge code at `src/bridge/lbreloc_bridge.cpp:302` (`lbRelocLoadAndRelocFile`) is where the raw bytes enter the port, pre-pass1.
+1. **Dump the raw Samus Special 1 file from the .o2r archive** *before* pass1 byte-swap and `portFixupStructU16`. Compare to what the port has in memory after both. This decides packed-vs-padded ROM layout unambiguously. The bridge code at `src/integration/decomp/lbreloc_bridge.cpp:302` (`lbRelocLoadAndRelocFile`) is where the raw bytes enter the port, pre-pass1.
 2. **Is there a MISSING u32 field at the start of the file?** The 64-byte file vs 52-byte struct leaves 12 bytes unaccounted for. If those 12 bytes are at the *start* (header), then `WPAttributes` is actually at file offset 12, not 0, and everything I read is shifted by 12 bytes. The `ll*WeaponAttributes` symbol resolving to `((intptr_t)0x0)` doesn't prove the offset is really 0 — the port's generated reloc stubs set every such symbol to 0 regardless. Check how the ORIGINAL decomp (pre-port) compiles these symbols.
 3. **Verify `gFTDataSamusSpecial1` is actually set to the decompressed Samus-Special-1 file content**, not some other file. The port's RelocFile factory is keyed by file_id; something in the load chain could be wiring the wrong file. Grep `gFTDataSamusSpecial1` — I found only declarations, never an assignment, which suggests a linker-generated symbol table sets it. Check `decomp/src/ft/ftmanager.c:ftManagerLoadFiles` or equivalent.
 4. **Build a quick standalone C program** that just includes `wptypes.h`, declares a `WPAttributes` on the stack, writes Fox-Blaster-plausible values through the named fields (`damage=3, angle=0`, etc.), and dumps the bytes. Then compare to the ROM bytes — if they differ, the struct declaration doesn't match the ROM format.
@@ -232,8 +232,8 @@ This session found and worked around a new variant of the existing "port_log ARM
 - `decomp/src/wp/wpsamus/wpsamuschargeshot.c:152` — `wpSamusChargeShotLaunch` (doesn't touch `attack_count`)
 - `decomp/src/wp/wptypes.h:36-120` — `WPAttributes` struct with the `#if IS_BIG_ENDIAN` bitfield mirror
 - `decomp/src/it/ittypes.h:242-243` — the working companion `u16 _pad_before_combat_bits;` for items
-- `src/bridge/lbreloc_byteswap.cpp:757` — `portFixupStructU16` implementation (idempotent via `sStructU16Fixups`)
-- `src/bridge/lbreloc_bridge.cpp:302` — `lbRelocLoadAndRelocFile` where raw file bytes enter the port
+- `src/integration/decomp/lbreloc_byteswap.cpp:757` — `portFixupStructU16` implementation (idempotent via `sStructU16Fixups`)
+- `src/integration/decomp/lbreloc_bridge.cpp:302` — `lbRelocLoadAndRelocFile` where raw file bytes enter the port
 
 ## The single most useful next step
 

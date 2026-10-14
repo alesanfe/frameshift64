@@ -3,7 +3,7 @@
 #include <cstdlib>
 
 #include "libultraship/bridge/consolevariablebridge.h"
-#include "bridge/hooks/Events.h"
+#include "integration/hooks/Events.h"
 
 namespace ssb64 {
 

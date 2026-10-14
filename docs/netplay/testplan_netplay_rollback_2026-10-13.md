@@ -104,7 +104,7 @@ All four layers are implemented. Env hooks are deterministic through
 
 ### Layer 1 — done
 
-- `src/netplay/port_udp.cpp` sim: `SSB64_NETPLAY_SIM_{DUP,REORDER,CORRUPT}_PCT`
+- `src/netplay/transport/port_udp.cpp` sim: `SSB64_NETPLAY_SIM_{DUP,REORDER,CORRUPT}_PCT`
   plus `SIM_REORDER_WINDOW_MS`. Order of application: loss drop → corrupt a
   copy (never the caller's buffer) → jitter/reorder delay → queue insert →
   optional duplicate twin. Only `send_routed` (game traffic) is affected;
@@ -148,7 +148,7 @@ All four layers are implemented. Env hooks are deterministic through
   `skip_rng_restore`. Driven by `scripts/testing/netplay_mutation_suite.ps1`:
   baselines must pass, every mutant must produce exit 1.
 - Lobby fuzz: `services/netplay-lobby/tests/test-lobby-fuzz.js` hammers
-  `node-lobby.js` with malformed text/binary frames and hostile connection
+  `node-lobby.mjs` with malformed text/binary frames and hostile connection
   params; asserts the process survives and an untouched control room stays
   functional.
 

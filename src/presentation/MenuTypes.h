@@ -119,6 +119,10 @@ struct WidgetInfo {
     WidgetFunc customFunction = nullptr;
     DisableVec activeDisables = {};
     const char* windowName = "";
+    // Short status tag rendered after the widget ("Restart required",
+    // "Experimental", "Advanced", ...). Kept out of `name` so it neither
+    // pollutes search results nor widens the control itself.
+    const char* tag = nullptr;
     bool isHidden = false;
     bool sameLine = false;
     bool raceDisable = true;
@@ -225,6 +229,11 @@ struct WidgetInfo {
 
     WidgetInfo& HideInSearch(bool hide) {
         hideInSearch = hide;
+        return *this;
+    }
+
+    WidgetInfo& Tag(const char* tag_) {
+        tag = tag_;
         return *this;
     }
 

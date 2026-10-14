@@ -45,6 +45,7 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_SAVE_PATH` | save location override (CI/debug) |
 | `SSB64_NO_UPDATE_CHECK` | disable updater |
 | `SSB64_LOG_PATH` | log destination |
+| `SSB64_LOG_JSON` | mirror every log line as JSONL (`{"t","sid","lvl","cat","msg"}`) to `<log>.jsonl` — structured events for tooling; `token=`/`key=`/`secret=`/`password=` values and the home-dir prefix are redacted in the mirror |
 | `SSB64_MUTE` | silence audio |
 | `SSB64_INTERP_{FPS,LOG,SNAP_DIST}` | frame-interpolation tuning/dump |
 | `SSB64_{DUMP_DRAWS,DUMP_ALL_FIGATREE,DUMP_FILE_ID,STAGE_AUDIT,TEX_DUMP,TEX_FIXUP_LOG,TEX_FIXUP_LOG_FILE_ID}` | asset/render dump switches |
@@ -82,8 +83,10 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_SCENE_HEAP_FREE` | arena free+malloc per scene transition (ASan bait) |
 | `SSB64_ADDR_JITTER` | shift process heap layout for local-peer tests |
 | `SSB64_MAX_FRAMES` | auto-shutdown after N frames |
+| `SSB64_HEADLESS` | run full sim + netplay without rendering (display lists dropped, 60 Hz timer pacing) — multi-instance rigs |
 | `SSB64_WIZARD_AUTOCANCEL` | auto-cancel the first-run wizard at frame N |
 | `SSB64_SYNTH_SELFTEST` | deblob synthesis validation harness; exits before game boot |
+| `SSB64_FUZZ_{PARSER,INPUT}` | parser fuzz entry (manifest/replay/json); parse file then exit — driven by `tools/fuzz/run_parser_fuzz.py` |
 
 *Policy:* gating rule = "does setting this mutate gameplay, let a
 packet/peer/session be accepted that correct validation would reject, inject

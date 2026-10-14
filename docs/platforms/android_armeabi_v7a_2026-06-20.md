@@ -27,7 +27,7 @@ target, and the only swap shim was `coroutine_aarch64.S` (AAPCS64).
 
 ### What landed
 
-- **`port/coroutine_armv7.S`** (new) — AArch32 AAPCS context-switch, a direct
+- **`src/platform/coroutine/coroutine_armv7.S`** (new) — AArch32 AAPCS context-switch, a direct
   mirror of `coroutine_aarch64.S`. Saves the callee-saved set: core `r4..r11`,
   `sp`, `lr`, and VFP `d8..d15` (armeabi-v7a mandates VFPv3-D16). 104-byte
   context. Assembled in ARM state (`.arm`); interworks with Android's default
@@ -35,17 +35,17 @@ target, and the only swap shim was `coroutine_aarch64.S` (AAPCS64).
   `lr`). `sp`/`lr` are stored via `str` rather than included in the `stm`
   register list to avoid the ARMv7-deprecated store-of-`r13` form.
 
-- **`port/coroutine_aarch64.S`** — body wrapped in `#if defined(__aarch64__)`
+- **`src/platform/coroutine/coroutine_aarch64.S`** — body wrapped in `#if defined(__aarch64__)`
   so it is inert when the target is ARM32 (the GNU-stack note stays
   unconditional).
 
-- **`src/platform/android/coroutine_android.cpp`** — now multi-arch. The `#error` guard accepts
+- **`src/platform/coroutine/coroutine_android.cpp`** — now multi-arch. The `#error` guard accepts
   `__aarch64__` *or* `__arm__`; a second `CoroCtx` layout + `static_assert`
   offset checks describe the ARM32 frame; the extern trampoline decl and the
   initial-context setup in `port_coroutine_create` are `#if`-branched
   (ARM32 seeds `r4` = `PortCoroutine*`, `lr` = trampoline, `sp` = stack top).
 
-- **`CMakeLists.txt`** — `port/coroutine_armv7.S` added alongside
+- **`CMakeLists.txt`** — `src/platform/coroutine/coroutine_armv7.S` added alongside
   `coroutine_aarch64.S` in the Android library target and the optional
   `coroutine_test`. Both `.S` bodies are arch-`#if`-guarded, so only the file
   matching `ANDROID_ABI` emits code; no CMake-side ABI selection needed.

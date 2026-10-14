@@ -39,7 +39,7 @@ Four converging leads. Listed in order of confidence.
 `fileBase`/`fileSize` of the originating reloc file *at widening time*.
 
 **Bug:** evicted only by `portResetPackedDisplayListCache()`, called from a
-single site — `lbRelocInitSetup` (`src/bridge/lbreloc_bridge.cpp:885`,
+single site — `lbRelocInitSetup` (`src/integration/decomp/lbreloc_bridge.cpp:885`,
 full scene reset). NOT evicted by `lbRelocLoadAndRelocFile`
 (`lbreloc_bridge.cpp:335-389`), even though peer caches at the same call
 site (`portEvictStructFixupsInRange`, `portTextureCacheDeleteRange`,

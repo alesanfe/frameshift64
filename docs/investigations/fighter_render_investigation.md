@@ -23,7 +23,7 @@ Fighters live in the reloc-file table; Torch treats every reloc entry as an opaq
 
 There is **no** `assets/configuration/extraction/us/*fighter*.yml` — the fighter-common and fighter-main files are covered by the blanket reloc-table extraction driven by `config.yml → RELOC_FILE_COUNT` + `RelocFactory`. Torch's `.hash.yml` for fighters doesn't exist either.
 
-Relevant reloc-table entries from `src/resources/RelocFileTable.us.cpp`:
+Relevant reloc-table entries from `generated/src/us/RelocFileTable.us.cpp`:
 - `reloc_fighters_main/MarioMain` (file_id 203), `MarioMainMotion` (202), `MarioSpecial1` (204), …
 - `reloc_fighters_common/FTEmblemSprites` (20), `FTStocksZako` (25), `FTManagerCommon` (163)
 - `reloc_animations/FTMarioAnim*` (500-ish…)
@@ -31,7 +31,7 @@ Relevant reloc-table entries from `src/resources/RelocFileTable.us.cpp`:
 
 All share the same factory + binary layout.
 
-### 1.2 Archive → runtime load (`src/bridge/lbreloc_bridge.cpp::lbRelocLoadAndRelocFile`)
+### 1.2 Archive → runtime load (`src/integration/decomp/lbreloc_bridge.cpp::lbRelocLoadAndRelocFile`)
 
 Lines 301-497, per-file pipeline:
 1. Resolve the `RelocFile` via LUS `ResourceManager::LoadResource(gRelocFileTable[file_id])`.
@@ -42,7 +42,7 @@ Lines 301-497, per-file pipeline:
 6. Walk the external reloc chain the same way but resolve against the cached `status_buffer` for the extern dependency file (load-on-demand if missing).
 7. **Figatree-only** postpass: `portRelocIsFighterFigatreeFile(file_id)` pattern-matches `reloc_animations/FT*` and `reloc_submotions/FT*` paths. If this is a figatree file, a bitmap of "which words got relocated" is recorded during chain walks, and then `portRelocFixupFighterFigatree` runs rotate16 on every non-reloc word in the whole file. Rationale: figatrees are streams of `AObjEvent16` (two 16-bit commands per u32 word), and pass1's blanket `BSWAP32` leaves the two u16s in swapped positions; rotate16 restores them. Reloc-chain slots are skipped because they already hold native-endian token u32s after the chain walk.
 
-### 1.3 Byte-swap passes (`src/bridge/lbreloc_byteswap.cpp`)
+### 1.3 Byte-swap passes (`src/integration/decomp/lbreloc_byteswap.cpp`)
 
 Central function `portRelocByteSwapBlob` (lines 699-718):
 
@@ -95,7 +95,7 @@ Drawing: `ftDisplayMainDrawDefault` (decomp/src/ft/ftdisplaymain.c:756) → `gcD
 ### 2.1 H1 (dominant): fighter MObjSubs are never run through `portFixupMObjSub`, so every byte-granular field in every fighter material is read from the wrong in-memory position
 
 **Evidence:**
-1. `portFixupMObjSub` is defined in `src/bridge/lbreloc_byteswap.cpp:1404` and declared in `src/bridge/lbreloc_byteswap.h:109`.
+1. `portFixupMObjSub` is defined in `src/integration/decomp/lbreloc_byteswap.cpp:1404` and declared in `src/integration/decomp/lbreloc_byteswap.h:109`.
 2. Searching the entire codebase (`Grep portFixupMObjSub`) turns up exactly two call sites, both inside `decomp/src/sys/objanim.c` at lines 2734 and 2798 — the `gcSetupCustomDObjsWithMObj` and `gcAddMObjAll` PORT branches. These are the **scene-geometry** loaders (OpeningRoom background, items, stages).
 3. `decomp/src/lb/lbcommon.c` contains no reference to `portFixupMObjSub` at all. `lbCommonAddMObjForFighterPartsDObj` (line 1030), `lbCommonSetupCustomTreeDObjsWithMObj` (line 1263), and `lbCommonAddMObjForTreeDObjs` (line 1313, 1327) all call `gcAddMObjForDObj` on a resolved MObjSub pointer without fixing it first.
 4. `gcAddMObjForDObj` (decomp/src/sys/objman.c:1307) executes `mobj->sub = *mobjsub` at line 1327 — a plain struct copy that captures whatever byte ordering is in the source MObjSub at that moment.
@@ -221,7 +221,7 @@ One 30-second capture of the first few frames of `mvopeningroom` → `ftOpeningM
 - Scene-geometry MObjSub path (has fixup):
   - `decomp/src/sys/objanim.c:2734` — `gcSetupCustomDObjsWithMObj`, PORT branch.
   - `decomp/src/sys/objanim.c:2798` — `gcAddMObjAll`, PORT branch.
-- Fixup function: `src/bridge/lbreloc_byteswap.cpp:1404 portFixupMObjSub`.
+- Fixup function: `src/integration/decomp/lbreloc_byteswap.cpp:1404 portFixupMObjSub`.
 - MObjSub struct definition: `decomp/src/sys/objtypes.h:320-370`.
 - SYColorPack definition: decomp/include/ssb_types.h:97-102`.
 - Draw-time reads of MObjSub fields: `decomp/src/sys/objdisplay.c:1322-1720 gcDrawMObjForDObj`.
@@ -233,7 +233,7 @@ One 30-second capture of the first few frames of `mvopeningroom` → `ftOpeningM
 - ftparam raw-indexing bug sites: `decomp/src/ft/ftparam.c:811, 817, 917, 923, 1062, 1068`.
 - Matanim color-path LE fix: `decomp/src/sys/objanim.c:1382-1628 gcPlayMObjMatAnim` (commits `25edeb0`, `a7024aa`).
 - Fighter lights port-hack: `decomp/src/ft/ftdisplaylights.c:10-70 ftDisplayLightsDrawReflect`.
-- Byte-swap pipeline: `src/bridge/lbreloc_byteswap.cpp:699-1497`.
-- Reloc file loader: `src/bridge/lbreloc_bridge.cpp:301-497 lbRelocLoadAndRelocFile`.
-- Figatree fixup: `src/bridge/lbreloc_bridge.cpp:133-157 portRelocFixupFighterFigatree`.
+- Byte-swap pipeline: `src/integration/decomp/lbreloc_byteswap.cpp:699-1497`.
+- Reloc file loader: `src/integration/decomp/lbreloc_bridge.cpp:301-497 lbRelocLoadAndRelocFile`.
+- Figatree fixup: `src/integration/decomp/lbreloc_bridge.cpp:133-157 portRelocFixupFighterFigatree`.
 - Torch reloc factory (opaque blob): `torch/src/factories/ssb64/RelocFactory.cpp:119-208`.

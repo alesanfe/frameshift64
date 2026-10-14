@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BattleShip mod manifest",
+  "type": "object",
+  "required": ["name", "version"],
+  "properties": {
+    "name":        { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+    "version":     { "type": "string" },
+    "apiVersion":  { "type": "integer", "minimum": 1 },
+    "simulation":  {
+      "type": "boolean", "default": true,
+      "description": "true = affects deterministic simulation and is hashed into the netplay compat token; false = cosmetic-only, exempt"
+    },
+    "code-version":{ "type": "string" },
+    "entry":       { "type": "string" },
+    "depends":     { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

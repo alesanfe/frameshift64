@@ -96,7 +96,7 @@ The XOR-4 deswizzle fix in `portFixupSpriteBitmapData` is applied for `bpp < 32`
 
 ## Current Code State
 
-All code is at HEAD. No pending changes in `src/bridge/lbreloc_byteswap.cpp` or `libultraship/`.
+All code is at HEAD. No pending changes in `src/integration/decomp/lbreloc_byteswap.cpp` or `libultraship/`.
 
 ## Debug Data Available
 
@@ -117,7 +117,7 @@ All code is at HEAD. No pending changes in `src/bridge/lbreloc_byteswap.cpp` or 
 
 ## Key Files
 
-- `src/bridge/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData` (BSWAP + deswizzle)
+- `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData` (BSWAP + deswizzle)
 - `decomp/src/lb/lbcommon.c:2629-2675` — `lbCommonDrawSObjBitmap` 32bpp GBI sequence
 - `decomp/src/lb/lbcommon.c:3033-3050` — `lbCommonMakeSObjForGObj` (calls fixup chain)
 - `decomp/src/mn/mnplayers/` — portrait creation (`mnPlayers*MakePortrait`)

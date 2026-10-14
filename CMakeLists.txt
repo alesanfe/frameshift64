@@ -15,15 +15,15 @@ if(BATTLESHIP_UWP)
 endif()
 
 # Android needs ASM for the aarch64 coroutine context-switch
-# (src/platform/coroutine_aarch64.S). Enable it before any add_library/add_executable
+# (src/platform/coroutine/coroutine_aarch64.S). Enable it before any add_library/add_executable
 # call sees an .S source. ASM is preprocessed by clang on the way through.
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     enable_language(ASM)
 endif()
 
 # Mod system master switch (TinyCC source scripting + funchook hook backend +
-# src/bridge/modding). DISABLE_SCRIPTING gates it everywhere — funchook FetchContent,
-# src/bridge/modding sources, the no-inline linkage tweaks, the post-build .tcc/ staging,
+# src/integration/modding). DISABLE_SCRIPTING gates it everywhere — funchook FetchContent,
+# src/integration/modding sources, the no-inline linkage tweaks, the post-build .tcc/ staging,
 # and the in-engine call sites (#ifndef DISABLE_SCRIPTING). Forced ON for
 # Android: funchook/TinyCC have no Android target and the loader is desktop-only.
 # Set BEFORE add_subdirectory(libultraship) so the engine half sees it too.
@@ -129,6 +129,26 @@ option(NON_MATCHING "Build without matching decomp constraints" ON)
 option(NON_EQUIVALENT "Build without equivalent decomp constraints" ON)
 option(USE_AUTO_VCPKG "Use automated vcpkg for dependency management" ON)
 option(SSB64_STAGE_CYCLE_DEMO "Boot directly into attract-demo stage cycle for rendering regression testing" OFF)
+option(SSB64_ENABLE_COVERAGE "Instrument the build for LLVM source-based coverage" OFF)
+
+# LLVM source-based coverage (clang/gcc only — MSVC has no
+# -fcoverage-mapping equivalent; use a clang-cl or Unix toolchain build
+# for coverage numbers). Run the suite with
+# LLVM_PROFILE_FILE=<dir>/%p-%m.profraw, then merge with
+# tools/testing/coverage.py.
+if(SSB64_ENABLE_COVERAGE)
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang|GNU" OR
+       NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR "SSB64_ENABLE_COVERAGE requires a Clang or GCC toolchain")
+    endif()
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+        add_link_options(-fprofile-instr-generate -fcoverage-mapping)
+    else()
+        add_compile_options(--coverage)
+        add_link_options(--coverage)
+    endif()
+endif()
 
 # ROM version to build. The decomp game code is region-conditionally
 # compiled (#if REGION_US / REGION_JP), so US and JP are separate builds —
@@ -322,7 +342,7 @@ add_custom_target(PrepareBuildInputs
 # Linux SDL only renders an app icon on the WM if SDL_SetWindowIcon() is
 # called at runtime — there's no .rc-equivalent that the WM reads at
 # launch. The PNG bytes are baked into the binary via tools/asset-pipeline/embed_icon.py
-# so src/platform/port_window_icon.cpp doesn't have to chase the icon across
+# so src/platform/window/port_window_icon.cpp doesn't have to chase the icon across
 # build/dev-tree/AppImage layouts. Region-aware: US uses assets/icon.png,
 # JP uses assets/icon-jp.png.
 set(SSB64_ICON_PNG ${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png)
@@ -499,7 +519,7 @@ file(GLOB_RECURSE SSB64_SRC_SYS     "decomp/src/sys/*.c"     "decomp/src/sys/*.h
 file(GLOB_RECURSE SSB64_SRC_WP      "decomp/src/wp/*.c"      "decomp/src/wp/*.h")
 
 # Port layer (C++ glue) — excludes src/compatibility/ which is compiled as part of ssb64_game
-# CONFIGURE_DEPENDS: new port TUs (e.g. a new src/features/*.cpp whose
+# CONFIGURE_DEPENDS: new port TUs (e.g. a new src/gameplay/**/*.cpp whose
 # symbol a decomp TU references) must be picked up by already-configured build
 # dirs, or a plain `cmake --build` after pulling hits an undefined-reference
 # link error against a stale glob.
@@ -507,22 +527,22 @@ file(GLOB_RECURSE SSB64_SRC_PORT CONFIGURE_DEPENDS "src/*.cpp" "src/*.c" "src/*.
 list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/compatibility/.*\.c$")
 # RelocFileTable.{us,jp}.cpp both define gRelocFileTable — compile only the
 # selected version's table (the rest are siblings for the other version).
-list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/resources/RelocFileTable\\.(us|jp)\\.cpp$")
+# The generated sources live outside src/ (generated/src/<region>/), so the
+# src glob never sees them — append the selected region explicitly.
 list(APPEND SSB64_SRC_PORT
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/RelocFileTable.${SSB64_VERSION}.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/${SSB64_VERSION}/RelocFileTable.${SSB64_VERSION}.cpp)
 # Deblob rebuild specs are region-specific the same way: both
 # ssb64_reloc_rebuild.{us,jp}.cpp define the same synthesis entry points.
-list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/bridge/ssb64_reloc_rebuild\\.(us|jp)\\.cpp$")
 list(APPEND SSB64_SRC_PORT
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/ssb64_reloc_rebuild.${SSB64_VERSION}.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/${SSB64_VERSION}/ssb64_reloc_rebuild.${SSB64_VERSION}.cpp)
 # coroutine_test.cpp has its own main(); only built standalone when
 # SSB64_BUILD_COROUTINE_TEST=ON below. Never link it into the game.
-list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "tests/unit/coroutine_test\\.cpp$")
+list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "tests/unit/platform/coroutine_test\\.cpp$")
 # ARM coroutine asm shims are Android-only (added explicitly to that target
 # below); MSVC can't assemble .S and produces no .obj, which breaks the
 # exports.def generation at link time.
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/coroutine_.*\\.S$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/coroutine/coroutine_.*\\.S$")
 endif()
 # Switch asm context-switch is AArch64-only and only appended on Switch
 # below — but the case-insensitive filesystem glob also matches "*.S" on
@@ -531,12 +551,12 @@ endif()
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/switch/context_switch\\.s$")
 endif()
-# src/bridge/modding/ (HookManager + SymbolResolver) wraps funchook, which isn't
+# src/integration/modding/ (HookManager + SymbolResolver) wraps funchook, which isn't
 # fetched when the mod system is disabled. Drop it so nothing references the
-# missing backend. src/bridge/hooks/ (the event dispatch system) is funchook-free
+# missing backend. src/integration/hooks/ (the event dispatch system) is funchook-free
 # and uses core libultraship events, so it stays compiled on every target.
 if (DISABLE_SCRIPTING)
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/bridge/modding/")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/integration/modding/")
 endif()
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # libtorch_runner.so wraps android_torch_bridge.cpp separately; keep
@@ -545,24 +565,24 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/android/android_torch_bridge\\.cpp$")
     # Drop features we explicitly disable on Android (no curl-driven
     # self-updater — Android updates via APK installs, not in-app binary
-    # replacement — no discord-rpc target, and no ModPackDownloader which
-    # still depends on a killable curl child). ShaderDownloader is NOT
-    # excluded: it fetches through HttpURLConnection (JNI) and extracts
-    # via in-process libzip, so it runs on Android too.
+    # replacement — and no discord-rpc target). ShaderDownloader and
+    # ModPackDownloader are NOT excluded: both go through the platform
+    # download service (HttpURLConnection via JNI on Android) and
+    # in-process libzip/SHA-256, so they run on Android too.
     # The corresponding menu entries are gated with #if !defined(__ANDROID__)
     # in src/presentation/PortMenu.cpp so nothing references the removed symbols.
-    # (src/resources/textures/hires/ is NOT dropped here — it compiles on Android but runs
+    # (src/resources/loading/textures/hires/ is NOT dropped here — it compiles on Android but runs
     # opt-in with a reduced LRU budget; see the PORT_HIRES_ENABLED block.)
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
-        "src/features/(Updater|DiscordRichPresence|ModPackDownloader)\\.cpp$")
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/port_window_icon\\.cpp$")
+        "src/(distribution/updater/Updater|social/DiscordRichPresence)\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/window/port_window_icon\\.cpp$")
 endif()
 if(BATTLESHIP_UWP)
     # Xbox packages are updated as MSIX and cannot use these Win32
     # shell-out/IPC integrations.
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
-        "src/features/(Updater|DiscordRichPresence|ShaderDownloader|ModPackDownloader)\\.cpp$")
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/port_window_icon\\.cpp$")
+        "src/(distribution/(updater/Updater|downloads/(ShaderDownloader|ModPackDownloader))|social/DiscordRichPresence)\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/window/port_window_icon\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/application/first_run\\.cpp$")
 endif()
 # Treat the generated icon header as a source so CMake schedules it ahead
@@ -731,7 +751,7 @@ set(SSB64_COMPILE_DEFS
     # Updater
     BATTLESHIP_CURRENT_VERSION=\"${BATTLESHIP_VERSION}\"
 
-    # Netplay handshake (see src/netplay/netlobby.cpp)
+    # Netplay handshake (see src/netplay/session/netlobby.cpp)
     BATTLESHIP_BUILD_SHA=\"${BATTLESHIP_BUILD_SHA}\"
 )
 
@@ -741,7 +761,7 @@ endif()
 
 # Hi-res texture pack support is US-only (desktop AND Android). On Android
 # it compiles but defaults to OFF and runs with a smaller decoded-RGBA8 LRU
-# budget (see src/resources/textures/hires/HiResPack.h: kHiResEnabledDefault / kDefaultLruBudgetMB)
+# budget (see src/resources/loading/textures/hires/HiResPack.h: kHiResEnabledDefault / kDefaultLruBudgetMB)
 # plus a per-texture upscale cap, so a pack can't blow the mobile memory
 # budget and trip the low-memory killer; the dev dump-tooling menu items are
 # still gated off touch UI in PortMenu.cpp.
@@ -749,16 +769,33 @@ endif()
 # came out of the US ROM fast-path; JP rendering hits different hash inputs
 # (different glyph art for VS-records, JP-only menus, plus palette/sprite
 # nuances on shared assets), so a US-built pack would silently miss on JP
-# and no JP-only pack has been authored. Drop src/resources/textures/hires/ from the JP build
+# and no JP-only pack has been authored. Drop src/resources/loading/textures/hires/ from the JP build
 # entirely and gate the port.cpp / PortMenu.cpp integration on PORT_HIRES_ENABLED.
 if(SSB64_VERSION STREQUAL "us")
     list(APPEND SSB64_COMPILE_DEFS PORT_HIRES_ENABLED=1)
 else()
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/resources/textures/hires/")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/resources/loading/textures/hires/")
 endif()
 
 if(SSB64_TEST_HOOKS)
     list(APPEND SSB64_COMPILE_DEFS SSB64_TEST_HOOKS=1)
+endif()
+
+# TD-009 — embed the release pubkey (raw 32-byte Ed25519 key, hex) when the
+# maintainer has provisioned one. Generate with `minisign -G` and derive via
+# tools/release/make_pubkey_hex.py — see docs/development/release_signing.md.
+# Builds without the file ship the updater in sha256-integrity-only mode.
+if(EXISTS "${CMAKE_SOURCE_DIR}/config/release_pubkey.hex")
+    file(READ "${CMAKE_SOURCE_DIR}/config/release_pubkey.hex" _release_pubkey)
+    string(STRIP "${_release_pubkey}" _release_pubkey)
+    if(_release_pubkey MATCHES "^[0-9a-fA-F]{64}$")
+        list(APPEND SSB64_COMPILE_DEFS BATTLESHIP_RELEASE_PUBKEY=\"${_release_pubkey}\")
+        message(STATUS "Release signature verification ENABLED (pubkey embedded)")
+    else()
+        message(WARNING "config/release_pubkey.hex is not 64 hex chars — "
+                        "release signature verification DISABLED for this build")
+    endif()
+    unset(_release_pubkey)
 endif()
 
 ################################################################################
@@ -825,12 +862,12 @@ if (MSVC)
     list(FILTER SSB64_ROLLBACK_SEG_SOURCES INCLUDE REGEX "\\.c$")
     list(FILTER SSB64_ROLLBACK_SEG_SOURCES EXCLUDE REGEX "\\.inc\\.c$")
     set_source_files_properties(${SSB64_ROLLBACK_SEG_SOURCES}
-        PROPERTIES COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/netrollback_seg.h")
+        PROPERTIES COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/rollback/netrollback_seg.h")
 endif()
 
 # N64 audio library — synthesis driver, sequence player, voice management.
 # These decomp files are compiled with PORT defines; the CPU Acmd interpreter
-# (src/resources/audio/mixer.h) replaces RSP microcode via macro substitution.
+# (src/resources/loading/audio/mixer.h) replaces RSP microcode via macro substitution.
 set(SSB64_NAUDIO_PORT
     decomp/src/libultra/n_audio/n_env.c             # Core: synth driver, audio frame, pull chain, CSP, FX, event queue
     decomp/src/libultra/n_audio/n_synaddplayer.c     # Add player to synth driver
@@ -868,22 +905,47 @@ target_include_directories(ssb64_game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src       # Decomp game module headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src            # src/<module>/x.h prefixed includes
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/modding
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/observability
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/persistence
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/updater
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/downloads
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/integrity
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/config
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/decomp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/modding
     ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/domain
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/session
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/transport
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/rollback
     ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/features
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/features/internal
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/features/cosmetics/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gameplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/input
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/social
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/cosmetics
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/relocation
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/interpolation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/shaders
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/css_icons
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/textures/hires
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/loading/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/loading/shaders
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/loading/css_icons
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/loading/textures/hires
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/us   # reloc_data.us.h selector target
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/jp
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/us      # RelocFileTable.us.h selector target
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/jp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/coroutine
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/http
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/filesystem
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/window
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/android
     ${CMAKE_CURRENT_SOURCE_DIR}/src/compatibility
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/debugging      # Acmd trace (mixer.h calls acmd_trace_log_cmd)
@@ -998,8 +1060,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
         ${SSB64_SRC_PORT}
         ${SSB64_DEBUG_TOOLS}
         $<TARGET_OBJECTS:ssb64_game>
-        src/platform/coroutine_aarch64.S
-        src/platform/coroutine_armv7.S
+        src/platform/coroutine/coroutine_aarch64.S
+        src/platform/coroutine/coroutine_armv7.S
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "main")
 elseif(BATTLESHIP_UWP)
@@ -1084,22 +1146,47 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include          # Public port headers (smash_classic/)
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/modding
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/bridge/hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/observability
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/persistence
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/updater
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/downloads
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/integrity
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/config
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/decomp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/modding
     ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/domain
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/session
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/transport
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/rollback
     ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/features
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/features/internal
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/features/cosmetics/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gameplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/input
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/social
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/cosmetics
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/relocation
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/interpolation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/shaders
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/css_icons
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/textures/hires
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/loading/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/loading/shaders
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/loading/css_icons
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/loading/textures/hires
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/us   # reloc_data.us.h selector target
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/jp
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/us      # RelocFileTable.us.h selector target
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/jp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/coroutine
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/http
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/filesystem
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/window
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/android
     ${CMAKE_CURRENT_SOURCE_DIR}/src/compatibility
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/debugging
@@ -1137,16 +1224,38 @@ else()
     target_link_libraries(${PROJECT_NAME} PRIVATE libultraship discord-rpc)
 endif()
 if (WIN32)
-    # src/core/port_symbolize.cpp (SyncTest diagnostics), src/netplay/port_udp.cpp, src/netplay/port_ws.cpp
+    # src/diagnostics/port_symbolize.cpp (SyncTest diagnostics), src/netplay/transport/port_udp.cpp, src/netplay/transport/port_ws.cpp
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt)
 endif()
 
-# In-process zip extraction (src/platform/zip_extract.cpp). libzip is
+# In-process zip extraction (src/platform/filesystem/zip_extract.cpp). libzip is
 # already REQUIRED by libultraship on every target — vcpkg/system on
 # desktop, FetchContent'd on Android — so this only adds a direct link
 # for the executable, no new dependency.
 find_package(libzip REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE libzip::zip)
+
+# TD-009 — offline-signed release manifest verification. orlp/ed25519 is the
+# small public-domain RFC 8032 implementation; only the verify path is
+# compiled (releases are signed with `minisign -l`, raw Ed25519 — see
+# docs/development/release_signing.md). The pubkey comes from
+# config/release_pubkey.hex via BATTLESHIP_RELEASE_PUBKEY.
+include(FetchContent)
+FetchContent_Declare(ed25519
+    GIT_REPOSITORY https://github.com/orlp/ed25519.git
+    GIT_TAG        b1f19fab4aebe607805620d25a5e42566ce46a0e)
+FetchContent_GetProperties(ed25519)
+if(NOT ed25519_POPULATED)
+    FetchContent_Populate(ed25519)
+endif()
+add_library(ed25519_verify STATIC
+    ${ed25519_SOURCE_DIR}/src/fe.c
+    ${ed25519_SOURCE_DIR}/src/ge.c
+    ${ed25519_SOURCE_DIR}/src/sc.c
+    ${ed25519_SOURCE_DIR}/src/sha512.c
+    ${ed25519_SOURCE_DIR}/src/verify.c)
+target_include_directories(ed25519_verify PUBLIC ${ed25519_SOURCE_DIR}/src)
+target_link_libraries(${PROJECT_NAME} PRIVATE ed25519_verify)
 
 add_dependencies(ssb64_game GenerateCreditsAssets)
 if (NOT DISABLE_SCRIPTING)
@@ -1172,10 +1281,6 @@ if (NOT DISABLE_SCRIPTING)
     if (MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE /Ob0)
         target_compile_options(ssb64_game     PRIVATE /Ob0)
-        # /Zi on compile + /DEBUG on link emits a PDB for every config,
-        # not just Debug. Release builds otherwise strip symbols.
-        target_compile_options(${PROJECT_NAME} PRIVATE /Zi)
-        target_compile_options(ssb64_game     PRIVATE /Zi)
         # NOTE: do NOT add /OPT:REF or /OPT:ICF here. /OPT:REF strips
         # unreferenced symbols (mods reach in by-name even when nothing
         # in the binary references the function); /OPT:ICF folds
@@ -1183,11 +1288,24 @@ if (NOT DISABLE_SCRIPTING)
         # collapse to one symbol, breaking hook-by-name when two ports
         # of the same function exist). Plain /DEBUG is enough; it just
         # tells the linker to emit a full PDB.
-        target_link_options(${PROJECT_NAME}    PRIVATE /DEBUG)
     else()
-        target_compile_options(${PROJECT_NAME} PRIVATE -fno-inline-functions -g)
-        target_compile_options(ssb64_game     PRIVATE -fno-inline-functions -g)
+        target_compile_options(${PROJECT_NAME} PRIVATE -fno-inline-functions)
+        target_compile_options(ssb64_game     PRIVATE -fno-inline-functions)
     endif()
+endif()
+
+# Debug info for EVERY build — crash-bundle symbolization (TD-015) must
+# work on script-disabled builds too (the JP Windows release disables
+# scripting). /Zi + /DEBUG emits a PDB per config; -g carries DWARF.
+# The shipped binary is unaffected — packaging splits the debug payload
+# into the per-release symbols archive.
+if (MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /Zi)
+    target_compile_options(ssb64_game     PRIVATE /Zi)
+    target_link_options(${PROJECT_NAME}    PRIVATE /DEBUG)
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE -g)
+    target_compile_options(ssb64_game     PRIVATE -g)
 endif()
 
 ################################################################################
@@ -1596,13 +1714,13 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
         "Build the ARM coroutine standalone test binary (Android)" OFF)
     if (SSB64_BUILD_COROUTINE_TEST)
         add_executable(coroutine_test
-            tests/unit/coroutine_test.cpp
-            src/platform/android/coroutine_android.cpp
-            src/platform/coroutine_aarch64.S
-            src/platform/coroutine_armv7.S
+            tests/unit/platform/coroutine_test.cpp
+            src/platform/coroutine/coroutine_android.cpp
+            src/platform/coroutine/coroutine_aarch64.S
+            src/platform/coroutine/coroutine_armv7.S
         )
         target_include_directories(coroutine_test PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/coroutine
         )
     endif()
 endif()
@@ -1636,9 +1754,35 @@ if (NOT DISABLE_SCRIPTING)
         VERBATIM)
 endif()
 
+# GLideN64->BattleShip texture-name mapping (vendored from GhostlyDark's
+# SSB-Reloaded, MIT — see tools/modding/vendor/README.md). The in-game
+# converter (src/distribution/downloads/ModPackDownloader.cpp) renames
+# GLideN64/Rice-format PNG packs to the native "#hash#fmt#siz.png"
+# grammar using this table. Staged as bundled-data/gliden64-map.json;
+# independent of DISABLE_SCRIPTING since texture packs aren't script mods.
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/bundled-data"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/modding/vendor/battleship.json
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/bundled-data/gliden64-map.json"
+    COMMENT "Staging GLideN64 conversion map"
+    VERBATIM)
+
 ################################################################################
 # Switch toolchain settings + SD-card bundling (cmake/platforms/Switch.cmake).
 # Included late so BundleSwitch can depend on GenerateF3DO2R, which is
 # defined by cmake/RuntimeAssets.cmake above.
 ################################################################################
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/platforms/Switch.cmake)
+
+################################################################################
+# Test harness (tests/). Off by default — enables CTest + smash_add_test
+# registrations. See tests/README.md for the level/domain layout and
+# tests/config/test-suites.yml for suite presets.
+################################################################################
+option(SSB64_BUILD_TESTING "Build the CTest-registered test harness (tests/)" OFF)
+if (SSB64_BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

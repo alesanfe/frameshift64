@@ -26,7 +26,7 @@ Verified non-issues: the packed-DL cache is already evicted by
 `lbreloc_bridge.cpp` on heap reclaim + scene reset (growth bounded by live
 files); `ControlDeck` shutdown ordering remains correct.
 
-### Coroutines (`port/coroutine_*.{cpp,S}`)
+### Coroutines (`src/platform/coroutine/coroutine_*.{cpp,S}`)
 
 - **Guard pages (macOS/Linux/Android)**: coroutine stacks were plain
   `malloc`/`posix_memalign` blocks — a stack overflow silently corrupted

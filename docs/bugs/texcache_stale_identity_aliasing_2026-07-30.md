@@ -25,7 +25,7 @@ clip), one corrupted (natural full boot) — show the **same file at the same of
 
 So the file loaded and relocated correctly, and was then re-byte-swapped in place
 afterwards. The only code that BSWAP32s reloc-file memory post-load is
-**`portRelocFixupTextureAtRuntime`** (`src/bridge/lbreloc_byteswap.cpp`) — the lazy
+**`portRelocFixupTextureAtRuntime`** (`src/integration/decomp/lbreloc_byteswap.cpp`) — the lazy
 texel-order fixup invoked from the interpreter's `GfxDpLoadBlock`/`LoadTile`/`LoadTLUT`
 on the current SETTIMG address. Its only gate was "is the address inside a reloc file".
 A single garbage/stale SETTIMG operand pointing into file data (seeded by whatever stale
@@ -51,7 +51,7 @@ corruption, not temporal UAF.
 
 ## Fixes
 
-1. **Chain-slot clamp on the runtime texture fixup** (`src/bridge/lbreloc_byteswap.{h,cpp}`,
+1. **Chain-slot clamp on the runtime texture fixup** (`src/integration/decomp/lbreloc_byteswap.{h,cpp}`,
    `lbreloc_bridge.cpp`): both reloc chain walks now record every tokenized slot address
    (`portRelocNoteChainSlot`, evicted with the existing range/reset evictors). The
    corrupting requests turned out to be *legitimate* texture draws whose N64 fixed-size
@@ -96,7 +96,7 @@ corruption, not temporal UAF.
    logs `TextureCache stale-content hit healed`. Default ON; `SSB64_TEXCACHE_VERIFY=0`
    disables. Verified live: healed real aliased hits (48x48 IA8) during attract runs.
 
-4. **Particle bank lockstep eviction** (`src/bridge/particle_bank_bridge.cpp`): the
+4. **Particle bank lockstep eviction** (`src/integration/decomp/particle_bank_bridge.cpp`): the
    per-bank working buffers were freed and re-allocated with no cache eviction — not in
    the scene arena, not routed through `lbRelocLoadAndRelocFile`, so none of the three
    range evictors ever ran on them. glibc hands the freed chunk back to the same-size

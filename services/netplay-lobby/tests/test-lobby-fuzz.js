@@ -29,7 +29,7 @@ const TEXT_VECTORS = [
 ];
 
 async function main() {
-  const srv = spawn("node", [path.join(__dirname, "..", "src", "node-lobby.js"), String(PORT)], { stdio: "pipe" });
+  const srv = spawn("node", [path.join(__dirname, "..", "src", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
   let srvDead = false;
   srv.on("exit", (code) => { srvDead = true; console.log(`lobby exited code=${code}`); });
   await sleep(700);

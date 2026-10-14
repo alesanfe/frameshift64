@@ -19,7 +19,7 @@ Net effect: every demo script died at its first `Subroutine`/`Goto`. 62 call sit
 Same pattern as `gmColScriptsLinkRelocTargets()` (`gmcolscripts.c`, the collision-script equivalent):
 
 - `decomp/src/sc/scsubsys/scsubsysportfix.c` (new, PORT-only): a generated table of 62 `{ script, operand_index, target }` links; `scSubsysMotionLinkRelocTargets()` writes `portRelocRegisterPointer(target)` into each operand slot. Each entry validates that the preceding word's opcode is `Subroutine`/`Goto` before patching, so future `scsubsysdata*.c` edits that shift word indices produce a log line instead of a mispatched script. The table was generated mechanically from the `ftMotionCommandSubroutine`/`Goto` call sites (each macro spans two `s32` words: opcode, operand).
-- `src/bridge/lbreloc_bridge.cpp`: `lbRelocInitSetup` calls it right after `gmColScriptsLinkRelocTargets()` (every scene init; overwrite-idempotent).
+- `src/integration/decomp/lbreloc_bridge.cpp`: `lbRelocInitSetup` calls it right after `gmColScriptsLinkRelocTargets()` (every scene init; overwrite-idempotent).
 - `decomp/src/ft/ftmain.c`: the Subroutine/Goto parse cases now log (once per run each) when a token resolves to NULL — the silence of `PORT_RESOLVE(0)` is what let this survive multiple animation investigations.
 
 ## Verification

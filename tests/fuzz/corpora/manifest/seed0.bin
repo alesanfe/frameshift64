@@ -1,0 +1,1 @@
+{"name": "fuzzmod", "author": "td-010", "version": "1.0.0", "description": "seed", "license": "MIT", "code-version": 1, "game-version": 0, "simulation": true, "main": "main.c", "binaries": {"win": "a.dll", "lin": "a.so"}, "dependencies": ["other-mod@1.0"], "checksum": "0000000000000000000000000000000000000000000000000000000000000000"}

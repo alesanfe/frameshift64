@@ -35,7 +35,7 @@ Two compounding bugs in our port:
 
 ### Bug 1 — `chain_fixup_settimg` only fixes `count*2` rounded down to a u32 word
 
-`src/bridge/lbreloc_byteswap.cpp:chain_fixup_settimg` walks the reloc chain at
+`src/integration/decomp/lbreloc_byteswap.cpp:chain_fixup_settimg` walks the reloc chain at
 file-load time and BSWAPs the bytes a CI palette LOADTLUT will sample. For
 `count=3` it computed `tex_bytes = (3*2 + 3) & ~3 = 8`, fixing 2 words. That's
 correct on its own. But the **runtime** fixup used by `GfxDpLoadTlut` had its
@@ -66,13 +66,13 @@ palette before the arrow's count=3 fired.
 
 Three coordinated changes:
 
-1. **`src/bridge/lbreloc_byteswap.cpp:chain_fixup_settimg`** — also record
+1. **`src/integration/decomp/lbreloc_byteswap.cpp:chain_fixup_settimg`** — also record
    per-word entries in `sTexFixupWords` and the texture extent in
    `sTexFixupExtent[target]`. This lets the runtime fixup's early-skip
    correctly recognize chain-fixed targets, fall through to the per-word loop,
    and BSWAP only the words chain didn't cover.
 
-2. **`src/bridge/lbreloc_byteswap.cpp:portRelocFixupTextureAtRuntime`** —
+2. **`src/integration/decomp/lbreloc_byteswap.cpp:portRelocFixupTextureAtRuntime`** —
    round `num_bytes` UP to a 4-byte boundary instead of down. A count=3
    LOADTLUT's 6-byte `num_bytes` becomes 8, so word 1 (containing pal[2..3])
    gets fixed and the outline reads as black.

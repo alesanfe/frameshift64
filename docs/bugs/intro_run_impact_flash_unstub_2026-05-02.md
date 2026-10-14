@@ -33,7 +33,7 @@ and the decomp `while(TRUE)` panic fired.
 The same commit (`66e108c`) shipped two infrastructure fixes that
 *together* address the underlying byte-order issue:
 
-1. `src/bridge/lbreloc_byteswap.cpp` — `portFixupBitmapArray` and
+1. `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupBitmapArray` and
    `portFixupSpriteBitmapData` now register protected struct ranges so
    `portRelocFixupTextureAtRuntime` won't re-BSWAP previously fixed-up
    memory when an over-sized TLUT load extends past the palette.
@@ -101,7 +101,7 @@ play, this plays.
 | Stubbed call site | `decomp/src/mv/mvopening/mvopeningrun.c:322-326` |
 | `mvOpeningRunMakeCrash` | `decomp/src/mv/mvopening/mvopeningrun.c:207` |
 | Crash file reloc id | `llMVOpeningRunCrashFileID = 0x4B` |
-| Reloc data offsets | `llMVOpeningRunCrashDObjDesc / MObjSub / MatAnimJoint` in `include/reloc_data.us.h` |
+| Reloc data offsets | `llMVOpeningRunCrashDObjDesc / MObjSub / MatAnimJoint` in `generated/include/us/reloc_data.us.h` |
 | Original stubbing commit | `66e108c` (2026-04-11) |
-| Protected-range fix | `src/bridge/lbreloc_byteswap.cpp` (`portFixupBitmapArray`) |
+| Protected-range fix | `src/integration/decomp/lbreloc_byteswap.cpp` (`portFixupBitmapArray`) |
 | NULL-bitmap safety net | `decomp/src/lb/lbcommon.c:lbCommonStartSprite` |

@@ -1,7 +1,7 @@
 # Audio bridge swapped sSYAudioSequenceBank1/2 sources
 
 **Date:** 2026-04-24
-**Status:** Fix shipped to `src/bridge/audio_bridge.cpp`. Awaiting in-game verification of audible BGM.
+**Status:** Fix shipped to `src/integration/decomp/audio_bridge.cpp`. Awaiting in-game verification of audible BGM.
 **Class:** Port-side asset wiring mismatch — bridge loaded the right CTL files but routed each into the wrong global slot.
 
 ## Symptom
@@ -51,7 +51,7 @@ Effect: the music CSP players were handed the SFX bank's 322-sound table. `__n_l
 
 ## Fix
 
-`src/bridge/audio_bridge.cpp` — swap the two parser blocks so that:
+`src/integration/decomp/audio_bridge.cpp` — swap the two parser blocks so that:
 
 ```cpp
 sounds1_ctl → sSYAudioSequenceBank2   // music CSP

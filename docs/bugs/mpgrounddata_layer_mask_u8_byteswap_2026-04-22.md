@@ -90,7 +90,7 @@ is what the real mask is after the byteswap.
 ## Fix
 
 New helper `portFixupStructU32(base, byte_offset, num_words)` in
-`src/bridge/lbreloc_byteswap.cpp` that re-`BSWAP32`s a specified u32 word
+`src/integration/decomp/lbreloc_byteswap.cpp` that re-`BSWAP32`s a specified u32 word
 (undoing pass 1 for that word). Idempotent via the existing
 `sStructU16Fixups` tracker.
 

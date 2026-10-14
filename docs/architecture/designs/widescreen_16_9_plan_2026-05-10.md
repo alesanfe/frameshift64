@@ -16,7 +16,7 @@ Non-goal: arbitrary aspect ratios (21:9 etc.). 16:9 first; the architecture shou
 
 1. **Decomp preservation (CLAUDE.md rule 5):** changes to `decomp/src/` should be wrapped in `#ifdef PORT` *only when the change alters decomp call sites*. Prefer keeping decomp pristine and intercepting at the GBI / port boundary where possible.
 2. **Toggle-gated:** every behavior change reads `CVarGetInteger(kWidescreenCVar, 0)`; CVar=0 ⇒ exact current 4:3 behavior, byte-for-byte. This lets us ship incrementally and bisect regressions.
-3. **MIT attribution:** any file we lift from another port (Ship of Harkinian, Starship, 2 Ship 2 Harkinian, etc.) gets the SPDX/Portions-derived header that `src/resources/audio/mixer.c:1-8` uses.
+3. **MIT attribution:** any file we lift from another port (Ship of Harkinian, Starship, 2 Ship 2 Harkinian, etc.) gets the SPDX/Portions-derived header that `src/resources/loading/audio/mixer.c:1-8` uses.
 
 ---
 
@@ -47,15 +47,15 @@ Goal: land all infrastructure with CVar default 0, so this is a no-op merge that
 
 Files to add (all auto-globbed by `CMakeLists.txt:182-183`):
 
-- `src/features/cosmetics/widescreen/widescreen.h`
+- `src/rendering/widescreen/widescreen.h`
   - `bool port_widescreen_enabled();`
   - `float port_widescreen_aspect();` — returns `16.0f/9.0f` if enabled, else `4.0f/3.0f`
   - `void port_widescreen_get_viewport(s32* ulx, s32* uly, s32* lrx, s32* lry, s32 base_ulx, s32 base_uly, s32 base_lrx, s32 base_lry);` — given the decomp-baked 4:3 bounds, returns widened bounds (or pass-through when off)
   - `s32 port_widescreen_anchor_x(s32 base_x, port_widescreen_anchor_t anchor);` — for HUD anchor offsets
   - `bool port_widescreen_should_letterbox_2d();` — flag for full-screen authored effects
-- `src/features/cosmetics/widescreen/widescreen.cpp` — implements the helpers, reads `CVAR_WIDESCREEN_ENABLED`
-- `src/features/enhancements.h` (existing) — add `const char* WidescreenCVarName();`
-- `src/features/cosmetics/widescreen/widescreen.cpp` — owns the CVar string `gEnhancements.Widescreen` (mirroring `kStageHazardsDisabledCVar` pattern from `src/features/DisableStageHazards.cpp:8`)
+- `src/rendering/widescreen/widescreen.cpp` — implements the helpers, reads `CVAR_WIDESCREEN_ENABLED`
+- `src/gameplay/enhancements.h` (existing) — add `const char* WidescreenCVarName();`
+- `src/rendering/widescreen/widescreen.cpp` — owns the CVar string `gEnhancements.Widescreen` (mirroring `kStageHazardsDisabledCVar` pattern from `src/gameplay/rules/DisableStageHazards.cpp:8`)
 - `src/presentation/PortMenu.cpp` — register checkbox under the existing **Enhancements** sidebar, mirroring the `StageHazardsDisabledCVarName()` registration at `PortMenu.cpp:314`. Tooltip: "Renders the game in native 16:9 widescreen. Some stage backgrounds may show visible edges. Restart not required."
 
 Verification: build clean; toggle the menu item; `CVarGet` reads correct values. No rendering change yet.
@@ -119,9 +119,9 @@ Strong candidates from MIT-licensed N64 PC ports:
 
 - **Ship of Harkinian (HarbourMasters/Shipwright)** — `OTRGlobals::HasMasterQuest`, `gSPGrayscale`, `OTRGlobals::IsGameMasterQuest` patterns; `update_screen_aspect_ratio` if present. License: MIT. URL: `https://github.com/HarbourMasters/Shipwright`.
 - **2 Ship 2 Harkinian (HarbourMasters/2ship2harkinian)** — Majora's Mask port, has more recent widescreen plumbing.
-- **Starship (HarbourMasters/Starship)** — Star Fox 64 port. Already a referenced source for `src/resources/audio/mixer.c`. License: MIT. Likely has the cleanest projection-matrix widescreen patches because SF64's render path is the closest to SSB64's (both use F3DEX).
+- **Starship (HarbourMasters/Starship)** — Star Fox 64 port. Already a referenced source for `src/resources/loading/audio/mixer.c`. License: MIT. Likely has the cleanest projection-matrix widescreen patches because SF64's render path is the closest to SSB64's (both use F3DEX).
 
-If we lift any helper file (e.g. an aspect-correction matrix utility), it gets the standard header — sample from `src/resources/audio/mixer.c:1-8`:
+If we lift any helper file (e.g. an aspect-correction matrix utility), it gets the standard header — sample from `src/resources/loading/audio/mixer.c:1-8`:
 
 ```c
 /*

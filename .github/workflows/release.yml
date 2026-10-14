@@ -172,7 +172,9 @@ jobs:
           # NB: GHA `a && b || c` is not a ternary — an empty-string `b`
           # is falsy and falls through to `c`. Keep the non-empty value
           # in the `&&` branch and the empty default in `||`.
-          path: dist/BattleShip${{ matrix.version == 'jp' && '-JP' || '' }}.dmg
+          path: |
+            dist/BattleShip${{ matrix.version == 'jp' && '-JP' || '' }}.dmg
+            dist/BattleShip${{ matrix.version == 'jp' && '-JP' || '' }}-symbols-macos.zip
           if-no-files-found: error
 
   build-linux:
@@ -267,7 +269,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: BattleShip-linux-${{ matrix.version }}
-          path: dist/BattleShip${{ matrix.version == 'jp' && '-JP' || '' }}-x86_64.AppImage
+          path: |
+            dist/BattleShip${{ matrix.version == 'jp' && '-JP' || '' }}-x86_64.AppImage
+            dist/BattleShip${{ matrix.version == 'jp' && '-JP' || '' }}-symbols-linux.tar.xz
           if-no-files-found: error
 
   build-android:
@@ -438,7 +442,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          path: |
+            ${{ matrix.artifact_path }}
+            dist/BattleShip${{ matrix.version == 'jp' && '-JP' || '' }}-symbols-windows.zip
           if-no-files-found: error
 
   release:
@@ -471,6 +477,35 @@ jobs:
                 (cd artifacts && sha256sum "$(basename "$file")")
               done > artifacts/SHA256SUMS.txt
           cat artifacts/SHA256SUMS.txt
+      # TD-009 — offline-signed manifest: the updater verifies SHA256SUMS.txt
+      # against an Ed25519 signature before trusting any digest in it. The
+      # signing key lives only in the MINISIGN_SECRET_KEY repo secret; the
+      # matching pubkey is embedded in binaries via config/release_pubkey.hex
+      # (see docs/development/release_signing.md). Legacy mode (-l) signs the
+      # raw bytes so the client only needs plain Ed25519 verification.
+      - name: Check for release signing key
+        id: signing
+        env:
+          KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "release signing key present — SHA256SUMS.txt will be signed"
+          else
+            echo "::warning::MINISIGN_SECRET_KEY not set — release manifest will be UNSIGNED"
+          fi
+      - name: Sign SHA256SUMS.txt (minisign, raw mode)
+        if: steps.signing.outputs.available == 'true'
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y minisign
+          printf '%s' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+          chmod 600 "$RUNNER_TEMP/minisign.key"
+          minisign -Sl -x artifacts/SHA256SUMS.txt.minisig \
+            -s "$RUNNER_TEMP/minisign.key" -m artifacts/SHA256SUMS.txt
+          rm -f "$RUNNER_TEMP/minisign.key"
+          head -2 artifacts/SHA256SUMS.txt.minisig
       - name: Attest release assets
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4
         with:
@@ -496,6 +531,7 @@ jobs:
             artifacts/BattleShip-android.apk
             artifacts/BattleShip-android-armeabi-v7a.apk
             artifacts/SHA256SUMS.txt
+            artifacts/SHA256SUMS.txt.minisig
             artifacts/smash-classic.cdx.json
           generate_release_notes: true
           draft: true   # land as a draft so a human can sanity-check

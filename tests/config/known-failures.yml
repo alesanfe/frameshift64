@@ -1,0 +1,10 @@
+# Quarantine registry — NOT a flaky/ dir. Every entry needs an issue, the
+# affected platforms, a reason, and an expiry. CI runs quarantined tests in
+# a non-blocking job; an expired entry fails lint until renewed or removed.
+# Quarantined tests may not carry the `release-gate` label.
+known_failures: []
+# - test: netplay_relay_reconnect_test
+#   issue: 142
+#   platforms: [windows]
+#   reason: "Intermittent process shutdown race"
+#   expires: "2026-11-15"

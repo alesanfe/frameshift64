@@ -10,7 +10,7 @@ After the bank-swap (`docs/bugs/audio_bridge_bank_swap_2026-04-24.md`) and `ALPa
 
 ## Root cause
 
-decomp/include/PR/abi.h finished its declarations and then auto-included `src/resources/audio/mixer.h`:
+decomp/include/PR/abi.h finished its declarations and then auto-included `src/resources/loading/audio/mixer.h`:
 
 ```c
 #endif /* _LANGUAGE_C */
@@ -22,7 +22,7 @@ decomp/include/PR/abi.h finished its declarations and then auto-included `src/re
 #endif /* !_ABI_H_ */
 ```
 
-`mixer.h` `#undef`s the standard `aLoadADPCM`, `aLoadBuffer`, etc. **and** the N_MICRO `n_aLoadBuffer`, `n_aADPCMdec`, `n_aResample`, `n_aLoadADPCM`, `n_aSetVolume`, `n_aEnvMixer`, `n_aInterleave`, `n_aSaveBuffer`, `n_aPoleFilter` macros, then redefines them all to call the `aXxxImpl()` CPU functions in `src/resources/audio/mixer.c`.
+`mixer.h` `#undef`s the standard `aLoadADPCM`, `aLoadBuffer`, etc. **and** the N_MICRO `n_aLoadBuffer`, `n_aADPCMdec`, `n_aResample`, `n_aLoadADPCM`, `n_aSetVolume`, `n_aEnvMixer`, `n_aInterleave`, `n_aSaveBuffer`, `n_aPoleFilter` macros, then redefines them all to call the `aXxxImpl()` CPU functions in `src/resources/loading/audio/mixer.c`.
 
 But `n_abi.h` (the file that defines the `n_a*` originals) is included via `n_audio/n_synthInternals.h` — **after** `abi.h` returns. The preprocessor sequence ended up:
 
@@ -59,7 +59,7 @@ decomp/include/PR/abi.h — drop the auto-include:
  * (e.g. via n_audio/n_synthInternals.h). */
 ```
 
-`src/resources/audio/mixer.h` — comment block at the top of the N_MICRO section explaining the include-order requirement.
+`src/resources/loading/audio/mixer.h` — comment block at the top of the N_MICRO section explaining the include-order requirement.
 
 `decomp/src/libultra/n_audio/n_env.c` already does `#include "audio/mixer.h"` after the n_audio headers, so its `n_aLoadBuffer` calls now resolve to the CPU impl (verified by re-disassembling `__decodeChunk` after rebuild).
 

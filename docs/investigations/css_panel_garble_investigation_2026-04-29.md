@@ -85,7 +85,7 @@ corruption is the issue.
 ### Theory C — Heap reuse stale fixup idempotency
 
 `lbRelocLoadAndRelocFile` evicts `sStructU16Fixups` for the heap range
-before memcpy (see `src/bridge/lbreloc_bridge.cpp:378`). Should
+before memcpy (see `src/integration/decomp/lbreloc_bridge.cpp:378`). Should
 prevent stale fixups, but the panel sprites are loaded into a heap
 that's reused across CSS visits, so a missed eviction would leave
 `portFixupSprite` skipping the new load → fields read wrong.

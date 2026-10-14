@@ -35,7 +35,7 @@ desktop and Android get the file. Desktop never got its answer.
 
 ## Fix
 
-`src/resources/css_icons/port_css_stage_assets.cpp` gained a second, platform-neutral
+`src/resources/loading/css_icons/port_css_stage_assets.cpp` gained a second, platform-neutral
 source: derive the background and icon at runtime from the user's own
 extracted archive (`BattleShip.o2r`). The stage's reloc file
 (`STAGE_TABLE.wp_file_id` — 96 / 0x62 / 0x61, all with the 300x220 RGBA16
@@ -80,7 +80,7 @@ degrades to the old question-mark behavior, never a garbage image.
 ## Related: "Bonus Stages" Toggle (issue #267)
 
 The same issue asked for a way to hide the three stages entirely.
-`src/features/BonusStages.cpp` adds `gEnhancements.BonusStagesEnabled`
+`src/gameplay/modes/BonusStages.cpp` adds `gEnhancements.BonusStagesEnabled`
 (LUS menu → Settings → Gameplay → "Bonus Stages", default ON). When off,
 `mnMapsCheckLocked()` reports every stage on page 1+ as locked — membership
 is derived from `dMNMapsPageGkinds` via `mnMapsGetPageForGkind`, not a
@@ -105,7 +105,7 @@ A ROM-derived runtime asset now has three sources (dev build-time PNG,
 Android first-run PNG, o2r derivation). When adding a fourth stage, update
 all three manifests together: `STAGES` in `tools/asset-pipeline/derive_stage_assets.py`,
 `kAndroidCssStages` in `src/platform/android/android_torch_bridge.cpp`, and `STAGE_TABLE`
-in `src/resources/css_icons/port_css_stage_assets.cpp` (the latter now carries
+in `src/resources/loading/css_icons/port_css_stage_assets.cpp` (the latter now carries
 `wp_file_id`/`wp_sprite_off` for the o2r path). The Bonus Stages toggle
 needs no update — it keys off `dMNMapsPageGkinds` page membership.
 

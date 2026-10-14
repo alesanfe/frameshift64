@@ -78,7 +78,7 @@ Or: Move the `memset` call into a stub that doesn't include the LUS headers, usi
 
 ### 2. Particle Bank Bridge — Rapid Scene Transition Dedup Map Eviction
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/bridge/particle_bank_bridge.cpp:378-406`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/integration/decomp/particle_bank_bridge.cpp:378-406`
 
 **Context:**
 The `portParticleLoadBank()` function evicts old working entries for a given `scripts_lo` address when a new scene requests them:
@@ -112,7 +112,7 @@ sWorkingEntries.erase(
 
 ### 3. Port Log ARM64 Variadic-Arguments Declaration
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/core/port_log.c:28-36` and callers in decomp
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/observability/port_log.c:28-36` and callers in decomp
 
 **Code:**
 ```c
@@ -133,7 +133,7 @@ void port_log(const char *fmt, ...)
   - `/src/gr/grwallpaper.c` has `extern void port_log(const char *fmt, ...);`
   - `/src/lb/lbcommon.c` has the same extern
 
-- ✅ Port header `/src/core/port_log.h` declares it correctly
+- ✅ Port header `/src/observability/port_log.h` declares it correctly
 
 **Verdict:** **NO BUG** — variadic args are safe on ARM64 because:
 1. All callsites have the proper extern declaration.
@@ -145,7 +145,7 @@ void port_log(const char *fmt, ...)
 ### 4. Coroutine Stack Size for Nested Decomp Callstacks
 
 **Files:** 
-- `/Users/jackrickey/Dev/ssb64-port/src/platform/coroutine_posix.cpp:45-46` — 256 KB service threads, 64 KB GObj threads
+- `/Users/jackrickey/Dev/ssb64-port/src/platform/coroutine/coroutine_posix.cpp:45-46` — 256 KB service threads, 64 KB GObj threads
 - `/Users/jackrickey/Dev/ssb64-port/src/compatibility/n64_stubs.c:45-46` — defines PORT_STACK_SERVICE and PORT_STACK_GOBJ
 
 **Concern:**
@@ -173,7 +173,7 @@ The game's decomp code can recurse deeply in some paths:
 
 ### 5. Audio Bridge — Field-by-Field Parsing (WELL-DEFENDED)
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/bridge/audio_bridge.cpp:308-491`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/integration/decomp/audio_bridge.cpp:308-491`
 
 **Strengths:**
 - ✅ Avoids the sizeof trap entirely by parsing ROM binary field-by-field.
@@ -187,7 +187,7 @@ The game's decomp code can recurse deeply in some paths:
 
 ### 6. Particle Bank Bridge — Byte-Swap Helpers (WELL-DEFENDED)
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/bridge/particle_bank_bridge.cpp:163-308`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/integration/decomp/particle_bank_bridge.cpp:163-308`
 
 **Strengths:**
 - ✅ Byte-swap functions work on raw uint8_t* data with explicit offsets.
@@ -234,7 +234,7 @@ void DumpBacktraceBoth() {
 
 ### 8. Coroutine Context Saving (WELL-DEFENDED on POSIX)
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/platform/coroutine_posix.cpp:99-112`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/platform/coroutine/coroutine_posix.cpp:99-112`
 
 **Strengths:**
 - ✅ ucontext_t captures all callee-save registers (R15-R30 on ARM64, RBX/RBP on x86-64).
@@ -252,7 +252,7 @@ The POSIX ucontext_t on ARM64 (both Linux and macOS) includes d8-d15 NEON regist
 
 **Status:** ✅ **NO ISSUE FOUND**
 
-Audit of `src/resources/audio/mixer.h` include order:
+Audit of `src/resources/loading/audio/mixer.h` include order:
 - mixer.c includes: `<stdint.h>`, `<stdlib.h>`, `<string.h>`, `<stdio.h>`, then `"mixer.h"`
 - mixer.h does NOT include `n_abi.h` (it declares that the caller has included it before: "These are defined in abi.h which is included before this header.")
 - The undef/redefine pattern at mixer.h:79-94 is safe as long as abi.h macros are already in scope.
@@ -318,7 +318,7 @@ void bzero(void *ptr, int len)
 
 ## WINDOWS FIBER COROUTINES: CANARY CHECKS
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/platform/coroutine_win32.cpp:21-87`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/platform/coroutine/coroutine_win32.cpp:21-87`
 
 **Observation:**
 - Canaries (0xDEADBEEF / 0xCAFEBABE) are written to the PortCoroutine struct.
@@ -341,7 +341,7 @@ void bzero(void *ptr, int len)
 | Particle bank byte-swap | particle_bank_bridge.cpp:163 | LOW | ✅ WELL-DEFENDED |
 | Watchdog signal safety | port_watchdog.cpp:50 | LOW | ✅ ASYNC-SAFE |
 | Coroutine context save | coroutine_posix.cpp:99 | LOW | ✅ CORRECT (NEON OK) |
-| Mixer macro order | src/resources/audio/mixer.h | LOW | ✅ NO REGRESSION |
+| Mixer macro order | src/resources/loading/audio/mixer.h | LOW | ✅ NO REGRESSION |
 | Thread safety (statics) | bridge/*.cpp | LOW | ✅ SINGLE-THREADED |
 | bzero recursion | libc_compat.c:66 | LOW | ✅ NO BUG |
 | Windows canaries | coroutine_win32.cpp:74 | LOW | ✅ EXTRA DEFENSE |

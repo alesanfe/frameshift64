@@ -1,0 +1,89 @@
+[project]
+name = "smash-classic-test-suite"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "pytest-cov>=7",
+    "pytest-xdist>=3",
+    "pytest-timeout>=2",
+    "pytest-randomly>=4",
+    "pytest-json-report>=1.5",
+    "pytest-mock>=3",
+    "hypothesis>=6",
+    "psutil>=6",
+    "PyYAML>=6",
+    "jsonschema>=4",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "--showlocals",
+    "--tb=short",
+    "--durations=20",
+    "--junitxml=out/test-results/junit.xml",
+]
+markers = [
+    "unit: isolated and fast test",
+    "integration: test involving multiple native components",
+    "contract: public format or protocol compatibility",
+    "e2e: complete executable workflow",
+    "smoke: minimum viability test",
+    "regression: previously reported defect",
+    "security: security and malformed-input test",
+    "performance: benchmark or performance test",
+    "fuzz: fuzzing driver",
+    "netplay: networking or rollback behavior",
+    "modding: mod API or runtime mod behavior",
+    "assets: asset extraction or validation",
+    "requires_rom: requires a locally supplied legal ROM",
+    "requires_network: requires external network access",
+    "requires_gpu: requires a graphics device",
+    "requires_audio: requires an audio device",
+    "slow: unsuitable for the quick test suite",
+    "serial: cannot run concurrently",
+    "flaky: temporarily quarantined test with an issue",
+]
+timeout = 60
+junit_family = "xunit2"
+
+# Python coverage: tools/ + the test support package. The game binary is
+# C/C++ — covered separately via LLVM instrumentation (see
+# tools/testing/coverage.py and -DSSB64_ENABLE_COVERAGE=ON).
+[tool.coverage.run]
+branch = true
+parallel = true
+relative_files = true
+source = [
+    "tools",
+    "tests/support/python",
+]
+omit = [
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.coverage.html]
+directory = "out/coverage/python/html"
+
+[tool.coverage.xml]
+output = "out/coverage/python/coverage.xml"

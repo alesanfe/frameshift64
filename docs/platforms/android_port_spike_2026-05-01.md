@@ -63,7 +63,7 @@ None of this exists in either repo today. Estimated ~2 days of plumbing.
 ### 3.5. Save data (mostly handled by upstream)
 
 Main landed an SRAM-backed save persistence in
-`src/core/port_save.{cpp,h}` (commit 87cc570). The path resolution chain is:
+`src/persistence/port_save.{cpp,h}` (commit 87cc570). The path resolution chain is:
 
 ```
 $SSB64_SAVE_PATH  >  Ship::Context::GetPathRelativeToAppDirectory  >  SDL_GetPrefPath  >  cwd
@@ -129,10 +129,10 @@ phase.
 
 ```
 CMakeLists.txt                        # Android branches: USE_OPENGLES, SHARED lib, gate Torch, ASM language, coroutine test target
-src/platform/coroutine_posix.cpp              # exclude when __ANDROID__
-src/platform/android/coroutine_android.cpp            # aarch64 coroutine impl driving the asm swap
-port/coroutine_aarch64.S              # NEW — ~30-line context-switch primitive (boost::context-style)
-port/coroutine_test.cpp               # NEW — standalone harness, runs via adb shell
+src/platform/coroutine/coroutine_posix.cpp              # exclude when __ANDROID__
+src/platform/coroutine/coroutine_android.cpp            # aarch64 coroutine impl driving the asm swap
+src/platform/coroutine/coroutine_aarch64.S              # NEW — ~30-line context-switch primitive (boost::context-style)
+src/platform/coroutine/coroutine_test.cpp               # NEW — standalone harness, runs via adb shell
 src/application/port_watchdog.cpp                # gate <execinfo.h> on API <33
 android/app/src/main/res/xml/backup_rules.xml          # NEW — Auto Backup scope (Phase 3 manifest will reference)
 android/app/src/main/res/xml/data_extraction_rules.xml # NEW — API 31+ backup channels

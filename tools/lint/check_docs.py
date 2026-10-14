@@ -27,6 +27,14 @@ SCAN_FILES = ["README.md", "BUILDING.md", "CONTRIBUTING.md", "CLAUDE.md",
 
 SKIP_SCHEMES = ("http://", "https://", "mailto:", "ftp://")
 
+# Paths docs legitimately reference without the file being committed:
+# generated-on-demand artifacts (release pubkey is produced by the
+# signing maintainer, embedded only if present — CMake guards with
+# if(EXISTS)) and user-supplied inputs.
+OPTIONAL_REFS = {
+    "config/release_pubkey.hex",
+}
+
 
 def _iter_markdown():
     for d in SCAN_DIRS:
@@ -64,7 +72,7 @@ def check_file(path: Path):
         ref = re.sub(r"\$\{[^}]*\}", "*", ref)
         # 'file.h/.cpp' shorthand -> the first variant is authoritative
         ref = re.sub(r"(\.[A-Za-z0-9]+)/\.[A-Za-z0-9]+$", r"\1", ref)
-        if "<" in ref or not ref:
+        if "<" in ref or not ref or ref in OPTIONAL_REFS:
             continue
 
         def _resolves(r):

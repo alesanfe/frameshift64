@@ -1,6 +1,6 @@
 #include "UpdatePrompt.h"
 
-#include "features/enhancements.h"
+#include "gameplay/enhancements.h"
 
 #include <imgui.h>
 

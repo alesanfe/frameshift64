@@ -5,7 +5,7 @@
 | `architecture/` | Living design docs: [`overview.md`](architecture/overview.md), [`build_and_tooling.md`](architecture/build_and_tooling.md), plus `designs/` for accepted design plans (interpolation, freeze-frame clock, widescreen, JP ROM compat…). |
 | `development/` | Contributor reference: `c_conventions.md`, `n64_reference.md`, debugging guides (`debug_gbi_trace.md`, `debug_ido_bitfield_layout.md`, `state_trace.md`), `classic_coop.md`, `env_vars.md` (SSB64_* catalog). |
 | `netplay/` | Netplay design docs (living): `netplay_architecture.md`, `netplay_online.md`, `rollback_design.md`, `netcode_agent_rules.md`, `testplan_netplay_rollback_2026-10-13.md`. **`netplay/protocol/`** is the normative wire spec — see ADR-0006. |
-| `modding/` | Mod authoring guide (`modding.md`). Runtime lives in `src/bridge/modding/`; SDK skeleton in `mods/`. |
+| `modding/` | Mod authoring guide (`modding.md`). Runtime lives in `src/integration/modding/`; SDK skeleton in `mods/`. |
 | `platforms/` | Per-platform feasibility/status notes (Android, UWP/Xbox, Linux AppImage, 32-bit x86). |
 | `compatibility/` | Version policy per surface (saves, config, assets, mods, netplay, lobby). Canonical numbers in `include/smash_classic/version.h`. |
 | `security/` | Threat models (network, mods, updater, assets), supply-chain posture, incident response. |

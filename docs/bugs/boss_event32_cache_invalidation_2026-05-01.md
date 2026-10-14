@@ -127,7 +127,7 @@ Inventoried every pointer-keyed cache in `port/`:
 
 - `port_aobj_fixup.cpp`: 3 caches (above).  All now evicted on figatree
   heap reload via `port_aobj_register_halfswapped_range`.
-- `src/bridge/lbreloc_byteswap.cpp`: 4 caches (`sStructU16Fixups`,
+- `src/integration/decomp/lbreloc_byteswap.cpp`: 4 caches (`sStructU16Fixups`,
   `sTexFixupExtent`, `sTexFixupWords`, `sDeswizzle4cFixups`).  All
   evicted via `portEvictStructFixupsInRange` called from
   `lbRelocLoadAndRelocFile` before bytes are copied.

@@ -63,14 +63,16 @@ Hallazgos totales: **11 confirmados de severidad alta/crítica**, ~20 medios,
 ```
 Cliente (ssb64.exe)
 ├─ src/presentation/      PortMenu, OnlineStatus, Menu (sidebar)
-├─ src/netplay/           netlobby (SSBL, peers, LAN, spec) 
-│                          port_udp (link table 0..7, framing relay)
+├─ src/netplay/session/   netlobby (SSBL, peers, LAN, spec)
+├─ src/netplay/transport/  port_udp (link table 0..7, framing relay)
 │                          port_ws (control socket + uplink)
-├─ src/core/              port_save (SRAM + replays dir), port_log
-├─ src/bridge/            modding (ModRegistry/ScriptLoader TCC),
-│                          audio_bridge, lbreloc_byteswap, particle_bank
+├─ src/persistence/       port_save (SRAM + replays dir)
+├─ src/observability/     port_log
+├─ src/integration/decomp/  audio_bridge, lbreloc_byteswap, particle_bank
+├─ src/integration/modding/ ModRegistry/ScriptLoader TCC
 ├─ src/compatibility/     n64_stubs (tasks, coroutines, defer queues)
-├─ src/features/          Updater, ShaderDownloader, widescreen, interp
+├─ src/distribution/      Updater, ShaderDownloader, ModPackDownloader
+├─ src/features/          widescreen, interp, gameplay/audio/social packs
 └─ decomp/src/sys/        netpeer (star/FORWARD/spec links), netinput
                           (sources: local/remote-confirmed/predicted/saved),
                           netrollback (8 snapshots + resim), netreplay
@@ -223,7 +225,7 @@ Servicios
 
 ### AUD-13 — Parsers de blobs de audio confían en counts/offsets — ALTA / CONFIRMADO
 
-- **Evidencia:** `src/bridge/audio_bridge.cpp:505-547` — `seqCount`,
+- **Evidencia:** `src/integration/decomp/audio_bridge.cpp:505-547` — `seqCount`,
   `bankCount`, `instCount`, offsets y lens leídos del blob jamás se validan
   contra `sbkSize`/`size`/`ctlSize`; punteros salvajes entran a
   `seqArray`/`pkg->data`/`bankArray`; `sSYAudioSequenceBank2 =
@@ -382,7 +384,7 @@ Resumen (evidencia completa en el análisis de build/CI):
   `PortCoroutine` huerfano (fiber/ucontext + 64KB stack por ocurrencia;
   en Windows un Fiber handle). Bounded pero acumulable en sesiones largas.
 - **AUD-28** `config/semgrep/smash-classic.yml` include paths `net/*`,
-  `*netpeer*`… no cubren `src/netplay/*.cpp` → las reglas de net-safety no
+  `*netpeer*`… no cubren `src/netplay/**/*.cpp` → las reglas de net-safety no
   aplican al netcode del port.
 - **AUD-29** `GenerateRelocArtifacts`/`GenerateCreditsAssets` reescriben
   outputs cada build (timestamp bump → recompile+relink); `generate_yamls`
@@ -423,10 +425,10 @@ Resumen (evidencia completa en el análisis de build/CI):
 - **AUD-41** `coroutine_test` include dir `port/` muerto; 3 CMakeLists de
   mods llaman tools/merge_mod.py (real `tools/modding/merge_mod.py`); `test_vpk0.py`/
   `test_extern_ids.py` calculan repo-root un nivel corto y referencian
-  tools/test_vpk0.c (real `tests/unit/test_vpk0.c`).
+  tools/test_vpk0.c (real `tests/unit/resources/vpk0_test.c`).
   **RESUELTO (post-reorganización):** include dir → `src/platform`,
   mod CMakeLists → `tools/modding/merge_mod.py`, probes corregidos
-  (`tests/unit/test_*.py` resuelven root y ROM vía `roms/`/`SMASH_BASEROM`).
+  (`` `tests/unit/resources/*_test.py` `` resuelven root y ROM vía `roms/`/`SMASH_BASEROM`).
 - **AUD-42** `RelocFileTable.us.h:11` embebe `C:/Users/alex0/...` absoluto —
   diffs por máquina + leak de path del autor.
 - **AUD-43** `TorchExternal` sin `BUILD_ALWAYS` → submodule movido no
@@ -491,7 +493,7 @@ Resumen (evidencia completa en el análisis de build/CI):
 ## 9. Gaps de test
 
 - No hay ctest/enable_testing: toda la cobertura es manual.
-- `tests/unit/test_vpk0.py`, `test_extern_ids.py` rotos (root math).
+- `tests/unit/resources/vpk0_test.py`, `test_extern_ids.py` rotos (root math).
 - `test-lobby-security.js` tiene cero casos spec y ninguno que ejercite el
   edge-fetch — por eso AUD-09/AUD-10 sobrevivieron.
 - Nada prueba: spec→host binario, host cross-version, flood de oversize,
@@ -556,8 +558,8 @@ Resumen (evidencia completa en el análisis de build/CI):
 
 ## 12b. Fixes aplicados tras la auditoría (misma sesión)
 
-Verificados donde fue posible (JS tests corren; C++/CMake/PS1 solo
-verificados por lectura/sintaxis — sin toolchain en este entorno):
+Verificación real posterior en §12e (build Windows completo OK, tests
+ejecutados). Lo verificado originalmente en la sesión de fixes:
 
 - **AUD-01** — `.gitignore` añade `!assets/configuration/`; el árbol de
   extracción ya es addable (pendiente `git add` + commit con el reorg).
@@ -636,8 +638,9 @@ tests, cancelación shader install, verificación updater), AUD-34-36
   .workers.dev` versión `e98a112c`; no se verificó que el código desplegado
   coincida con `services/netplay-lobby/src/index.js` local —
   AUD-09/10 asumen que sí (el push nunca se confirmó).
-- **Windows/macOS/Linux/Android builds:** nada compiló — todos los fallos
-  de path son por lectura, no por ejecución.
+- **macOS/Linux/Android builds:** no compilados en este entorno (Windows sí —
+  `BattleShip.exe` Debug linka; ver §12e). Los fallos de path macOS/Linux/
+  Android siguen siendo por lectura, no por ejecución.
 
 ---
 
@@ -645,7 +648,7 @@ tests, cancelación shader install, verificación updater), AUD-34-36
 
 Nueva superficie auditada tras el fix pass: `src/platform/switch/`
 (SwitchImpl, context_switch.s, SwitchPerformanceProfiles),
-`src/platform/coroutine_switch.cpp`, secciones `NintendoSwitch` en
+`src/platform/coroutine/coroutine_switch.cpp`, secciones `NintendoSwitch` en
 CMakeLists, `scripts/build/build-switch.sh`, `first_run.cpp`/`port.cpp`
 `__SWITCH__` paths, `check_module_deps.py` + baseline, bloque Liquid
 Glass en `package-macos.sh`.
@@ -661,7 +664,7 @@ Glass en `package-macos.sh`.
 | SW-05 | PROBABLE | Media | `sdmc:/switch/BattleShip/` podía no existir → `fopen` falla → log perdido. **FIX:** `mkdir` antes de `port_log_init`. |
 | SW-06 | CONFIRMADO | Baja | `SwitchContext caller;` muerta en `coroutine_switch.cpp`; comentario stale `port/switch/`; `port_log.h` sin uso; `--icon=/opt/devkitpro/...` hardcodeado. **FIX:** todos corregidos; icon ahora vía `$DEVKITPRO`. |
 | SW-07 | CONFIRMADO | Alta | `build-switch.sh`: `PROJECT_DIR=$SCRIPT_DIR/..` → `scripts/` (mismo bug que packagers); configure habría fallado siempre. Build dirs en raíz en vez de `out/`. **FIX:** `../..` + `out/build/switch{,-native}`. |
-| SW-08 | RESUELTO (gate) | Alta | Verificado: la rama `ssb64` del fork (`3694576a`) solo añade `tests/port_stubs.cpp` — **cero** soporte `__SWITCH__` en los 378 fuentes de LUS escaneados. Un configure Switch habría producido un .nro sin linkar. **FIX:** `Switch.cmake` escanea los fuentes de LUS en configure-time y `FATAL_ERROR` con mensaje accionable si falta el backend (verificado con `cmake -P`: el check dispara sobre el checkout actual). El target Switch queda desbloqueado automáticamente cuando el fork reciba un backend libnx. |
+| SW-08 | RESUELTO (gate) | Alta | Verificado: la rama `ssb64` del fork (`3694576a`) solo añade `libultraship/tests/port_stubs.cpp` — **cero** soporte `__SWITCH__` en los 378 fuentes de LUS escaneados. Un configure Switch habría producido un .nro sin linkar. **FIX:** `Switch.cmake` escanea los fuentes de LUS en configure-time y `FATAL_ERROR` con mensaje accionable si falta el backend (verificado con `cmake -P`: el check dispara sobre el checkout actual). El target Switch queda desbloqueado automáticamente cuando el fork reciba un backend libnx. |
 
 ### Verificado correcto
 
@@ -705,7 +708,7 @@ SDL2/libnx wiring de `SDL_main` en Switch asumido correcto por la toolchain.
 | AUD-23/24/25/46 | **FIXED** (index.js + node-lobby.js en espejo) — idle reaper ~90s invocando el camino normal de `onClose` (preserva `peer_left` y limpieza de uplinks); join budget con headroom sobre una sala llena legítima para que un code-holder no la mantenga cerrada; throttle por IP en respuestas de existencia de sala (anti-oráculo); roster redactado para specs (sin endpoints `public`/`local` de players al rol menos confiable). Verificado: `test-lobby-security.js` 21/21 + `test-lobby-fuzz.js` PASS. |
 | AUD-26 | **FIXED** — LAN HELLO autenticado con `SSB64_LAN_KEY` (hash FNV compartido) + rate-limit de adopción anónima; endpoints arbitrarios ya no ocupan slots. |
 | AUD-37/38/39/40 | **FIXED** — warnings en mq ops fuera de coroutine; `osContInit`/query/read reportan conectividad real vía bridge LUS (la pantalla "no controller" ya puede mostrarse); canary real de stack host en `PortCoroutine` (el `0xFEDCBA98` N64 era inerte en port). |
-| AUD-45/47/48 | **FIXED** — deuda doc: `.gitignore` (paths `assets/configuration/extraction`, decomp tools anclados a `decomp/tools/`), `overview.md:45` (frase corrupta), BUILDING.md (`out/build/<ver>` + presets), READMEs de mods (`src/application/port.cpp`, `src/bridge/hooks/list/EngineEvent.h`), comentario de `new-worktree.{sh,ps1}`. Limitaciones takeover/spec documentadas en `netplay_online.md`. |
+| AUD-45/47/48 | **FIXED** — deuda doc: `.gitignore` (paths `assets/configuration/extraction`, decomp tools anclados a `decomp/tools/`), `overview.md:45` (frase corrupta), BUILDING.md (`out/build/<ver>` + presets), READMEs de mods (`src/application/port.cpp`, `src/integration/hooks/list/EngineEvent.h`), comentario de `new-worktree.{sh,ps1}`. Limitaciones takeover/spec documentadas en `netplay_online.md`. |
 
 Notas:
 - `Mutex` libnx se asume zero-init==unlocked (estático); si libnx exige `mutexInit()` explícito hay que llamarlo en `port_log_init`.
@@ -726,5 +729,7 @@ Todo lo verificable sin hardware devkitPro/hardware de red se ejecutó:
 - **SW-08 verificado:** el gate de configure dispara correctamente (378 fuentes LUS escaneados, `has_switch=FALSE` → `FATAL_ERROR`).
 - **`gen_sbom.py`** corre y emite CycloneDX válido desde `services/netplay-lobby/package-lock.json`.
 - **Python:** `ast.parse` OK en los 7 scripts modificados/nuevos.
+
+**Segunda ronda (post-commit `a9e98f24`):** rebuild incremental tras los cambios de `ModRegistry`/`netlobby` (`"simulation": false` exime mods cosméticos del compat hash) → `BattleShip.exe` linka limpio. `check_retired_paths.py` → clean; `test_extraction_recipes.py` → 246 recetas, jp=10719/us=10744 símbolos, 0 fallos; ambos parsean y corren.
 
 Sigue sin ser verificable aquí: build Android (sin NDK), build Switch (sin devkitPro — ahora fail-loud en configure), tests PS1 de netplay contra dos procesos reales, y el deploy del worker (`e98a112c` vs `index.js` local).

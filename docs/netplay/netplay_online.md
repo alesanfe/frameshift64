@@ -47,9 +47,9 @@ Release builds default to the deployed Worker. Override it at configure time wit
 | Piece | File |
 |---|---|
 | Lobby server (room codes, endpoint exchange, relay) | `services/netplay-lobby/src/index.js` |
-| Lobby state machine (STUN, create/join, hole punch, picks, START/GO) | `src/netplay/netlobby.cpp` |
-| WebSocket client (WinHTTP, wss://) | `src/netplay/port_ws.cpp` |
-| UDP endpoint (Winsock/BSD, relay hooks, network simulator) | `src/netplay/port_udp.cpp` |
+| Lobby state machine (STUN, create/join, hole punch, picks, START/GO) | `src/netplay/session/netlobby.cpp` |
+| WebSocket client (WinHTTP, wss://) | `src/netplay/transport/port_ws.cpp` |
+| UDP endpoint (Winsock/BSD, relay hooks, network simulator) | `src/netplay/transport/port_udp.cpp` |
 | Match transport, pacing, time sync, desync check | `decomp/src/sys/netpeer.c` |
 | Input delay, prediction, misprediction detection | `decomp/src/sys/netinput.c` |
 | Snapshots, resimulation, shadow draws | `decomp/src/sys/netrollback.c`, `docs/netplay/rollback_design.md` |

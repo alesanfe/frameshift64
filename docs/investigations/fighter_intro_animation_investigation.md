@@ -321,7 +321,7 @@ The correct actions trigger and animations load, but **joint transforms are visu
 
 ### Suspected Root Cause: Figatree Byte-Swap Pipeline
 
-`portRelocFixupFighterFigatree` in `src/bridge/lbreloc_bridge.cpp:133-157` applies ROT16 `((word<<16)|(word>>16))` to all non-relocated u32 words in figatree files. This correctly fixes u16 event pair ordering after bswap32.
+`portRelocFixupFighterFigatree` in `src/integration/decomp/lbreloc_bridge.cpp:133-157` applies ROT16 `((word<<16)|(word>>16))` to all non-relocated u32 words in figatree files. This correctly fixes u16 event pair ordering after bswap32.
 
 **Potential corruption vectors:**
 1. **f32 interpolation data** — `nGCAnimEvent16SetTranslateInterp` commands reference `SYInterpDesc` structures with f32 fields. ROT16 corrupts f32 values (they need plain bswap32, not ROT16).

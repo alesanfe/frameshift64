@@ -6,9 +6,10 @@ The SSB64 PC-port lobby/relay service — deployable independently of the game b
 
 | Entry | Purpose |
 |-------|---------|
-| `src/index.js` | Cloudflare Worker + Durable Object (`NetplayRoom`): WebSocket sessions, slot assignment, `upkey` uplink auth, rate limiting, star routing (v1 1v1 + v2 up to 4 players). Deploy with `npx wrangler deploy`. |
-| `src/node-lobby.js` | Local-dev stand-in implementing the same wire protocol for `wrangler dev`-free testing (`node src/node-lobby.js 8799`). |
-| `tests/` | `test-lobby-security.js` (session ids, upkey auth, rate limits, star-routing drops) and `test-lobby-fuzz.js` (malformed-frame fuzz driver). Both run against `node-lobby.js`. |
+| `src/domain/` | Shared lobby logic both adapters run — `protocol.mjs` (frame schema, session ids, upkey auth, rate limits, close codes) and `room.mjs` (slots, star routing, spectator state). Edit room behavior here only: a change lands in both deployables by construction. |
+| `src/index.js` | Cloudflare adapter — Worker + Durable Object (`NetplayRoom`) driving `domain/` under the Workers runtime (ws hibernation API). Deploy with `npx wrangler deploy`. |
+| `src/node-lobby.mjs` | Node adapter — same wire protocol for `wrangler dev`-free local testing (`node src/node-lobby.mjs 8799`). This is the process every test and netplay script launches. |
+| `tests/` | `test-lobby-security.js` (session ids, upkey auth, rate limits, star-routing drops) and `test-lobby-fuzz.js` (malformed-frame fuzz driver). Both run against `node-lobby.mjs`. |
 | `package.json` / `package-lock.json` | Shared deps (`wrangler`, `ws`). `npm ci` at this directory, not per-subdir. |
 | `wrangler.jsonc` | Worker config; `main: src/index.js`. |
 

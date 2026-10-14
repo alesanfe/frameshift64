@@ -176,6 +176,18 @@ def build_checks(args) -> list:
               [sys.executable, str(ROOT / "tools" / "lint" /
                                    "check_module_deps.py")],
               "module-deps.txt", required=True),
+        Check("cvar-schema",
+              [sys.executable, str(ROOT / "tools" / "lint" /
+                                   "check_cvar_schema.py")],
+              "cvar-schema.txt", required=True),
+        Check("generated-headers",
+              [sys.executable, str(ROOT / "tools" / "lint" /
+                                   "check_generated_headers.py")],
+              "generated-headers.txt", required=True),
+        Check("retired-paths",
+              [sys.executable, str(ROOT / "tools" / "lint" /
+                                   "check_retired_paths.py")],
+              "retired-paths.txt", required=True),
     ]
 
     sem = ROOT / "config" / "semgrep" / "smash-classic.yml"

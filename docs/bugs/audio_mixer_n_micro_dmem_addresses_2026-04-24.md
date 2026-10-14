@@ -16,7 +16,7 @@ WAV dump captured 10 s of PCM via `portAudioSubmitFrame` and inspected with a Py
 
 ## Root cause
 
-`src/resources/audio/mixer.c` hard-coded the four output-bus DMEM addresses against the **standard `AL_*` constants** from decomp/include/n_audio/synthInternals.h:
+`src/resources/loading/audio/mixer.c` hard-coded the four output-bus DMEM addresses against the **standard `AL_*` constants** from decomp/include/n_audio/synthInternals.h:
 
 ```c
 #define MIX_MAIN_L 1088   /* AL_MAIN_L_OUT */
@@ -50,7 +50,7 @@ The output PCM was effectively whatever leaked from the AUX bus residue plus uni
 
 ## Fix
 
-`src/resources/audio/mixer.c` — change the four `MIX_*` constants to the `N_AL_*` values, with a comment explaining the trap so the next person doesn't re-introduce it.
+`src/resources/loading/audio/mixer.c` — change the four `MIX_*` constants to the `N_AL_*` values, with a comment explaining the trap so the next person doesn't re-introduce it.
 
 ## Verification
 

@@ -57,7 +57,7 @@ L1  reloc parse              table entry + decompressed bundle + chains
 L2  MANIFEST (canonical IR)  assets/configuration/extraction/<v>/reloc_fighters_main/manifests/<Symbol>.json
 L3  derived views (same tool, same parse — cannot drift; I10):
       child yaml <Symbol>.yml (torch input)
-      src/bridge/ssb64_reloc_rebuild.<v>.cpp (runtime spec)
+      src/integration/decomp/ssb64_reloc_rebuild.<v>.cpp (runtime spec)
 L4  o2r archive              inspector: unzip -l build/extracted/BattleShip.o2r
 L5  runtime synthesis        inspector: SSB64_SYNTH_INSPECT=<id> → JSON
 L6  game heap                existing token/byteswap machinery, unchanged
@@ -193,7 +193,7 @@ LinkMain/LinkModel template (multiset-validated):
 **Known follow-up**: sprite-region textures (batch-loaded via Sprite
 structs, e.g. LinkModel 0xB1B0–0xC6xx shield/sword art) stay BLOB — typing
 them needs a Sprite-struct walker (layout documented in
-`src/bridge/lbreloc_byteswap.cpp` `portFixupSprite`). Recorded per-file in
+`src/integration/decomp/lbreloc_byteswap.cpp` `portFixupSprite`). Recorded per-file in
 the manifest's `demotions` report.
 
 ## Failure playbook
@@ -209,7 +209,7 @@ the manifest's `demotions` report.
 
 ## Spec schema (generator ↔ runtime contract)
 
-Defined in `src/bridge/ssb64_reloc_rebuild.h`; data in generated
+Defined in `src/integration/decomp/ssb64_reloc_rebuild.h`; data in generated
 `ssb64_reloc_rebuild.<v>.cpp` (file_id-sorted, binary-searched). All
 offsets slice-relative where possible, self-validating at generation:
 
@@ -233,5 +233,5 @@ format mod DLs author against; unresolvable references are fatal (I7).
   pre-relocates intern slots at extraction (the chain `next` field is
   unknowable from a sliced DL), so the runtime uses explicit slot lists and
   every comparison uses the **relocated view**.
-- Hires packs hash decoded RGBA8 + fmt/siz at upload (`src/resources/textures/hires/`), not
+- Hires packs hash decoded RGBA8 + fmt/siz at upload (`src/resources/loading/textures/hires/`), not
   paths — vanilla byte-exactness ⇒ existing packs keep binding.

@@ -72,11 +72,38 @@ MOD_EXIT() {
 }
 ```
 
-Available events live in `src/bridge/hooks/list/EngineEvent.h` (and any other `list/*.h` headers added later).
+Available events live in `src/integration/hooks/list/EngineEvent.h` (and any other `list/*.h` headers added later).
 
 ## Calling engine functions
 
 Any function in BattleShip's export table is callable from your mod. The post-build step runs `tcc.exe -impdef <BattleShip.exe>` and produces `BattleShip.def`, which libtcc automatically links against. You don't have to declare engine functions — `#include` the relevant decomp / port header and call them.
+
+## Manifest fields
+
+`manifest.json` keys the engine reads:
+
+- `name`, `version`, `author`, `description`, `website`, `license`,
+  `icon` — metadata shown in the Mods menu.
+- `main` — build descriptor (e.g. `build.gen`) listing the C sources to
+  compile.
+- `code-version` (integer) — minimum scripting ABI the mod needs. The
+  loader refuses to compile a mod whose `code-version` is newer than the
+  engine supports.
+- `game-version` (integer) — pin to a specific game archive version.
+- `dependencies` — other mods that must load first (see below).
+- `simulation` (boolean, default `true`) — whether the mod can alter
+  gameplay state: hitboxes, physics, items, scripts that write game
+  memory, or asset files that shadow gameplay data. Mods that declare
+  `"simulation": false` are treated as cosmetic-only (texture/audio swap
+  packs) and are **excluded from the netplay compatibility hash**, so a
+  cosmetic pack doesn't keep you out of vanilla lobbies. Only set it if
+  you're sure — a `simulation: false` mod that still touches gameplay
+  data will desync mid-match instead of being rejected in the lobby.
+- `checksum` (`"fnv1a64:<16-hex>"`) + `signature` / `public-key` —
+  optional minisign raw/legacy (`-l`) Ed25519 signature over the
+  archive. Use `tools/modding/package_mod.py --checksum --sign-key
+  <key>` to generate them; the Mods menu shows a `[signed]` badge when
+  verification succeeds.
 
 ## Cross-mod calls
 

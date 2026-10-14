@@ -7,9 +7,8 @@
 assets/configuration/extraction/**/*.yml text eol=lf
 
 # Committed codegen output — same rule.
-include/reloc_data*.h text eol=lf
-src/resources/RelocFileTable.* text eol=lf
-src/bridge/ssb64_reloc_rebuild*.cpp text eol=lf
+generated/**/*.h text eol=lf
+generated/**/*.cpp text eol=lf
 assets/configuration/extraction/**/manifests/*.json text eol=lf
 
 # Python tooling: LF on all platforms so committed sources don't drift.
@@ -63,8 +62,9 @@ services/netplay-lobby/cloudflare/node_modules/** linguist-vendored
 **/package-lock.json linguist-generated=true
 
 # Generated code: collapse in PR diffs, exclude from stats.
-src/resources/RelocFileTable.* linguist-generated=true
-include/reloc_data*.h linguist-generated=true
+generated/** linguist-generated=true
+assets/configuration/extraction/**/*.yml linguist-generated=true
+assets/configuration/extraction/**/manifests/*.json linguist-generated=true
 
 # ---------------------------------------------------------------------------
 # Release export — don't ship dev plumbing in `git archive` artifacts

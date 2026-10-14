@@ -6,5 +6,6 @@
     "description": "A simple demo mod for testing the BattleShip TCC scripting layer.",
     "author": "Your Name",
     "license": "MIT",
-    "code-version": 1
+    "code-version": 1,
+    "simulation": true
 }

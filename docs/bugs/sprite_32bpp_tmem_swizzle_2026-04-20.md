@@ -98,7 +98,7 @@ artifact.
 ## Fix
 
 Extended the existing sprite deswizzle in `portFixupSpriteBitmapData`
-(`src/bridge/lbreloc_byteswap.cpp`) to pick `group_size` based on bpp:
+(`src/integration/decomp/lbreloc_byteswap.cpp`) to pick `group_size` based on bpp:
 
 ```cpp
 size_t group_size = (bpp == 32) ? 16 : 8;
@@ -112,7 +112,7 @@ deswizzle).
 
 ## Files
 
-- `src/bridge/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`, extended
+- `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`, extended
   deswizzle for bpp=32.
 - `docs/investigations/smash_title_32bpp_sprite.md` — superseded by this writeup.
 - `docs/investigations/sprite_broken_textures_handoff_2026-04-19.md` — superseded by this

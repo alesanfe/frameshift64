@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-18
 **Area:** `tools/codegen/generate_yamls.py` (JP asset-name generation) →
-`src/resources/RelocFileTable.jp.cpp` → `src/bridge/lbreloc_bridge.cpp`
+`generated/src/jp/RelocFileTable.jp.cpp` → `src/integration/decomp/lbreloc_bridge.cpp`
 classification
 **Symptom (JP only):** Mario, DK, and Fox T-pose on the VS
 character-select screen; Fox T-poses through the opening "master hand
@@ -24,7 +24,7 @@ no named table and fell through to the `file_{id:04d}` fallback →
 `assets/configuration/extraction/jp/reloc_misc_named.yml` `file_0332`…`file_0356` →
 `RelocFileTable.jp.cpp[332..356] = "reloc_misc/file_0NNN"`.
 
-This is **not cosmetic.** `src/bridge/lbreloc_bridge.cpp`
+This is **not cosmetic.** `src/integration/decomp/lbreloc_bridge.cpp`
 `portRelocIsFighterFigatreeFile()` (lbreloc_bridge.cpp:274–278) classifies
 a reloc file as a fighter figatree purely by **resource-path prefix** —
 `"reloc_animations/FT"` or `"reloc_submotions/FT"`. The placeholder
@@ -59,7 +59,7 @@ fallback still key on the real version file_id.
 
 For US, `ll_<N>_FileID == N` for all N, so the map is the identity and
 US output is **byte-for-byte unchanged** (regression guard:
-`git diff assets/configuration/extraction/us src/resources/RelocFileTable.us.*` empty after
+`git diff assets/configuration/extraction/us src/resources/relocation/RelocFileTable.us.*` empty after
 regen — verified).
 
 Regenerate + rebuild: `python3 tools/codegen/generate_yamls.py --version jp`,
@@ -85,7 +85,7 @@ rebuilt to match the table).
 ## Notes
 
 `generate_yamls.py` lives in the outer port tree (not a submodule). The
-companion `src/resources/RelocFileTable.jp.{cpp,h}` and `assets/configuration/extraction/jp/*` are
+companion `generated/src/jp/RelocFileTable.jp.*` and `assets/configuration/extraction/jp/*` are
 generated artifacts committed for the JP build. No decomp/torch/LUS
 submodule change. Earlier triage (`docs/investigations/jp_runtime_triage_2026-05-18.md`
 Issue C, now corrected) wrongly concluded the naming wart was cosmetic by

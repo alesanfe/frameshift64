@@ -14,10 +14,10 @@ Fighter reloc files (`reloc_animations/FT*`, `reloc_submotions/FT*`)
 are loaded through two port-layer byte-swap passes:
 
 1. **Blanket `BSWAP32`** over the whole blob in
-   `src/bridge/lbreloc_byteswap.cpp:pass1_swap_u32`. Makes u32 reads
+   `src/integration/decomp/lbreloc_byteswap.cpp:pass1_swap_u32`. Makes u32 reads
    produce the same value as on N64 (BE-native).
 2. **u16 half-swap** of every non-reloc u32 slot in
-   `portRelocFixupFighterFigatree` (`src/bridge/lbreloc_bridge.cpp:134`):
+   `portRelocFixupFighterFigatree` (`src/integration/decomp/lbreloc_bridge.cpp:134`):
    `w = (w << 16) | (w >> 16)`. Reloc-chain slots (pointer tokens) are
    skipped by this pass.
 

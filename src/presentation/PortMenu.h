@@ -32,11 +32,15 @@ class PortMenu : public Ship::Menu {
     void AddMenuElements();
     void AddMenuSettings();
     void AddMenuAssets();
+    void AddMenuSupport();
     void AddMenuAbout();
     void AddMenuOnline();
 #ifndef DISABLE_SCRIPTING
     void AddMenuMods();
 #endif
+    /* Clears and rebuilds every menu entry — used when a toggle changes which
+     * sidebars exist (e.g. enabling developer tools). */
+    void RebuildMenu();
 
   private:
     bool mShowReextractMessage = false;

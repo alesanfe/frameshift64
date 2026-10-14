@@ -87,7 +87,7 @@ All changes in the ScriptLoader (the temp-DLL compile+load path):
      `ENABLE_EXPORTS` keeps the exe's export table; `dlsym(RTLD_DEFAULT,…)`
      on Unix — we already link `-Wl,-export-dynamic`), and register it with
      `tcc_add_symbol(s, name, addr)`. The existing `SymbolResolver` machinery
-     in `src/bridge/modding/` does the same lookup and can likely be reused.
+     in `src/integration/modding/` does the same lookup and can likely be reused.
 3. `tcc_relocate(s)` then `tcc_get_symbol(s, "ModInit")` /
    `"ModExit"` instead of `LoadLibrary` + `GetProcAddress`.
 4. **Hot reload / unload:** replace `FreeLibrary` with `tcc_delete(s)` (frees

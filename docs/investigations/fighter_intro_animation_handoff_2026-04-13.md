@@ -356,7 +356,7 @@ Contents (218 lines across 4 files):
 - `decomp/src/ft/ftmain.c` — 57 lines of `SSB64_TRACE_MOTION=1`-gated
   instrumentation for the motion event parser, plus unconditional logs in
   each `SetFlag0..3` case (Lead 2).
-- `src/bridge/lbreloc_bridge.cpp` — 11 lines adding
+- `src/integration/decomp/lbreloc_bridge.cpp` — 11 lines adding
   `SSB64_DUMP_MAIN_FILES=1` env var to dump every
   `reloc_fighters_main/*` file pre-byteswap to
   `debug_traces/port_file_<id>.bin` (Lead 2). Useful to pair with
@@ -374,6 +374,6 @@ discarded.
 ## Files touched during this session
 
 - **Committed (`006128e`):** `decomp/src/ft/fttypes.h` — FTMotionFlags plain fields
-- **Stashed:** `decomp/src/sys/objanim.c`, `decomp/src/ft/ftmain.c`, `src/bridge/lbreloc_bridge.cpp`, `decomp/src/ft/ftchar/ftfox/ftfoxspecialn.c`
+- **Stashed:** `decomp/src/sys/objanim.c`, `decomp/src/ft/ftmain.c`, `src/integration/decomp/lbreloc_bridge.cpp`, `decomp/src/ft/ftchar/ftfox/ftfoxspecialn.c`
 - **Untracked in `debug_traces/`:** `port_file_338.bin`, `port_file_208.bin`, `matanim_evidence/port_matanim_trace.txt`, plus pre-existing figatree dumps
 - **Crash reports:** `~/Library/Logs/DiagnosticReports/ssb64-2026-04-13-003406.ips` and `ssb64-2026-04-13-004119.ips`

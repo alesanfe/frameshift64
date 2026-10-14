@@ -1,7 +1,7 @@
 # Sprite Trailing-Column Bleed — Fighter-Intro "MARIO" Title Card
 
 **Date:** 2026-04-11
-**Files touched:** `src/bridge/lbreloc_byteswap.cpp` (`portFixupSpriteBitmapData`)
+**Files touched:** `src/integration/decomp/lbreloc_byteswap.cpp` (`portFixupSpriteBitmapData`)
 
 ## Symptom
 

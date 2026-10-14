@@ -69,7 +69,7 @@ capture.
 ### 2. `SSB64_STAGE_AUDIT=1` env var
 
 Runtime instrumentation gate. When the env var is set, per-file audit
-counters in `src/bridge/lbreloc_byteswap.cpp` collect:
+counters in `src/integration/decomp/lbreloc_byteswap.cpp` collect:
 
 - **Pass 2 scan counters** — `vtx_scan_count`, `settimg_scan_count` per
   file (how many vertex / texture headers the pass 2 walker encountered).
@@ -85,7 +85,7 @@ counters in `src/bridge/lbreloc_byteswap.cpp` collect:
   of arbitrary file regions.
 
 Summary emitted via **`portStageAuditEmitLoadSummary`** in
-`src/bridge/lbreloc_bridge.cpp` after **each file load completes**.
+`src/integration/decomp/lbreloc_bridge.cpp` after **each file load completes**.
 
 **Counter-reset gotcha (important).** Because the per-file counters
 reset on every file-load entry and bank loads are recursive (main file
@@ -320,9 +320,9 @@ without a fresh re-read of the files:
 
 ### Runtime instrumentation
 
-- **`src/bridge/lbreloc_byteswap.cpp`** — `SSB64_STAGE_AUDIT=1` env
+- **`src/integration/decomp/lbreloc_byteswap.cpp`** — `SSB64_STAGE_AUDIT=1` env
   var gates all counters. No-op when unset.
-- **`src/bridge/lbreloc_bridge.cpp`** — calls
+- **`src/integration/decomp/lbreloc_bridge.cpp`** — calls
   `portStageAuditEmitLoadSummary` after each file load. No-op when
   `SSB64_STAGE_AUDIT` unset.
 

@@ -152,6 +152,22 @@ if (-not $TorchExe)              { Fail "torch.exe not found in $BuildDir" }
 & $PythonExe (Join-Path $Root "tools\lint\check_release_binary.py") $GameExe
 if ($LASTEXITCODE -ne 0) { Fail "release binary contains gated test-hook strings" }
 
+# ── 3b. Symbol archive (TD-015) ──
+# Crash-bundle minidumps can only be symbolized against the PDBs of the
+# exact build that produced them. /Zi + /DEBUG are already on for every
+# config (mod hooking needs symbols), so the PDB sits next to the exe —
+# archive it beside the release zip so support bundles can be resolved.
+New-Item -ItemType Directory -Path $DistDir -Force | Out-Null
+$SymbolsZip = Join-Path $DistDir "$AppName-symbols-windows.zip"
+$PdbPath    = [System.IO.Path]::ChangeExtension($GameExe, ".pdb")
+if (Test-Path $PdbPath) {
+    if (Test-Path $SymbolsZip) { Remove-Item $SymbolsZip -Force }
+    Compress-Archive -Path $PdbPath -DestinationPath $SymbolsZip -CompressionLevel Optimal
+    Write-Host "Symbols archive: $SymbolsZip"
+} else {
+    Write-Warning "no PDB next to $GameExe — shipping no Windows symbol archive"
+}
+
 # ── 4. Stage the release tree ──
 Write-Step "Staging $StageDir"
 if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
@@ -240,6 +256,26 @@ if ($EnableScripting) {
         $Names = ($TccPeFiles | ForEach-Object { $_.FullName }) -join "`n"
         Fail ".tcc scripting runtime contains PE executables:`n$Names"
     }
+
+    # Bundled example mods (CMake POST_BUILD packages mods/examples/* into
+    # <build>/bundled-mods/ next to the exe). The in-game Mods panel offers
+    # one-click install: copy bundled-mods/<name> into mods/ + hot reload.
+    $BundledMods = Join-Path $ExeBuildDir "bundled-mods"
+    if (Test-Path $BundledMods) {
+        Copy-Item $BundledMods (Join-Path $StageDir "bundled-mods") -Recurse -Force
+    } else {
+        Write-Host "   note: no bundled-mods/ next to the exe (packaging step may have been skipped)"
+    }
+}
+
+# GLideN64 conversion map (POST_BUILD stages tools/modding/vendor/
+# battleship.json as bundled-data/gliden64-map.json). The in-game
+# converter needs it to accept GLideN64/Rice-named texture packs.
+$BundledData = Join-Path $ExeBuildDir "bundled-data"
+if (Test-Path $BundledData) {
+    Copy-Item $BundledData (Join-Path $StageDir "bundled-data") -Recurse -Force
+} else {
+    Write-Host "   note: no bundled-data/ next to the exe (GLideN64 pack conversion unavailable)"
 }
 
 # ── 5. Zip ──

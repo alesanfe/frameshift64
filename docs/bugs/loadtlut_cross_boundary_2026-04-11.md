@@ -13,6 +13,6 @@ The chain-walker workaround in commit 4735921 (rewriting LOADTLUT w1 in-place to
 
 **Files:**
 - `libultraship/src/fast/interpreter.cpp` — `GfxDpLoadTlut` (commit `975d10a` on branch `ssb64`).
-- `src/bridge/lbreloc_byteswap.cpp` — `chain_fixup_settimg` revert (commit `5fc4c41` on main, includes the submodule bump).
+- `src/integration/decomp/lbreloc_byteswap.cpp` — `chain_fixup_settimg` revert (commit `5fc4c41` on main, includes the submodule bump).
 
 **Class-of-bug lesson:** Port-layer workarounds that patch values in-place to trick a downstream consumer tend to have at least one side effect on whatever *else* reads or computes from the patched value. If a libultraship behavior is wrong for valid N64 data, the right fix is in libultraship — even when the submodule is "out of scope" for an agent worktree, the main session can reach into it. Check whether a submodule is a vendored fork (`.gitmodules` url) before accepting an "I can't touch libultraship" constraint.

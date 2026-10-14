@@ -3,17 +3,20 @@
 
 Layer contract (docs/architecture/overview.md, proposal §13):
 
-  application → presentation / features / netplay / bridge / core / platform
-  presentation → core (+ interfaces)         — never bridge internals, decomp
-  features    → core / bridge / netplay      — never application/presentation
-  netplay     → core / platform / bridge     — never presentation
-  resources   → core / bridge               — never application/presentation
-  platform    → core                         — never application/features/...
-  compatibility → decomp / core              — the N64 shim layer, no product
-  bridge      → decomp / libultraship / core — the adapter layer
-  core        → no product module            — external/decomp headers only
-  decomp      → src/core + src/features only — port shim + hooks call-outs;
-                never presentation/application/platform
+  application   → everything (composition root)
+  presentation  → leaf modules + gameplay      — never integration internals, decomp
+  gameplay/audio/social/input → leaf modules / integration / netplay — never application/presentation
+  distribution  → leaf modules / platform / integration (downloads, updater,
+                  signing)                    — never application/presentation
+  netplay       → leaf modules / platform / integration — never presentation/features
+  resources     → leaf modules / integration  — never application/presentation
+  platform      → observability only          — never application/gameplay/...
+  compatibility → decomp / observability      — the N64 shim layer, no product
+  integration   → decomp / libultraship / leaf modules — the adapter layer
+  observability / persistence / diagnostics / game / rendering / config
+                → leaf modules only           — no product deps
+  decomp        → leaf modules + features + integration — port shim +
+                  hooks call-outs; never presentation/application/platform
 
 Includes resolve in three ways: qualified `module/...` paths, same-dir
 siblings, then a basename index over src/, include/, decomp/, libultraship/.
@@ -32,25 +35,69 @@ BASELINE = ROOT / "config" / "lint" / "module-deps-baseline.txt"
 HEADER_ROOTS = ["src", "include", "decomp/include", "decomp/src",
                 "libultraship/include"]
 
-MODULES = ("application", "bridge", "core", "features", "netplay",
-           "platform", "presentation", "resources", "compatibility")
+MODULES = ("application", "integration", "config", "diagnostics",
+           "distribution", "gameplay", "audio", "social", "input", "game", "netplay", "observability",
+           "persistence", "platform", "presentation", "rendering",
+           "resources", "compatibility")
 
 # module -> set of src modules it may NOT include. 'decomp' handled separately.
 FORBIDDEN = {
-    "src/core":          {"src/application", "src/presentation", "src/features",
-                          "src/netplay", "src/platform", "src/resources",
-                          "src/bridge"},
-    "src/compatibility": {"src/application", "src/presentation", "src/features",
-                          "src/netplay", "src/bridge"},
-    "src/platform":      {"src/application", "src/presentation", "src/features",
-                          "src/netplay", "src/bridge", "src/resources"},
-    "src/resources":     {"src/application", "src/presentation", "src/features",
+    # leaf modules — no product deps (external/decomp headers only)
+    "src/observability": {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution", "src/netplay",
+                          "src/platform", "src/resources", "src/integration",
+                          "src/persistence", "src/diagnostics", "src/game",
+                          "src/rendering", "src/config"},
+    "src/persistence":   {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution", "src/netplay",
+                          "src/platform", "src/resources", "src/integration",
+                          "src/diagnostics", "src/game", "src/rendering",
+                          "src/config"},
+    "src/diagnostics":   {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution", "src/netplay",
+                          "src/platform", "src/resources", "src/integration",
+                          "src/persistence", "src/game", "src/rendering",
+                          "src/config"},
+    "src/game":          {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution", "src/netplay",
+                          "src/platform", "src/resources", "src/integration",
+                          "src/persistence", "src/diagnostics",
+                          "src/rendering", "src/config"},
+    # rendering/cosmetics + widescreen are gameplay features that live in the
+    # rendering module — they may pull the gameplay facade (enhancements.h).
+    "src/rendering":     {"src/application", "src/presentation",
+                          "src/audio", "src/social", "src/input",
+                          "src/distribution", "src/netplay",
+                          "src/platform", "src/resources", "src/integration",
+                          "src/persistence", "src/diagnostics", "src/game",
+                          "src/config"},
+    "src/config":        {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution", "src/netplay",
+                          "src/platform", "src/resources", "src/integration",
+                          "src/persistence", "src/diagnostics", "src/game",
+                          "src/rendering"},
+    "src/compatibility": {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution",
+                          "src/netplay", "src/integration"},
+    "src/platform":      {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution", "src/netplay",
+                          "src/integration", "src/resources", "src/game",
+                          "src/rendering", "src/persistence",
+                          "src/diagnostics", "src/config"},
+    "src/resources":     {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution",
                           "src/netplay"},
-    "src/features":      {"src/application", "src/presentation"},
-    "src/netplay":       {"src/application", "src/presentation", "src/features",
+    "src/distribution":  {"src/application", "src/presentation"},
+    "src/gameplay":      {"src/application", "src/presentation"},
+    "src/audio":         {"src/application", "src/presentation"},
+    "src/social":        {"src/application", "src/presentation"},
+    "src/input":         {"src/application", "src/presentation"},
+    "src/netplay":       {"src/application", "src/presentation",
+                          "src/gameplay", "src/audio", "src/social", "src/input", "src/distribution",
                           "src/resources"},
-    "src/presentation":  {"src/bridge", "decomp"},
-    # bridge, application: top of the stack — everything allowed.
+    "src/presentation":  {"src/integration", "decomp"},
+    # integration, application: top of the stack — everything allowed.
+    # game/ holds the decomp-facing port ABI (port.h, fighter_registry).
     "decomp":            {"src/presentation", "src/application",
                           "src/platform"},
 }

@@ -87,7 +87,7 @@ Core of the abort (`coredumpctl`, gdb python over
 4. The in-core chain tokens are gen 16 (`0x0100401e`…) → the misparse source
    is the walk's own freshly written tokens.
 
-## Fix (three layers, all in `src/bridge/` + `src/resources/`)
+## Fix (three layers, all in `src/integration/decomp/` + `src/resources/`)
 
 1. **`portRelocFixupTextureFromChain` refuses tokens as commands**
    (`lbreloc_byteswap.cpp`): if the w0 address is a registered chain slot

@@ -10,7 +10,7 @@ I10 — they cannot drift):
   yamls/<v>/<cat>/manifests/<Symbol>.json   canonical IR (L2) — slices, slots,
                                             classifications, reports
   yamls/<v>/<cat>/<Symbol>.yml              torch extraction input (L3)
-  src/bridge/ssb64_reloc_rebuild.<v>.cpp   runtime rebuild/relayout spec (L3)
+  src/integration/decomp/ssb64_reloc_rebuild.<v>.cpp   runtime rebuild/relayout spec (L3)
 
 See docs/deblob.md for the abstraction tower, the invariant list (I1-I4 are
 enforced here as hard failures), the slice naming scheme (frozen — slice
@@ -23,7 +23,7 @@ Usage:
 Classification is CHAIN-SEEDED: only intern-chain targets (and display-list
 references discovered from them) become typed slices; everything else stays
 BLOB, which is always memcpy-safe for the round-trip. A flat scan mirroring
-the runtime's scan_display_lists (src/bridge/lbreloc_byteswap.cpp) runs as
+the runtime's scan_display_lists (src/integration/decomp/lbreloc_byteswap.cpp) runs as
 a cross-check and reports typed-looking regions the chain could not reach.
 """
 
@@ -40,7 +40,7 @@ from deblob_categories import DEBLOBBED_CATEGORIES
 
 TOOL_VERSION = "1.0"
 
-# F3DEX2 opcodes (match src/bridge/lbreloc_byteswap.cpp + fast3d interpreter)
+# F3DEX2 opcodes (match src/integration/decomp/lbreloc_byteswap.cpp + fast3d interpreter)
 G_VTX = 0x01
 G_DL = 0xDE
 G_ENDDL = 0xDF
@@ -272,7 +272,7 @@ def discover_dls(view, seeds, boundaries, slot_offsets, extern_slot_offsets):
 
 # ---------------------------------------------------------------------------
 # Flat cross-check scan — Python port of scan_display_lists
-# (src/bridge/lbreloc_byteswap.cpp:709), run on PRE-relocation bytes.
+# (src/integration/decomp/lbreloc_byteswap.cpp:709), run on PRE-relocation bytes.
 # ---------------------------------------------------------------------------
 
 def flat_scan(data):
@@ -693,7 +693,7 @@ def emit_child_yaml(path, prov, symbol, category, info, slices):
 
 def emit_spec_cpp(path, prov, manifests):
     """One generated TU per region: slice/slot arrays + a file_id-sorted spec
-    table consumed via binary search (src/bridge/ssb64_reloc_rebuild.h)."""
+    table consumed via binary search (src/integration/decomp/ssb64_reloc_rebuild.h)."""
     L = [
         "// SSB64 synthetic reloc rebuild specs — vanilla layout of every",
         "// deblobbed bundle (see docs/deblob.md). All offsets/sizes describe",
@@ -881,7 +881,7 @@ def main():
         return 1
 
     if not args.check and not args.only:
-        spec_path = repo / "src" / "bridge" / f"ssb64_reloc_rebuild.{args.version}.cpp"
+        spec_path = repo / "generated" / "src" / args.version / f"ssb64_reloc_rebuild.{args.version}.cpp"
         emit_spec_cpp(spec_path, prov, all_manifests)
         print(f"\nWrote {spec_path} ({len(all_manifests)} specs)")
     elif not args.check and args.only:

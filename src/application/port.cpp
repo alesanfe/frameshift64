@@ -25,10 +25,14 @@
 #include <typeinfo>
 #include <unordered_set>
 
-#include "resources/ResourceType.h"
-#include "resources/RelocFileFactory.h"
-#include "resources/SyntheticReloc.h"
+#include "resources/relocation/ResourceType.h"
+#include "resources/relocation/RelocFileFactory.h"
+#include "resources/relocation/SyntheticReloc.h"
 #include <ship/resource/factory/BlobFactory.h>
+#include <ship/resource/archive/Archive.h>
+#ifdef SSB64_TEST_HOOKS
+#include <nlohmann/json.hpp>
+#endif
 #include <ship/resource/ResourceType.h>
 #include <fast/resource/ResourceType.h>
 #include <fast/resource/factory/DisplayListFactory.h>
@@ -38,16 +42,19 @@
 #include <fast/resource/factory/VertexFactory.h>
 
 #include "app_paths.h"
-#include "bridge/audio_bridge.h"
-#include "bridge/framebuffer_capture.h"
-#include "features/enhancements.h"
+#include "config/schema.h"
+#include "diagnostics/crash_bundle.h"
+#include "distribution/integrity/ReleaseSig.h"
+#include "integration/decomp/audio_bridge.h"
+#include "integration/decomp/framebuffer_capture.h"
+#include "gameplay/enhancements.h"
 #include "first_run.h"
 #include "presentation/UpdatePrompt.h"
 #include "presentation/OnlineStatus.h"
 #include "presentation/PortMenu.h"
 #ifdef PORT_HIRES_ENABLED
-#include "resources/textures/hires/HiResHook.h"
-#include "resources/textures/hires/HiResPack.h"
+#include "resources/loading/textures/hires/HiResHook.h"
+#include "resources/loading/textures/hires/HiResPack.h"
 #endif
 #if !defined(__ANDROID__)
 #include "port_window_icon.h"
@@ -60,14 +67,14 @@
 #include <android/api-level.h>  // android_get_device_api_level (audio-driver gate)
 #endif
 #ifndef DISABLE_SCRIPTING
-#include "bridge/modding/HookManager.h"
-#include "bridge/modding/SymbolResolver.h"
+#include "integration/modding/HookManager.h"
+#include "integration/modding/SymbolResolver.h"
 #endif
 #include "renderdoc_trigger.h"
 #include "port_log.h"
 #include "fighter_registry.h"
 #include "focus.h"
-#include "resources/shaders/fast3d_shader_manifest.h"
+#include "resources/loading/shaders/fast3d_shader_manifest.h"
 
 #ifndef DISABLE_SCRIPTING
 #include <ship/scripting/ScriptLoader.h>
@@ -196,6 +203,7 @@ static void portSignalHandler(int sig)
 		port_log("    [%2u] %p %s\n", i, frames[i], fsym[0] ? fsym : "(no sym)");
 	}
 
+	port_diag_write_crash_marker(name, 0);
 	if (InterlockedCompareExchange(&sMinidumpWritten, 1, 0) == 0) {
 		portWriteMinidump(nullptr, "signal");
 	}
@@ -437,6 +445,7 @@ static LONG WINAPI portWindowsCrashFilter(EXCEPTION_POINTERS* info)
 	         (unsigned long long)c->R8,  (unsigned long long)c->R9);
 #endif
 
+	port_diag_write_crash_marker("unhandled", (uintptr_t)addr);
 	if (InterlockedCompareExchange(&sMinidumpWritten, 1, 0) == 0) {
 		portWriteMinidump(info, "unhandled");
 	}
@@ -474,18 +483,48 @@ void MountModsDir() {
 	auto am = rm->GetArchiveManager();
 	if (!am) return;
 
+	/* Mods can live in two roots:
+	 *   - the bundle dir (RealAppBundlePath()/mods) — mods shipped with
+	 *     the release or dropped next to the exe in portable installs;
+	 *   - the writable app-data dir (GetPathRelativeToAppDirectory("mods"))
+	 *     — where the in-game installer puts mods on packaged builds
+	 *     (AppImage, .app, installed layouts) whose bundle dir is
+	 *     read-only. In portable mode both resolve to the same place and
+	 *     the second walk just no-ops through the dedupe set. */
+	std::vector<fs::path> modsDirs;
 #ifdef BATTLESHIP_UWP
 	const fs::path usbMods(ssb64::ExternalDataPath("mods"));
 	std::error_code rootEc;
-	const fs::path modsDir = fs::is_directory(usbMods, rootEc)
-	                           ? usbMods
-	                           : fs::path(Ship::Context::GetAppDirectoryPath()) / "mods";
+	modsDirs.push_back(fs::is_directory(usbMods, rootEc)
+	                     ? usbMods
+	                     : fs::path(Ship::Context::GetAppDirectoryPath()) / "mods");
 #else
-	const fs::path modsDir(ssb64::RealAppBundlePath() + "/mods");
+	modsDirs.push_back(ssb64::RealAppBundlePath() + "/mods");
+	/* In portable mode GetPathRelativeToAppDirectory("mods") resolves to
+	 * the same directory as the bundle dir — possibly through a different
+	 * spelling ("./mods" vs absolute). Canonicalise before comparing so
+	 * the same dir is never walked twice (the dedupe set keys on the
+	 * archive path string, which would differ per spelling). */
+	std::error_code appDataEc;
+	fs::path appDataMods =
+		fs::weakly_canonical(
+			Ship::Context::GetPathRelativeToAppDirectory("mods"),
+			appDataEc);
+	appDataEc.clear();
+	const fs::path bundleMods = fs::weakly_canonical(modsDirs.front(), appDataEc);
+	if (!appDataMods.empty() && appDataMods != bundleMods) {
+		modsDirs.push_back(appDataMods);
+	}
 #endif
-	std::error_code ec;
-	if (!fs::exists(modsDir, ec)) {
-		return;
+	{
+		std::error_code ec;
+		bool any = false;
+		for (const auto& d : modsDirs) {
+			if (fs::exists(d, ec)) { any = true; break; }
+		}
+		if (!any) {
+			return;
+		}
 	}
 
 	/* Build a set of already-mounted archive paths so we don't
@@ -537,7 +576,12 @@ void MountModsDir() {
 			}
 		}
 	};
-	walk(modsDir);
+	for (const auto& d : modsDirs) {
+		std::error_code ec;
+		if (fs::is_directory(d, ec)) {
+			walk(d);
+		}
+	}
 
 	/* A newly mounted archive can override paths whose resources are
 	 * already cached — the VFS override binds at AddArchive time, but the
@@ -636,6 +680,7 @@ static std::string PortLocateFile(const std::string& basename) {
  * struct layout here would invite exactly the layout-drift bugs
  * docs/debug_ido_bitfield_layout.md warns about. */
 extern "C" void portSCManagerRequestReset(void);
+extern "C" int syNetReplayLoadDebugFile(const char* path);
 
 static int32_t ResetCommandHandler(std::shared_ptr<Ship::Console> console, std::vector<std::string> args,
                                    std::string* output) {
@@ -673,6 +718,59 @@ int PortInit(int argc, char* argv[]) {
 
 static int PortInitImpl(int argc, char* argv[]) {
 	port_log("SSB64: PortInit entered\n");
+
+#ifdef SSB64_TEST_HOOKS
+	/* TD-010 — parser fuzz entry point. `tools/fuzz/run_parser_fuzz.py`
+	 * drives this: SSB64_FUZZ_PARSER=<manifest|replay|json> +
+	 * SSB64_FUZZ_INPUT=<path> parses the file through the real parser and
+	 * exits. Placed before every other init so a fuzz iteration is a bare
+	 * parse+exit with no SDL/archive/game boot in between. */
+	if (const char* fuzz = std::getenv("SSB64_FUZZ_PARSER")) {
+		const char* input = std::getenv("SSB64_FUZZ_INPUT");
+		if (input == nullptr) {
+			port_log("SSB64 Fuzz: SSB64_FUZZ_INPUT unset\n");
+			port_exit_process(2);
+		}
+		auto read_all = [](const char* path) {
+			std::vector<char> data;
+			if (FILE* f = std::fopen(path, "rb")) {
+				char chunk[1 << 16];
+				size_t n;
+				while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0) {
+					data.insert(data.end(), chunk, chunk + n);
+				}
+				std::fclose(f);
+			}
+			return data;
+		};
+		if (std::strcmp(fuzz, "manifest") == 0) {
+			const std::vector<char> data = read_all(input);
+			Ship::ArchiveManifest manifest;
+			(void)Ship::Archive::ParseManifestBuffer(
+			    data.empty() ? nullptr : data.data(), data.size(), &manifest);
+			port_log("SSB64 Fuzz: manifest parsed name=\"%s\"\n",
+			         manifest.Name.c_str());
+		} else if (std::strcmp(fuzz, "replay") == 0) {
+			const int ok = syNetReplayLoadDebugFile(input);
+			port_log("SSB64 Fuzz: replay load -> %d\n", ok);
+		} else if (std::strcmp(fuzz, "json") == 0) {
+			/* Raw nlohmann coverage — exercises the JSON parser the config
+			 * file and mod manifests share. */
+			const std::vector<char> data = read_all(input);
+			try {
+				auto j = nlohmann::json::parse(data.begin(), data.end());
+				port_log("SSB64 Fuzz: json parsed type=%d\n", (int)j.type());
+			} catch (const std::exception& e) {
+				port_log("SSB64 Fuzz: json rejected (%s)\n", e.what());
+			}
+		} else {
+			port_log("SSB64 Fuzz: unknown parser \"%s\" "
+			         "(manifest|replay|json)\n", fuzz);
+			port_exit_process(2);
+		}
+		port_exit_process(0);
+	}
+#endif /* SSB64_TEST_HOOKS */
 
 	/* Wire the SSB64-specific DL-range bounds-check and diag classifier
 	 * into libultraship's GFX walker (see port/port_dl_ranges.h). Done
@@ -713,6 +811,19 @@ static int PortInitImpl(int argc, char* argv[]) {
 	if (!sContext->InitConfiguration()) { port_log("SSB64: InitConfiguration failed\n"); return 1; }
 	if (!sContext->InitConsoleVariables()) { port_log("SSB64: InitConsoleVariables failed\n"); return 1; }
 	port_log("SSB64: Config + CVars OK\n");
+
+	/* TD-005: typed-schema pass over the loaded CVars — clamp out-of-range
+	 * values and warn on `g*` keys nothing declares (typos / stale entries
+	 * left by older builds). Runs before any feature latches CVar state. */
+	{
+		const int clamped = ssb64::config::PortConfigValidate();
+		const int unknown = ssb64::config::PortConfigUnknownKeys();
+		ssb64::config::PortConfigStampVersion();
+		if (clamped || unknown) {
+			port_log("SSB64 Config: %d value(s) clamped, %d unknown key(s)\n",
+			         clamped, unknown);
+		}
+	}
 
 #ifdef BATTLESHIP_UWP
 	// Xbox is controller-first. Set this before the first ImGui frame so
@@ -1060,6 +1171,18 @@ static int PortInitImpl(int argc, char* argv[]) {
 		}
 		portSyntheticRelocSetBaseArchive(baseArchive);
 		port_log("SSB64: game archive registered\n");
+
+		/* TD-009: register the engine-agnostic Ed25519 verifier so mod
+		 * archives can validate manifest signatures. The callback keeps
+		 * crypto out of libultraship; mods without signature fields are
+		 * unaffected. */
+		Ship::Archive::SetSignatureVerifier(
+			[](const std::string& message, const std::string& signature_b64,
+			   const std::string& pubkey_b64) -> bool {
+				std::string err;
+				return ssb64::enhancements::VerifyEd25519MinisigFields(
+					message, signature_b64, pubkey_b64, err);
+			});
 	}
 
 	{
@@ -1092,7 +1215,7 @@ static int PortInitImpl(int argc, char* argv[]) {
 	if (!sContext->InitEventSystem()) { port_log("SSB64: InitEventSystem failed\n"); return 1; }
 	port_log("SSB64: EventSystem initialized\n");
 
-	// Allocate runtime EventIDs for every event declared in src/bridge/hooks/list/*.
+	// Allocate runtime EventIDs for every event declared in src/integration/hooks/list/*.
 	// Must happen AFTER InitEventSystem (PortRegisterEvents calls
 	// EventSystemRegisterEvent, which dereferences Context::GetEventSystem()).
 	PortRegisterEvents();
@@ -1374,7 +1497,20 @@ int main(int argc, char* argv[]) {
 			logPath = "ssb64.log";  // last-resort cwd fallback
 		}
 #endif
+		/* TD-015: if the previous run crashed, its handler left a
+		 * crash.marker beside the log. Bundle it (marker + the old log,
+		 * which holds the backtrace) into logs/crashes/ BEFORE
+		 * port_log_init truncates ssb64.log. */
+		const std::string bundle = ssb64::diag::CollectPendingCrashBundle(logPath);
 		port_log_init(logPath.c_str());
+		if (!bundle.empty()) {
+			port_log("SSB64: previous run crashed — bundle at %s\n", bundle.c_str());
+		}
+		/* Tell the crash handlers where to drop crash.marker for the NEXT
+		 * run: the same directory the log lives in. */
+		const size_t sep = logPath.find_last_of("/\\");
+		const std::string logDir = (sep == std::string::npos) ? "." : logPath.substr(0, sep);
+		port_diag_set_crash_dir(logDir.c_str());
 	}
 	port_log("SSB64: main entered\n");
 #ifdef __SWITCH__

@@ -63,7 +63,7 @@ VERSIONS = {
 }
 
 # Defaults (US) so the module is importable without selecting a version.
-HEADER_OUT = ROOT / "include" / VERSIONS["us"]["header"]
+HEADER_OUT = ROOT / "generated" / "include" / "us" / VERSIONS["us"]["header"]
 SYMBOLS_TXT = ROOT / "tools" / "codegen" / VERSIONS["us"]["symbols"]
 
 
@@ -72,7 +72,7 @@ def select_version(version):
     global HEADER_OUT, SYMBOLS_TXT
     cfg = VERSIONS[version]
     SYMBOLS_TXT = ROOT / "tools" / "codegen" / cfg["symbols"]
-    HEADER_OUT = ROOT / "include" / cfg["header"]
+    HEADER_OUT = ROOT / "generated" / "include" / version / cfg["header"]
 
 SYMBOL_RE = re.compile(r"\bll[A-Z_][A-Za-z0-9_]*\b")
 ASSIGN_RE = re.compile(r"^\s*(ll[A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+?)\s*;\s*$")

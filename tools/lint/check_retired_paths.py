@@ -37,7 +37,34 @@ RETIRED_REF = re.compile(
     r'|enhancements|mods|hooks|stubs|assets)/'
     r'|server/cloudflare'
     r'|debug_tools/'
-    r'|workspace/(?:hooktest|playertint|template))'
+    r'|workspace/(?:hooktest|playertint|template)'
+    # post-module-split retired paths (2026-10 src/ modularization):
+    r'|src/core/'
+    r'|src/bridge/'
+    r'|"bridge/(?:modding|hooks)/'
+    r'|"core/'
+    r'|src/features/'
+    r'|"features/(?:enhancements|cosmetics|audio|social|internal|gameplay)/'
+    r'|src/distribution/(?:Updater|ModPackDownloader|ShaderDownloader'
+    r'|FileHash|ReleaseSig)\.(?:cpp|h)'
+    r'|"distribution/(?:ReleaseSig|FileHash|ModPackDownloader'
+    r'|ShaderDownloader|Updater)\.h"'
+    r'|src/netplay/(?:netlobby|netrules|port_udp|port_ws)\.(?:cpp|h)'
+    r'|src/netplay/netrollback_seg\.h'
+    r'|"netplay/(?:netlobby|netrules)\.h"'
+    r'|src/platform/(?:coroutine_|coroutine\.h|http_download'
+    r'|download_service|zip_extract|exe_dir|port_window_icon|io/)'
+    # resources/ split (relocation + loading) and generated/ isolation:
+    r'|src/resources/(?:audio|css_icons|shaders|textures)/'
+    r'|src/resources/RelocFile[A-Za-z]*\.'
+    r'|"resources/(?:audio|css_icons|shaders|textures)/'
+    r'|src/integration/decomp/ssb64_reloc_rebuild\.(?:us|jp)\.cpp'
+    r'|include/reloc_data\.(?:us|jp)\.h'
+    # test-tree reorg (level-based tests/): the flat unit/ names and the
+    # seeds/ corpus dir are retired — new paths under tests/<level>/<domain>
+    r'|tests/unit/test_(?:extraction_recipes|extern_ids|vpk0|package_mod)'
+    r'|tests/unit/coroutine_test\.cpp'
+    r'|tests/fuzz/seeds)'
 )
 
 SCAN_EXT = {".c", ".cpp", ".h", ".hpp", ".cmake", ".txt"}

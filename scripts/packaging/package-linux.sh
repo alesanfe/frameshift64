@@ -108,12 +108,33 @@ TORCH_BIN="$BUILD_DIR/TorchExternal/src/TorchExternal-build/torch"
 python3 "$ROOT/tools/lint/check_release_binary.py" "$GAME_BIN" \
     || fail "release binary contains gated test-hook strings"
 
+# ── 3b. Symbol archive (TD-015) ──
+# Crash-bundle backtraces can only be symbolized against the debug info of
+# the exact build that produced them. The binary carries -g (mod hooking
+# needs it); split the DWARF into a .debug sidecar shipped beside the
+# AppImage so support bundles can be resolved offline.
+mkdir -p "$DIST_DIR"
+SYMBOLS_ARCHIVE="$DIST_DIR/${APP_NAME}-symbols-linux.tar.xz"
+if command -v objcopy >/dev/null 2>&1; then
+    objcopy --only-keep-debug "$GAME_BIN" "$BUILD_DIR/$APP_NAME.debug" \
+        || fail "objcopy --only-keep-debug failed"
+    tar -C "$BUILD_DIR" -cJf "$SYMBOLS_ARCHIVE" "$APP_NAME.debug"
+    rm -f "$BUILD_DIR/$APP_NAME.debug"
+    echo "Symbols archive: $SYMBOLS_ARCHIVE"
+else
+    echo "::warning::objcopy not found — shipping no Linux symbol archive"
+fi
+
 # ── 4. Assemble AppDir ──
 step "Assembling $APPDIR"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/$APP_NAME/yamls/$VER"
 
 cp "$GAME_BIN"   "$APPDIR/usr/bin/$APP_NAME"
+# The .debug sidecar captured above carries the symbols; strip the shipped
+# copy so the AppImage doesn't carry DWARF it will never read.
+command -v objcopy >/dev/null 2>&1 \
+    && objcopy --strip-debug "$APPDIR/usr/bin/$APP_NAME" || true
 cp "$TORCH_BIN"  "$APPDIR/usr/bin/torch"
 cp "$F3D_O2R"    "$APPDIR/usr/share/$APP_NAME/f3d.o2r"
 cp "$ROOT/assets/configuration/controllers/gamecontrollerdb.txt" "$APPDIR/usr/share/$APP_NAME/gamecontrollerdb.txt"
@@ -121,6 +142,14 @@ cp "$ROOT/config/project/config.yml" "$APPDIR/usr/share/$APP_NAME/config.yml"
 # Recursive: deblob child slice maps + manifests live in per-category
 # subdirs (reloc_fighters_main/*, reloc_fighters_common/*).
 cp -R "$ROOT/assets/configuration/extraction/$VER/." "$APPDIR/usr/share/$APP_NAME/yamls/$VER/"
+
+# GLideN64 conversion map: the in-game installer renames GLideN64/Rice
+# texture packs via bundled-data/gliden64-map.json (POST_BUILD stages it
+# next to the exe; here it lives in the FHS data dir, which the runtime
+# resolves as <exe>/../share/BattleShip/bundled-data/).
+mkdir -p "$APPDIR/usr/share/$APP_NAME/bundled-data"
+cp "$ROOT/tools/modding/vendor/battleship.json" \
+   "$APPDIR/usr/share/$APP_NAME/bundled-data/gliden64-map.json"
 
 # Bundle the ESC menu fonts. Menu.cpp::FindMenuAssetPath walks up from
 # RealAppBundlePath() (= /proc/self/exe parent = AppDir/usr/bin inside

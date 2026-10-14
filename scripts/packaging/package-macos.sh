@@ -140,12 +140,33 @@ TORCH_BIN="$BUILD_DIR/TorchExternal/src/TorchExternal-build/torch"
 python3 "$ROOT/tools/lint/check_release_binary.py" "$SSB64_BIN" \
     || fail "release binary contains gated test-hook strings"
 
+# ── 2b. Symbol archive (TD-015) ──
+# Crash-bundle backtraces can only be symbolized against the dSYM of the
+# exact build that produced them. Ship it beside the DMG so support
+# bundles can be resolved offline with atos/symbolicatecrash.
+mkdir -p "$DIST_DIR"
+DSYM_DIR="$DIST_DIR/$APP_NAME.dSYM"
+SYMBOLS_ZIP="$DIST_DIR/${APP_NAME}-symbols-macos.zip"
+rm -rf "$DSYM_DIR"
+if command -v dsymutil >/dev/null 2>&1; then
+    dsymutil "$SSB64_BIN" -o "$DSYM_DIR" || fail "dsymutil failed"
+    rm -f "$SYMBOLS_ZIP"
+    ( cd "$DIST_DIR" && zip -rq "$(basename "$SYMBOLS_ZIP")" "$APP_NAME.dSYM" )
+    rm -rf "$DSYM_DIR"
+    echo "Symbols archive: $SYMBOLS_ZIP"
+else
+    echo "::warning::dsymutil not found — shipping no macOS symbol archive"
+fi
+
 # ── 3. Assemble the bundle ──
 step "Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/yamls/$VER"
 
 cp "$SSB64_BIN"  "$APP/Contents/MacOS/$APP_NAME"
+# The dSYM captured above carries the symbols; strip the shipped binary so
+# the .app doesn't carry DWARF it will never read (UUID is preserved).
+strip -x "$APP/Contents/MacOS/$APP_NAME" || true
 cp "$TORCH_BIN"  "$APP/Contents/MacOS/torch"
 cp "$F3D_O2R"    "$APP/Contents/Resources/f3d.o2r"
 cp "$ROOT/assets/configuration/controllers/gamecontrollerdb.txt" "$APP/Contents/Resources/gamecontrollerdb.txt"
@@ -153,6 +174,13 @@ cp "$ROOT/config/project/config.yml" "$APP/Contents/Resources/config.yml"
 # Recursive: deblob child slice maps + manifests live in per-category
 # subdirs (reloc_fighters_main/*, reloc_fighters_common/*).
 cp -R "$ROOT/assets/configuration/extraction/$VER/." "$APP/Contents/Resources/yamls/$VER/"
+
+# GLideN64 conversion map for the in-game texture-pack installer
+# (src/distribution/ModPackDownloader.cpp resolves it as
+# Contents/Resources/bundled-data/gliden64-map.json).
+mkdir -p "$APP/Contents/Resources/bundled-data"
+cp "$ROOT/tools/modding/vendor/battleship.json" \
+   "$APP/Contents/Resources/bundled-data/gliden64-map.json"
 # Region-aware app icon: US uses assets/icon.icns, JP uses
 # assets/icon-jp.icns (added with the JP bifurcation so a user with
 # both .app bundles sees distinct icons in Finder / Dock). The bundle

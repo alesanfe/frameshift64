@@ -69,7 +69,7 @@ an `#ifdef PORT` branch forgot to downgrade the pointer field to a
 
 The sprite slots themselves are **already tokenized** correctly by the
 intra-file reloc chain in
-`src/bridge/lbreloc_bridge.cpp:452`, so no separate token
+`src/integration/decomp/lbreloc_bridge.cpp:452`, so no separate token
 registration is needed — only the struct layout had to be fixed.
 
 ## Fix

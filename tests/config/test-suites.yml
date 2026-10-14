@@ -1,0 +1,26 @@
+# Declarative suite presets → pytest marker expressions. The runner
+# (tools/testing/run_tests.py) maps a suite name to
+# `pytest -m '<include> and not <exclude>'`. Markers are declared in
+# pyproject.toml [tool.pytest.ini_options]. Native GTest binaries keep
+# their own CTest labels — pytest reaches them through
+# tests/unit/test_native_scripts.py.
+suites:
+  quick:
+    include: ["unit", "smoke"]
+    exclude: ["slow", "requires_rom", "requires_network", "requires_gpu"]
+  pull-request:
+    include: ["unit", "integration", "contract", "security"]
+    exclude: ["slow", "requires_rom", "requires_network"]
+  nightly:
+    include: ["unit", "integration", "contract", "e2e", "security",
+              "regression", "fuzz"]
+    exclude: ["requires_rom"]
+  release:
+    include: ["e2e", "contract", "security", "smoke", "regression"]
+    regions: [us, jp]
+    configurations: [release]
+  netplay:
+    include: ["netplay"]
+  full:
+    include: ["unit", "integration", "contract", "e2e", "smoke",
+              "security", "regression", "fuzz", "performance"]

@@ -3,7 +3,7 @@
 ## Signaling vs data
 
 - **Signaling**: WebSocket to the lobby Worker (Cloudflare Durable Object)
-  or the local `node-lobby.js` reference implementation.
+  or the local `node-lobby.mjs` reference implementation.
 - **Data**: UDP between players. Two shapes:
 
 ### Direct mesh (2 players)
@@ -29,5 +29,5 @@ traffic; the host pushes the confirmed input stream to them.
 - Direct UDP fails or is impossible → relay via the host (lobby supplies
   relay endpoint frames).
 - `wrangler dev` local testing has a known dev-proxy frame-drop issue —
-  `node-lobby.js` is the reference for local protocol testing
+  `node-lobby.mjs` is the reference for local protocol testing
   (`docs/bugs/README.md` → `netplay_relay_wrangler_dev_drop`).
