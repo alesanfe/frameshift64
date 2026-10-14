@@ -1185,6 +1185,15 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
+    # The smash_* OBJECT libraries compile with the toolchain default (/MD)
+    # unless told otherwise; mixing them into the static-CRT binary leaves
+    # __imp_ externals unresolved (LNK2019). Same runtime for every module.
+    foreach(mod IN LISTS SSB64_MODULE_DIRS)
+        if(TARGET smash_${mod})
+            set_target_properties(smash_${mod} PROPERTIES
+                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+    endforeach()
 endif()
 
 ################################################################################
