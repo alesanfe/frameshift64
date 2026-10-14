@@ -1,5 +1,5 @@
 #ifndef PORT
-// In the port build, this entire file is replaced by port/bridge/lbreloc_bridge.cpp
+// In the port build, this entire file is replaced by src/integration/decomp/lbreloc_bridge.cpp
 // which loads files from the LUS ResourceManager instead of ROM DMA.
 
 #include <lb/library.h>

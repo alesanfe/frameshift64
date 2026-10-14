@@ -7,7 +7,7 @@
 #include <reloc_data.h>
 #include <sys/audio.h>
 #ifdef PORT
-#include <bridge/framebuffer_capture.h>
+#include <integration/decomp/framebuffer_capture.h>
 extern void portFixupSprite(void *sprite);
 extern void portFixupBitmapArray(void *bitmaps, unsigned int count);
 extern void portFixupSpriteBitmapData(void *sprite, void *bitmaps);
@@ -2206,7 +2206,7 @@ void sc1PStageClearCopyFramebufToWallpaper(void)
 	 * via SelectTextureFb -- no CPU readback, no byte-swap, no
 	 * texture-cache eviction, full GPU resolution. The registrations
 	 * are dropped on the next scene change via lbRelocInitSetup ->
-	 * port_capture_release_all (see port/bridge/lbreloc_bridge.cpp). */
+	 * port_capture_release_all (see src/integration/decomp/lbreloc_bridge.cpp). */
 	{
 		Sprite *wp_sprite = lbRelocGetFileData(Sprite*, sSC1PStageClearFiles[6], llGRWallpaperTrainingBlackSprite);
 		Bitmap *wp_bitmap;

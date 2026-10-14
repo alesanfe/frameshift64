@@ -9,7 +9,7 @@
 /* Rollback snapshot/restore for VS battles. See docs/rollback_design.md.
  *
  * A snapshot is: every global of the gameplay modules (grouped into one PE
- * section by port/netrollback_seg.h, which CMake force-includes into those
+ * section by src/netplay/rollback/netrollback_seg.h, which CMake force-includes into those
  * TUs), the general heap allocator, and the scene arena from the VS setup
  * watermark up to the allocator's bump pointer. */
 

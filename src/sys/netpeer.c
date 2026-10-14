@@ -17,7 +17,7 @@ extern void port_log(const char *fmt, ...);
 
 #ifdef PORT
 #include <string.h>
-#include <netplay/port_udp.h>
+#include <netplay/transport/port_udp.h>
 #endif
 
 #define SYNETPEER_MAGIC 0x53534E50 // SSNP

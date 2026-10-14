@@ -3,7 +3,7 @@
 #include <reloc_data.h>
 
 #ifdef PORT
-#include <bridge/framebuffer_capture.h>
+#include <integration/decomp/framebuffer_capture.h>
 #endif
 
 extern void *gSYSchedulerCurrentFramebuffer;
@@ -309,7 +309,7 @@ void lbTransitionSetupTransition(void)
      * via SelectTextureFb -- full GPU resolution, no readback. The
      * registration is dropped on the next scene change via
      * lbRelocInitSetup -> port_capture_release_all (see
-     * port/bridge/lbreloc_bridge.cpp). Falls through to the no-op
+     * src/integration/decomp/lbreloc_bridge.cpp). Falls through to the no-op
      * zero-init copy below if the bridge can't grab a clean source FB
      * (e.g. backend without render-to-fb pinned), matching the pre-fix
      * black-interior behaviour. */
