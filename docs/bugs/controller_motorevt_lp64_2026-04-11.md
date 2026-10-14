@@ -10,7 +10,7 @@ _ctx_start
 ```
 The crash reproduced ~1 in ~30 runs of longer sessions, seemingly randomly — "shutdown / end-of-runtime crash" from the user's perspective because it most often fired when the game had been running long enough to reach a rumble-emitting scene. Survived the `016dea1`/`e393d0b` AudioBlob-shutdown fix because it's an unrelated runtime bug that happens to live in the same "end of session" window.
 
-**Root cause:** `src/sys/controller.h`'s `Unk80045268` struct was designed so `&D_80045268[i].unk04` could be **pointer-punned as a `ContMotorEvt *`**. On N64 (32-bit pointers) that works exactly:
+**Root cause:** `decomp/src/sys/controller.h`'s `Unk80045268` struct was designed so `&D_80045268[i].unk04` could be **pointer-punned as a `ContMotorEvt *`**. On N64 (32-bit pointers) that works exactly:
 ```
 Unk80045268 (N64, 0x18 bytes):      ContMotorEvt (N64, 0x14 bytes) starting at &unk04:
   0x00: unk00 (busy)                  0x00: type
@@ -30,8 +30,8 @@ The crash was flaky because whether `evt->cbQueue` decoded to `0x1` vs some rand
 **Fix:** Add a dedicated, compiler-laid-out `ContMotorEvt port_motor_evt` field to `Unk80045268` under `#ifdef PORT`, populate it from `unk04`/`unk08`/`unk0C`/`unk10`/`unk14` each time `syControllerUpdateRumbleEvent` dispatches, and pass `&port_motor_evt` to `osSendMesg` instead of `&unk04`. The receiver's existing `(ContMotorEvt*)evt` cast then reads a naturally-aligned struct on both ABIs. N64 builds are untouched — the `#ifdef PORT` gate keeps the original pointer pun.
 
 **Files:**
-- `src/sys/controller.h` — add `ContMotorEvt port_motor_evt` field inside `Unk80045268` under `#ifdef PORT`.
-- `src/sys/controller.c` — rewrite the `osSendMesg` call in `syControllerUpdateRumbleEvent` under `#ifdef PORT` to populate and dispatch `port_motor_evt`.
-- `port/port.cpp` — drive-by: add `SSB64_MAX_FRAMES=N` env-var hook that drives `Window::Close()` after N frames, for automated clean-shutdown testing without needing a human to click the close button.
+- `decomp/src/sys/controller.h` — add `ContMotorEvt port_motor_evt` field inside `Unk80045268` under `#ifdef PORT`.
+- `decomp/src/sys/controller.c` — rewrite the `osSendMesg` call in `syControllerUpdateRumbleEvent` under `#ifdef PORT` to populate and dispatch `port_motor_evt`.
+- `src/application/port.cpp` — drive-by: add `SSB64_MAX_FRAMES=N` env-var hook that drives `Window::Close()` after N frames, for automated clean-shutdown testing without needing a human to click the close button.
 
 **Class-of-bug lesson:** Any decomp struct whose fields include `void*`, `OSMesg`, or other pointer-width types can silently drift on LP64 vs the N64 ABI that the layout was originally designed around. Field-access-by-name is still safe (the compiler picks the right offset), but **type-punning a substruct via pointer cast is not** — the substructs have to agree on offsets on both ABIs, and with 8-byte pointers they usually don't. When you see a decomp function pass `&some_struct.sub_field` to a callee that casts it to a different type, audit whether every field offset still matches. This is a sibling class to the "OSMesg Union/Pointer Type Split" bug — same root (C ABI differences), different manifestation.

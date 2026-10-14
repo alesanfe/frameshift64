@@ -16,7 +16,7 @@ WAV dump captured 10 s of PCM via `portAudioSubmitFrame` and inspected with a Py
 
 ## Root cause
 
-`port/audio/mixer.c` hard-coded the four output-bus DMEM addresses against the **standard `AL_*` constants** from `include/n_audio/synthInternals.h`:
+`src/resources/audio/mixer.c` hard-coded the four output-bus DMEM addresses against the **standard `AL_*` constants** from decomp/include/n_audio/synthInternals.h:
 
 ```c
 #define MIX_MAIN_L 1088   /* AL_MAIN_L_OUT */
@@ -25,7 +25,7 @@ WAV dump captured 10 s of PCM via `portAudioSubmitFrame` and inspected with a Py
 #define MIX_AUX_R  2048   /* AL_AUX_R_OUT  */
 ```
 
-But SSB64 builds with `N_MICRO=1`, which swaps in the **`N_AL_*` constants** from `include/n_audio/n_synthInternals.h`:
+But SSB64 builds with `N_MICRO=1`, which swaps in the **`N_AL_*` constants** from decomp/include/n_audio/n_synthInternals.h:
 
 ```c
 #define N_AL_MAIN_L_OUT 1248
@@ -50,7 +50,7 @@ The output PCM was effectively whatever leaked from the AUX bus residue plus uni
 
 ## Fix
 
-`port/audio/mixer.c` — change the four `MIX_*` constants to the `N_AL_*` values, with a comment explaining the trap so the next person doesn't re-introduce it.
+`src/resources/audio/mixer.c` — change the four `MIX_*` constants to the `N_AL_*` values, with a comment explaining the trap so the next person doesn't re-introduce it.
 
 ## Verification
 

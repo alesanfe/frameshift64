@@ -79,7 +79,7 @@ unemulated, the original priority becomes wrong.
 
 ## Fix
 
-`src/mv/mvopening/mvopeningroom.c`, two PORT-gated changes:
+`decomp/src/mv/mvopening/mvopeningroom.c`, two PORT-gated changes:
 
 1. **`mvOpeningRoomTransitionOverlayProcDisplay`**: early-return under
    `#ifdef PORT`. The Overlay mesh contributes nothing visible when
@@ -100,7 +100,7 @@ changes required.
 ## Why not implement the redirect properly?
 
 Three earlier attempts at libultraship-side fixes are documented in
-`docs/intro_explosion_alpha_cutout_handoff_2026-04-25.md` (approaches
+`docs/investigations/intro_explosion_alpha_cutout_handoff_2026-04-25.md` (approaches
 3–5). Each got partial visuals working but none reproduced the
 intended look without significant new infrastructure (depth-attachment
 writes from triangle draws keyed off `color_image_address ==
@@ -125,7 +125,7 @@ Overlay's Z mask and the original camera priority both come back.
 
 ## Related
 
-- `docs/intro_explosion_alpha_cutout_handoff_2026-04-25.md` — full
+- `docs/investigations/intro_explosion_alpha_cutout_handoff_2026-04-25.md` — full
   history of attempted fixes, mechanism analysis, and outstanding
   approach #4 (color-image-redirect emulation) for if/when this comes
   back.

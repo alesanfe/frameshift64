@@ -28,7 +28,7 @@ static GMColScriptLink sGMColScriptLinks[] = { { script, operand_index, target }
 iterated in `gmColScriptsRegisterPointers()` via `ARRAY_COUNT(...)` to
 runtime-patch the 64-bit pointers that `gmColCommandGoto` truncates to
 `u32` on LP64 (see the `gmColCommandGotoS2 → ((u32)0)` note in
-`docs/build_and_tooling.md`). That port table referenced
+`docs/architecture/build_and_tooling.md`). That port table referenced
 `dGMColScriptsFighterPikachuSpecialHi` **unconditionally**, so it broke
 the JP build even though the rest of the JP REGION divergence (135 files)
 compiled cleanly. The table is port-specific (absent from upstream

@@ -25,7 +25,7 @@ restart, and multiple Open attempts in the same session.
 `hid_get_feature_report` returned `got > 0`, then computed payload as
 `payloadLen = got - 1` and returned that. On Windows hidapi's
 `hid_get_feature_report` always adds 1 to `bytes_returned` to account for the
-report-id byte (`libultraship/_deps/hidapi/windows/hid.c::hid_get_feature_report`),
+report-id byte (libultraship/_deps/hidapi/windows/hid.c::hid_get_feature_report),
 so a "device returned no payload" read surfaces as `got == 1` — which we
 happily treated as "successful 0-byte read" and bailed with `n=0`. On
 Linux/macOS the same condition surfaces as `got == 0` and we did retry it.

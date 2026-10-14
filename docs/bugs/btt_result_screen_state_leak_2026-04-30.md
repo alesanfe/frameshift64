@@ -13,7 +13,7 @@ Build at v0.4-beta does not exhibit the bug; the symptom appeared after addition
 
 ## Investigation
 
-The state machine in `sc1PStageClearUpdateResultScore` (`src/sc/sc1pmode/sc1pstageclear.c:1987`) advances the BTT/BTP "Result" path through:
+The state machine in `sc1PStageClearUpdateResultScore` (`decomp/src/sc/sc1pmode/sc1pstageclear.c:1987`) advances the BTT/BTP "Result" path through:
 
 1. `tic = 10`: `MakeTargetTextSObjs()` — "TARGETS:" caption.
 2. `tic = 20`: `func_ovl56_80132F78()` spawns one target sprite per cleared target; sets `BaseIntervalTic = 20 + cleared * 10` (= 120 for a 10/10 clear).
@@ -48,7 +48,7 @@ After this, `BonusShowNextTic = (BonusNum * 10) + tic + 20 = 1*10 + 130 + 20 = 1
 
 PC overlay vs. N64 overlay.
 
-On N64, `sc1PManagerRunLoop` (`src/sc/sc1pmode/sc1pmanager.c:471`) calls `syDmaLoadOverlay(&dSC1PManager1PStageClearOverlay)` before each stage-clear scene. `syDmaLoadOverlay` re-DMAs the overlay's `.bss` image, zeroing every BSS global the overlay owns — including `sSC1PStageClearCommonAdvanceTic`, `sSC1PStageClearBonusShowNextTic`, `sSC1PStageClearBonusAdvanceTic`, and `sSC1PStageClearBonusNum`.
+On N64, `sc1PManagerRunLoop` (`decomp/src/sc/sc1pmode/sc1pmanager.c:471`) calls `syDmaLoadOverlay(&dSC1PManager1PStageClearOverlay)` before each stage-clear scene. `syDmaLoadOverlay` re-DMAs the overlay's `.bss` image, zeroing every BSS global the overlay owns — including `sSC1PStageClearCommonAdvanceTic`, `sSC1PStageClearBonusShowNextTic`, `sSC1PStageClearBonusAdvanceTic`, and `sSC1PStageClearBonusNum`.
 
 The PC port has overlays statically linked. `syDmaLoadOverlay` is a no-op-equivalent stub. BSS persists across stage-clear scene entries.
 
@@ -56,7 +56,7 @@ The PC port has overlays statically linked. `syDmaLoadOverlay` is a no-op-equiva
 
 ## Fix
 
-`src/sc/sc1pmode/sc1pstageclear.c:1746` — under `#ifdef PORT`, explicitly zero the four globals at the start of each `InitVars`:
+`decomp/src/sc/sc1pmode/sc1pstageclear.c:1746` — under `#ifdef PORT`, explicitly zero the four globals at the start of each `InitVars`:
 
 ```c
 sSC1PStageClearCommonAdvanceTic = 0;

@@ -7,8 +7,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Replay,
     [string]$Takeover = "",
     [int]$Seconds = 20,
-    [string]$BuildDir = "$PSScriptRoot\..\..\build\x64\Release",
-    [string]$OutDir = "$PSScriptRoot\..\..\build\x64\takeover-test"
+    [string]$BuildDir = "$PSScriptRoot\..\..\out\build\windows-release\Release",
+    [string]$OutDir = "$PSScriptRoot\..\..\out\logs\takeover-test"
 )
 
 $build = Resolve-Path $BuildDir

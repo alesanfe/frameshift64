@@ -1,0 +1,73 @@
+name: Repo checks
+
+# ROM-free quality gate: documentation integrity, lobby service tests,
+# prohibited-artifact scan, and environment-variable catalog drift. Runs on
+# every PR — no build, no ROM, no external services.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Documentation check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.x'
+      - run: python tools/lint/check_docs.py
+      - name: Env-var catalog is complete
+        run: python tools/lint/check_env_vars.py
+      - name: Module dependency rules
+        run: python tools/lint/check_module_deps.py
+      - name: Extraction recipes (structure + golden hashes)
+        run: |
+          pip install pyyaml
+          python tests/unit/test_extraction_recipes.py
+
+  lobby:
+    name: Lobby security + fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install lobby deps
+        working-directory: services/netplay-lobby
+        run: npm ci
+      - name: Security suite
+        run: node services/netplay-lobby/tests/test-lobby-security.js
+      - name: Fuzz suite
+        run: node services/netplay-lobby/tests/test-lobby-fuzz.js 400
+
+  hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: false
+      - name: No prohibited artifacts
+        run: |
+          # ROM images / derived blobs / credentials must never be committed.
+          if git ls-files | grep -iE '\.(z64|n64|v64|ndd|pfx|keystore|jks|pem|key)$'; then
+            echo "::error::prohibited artifact committed"; exit 1
+          fi
+          if git ls-files | grep -iE '(baserom|secret|credential|password)[^/]*\.(json|txt|env)'; then
+            echo "::error::possible credential material committed"; exit 1
+          fi
+          echo "no prohibited artifacts tracked"
+      - name: Workflows are SHA-pinned
+        run: |
+          # Every `uses:` must reference a 40-hex commit SHA (tag kept as comment).
+          bad=$(grep -rhoE 'uses:\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9._-]+' .github/workflows/ \
+                | grep -vE '@[0-9a-f]{40}' || true)
+          if [ -n "$bad" ]; then echo "::error::unpinned actions:"; echo "$bad"; exit 1; fi
+          echo "all actions SHA-pinned"

@@ -1,8 +1,8 @@
 # JP build: CSS/opening fighters T-pose — submotion figatree misclassified
 
 **Date:** 2026-05-18
-**Area:** `tools/generate_yamls.py` (JP asset-name generation) →
-`port/resource/RelocFileTable.jp.cpp` → `port/bridge/lbreloc_bridge.cpp`
+**Area:** `tools/codegen/generate_yamls.py` (JP asset-name generation) →
+`src/resources/RelocFileTable.jp.cpp` → `src/bridge/lbreloc_bridge.cpp`
 classification
 **Symptom (JP only):** Mario, DK, and Fox T-pose on the VS
 character-select screen; Fox T-poses through the opening "master hand
@@ -21,10 +21,10 @@ lives at JP file_ids **332–473**, not 357–498.
 
 Because the tables were keyed by raw US ordinal, JP file_ids 332–356 hit
 no named table and fell through to the `file_{id:04d}` fallback →
-`yamls/jp/reloc_misc.yml` `file_0332`…`file_0356` →
+`assets/configuration/extraction/jp/reloc_misc_named.yml` `file_0332`…`file_0356` →
 `RelocFileTable.jp.cpp[332..356] = "reloc_misc/file_0NNN"`.
 
-This is **not cosmetic.** `port/bridge/lbreloc_bridge.cpp`
+This is **not cosmetic.** `src/bridge/lbreloc_bridge.cpp`
 `portRelocIsFighterFigatreeFile()` (lbreloc_bridge.cpp:274–278) classifies
 a reloc file as a fighter figatree purely by **resource-path prefix** —
 `"reloc_animations/FT"` or `"reloc_submotions/FT"`. The placeholder
@@ -48,7 +48,7 @@ first entry (356) — matching the report.
 
 ## Fix
 
-`tools/generate_yamls.py`: build `_VERID_TO_USORD` from the version
+`tools/codegen/generate_yamls.py`: build `_VERID_TO_USORD` from the version
 header's numeric `ll_<N>_FileID` symbols (the decomp emits one per
 otherwise-unnamed file; `<N>` is the US ordinal, the value is the
 per-version file_id, captured by `parse_reloc_data_header` as clean name
@@ -59,17 +59,17 @@ fallback still key on the real version file_id.
 
 For US, `ll_<N>_FileID == N` for all N, so the map is the identity and
 US output is **byte-for-byte unchanged** (regression guard:
-`git diff yamls/us port/resource/RelocFileTable.us.*` empty after
+`git diff assets/configuration/extraction/us src/resources/RelocFileTable.us.*` empty after
 regen — verified).
 
-Regenerate + rebuild: `python3 tools/generate_yamls.py --version jp`,
-`python3 tools/generate_reloc_table.py --version jp`, rebuild `ssb64`,
+Regenerate + rebuild: `python3 tools/codegen/generate_yamls.py --version jp`,
+`python3 tools/codegen/generate_reloc_table.py --version jp`, rebuild `ssb64`,
 re-extract `BattleShip.o2r` (resource names changed, so the o2r must be
 rebuilt to match the table).
 
 ## Verification
 
-- US `yamls/us` and `RelocFileTable.us.{cpp,h}` byte-identical after
+- US `assets/configuration/extraction/us` and `RelocFileTable.us.{cpp,h}` byte-identical after
   regeneration (empty git diff).
 - JP `RelocFileTable.jp.cpp[332]` = `reloc_submotions/FTMarioSubMotionAppearR`
   (was `reloc_misc/file_0332`); `[357]` = `reloc_submotions/FTDonkeySubMotionAppearL`
@@ -85,9 +85,9 @@ rebuilt to match the table).
 ## Notes
 
 `generate_yamls.py` lives in the outer port tree (not a submodule). The
-companion `port/resource/RelocFileTable.jp.{cpp,h}` and `yamls/jp/*` are
+companion `src/resources/RelocFileTable.jp.{cpp,h}` and `assets/configuration/extraction/jp/*` are
 generated artifacts committed for the JP build. No decomp/torch/LUS
-submodule change. Earlier triage (`docs/jp_runtime_triage_2026-05-18.md`
+submodule change. Earlier triage (`docs/investigations/jp_runtime_triage_2026-05-18.md`
 Issue C, now corrected) wrongly concluded the naming wart was cosmetic by
 assuming figatree fixups were access-time; they are gated at load by
 path-prefix classification.

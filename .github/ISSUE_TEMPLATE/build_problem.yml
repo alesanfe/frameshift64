@@ -1,0 +1,27 @@
+name: Build problem
+description: Configure, compile, or packaging failure
+labels: ["type:bug", "area:build"]
+body:
+  - type: input
+    id: platform
+    attributes:
+      label: Host + target
+      placeholder: e.g. Windows 11 MSVC → x64, or Ubuntu → arm64 Android
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands run
+      render: text
+      placeholder: cmake preset or command lines
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Failing output
+      render: text
+      placeholder: The error block, not the whole log
+    validations:
+      required: true

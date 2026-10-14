@@ -22,7 +22,7 @@ exclude the main image or the guards never fire at all.
 
 Collateral damage: the CSS scroll-arrow texture is a **baked `.rodata`
 array in the main binary** (`kArrowRGBA16` in the generated `arrow_data.h`,
-via `port/css_icons/port_css_arrow.cpp`). In a non-PIE build it sits at
+via `src/resources/css_icons/port_css_arrow.cpp`). In a non-PIE build it sits at
 ~`0x010E1D20` — inside the guard's `<= 0x0FFFFFFF` window and inside the
 main image — so its `G_SETTIMG` was silently dropped and the arrow quad
 sampled whatever texture was previously bound (the noise strip).

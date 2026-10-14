@@ -22,7 +22,7 @@ Training mode stores its per-glyph / per-option sprites as two arrays
 of reloc tokens:
 
 ```c
-// src/sc/sctypes.h (PORT branch)
+// decomp/src/sc/sctypes.h (PORT branch)
 u32 *display_option_sprites;   // 39 entries — digits 0–9, item icons,
                                // speed/CP/view labels, ENEMY anchor
 u32 *menu_option_sprites;      // 31 entries — pause-menu options +
@@ -100,7 +100,7 @@ Two compounding hazards on top of the wrong-offset write:
 
 ## Fix
 
-`src/sc/sc1pmode/sc1ptrainingmode.c` — add a port-side helper that runs
+`decomp/src/sc/sc1pmode/sc1ptrainingmode.c` — add a port-side helper that runs
 the full Sprite + Bitmap-array + texel-data fixup chain on a sprite
 loaded from a reloc array, and call it at the top of the Init loops
 that touch every sprite in those two arrays:
@@ -167,7 +167,7 @@ Any code that:
 
 …will leave the writes at the wrong offsets and have them later moved
 by the deferred fixup. Grep target: `sprite->\(red\|green\|blue\|attr\|
-zdepth\)\s*=` in `src/{sc,if,gm,mn,gr,ef,it,ft}/` for any path that
+zdepth\)\s*=` in `decomp/src/{sc,if,gm,mn,gr,ef,it,ft}/` for any path that
 reaches the resolved Sprite via a `u32*` reloc-token array (rather
 than via a fresh `lbCommonMakeSObjForGObj`-returned SObj).
 

@@ -1,0 +1,5 @@
+# Commits that should not appear in `git blame` (mass moves/format only —
+# never behavior changes). GitHub respects this file; locally run:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# <sha>  2026-10  repository reorganization (port/ → src/, docs/ recategorize)

@@ -70,7 +70,7 @@ to be visibly broken today, but if a future regression appears around
 them, the fix is mechanical — add the same guard to the relevant Fast3D
 draw entry point.
 
-1. **`src/mv/mvopening/mvopeningroom.c` — `mvOpeningRoomTransitionOverlayProcDisplay`**
+1. **`decomp/src/mv/mvopening/mvopeningroom.c` — `mvOpeningRoomTransitionOverlayProcDisplay`**
    (line 1074) and **`mvOpeningRoomTransitionOutlineProcDisplay`** (line
    1092). These redirect to `gSYVideoZBuffer` and then:
    - Call `gcDrawDObjDLHead0` → triangle draws through `GfxSpTri1`
@@ -79,7 +79,7 @@ draw entry point.
    - Do a `gDPFillRectangle(0, 0, 320, 240)` (line 1100) — already
      guarded by the existing `GfxDpFillRectangle` skip.
 
-2. **`src/sys/objdisplay.c:2994-3002`** — conditional `gDPFillRectangle`
+2. **`decomp/src/sys/objdisplay.c:2994-3002`** — conditional `gDPFillRectangle`
    used as a Z-clear. Already guarded by the existing skip.
 
 If the opening-scene transition animation (Fight Now / Ready To Fight /

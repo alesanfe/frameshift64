@@ -44,7 +44,7 @@ memory. A native `u8` read at struct offset 68 returns `0x00` — the padding
 byte, not `M`.
 
 The consequence: `grDisplayMakeGeometryLayer` (in
-`src/gr/grdisplay.c`) uses
+`decomp/src/gr/grdisplay.c`) uses
 
 ```c
 if (gMPCollisionGroundData->layer_mask & (1 << gr_desc_id))
@@ -90,11 +90,11 @@ is what the real mask is after the byteswap.
 ## Fix
 
 New helper `portFixupStructU32(base, byte_offset, num_words)` in
-`port/bridge/lbreloc_byteswap.cpp` that re-`BSWAP32`s a specified u32 word
+`src/bridge/lbreloc_byteswap.cpp` that re-`BSWAP32`s a specified u32 word
 (undoing pass 1 for that word). Idempotent via the existing
 `sStructU16Fixups` tracker.
 
-In `mpCollisionInitAll` (`src/mp/mpcollision.c`) where the existing s16-pair
+In `mpCollisionInitAll` (`decomp/src/mp/mpcollision.c`) where the existing s16-pair
 fixups live, unswap the `layer_mask` u32 word so the `u8` field lands at its
 declared offset:
 
@@ -117,7 +117,7 @@ DObjDLLink-as-raw-DL dispatch pattern is fully eliminated.
 
 ## Related
 
-- `docs/stage_rendering_investigation_2026-04-22.md` — investigation handoff
+- `docs/investigations/stage_rendering_investigation_2026-04-22.md` — investigation handoff
   that led here.
 - Same class of bug as [aobjevent32_halfswap](aobjevent32_halfswap_2026-04-18.md)
   and [mpvertex_byte_swap](mpvertex_byte_swap_2026-04-11.md): blanket pass-1

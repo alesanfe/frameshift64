@@ -9,7 +9,7 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: npm
-    directory: /server/cloudflare
+    directory: /services/netplay-lobby
     schedule:
       interval: weekly
     groups:
@@ -17,7 +17,7 @@ updates:
         patterns: ["wrangler*"]
 
   - package-ecosystem: gradle
-    directory: /android
+    directory: /platforms/android
     schedule:
       interval: weekly
 

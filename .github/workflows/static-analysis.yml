@@ -34,8 +34,8 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: '3.12'
       - name: Install lint tools
@@ -44,44 +44,44 @@ jobs:
           python -m pip install cpplint cmakelang lizard codespell yamllint ruff bandit semgrep
       - name: Run fast lints
         run: |
-          mkdir -p lint-reports
-          codespell . --config .codespellrc > lint-reports/codespell.txt 2>&1 || true
-          yamllint -c .yamllint.yml . > lint-reports/yamllint.txt 2>&1 || true
-          ruff check . --exclude .venv-lint --exclude build --exclude build-lint \
+          mkdir -p out/reports/lint
+          codespell . --config .codespellrc > out/reports/lint/codespell.txt 2>&1 || true
+          yamllint -c .yamllint.yml . > out/reports/lint/yamllint.txt 2>&1 || true
+          ruff check . --exclude .venv-lint --exclude build --exclude out/build/lint \
             --exclude decomp --exclude libultraship --exclude torch \
-            --output-format full > lint-reports/ruff.txt 2>&1 || true
-          bandit -r scripts tools debug_tools -x '*/tests/*,*/build/*' \
-            > lint-reports/bandit.txt 2>&1 || true
+            --output-format full > out/reports/lint/ruff.txt 2>&1 || true
+          bandit -r scripts tools -x '*/tests/*,*/build/*' \
+            > out/reports/lint/bandit.txt 2>&1 || true
           lizard -l cpp -C 15 -L 120 -a 6 -w \
-            port include android uwp tools debug_tools \
-            > lint-reports/lizard.txt 2>&1 || true
+            src include platforms tools \
+            > out/reports/lint/lizard.txt 2>&1 || true
           cpplint --recursive --extensions=c,cc,cpp,cxx,h,hh,hpp,hxx \
             --filter=-whitespace/line_length,-build/include_subdir \
-            --exclude=build --exclude=build-lint --exclude=decomp \
-            --exclude=libultraship --exclude=torch --exclude=workspace \
-            port include android uwp tools debug_tools \
-            > lint-reports/cpplint.txt 2>&1 || true
+            --exclude=build --exclude=out/build/lint --exclude=decomp \
+            --exclude=libultraship --exclude=torch --exclude=mods \
+            src include platforms tools \
+            > out/reports/lint/cpplint.txt 2>&1 || true
           find . \( -name CMakeLists.txt -o -name '*.cmake' \) \
             -not -path './build*' -not -path './decomp/*' \
             -not -path './libultraship/*' -not -path './torch/*' \
-            -print0 | xargs -0 cmake-lint > lint-reports/cmake-lint.txt 2>&1 || true
-          semgrep scan --config semgrep-smash.yml \
-            port include android uwp tools debug_tools scripts decomp/src/sys \
-            > lint-reports/semgrep-smash.txt 2>&1 || true
+            -print0 | xargs -0 cmake-lint > out/reports/lint/cmake-lint.txt 2>&1 || true
+          semgrep scan --config config/semgrep/smash-classic.yml \
+            src include platforms tools scripts decomp/src/sys \
+            > out/reports/lint/semgrep-smash.txt 2>&1 || true
       - name: Summarize findings
         run: |
           {
             echo "## Static analysis (fast tier)"
             echo ""
-            for f in lint-reports/*.txt; do
+            for f in out/reports/lint/*.txt; do
               echo "- $(basename "$f"): $(wc -l < "$f") lines"
             done
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: lint-reports-fast
-          path: lint-reports/
+          path: out/reports/lint/
           retention-days: 14
 
   clang-tidy:
@@ -89,11 +89,11 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           submodules: recursive
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: '3.12'
       - name: Install build deps
@@ -114,24 +114,24 @@ jobs:
           CC: clang
           CXX: clang++
         run: |
-          cmake -B build-lint -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+          cmake -B out/build/lint -G Ninja -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DNON_PORTABLE=ON
       - name: clang-tidy (own code)
         run: |
-          run-clang-tidy -p build-lint -config-file .clang-tidy -j "$(nproc)" \
-            'smash-classic.(port|include|android|uwp|tools|debug_tools).' \
-            > lint-reports/clang-tidy.txt 2>&1 || true
+          run-clang-tidy -p out/build/lint -config-file .clang-tidy -j "$(nproc)" \
+            'smash-classic.(src|include|platforms|tools|services|mods|tests).' \
+            > out/reports/lint/clang-tidy.txt 2>&1 || true
       - name: cppcheck (own code)
         run: |
-          cppcheck --project=build-lint/compile_commands.json \
+          cppcheck --project=out/build/lint/compile_commands.json \
             --enable=warning,performance,portability,style \
             --inconclusive --inline-suppr --std=c++20 \
-            --suppressions-list=cppcheck-suppressions.txt \
-            -i decomp -i libultraship -i torch -i build-lint/_deps \
-            > lint-reports/cppcheck.txt 2>&1 || true
+            --suppressions-list=config/static-analysis/cppcheck-suppressions.txt \
+            -i decomp -i libultraship -i torch -i out/build/lint/_deps \
+            > out/reports/lint/cppcheck.txt 2>&1 || true
       - name: Upload reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: lint-reports-db
-          path: lint-reports/
+          path: out/reports/lint/
           retention-days: 14

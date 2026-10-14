@@ -1,13 +1,13 @@
 # JP build: Torch SSB64:RELOC factory hardcoded the US reloc-table address
 
 **Date:** 2026-05-18
-**Area:** `torch/` submodule — `src/factories/ssb64/RelocFactory.{h,cpp}`
+**Area:** `torch/` submodule — src/factories/ssb64/RelocFactory.{h,cpp}
 (branch `ssb64`), JP asset extraction
 **Symptom:** `cmake --build … --target ExtractAssets` against
 `baserom.jp.z64` aborted almost immediately:
 
 ```
-> Country: [jp]   Hash: 4b71f0e0…   Assets: …/yamls/jp
+> Country: [jp]   Hash: 4b71f0e0…   Assets: …/assets/configuration/extraction/jp
 - [SSB64:RELOC] Processing reloc_animations/FTMarioAnimWait at 0x53AFC0
 terminate called after throwing an instance of 'std::runtime_error'
   what():  ROM too small to read file data for file 474
@@ -47,7 +47,7 @@ resolved `L.tableRomAddr / fileCount / entrySize / dataStart`.
 - **US:** country 'E' → identical constants → byte-identical extraction.
 - **JP:** country 'J' → `0x001ACAF0` / 2107 → extraction completes
   cleanly; `BattleShip.o2r` contains 2108 entries (2107 reloc files +
-  version), distribution matching `yamls/jp`.
+  version), distribution matching `assets/configuration/extraction/jp`.
 
 ## Notes
 

@@ -31,7 +31,7 @@ So the runtime convention unambiguously wants a negative value. The attribute-dr
 
 ## Fix
 
-Negate on load in `itManagerMakeItem` (`src/it/itmanager.c`), guarded by `#ifdef PORT` and annotated so the non-PORT branch stays byte-identical to the decomp:
+Negate on load in `itManagerMakeItem` (`decomp/src/it/itmanager.c`), guarded by `#ifdef PORT` and annotated so the non-PORT branch stays byte-identical to the decomp:
 
 ```c
 #ifdef PORT
@@ -53,7 +53,7 @@ After the fix, a capsule/egg/pokéball dropped from the air rests flat on the pl
 
 ## Files
 
-- `src/it/itmanager.c` — `itManagerMakeItem` map_coll copy.
+- `decomp/src/it/itmanager.c` — `itManagerMakeItem` map_coll copy.
 
 ## Class-of-bug note
 

@@ -78,7 +78,7 @@ the same per-range eviction loop that already cleared
 `sRejectedHeads` too.  Implementation factored into a small lambda for
 readability.
 
-`port/port_aobj_fixup.cpp`, around the existing eviction site.
+`src/compatibility/port_aobj_fixup.cpp`, around the existing eviction site.
 
 ## Why this was hard to spot
 
@@ -127,7 +127,7 @@ Inventoried every pointer-keyed cache in `port/`:
 
 - `port_aobj_fixup.cpp`: 3 caches (above).  All now evicted on figatree
   heap reload via `port_aobj_register_halfswapped_range`.
-- `port/bridge/lbreloc_byteswap.cpp`: 4 caches (`sStructU16Fixups`,
+- `src/bridge/lbreloc_byteswap.cpp`: 4 caches (`sStructU16Fixups`,
   `sTexFixupExtent`, `sTexFixupWords`, `sDeswizzle4cFixups`).  All
   evicted via `portEvictStructFixupsInRange` called from
   `lbRelocLoadAndRelocFile` before bytes are copied.

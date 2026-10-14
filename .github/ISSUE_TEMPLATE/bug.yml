@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in the game or app misbehaves
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Please attach a diagnostics bundle or log excerpt if you have one.
+  - type: input
+    id: version
+    attributes:
+      label: Game version
+      placeholder: e.g. v1.4.1 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows, Linux, macOS, Android, UWP]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      placeholder: Steps, expected vs actual, frequency
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / diagnostics
+      render: text
+      placeholder: Paste relevant log lines (redact tokens/paths)

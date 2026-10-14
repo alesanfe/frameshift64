@@ -147,7 +147,7 @@ All four layers are implemented. Env hooks are deterministic through
   `accept_bad_session`, `accept_bad_checksum`, `no_forward_guard`,
   `skip_rng_restore`. Driven by `scripts/testing/netplay_mutation_suite.ps1`:
   baselines must pass, every mutant must produce exit 1.
-- Lobby fuzz: `services/netplay-lobby/test-lobby-fuzz.js` hammers
+- Lobby fuzz: `services/netplay-lobby/tests/test-lobby-fuzz.js` hammers
   `node-lobby.js` with malformed text/binary frames and hostile connection
   params; asserts the process survives and an untouched control room stays
   functional.

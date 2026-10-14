@@ -5,10 +5,10 @@
 - VS Character Select: a fighter puck cannot be picked up after being placed — an `A_BUTTON` tap registers as grab-then-immediate-drop.
 - CPU skill level slider: one keypress advances the value by 2–3 steps instead of 1.
 
-Instrumentation in `src/sys/controller.c` showed each physical press producing a *fresh* `unk02` edge on 4+ consecutive frames (`edge+=0x1000`, `unk04=0x1000`, `hold=0x1000` published every frame), which should be impossible — `syControllerReadDeviceData` stamps `sSYControllerDescs[i].unk00 = button` at the end of every read, so the next frame's XOR edge `(button ^ unk00) & button` should be zero while the button is held.
+Instrumentation in `decomp/src/sys/controller.c` showed each physical press producing a *fresh* `unk02` edge on 4+ consecutive frames (`edge+=0x1000`, `unk04=0x1000`, `hold=0x1000` published every frame), which should be impossible — `syControllerReadDeviceData` stamps `sSYControllerDescs[i].unk00 = button` at the end of every read, so the next frame's XOR edge `(button ^ unk00) & button` should be zero while the button is held.
 
 **Root cause:** The typename `OSContPad` refers to **two different struct layouts in the same build**:
-- Decomp view (`include/PR/os.h`, seen by C in `src/sys/controller.c`): `{ u16 button; s8 stick_x; s8 stick_y; u8 errno; }` — ~6 bytes.
+- Decomp view (decomp/include/PR/os.h, seen by C in `decomp/src/sys/controller.c`): `{ u16 button; s8 stick_x; s8 stick_y; u8 errno; }` — ~6 bytes.
 - libultraship view (`libultraship/include/libultraship/libultra/controller.h`): adds `err_no`, `gyro_x`, `gyro_y`, `right_stick_x`, `right_stick_y` — `size = 0x24` (36 bytes).
 
 `syControllerReadDeviceData` declares `OSContPad sSYControllerData[MAXCONTROLLERS]` using the decomp's 6-byte layout, so the array reserves ~24 bytes. The controller I/O stub `osContGetReadData` lives in `libultraship/src/libultraship/libultra/os.cpp` (C++, sees the 0x24-byte LUS layout) and did:

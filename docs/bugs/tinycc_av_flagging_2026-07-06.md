@@ -53,4 +53,4 @@ Local Windows preflight on 2026-07-06:
 
 External release reputation/submission steps remain pending: VirusTotal scan and Microsoft WDSI false-positive submission.
 
-Detailed local results: `docs/tinycc_av_test_results_2026-07-06.md`.
+Detailed local results: `docs/testing/tinycc_av_test_results_2026-07-06.md`.

@@ -1,16 +1,16 @@
 # Audio bridge swapped sSYAudioSequenceBank1/2 sources
 
 **Date:** 2026-04-24
-**Status:** Fix shipped to `port/bridge/audio_bridge.cpp`. Awaiting in-game verification of audible BGM.
+**Status:** Fix shipped to `src/bridge/audio_bridge.cpp`. Awaiting in-game verification of audible BGM.
 **Class:** Port-side asset wiring mismatch — bridge loaded the right CTL files but routed each into the wrong global slot.
 
 ## Symptom
 
-After the audio buildout reached "fully plumbed but silent" (see `docs/audio_buildout_2026-04-24.md`), every NoteOn in BGM 33 missed in `__n_lookupSoundQuick`. Diagnostic dumps showed the music bank parsed as **1 instrument with 322 sounds, sampleRate=44100**, with 8-byte degenerate keymaps that only matched MIDI keys 0/1/2 — never the keys 84..105 the sequence actually played.
+After the audio buildout reached "fully plumbed but silent" (see `docs/investigations/audio_buildout_2026-04-24.md`), every NoteOn in BGM 33 missed in `__n_lookupSoundQuick`. Diagnostic dumps showed the music bank parsed as **1 instrument with 322 sounds, sampleRate=44100**, with 8-byte degenerate keymaps that only matched MIDI keys 0/1/2 — never the keys 84..105 the sequence actually played.
 
 ## Root cause
 
-The original game's `SYAudioSettings` (in `src/sys/audio.c`) declares:
+The original game's `SYAudioSettings` (in `decomp/src/sys/audio.c`) declares:
 
 ```c
 (uintptr_t)&B1_sounds2_ctl_ROM_START,      // bank1_start
@@ -51,7 +51,7 @@ Effect: the music CSP players were handed the SFX bank's 322-sound table. `__n_l
 
 ## Fix
 
-`port/bridge/audio_bridge.cpp` — swap the two parser blocks so that:
+`src/bridge/audio_bridge.cpp` — swap the two parser blocks so that:
 
 ```cpp
 sounds1_ctl → sSYAudioSequenceBank2   // music CSP
@@ -62,7 +62,7 @@ Each bank still uses its paired TBL (`sounds1_tbl` with `sounds1_ctl`, etc.) bec
 
 ## Why the SFX-fallback workaround was added
 
-`syAudioInit` (`src/sys/audio.c:970`) has a PORT-only fallback:
+`syAudioInit` (`decomp/src/sys/audio.c:970`) has a PORT-only fallback:
 
 ```c
 ALInstrument *inst0 = sSYAudioSequenceBank1->instArray[0];
@@ -79,4 +79,4 @@ This is a sibling of the `LUS-vs-decomp typename shadowing` and `Token vs raw po
 
 ## Open follow-up
 
-Verify in-game: BGM 33 should now produce audible output, and the new audio_bridge log line should report `sounds1_ctl → sSYAudioSequenceBank2 (music): N instruments, rate=32000` (multi-instrument, 32 kHz). If still silent post-swap, return to `docs/audio_buildout_2026-04-24.md` and resume from "voice alloc / ADPCM / mixer" downstream investigation.
+Verify in-game: BGM 33 should now produce audible output, and the new audio_bridge log line should report `sounds1_ctl → sSYAudioSequenceBank2 (music): N instruments, rate=32000` (multi-instrument, 32 kHz). If still silent post-swap, return to `docs/investigations/audio_buildout_2026-04-24.md` and resume from "voice alloc / ADPCM / mixer" downstream investigation.

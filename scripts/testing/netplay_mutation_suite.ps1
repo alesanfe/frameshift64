@@ -2,7 +2,7 @@
 # then a probe stream hits the hole. Every mutated run must FAIL - a mutant
 # that still passes means the check wasn't load-bearing.
 #
-#   .\scripts\testing\netplay_mutation_suite.ps1 -BuildDir build\us\Release
+#   .\scripts\testing\netplay_mutation_suite.ps1 -BuildDir out\build\windows-release\Release
 #
 # Mutants:
 #   skip_rng_restore   - SyncTest: snapshot load skips RNG state -> resim must diverge
@@ -14,8 +14,8 @@
 #
 # Exit: 0 every mutant detected, 1 at least one went undetected, 2 harness error.
 param(
-    [string]$BuildDir = "$PSScriptRoot\..\..\build\us\Release",
-    [string]$OutDir = "$PSScriptRoot\..\..\build\us\netplay-test",
+    [string]$BuildDir = "$PSScriptRoot\..\..\out\build\windows-release\Release",
+    [string]$OutDir = "$PSScriptRoot\..\..\out\logs\netplay-test",
     [int]$Minutes = 1,
     [int]$Seconds = 45
 )

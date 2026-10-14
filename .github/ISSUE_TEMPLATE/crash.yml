@@ -1,0 +1,33 @@
+name: Crash report
+description: The application terminated unexpectedly
+labels: ["type:bug", "area:stability", "status:needs-triage"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Game version + build type
+      placeholder: e.g. v1.4.1 Release, or local Debug build @ SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows, Linux, macOS, Android, UWP]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you were doing
+      placeholder: Scene, mode, menu, mods loaded
+    validations:
+      required: true
+  - type: textarea
+    id: crash_data
+    attributes:
+      label: Crash log / backtrace / dump
+      render: text
+      placeholder: |
+        Paste the crash section of the log, or attach the minidump /
+        diagnostics bundle. `port_symbolize` output welcome.

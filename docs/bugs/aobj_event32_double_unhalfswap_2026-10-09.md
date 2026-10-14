@@ -1,6 +1,6 @@
 # AObj event32 un-halfswap was order-dependent and could double-swap (2026-10-09)
 
-**Status:** FIXED (`port/port_aobj_fixup.cpp`). Found by the rollback SyncTest (`docs/rollback_design.md`).
+**Status:** FIXED (`src/compatibility/port_aobj_fixup.cpp`). Found by the rollback SyncTest (`docs/netplay/rollback_design.md`).
 
 ## Symptom
 

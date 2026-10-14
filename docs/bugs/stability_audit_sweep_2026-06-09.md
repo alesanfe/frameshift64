@@ -16,11 +16,11 @@ JP / widescreen / FD-CSS / Android commits.
 
 | Severity | File | Fix |
 |---|---|---|
-| critical | `src/fast/backends/gfx_metal.cpp` | `DrawTriangles` had no bounds check on `mCurrentVertexBufferOffset` before the `memcpy` into the per-frame vertex pool slot (fixed 4.9 MB). A frame with enough draw flushes silently overflowed into adjacent heap/driver memory. Now checks capacity and drops the draw with an SPDLOG_ERROR (one visually-wrong frame instead of corruption). macOS only. |
-| high | `src/fast/backends/gfx_metal.cpp` | Every depth-test/mask change created a `MTLDepthStencilState` via `newDepthStencilState` (+1 retain) and never released it after `setDepthStencilState` (which retains internally) — one GPU object leaked per depth-mode change, and SSB64 toggles depth constantly (2D sprites vs 3D). Added the missing `release()`. |
-| high | `src/fast/interpreter.cpp` | All 12 `ImportTexture*` replacement paths dereferenced `mMaskedTextures.find(...)->second` with no `end()` check — UB/SIGSEGV if the registry entry was unregistered or named differently than the resource path. Extracted a guarded `GetMaskedReplacementData` helper returning nullptr on miss; every caller already null-checks `addr` and falls back. |
-| high | `src/ship/audio/WasapiAudioPlayer.{h,cpp}` | `DoInit` registered `this` as an `IMMNotificationClient` but nothing ever unregistered it; the class had no destructor and `AudioPlayer::~AudioPlayer` doesn't call `DoClose`. Windows kept delivering device-change callbacks to a dangling `this` after shutdown (UAF on audio-device plug/unplug at exit). Added a destructor that unregisters + closes. |
-| perf | `include/fast/interpreter.h` | `TextureCacheKey::Hasher` hashed only `texture_addr`, ignoring the other 8 fields `operator==` compares. The game's bump heaps cycle many distinct textures through the same addresses, so the 1024-entry cache degraded toward per-bucket linear scans on every `TextureCacheLookup`. Replaced with FNV-1a over every compared field. |
+| critical | `libultraship/src/fast/backends/gfx_metal.cpp` | `DrawTriangles` had no bounds check on `mCurrentVertexBufferOffset` before the `memcpy` into the per-frame vertex pool slot (fixed 4.9 MB). A frame with enough draw flushes silently overflowed into adjacent heap/driver memory. Now checks capacity and drops the draw with an SPDLOG_ERROR (one visually-wrong frame instead of corruption). macOS only. |
+| high | `libultraship/src/fast/backends/gfx_metal.cpp` | Every depth-test/mask change created a `MTLDepthStencilState` via `newDepthStencilState` (+1 retain) and never released it after `setDepthStencilState` (which retains internally) — one GPU object leaked per depth-mode change, and SSB64 toggles depth constantly (2D sprites vs 3D). Added the missing `release()`. |
+| high | `libultraship/src/fast/interpreter.cpp` | All 12 `ImportTexture*` replacement paths dereferenced `mMaskedTextures.find(...)->second` with no `end()` check — UB/SIGSEGV if the registry entry was unregistered or named differently than the resource path. Extracted a guarded `GetMaskedReplacementData` helper returning nullptr on miss; every caller already null-checks `addr` and falls back. |
+| high | `libultraship/src/ship/audio/WasapiAudioPlayer.{h,cpp}` | `DoInit` registered `this` as an `IMMNotificationClient` but nothing ever unregistered it; the class had no destructor and `AudioPlayer::~AudioPlayer` doesn't call `DoClose`. Windows kept delivering device-change callbacks to a dangling `this` after shutdown (UAF on audio-device plug/unplug at exit). Added a destructor that unregisters + closes. |
+| perf | `libultraship/include/fast/interpreter.h` | `TextureCacheKey::Hasher` hashed only `texture_addr`, ignoring the other 8 fields `operator==` compares. The game's bump heaps cycle many distinct textures through the same addresses, so the 1024-entry cache degraded toward per-bucket linear scans on every `TextureCacheLookup`. Replaced with FNV-1a over every compared field. |
 
 Verified non-issues: the packed-DL cache is already evicted by
 `lbreloc_bridge.cpp` on heap reclaim + scene reset (growth bounded by live
@@ -111,13 +111,13 @@ files); `ControlDeck` shutdown ordering remains correct.
 
 ### Android
 
-- **`port/android_touch_overlay.cpp` (UAF across relaunch)**: `sJoystick` /
+- **`src/platform/android/android_touch_overlay.cpp` (UAF across relaunch)**: `sJoystick` /
   `sAttachAttempted` are process-lifetime statics, but Android keeps the
   process alive across Activity relaunches while `SDL_Quit` frees every
   joystick. The next session's first touch hit a freed `SDL_Joystick*`.
   Added `port_touch_overlay_shutdown()` (close/detach/reset) called from
   `PortShutdown` while SDL is still up.
-- **`port/android_torch_bridge.cpp` (64 MB leak)**: extraction leaked the
+- **`src/platform/android/android_torch_bridge.cpp` (64 MB leak)**: extraction leaked the
   `Companion` singleton — including the full ROM `std::vector` — into the
   game process (Boot and game Activities share one process). Now deleted
   after `Init` returns; `gRomData` is an instance member so this frees it.

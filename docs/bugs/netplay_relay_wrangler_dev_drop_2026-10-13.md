@@ -5,7 +5,7 @@
 ## Symptom
 
 Multi-player (and 1v1) matches forced through the WebSocket relay
-(`SSB64_LOBBY_FORCE_RELAY=1`, `scripts/netplay_lobbytest_multi.ps1 -ForceRelay`)
+(`SSB64_LOBBY_FORCE_RELAY=1`, `scripts/testing/netplay_lobbytest_multi.ps1 -ForceRelay`)
 against a local `wrangler dev` Durable Object stalled a few seconds in:
 
 - Signaling worked: `endpoint` exchange, `relay` negotiation, `BATTLE_READY`,
@@ -33,20 +33,20 @@ against a local `wrangler dev` Durable Object stalled a few seconds in:
 bridge that drops binary frames under sustained load and intermittently resets
 the DO (observed: binary counters restarting mid-run, "Network connection lost"
 errors in wrangler output). The exact same client build and protocol work
-flawlessly against `server/node-lobby.js` — a standalone Node implementation of
+flawlessly against `services/netplay-lobby/src/node-lobby.js` — a standalone Node implementation of
 the same wire protocol — with zero code changes in between.
 
 **Audit hook:** when ws traffic "succeeds" at the sender but never arrives, and
 only under `wrangler dev`, suspect the dev proxy before the protocol. Use
-`server/node-lobby.js` (or a deployed Worker) for local relay testing.
+`services/netplay-lobby/src/node-lobby.js` (or a deployed Worker) for local relay testing.
 
 ## What changed anyway
 
-- `server/cloudflare/src/index.js`: Durable Object uses the non-hibernating
+- `services/netplay-lobby/src/index.js`: Durable Object uses the non-hibernating
   WebSocket API (simpler state model, no hibernation edge cases; required for
   in-memory room maps) — kept, it's the safer production shape.
-- `server/node-lobby.js` (new): local lobby for tests; the test script
-  auto-prefers it over wrangler when `server/cloudflare/node_modules/ws`
+- `services/netplay-lobby/src/node-lobby.js` (new): local lobby for tests; the test script
+  auto-prefers it over wrangler when `services/netplay-lobby/node_modules/ws`
   exists.
 - `port_ws.cpp`: send-only **uplink** ws connection (`/ws?...&up=1&slot=N`) for
   all outbound binary game frames. Isolating directions sidesteps the dev-proxy
@@ -57,7 +57,7 @@ only under `wrangler dev`, suspect the dev proxy before the protocol. Use
 
 ## Verified
 
-`scripts/netplay_lobbytest_multi.ps1` against node-lobby:
+`scripts/testing/netplay_lobbytest_multi.ps1` against node-lobby:
 
 | Scenario | Result |
 |---|---|

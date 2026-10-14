@@ -19,6 +19,6 @@ ignore: |
   decomp/
   libultraship/
   torch/
-  workspace/
-  yamls/
+  mods/
+  assets/configuration/extraction/
   node_modules/

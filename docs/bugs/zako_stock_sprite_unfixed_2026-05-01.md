@@ -66,7 +66,7 @@ sprite right after `lbRelocGetFileData`, mirroring what
 
 Files:
 
-- `src/sc/sc1pmode/sc1pgame.c` — port-side fixup at the Zako case in
+- `decomp/src/sc/sc1pmode/sc1pgame.c` — port-side fixup at the Zako case in
   `sc1PGameInitTeamStockDisplay`; also added the three `portFixup*`
   externs at the top of the TU.
 

@@ -18,7 +18,7 @@ and any X11 session are unaffected.
 
 Bisected to commit `9938319 icon(linux): SDL_SetWindowIcon at boot from
 embedded PNG`. SDL2's Wayland backend (`Wayland_SetWindowIcon` in
-`src/video/wayland/SDL_waylandwindow.c` on release-2.32.x) implements
+src/video/wayland/SDL_waylandwindow.c on release-2.32.x) implements
 icon setting via the `xdg_toplevel_icon_v1` protocol:
 
 ```c

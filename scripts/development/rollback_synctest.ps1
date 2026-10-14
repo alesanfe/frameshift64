@@ -1,7 +1,7 @@
 # Runs one unattended 4-CPU VS match with rollback SyncTest enabled and prints
 # the verdict plus the first divergences. See docs/rollback_design.md.
 #
-#   .\scripts\rollback_synctest.ps1 -Stage 0 -Fighters "0,1,2,3" -Seed 12345
+#   .\scripts\development\rollback_synctest.ps1 -Stage 0 -Fighters "0,1,2,3" -Seed 12345
 #
 # Exit code: 0 PASS, 1 FAIL, 2 timeout/crash.
 param(
@@ -14,7 +14,7 @@ param(
     # after a snapshot load — SyncTest must FAIL, proving RNG coverage.
     [string]$Mutant = "",
     [int]$TimeoutSeconds = 400,
-    [string]$BuildDir = "$PSScriptRoot\..\build\us\Release",
+    [string]$BuildDir = "$PSScriptRoot\..\..\out\build\windows-release\Release",
     [int]$ShowLines = 40
 )
 

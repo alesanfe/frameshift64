@@ -24,6 +24,6 @@ sp38.z = attach_parts->unk_dobjtrans_0x10[2][2];
 
 This preserves the original N64 semantics without depending on incompatible host `DObj` layout.
 
-**Files changed:** `src/ft/ftparam.c`
+**Files changed:** `decomp/src/ft/ftparam.c`
 
-**Verification:** `cmake --build /Users/jackrickey/Dev/ssb64-port/build -j8` rebuilt `src/ft/ftparam.c.o` and relinked `BattleShip` successfully.
+**Verification:** `cmake --build /Users/jackrickey/Dev/ssb64-port/build -j8` rebuilt decomp/src/ft/ftparam.c.o and relinked `BattleShip` successfully.

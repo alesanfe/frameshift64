@@ -126,7 +126,7 @@ The BE branch is unchanged — the decomp's original declaration order is what I
 
 ### How IDO's peculiar packing was reverse-engineered
 
-Compiled the decomp's `WPAttributes` struct with IDO 5.3 (bundled at `tools/ido-recomp/5.3/cc`) using the same flags as the decomp build (`-Wo,-loopunroll,0 -G0 -mips2 -O2`). A hand-written reader function extracted every field into an output array. Disassembling the result with `rabbitizer` gave the exact load/shift/mask instructions IDO emits for each bitfield access. Those load offsets and shift counts are the ground truth for the physical bit layout, which we then replicate in clang via reversed LSB-first bitfield declarations.
+Compiled the decomp's `WPAttributes` struct with IDO 5.3 (bundled at tools/ido-recomp/5.3/cc) using the same flags as the decomp build (`-Wo,-loopunroll,0 -G0 -mips2 -O2`). A hand-written reader function extracted every field into an output array. Disassembling the result with `rabbitizer` gave the exact load/shift/mask instructions IDO emits for each bitfield access. Those load offsets and shift counts are the ground truth for the physical bit layout, which we then replicate in clang via reversed LSB-first bitfield declarations.
 
 Example reader for `damage`:
 
@@ -153,15 +153,15 @@ All values are now in the expected ranges; the earlier port's values (damage=64,
 
 ## Files touched
 
-- `src/wp/wptypes.h` — rename `_pad_before_combat_bits` → `_angle_raw`; rewrite Word 1/2/3 PORT bitfield order to match IDO's physical layout.
-- `src/wp/wpmanager.c` — extract angle via `((s16)attr->_angle_raw) >> 6` instead of the (incorrect) `BITFIELD_SEXT10(attr->angle)`.
+- `decomp/src/wp/wptypes.h` — rename `_pad_before_combat_bits` → `_angle_raw`; rewrite Word 1/2/3 PORT bitfield order to match IDO's physical layout.
+- `decomp/src/wp/wpmanager.c` — extract angle via `((s16)attr->_angle_raw) >> 6` instead of the (incorrect) `BITFIELD_SEXT10(attr->angle)`.
 
 ## Related
 
 - `docs/bugs/itattributes_type_field_offset_2026-04-20.md` — sibling bug in `ITAttributes` (same struct pattern, type field was at wrong Word). The analogous Word 1 bitfield layout in `ITAttributes` is also wrong in the same way — see "Followups" below.
 - `docs/bugs/samus_charge_shot_hit_detection_2026-04-13.md` — superseded. The charge-shot-specific `attack_count = 0` theorized from the old (wrong) bit layout was never in the ROM; real decoded `attack_count = 1` lets the hit loop iterate. Any prior Launch-time workaround (explicit `attack_count = 1`, pos init) can be removed.
-- `docs/mario_fireball_passthrough_2026-04-19.md` — closed by this fix.
+- `docs/investigations/mario_fireball_passthrough_2026-04-19.md` — closed by this fix.
 
 ## Followups
 
-**`ITAttributes` has the same bug pattern.** The Word B1/B2/B3 bitfield declarations in `src/it/ittypes.h` are structured identically to the pre-fix `WPAttributes` (angle at the "top" of Word B1, knockback_weight at start of Word B2, etc.). Items currently don't crash (the `type` field fix addressed the Pokeball/Capsule crash), but damage/element/angle/attack_count decode for items is almost certainly as wrong as weapons were before this fix. Mechanical application of the same pattern — `_angle_raw` in place of `_pad_before_combat_bits`, reversed bitfield order for clang LE — should fix items analogously. Defer until after weapons are verified in-game.
+**`ITAttributes` has the same bug pattern.** The Word B1/B2/B3 bitfield declarations in `decomp/src/it/ittypes.h` are structured identically to the pre-fix `WPAttributes` (angle at the "top" of Word B1, knockback_weight at start of Word B2, etc.). Items currently don't crash (the `type` field fix addressed the Pokeball/Capsule crash), but damage/element/angle/attack_count decode for items is almost certainly as wrong as weapons were before this fix. Mechanical application of the same pattern — `_angle_raw` in place of `_pad_before_combat_bits`, reversed bitfield order for clang LE — should fix items analogously. Defer until after weapons are verified in-game.

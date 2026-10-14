@@ -68,7 +68,7 @@ already-populated `build*/\_deps/funchook-src` must be wiped to pick up the fix:
 
 ## Verification
 
-`workspace/hooktest` (hooks `osSpTaskStartGo`, passes through) on macOS arm64:
+`mods/examples/hooktest` (hooks `osSpTaskStartGo`, passes through) on macOS arm64:
 
 ```
 [mods] hooked osSpTaskStartGo @ 0x102455c98 (trampoline=..., chain=1, owner=HookTest)

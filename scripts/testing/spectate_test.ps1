@@ -11,8 +11,8 @@ param(
     [int]$JitterMs = 0,
     [string]$Server = "",
     [switch]$DebugStages,
-    [string]$BuildDir = "$PSScriptRoot\..\..\build\x64\Release",
-    [string]$OutDir = "$PSScriptRoot\..\..\build\x64\spectate-test"
+    [string]$BuildDir = "$PSScriptRoot\..\..\out\build\windows-release\Release",
+    [string]$OutDir = "$PSScriptRoot\..\..\out\logs\spectate-test"
 )
 
 $build = Resolve-Path $BuildDir
@@ -26,7 +26,7 @@ if (-not $Server) {
     $up = $false
     try { $up = (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8799/health" -TimeoutSec 3).StatusCode -eq 200 } catch {}
     if (-not $up) {
-        $serverProc = Start-Process -FilePath "node.exe" -ArgumentList "services\netplay-lobby\node-lobby.js 8799" `
+        $serverProc = Start-Process -FilePath "node.exe" -ArgumentList "services\netplay-lobby\src\node-lobby.js 8799" `
             -WorkingDirectory "$PSScriptRoot\..\.." -RedirectStandardOutput "$out\server.log" `
             -RedirectStandardError "$out\server.err" -PassThru -WindowStyle Hidden
         for ($i = 0; $i -lt 30 -and -not $up; $i++) {

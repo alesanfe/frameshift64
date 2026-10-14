@@ -20,7 +20,7 @@ The reverb-bridge fix (`audio_int32_acc_save_load_bridge_2026-04-29`) restored t
 
 ## Root cause
 
-`port/audio/audio_playback.cpp::applyOutputFilter` runs a Butterworth biquad LPF at fc = 14.5 kHz, fs = 32 kHz. That cutoff lands at **0.91 × Nyquist**, where the bilinear transform's frequency warp distorts the discrete-time response away from the analog Butterworth target.
+`src/resources/audio/audio_playback.cpp::applyOutputFilter` runs a Butterworth biquad LPF at fc = 14.5 kHz, fs = 32 kHz. That cutoff lands at **0.91 × Nyquist**, where the bilinear transform's frequency warp distorts the discrete-time response away from the analog Butterworth target.
 
 Hand-computed step response with the original coefficients:
 
@@ -50,7 +50,7 @@ That isolated the issue to the biquad math itself, not buffer routing or upstrea
 
 ## Fix
 
-`port/audio/audio_playback.cpp`: pre-attenuate the numerator coefficients by `kHeadroom = 0.85`. Filter step response now peaks at `0.85 × 1.146 ≈ 0.974` of input — just under int16 max even on int16-max input, so `clampS16FromDouble` never flat-tops.
+`src/resources/audio/audio_playback.cpp`: pre-attenuate the numerator coefficients by `kHeadroom = 0.85`. Filter step response now peaks at `0.85 × 1.146 ≈ 0.974` of input — just under int16 max even on int16-max input, so `clampS16FromDouble` never flat-tops.
 
 ```cpp
 constexpr double kHeadroom = 0.85;

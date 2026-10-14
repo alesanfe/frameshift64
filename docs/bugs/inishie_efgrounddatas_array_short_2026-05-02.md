@@ -22,7 +22,7 @@ heap address in the first place.
 
 ## Root cause
 
-`src/ef/efground.c:991` declares the per-stage ambient-effect table:
+`decomp/src/ef/efground.c:991` declares the per-stage ambient-effect table:
 
 ```c
 EFGroundData dEFGroundDatas[/* */] =
@@ -70,7 +70,7 @@ Append a NULL stub entry for Inishie, mirroring the Hyrule shape:
 { 0, NULL, 0x0, NULL }
 ```
 
-`src/ef/efground.c:1056`. With the entry present, the guard at
+`decomp/src/ef/efground.c:1056`. With the entry present, the guard at
 `efground.c:1580` now sees `effect_params == NULL` for gkind 8 and skips
 the actor-creation path entirely.
 
@@ -81,6 +81,6 @@ to `GRKind` after the original ambient-effects pass and several decomp
 tables were never extended. When a new bug presents as
 *“selecting Mushroom Kingdom crashes inside a `gr*` / `ef*` setup function
 with a small/garbage fault_addr”*, grep for `[nGRKindBattleEnd]` /
-`[nGRKindCastle..nGRKindYamabuki]`-shaped tables in `src/gr/` and
-`src/ef/` and verify each has 9 entries (Castle through Inishie) instead
+`[nGRKindCastle..nGRKindYamabuki]`-shaped tables in `decomp/src/gr/` and
+`decomp/src/ef/` and verify each has 9 entries (Castle through Inishie) instead
 of 8.

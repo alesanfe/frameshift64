@@ -10,7 +10,7 @@ stage-select extra page. Desktop builds showed the icons correctly.
 
 ## Root Cause
 
-Desktop builds run `tools/derive_stage_assets.py` against the user's local
+Desktop builds run `tools/asset-pipeline/derive_stage_assets.py` against the user's local
 ROM and place PNGs under:
 
 ```text
@@ -30,7 +30,7 @@ question-mark sprite for port-introduced stages.
 
 ## Fix
 
-After Android's Torch O2R export succeeds, `port/android_torch_bridge.cpp`
+After Android's Torch O2R export succeeds, `src/platform/android/android_torch_bridge.cpp`
 now derives the same ROM-backed CSS background and small-icon PNGs from the
 staged user ROM into:
 
@@ -76,7 +76,7 @@ CSS stage assets: derived 0/3 stage asset sets
 
 ### Root cause
 
-`port/android_torch_bridge.cpp` hardcoded the reloc **data region** start as
+`src/platform/android/android_torch_bridge.cpp` hardcoded the reloc **data region** start as
 `kRelocDataStart = 0x1AEAA0`. The correct value for US v1.0 (NALE) is
 `0x1B2C6C`: the data region begins immediately after the reloc table, which
 contains `(fileCount + 1)` entries including a trailing sentinel:
@@ -87,7 +87,7 @@ dataStart = tableRomAddr + (fileCount + 1) * entrySize
 ```
 
 This matches torch's `SSB64::GetRelocLayout` and the desktop
-`tools/derive_stage_assets.py` (`RELOC_DATA_START = 0x1B2C6C`). With the wrong
+`tools/asset-pipeline/derive_stage_assets.py` (`RELOC_DATA_START = 0x1B2C6C`). With the wrong
 base, `file_data` pointed `0x41CC` bytes short of the real VPK0 stream, so
 every compressed stage file failed to decode and `0/3` icons were produced —
 i.e. the icons would still have been question marks on Android.

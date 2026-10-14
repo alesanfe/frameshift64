@@ -48,9 +48,9 @@ Forces every item spawn to be a bumper. One bumper spawns at a time.
 ## What is verified
 
 1. **The bumper goes through the opaque display path.** A `port_log` placed in
-   `itDisplayOPAProcDisplay` (`src/it/itdisplay.c`) fires for every bumper draw
+   `itDisplayOPAProcDisplay` (`decomp/src/it/itdisplay.c`) fires for every bumper draw
    and reports `attr->is_display_xlu=0`, `attr->is_display_colanim=0`,
-   `kind_dump=16`. Routing in `itManagerCreateItem` (`src/it/itmanager.c`) is:
+   `kind_dump=16`. Routing in `itManagerCreateItem` (`decomp/src/it/itmanager.c`) is:
 
    ```c
    if (attr->is_display_colanim)
@@ -100,7 +100,7 @@ The temporary `gSsb64DrawingBumper` flag, `NBumper` display logs, and
 
 ## Next investigation steps (suggested, not done)
 
-- Capture a GBI trace of one bumper draw (see `docs/debug_gbi_trace.md`) and
+- Capture a GBI trace of one bumper draw (see `docs/development/debug_gbi_trace.md`) and
   diff against m64p plugin output for the same scene/item.
 - Inspect the bumper's DL in ROM: what render mode / CC does it set up?
 - Determine whether the texture is rendered via the bumper's own DL or via an

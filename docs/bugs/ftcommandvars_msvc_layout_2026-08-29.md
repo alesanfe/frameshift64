@@ -4,7 +4,7 @@
 
 **Fixed:** 2026-09-28
 
-**Status:** FIXED in the decomp port (`src/ft/fttypes.h`, `ft/ftcommon/ftcommonitemthrow.c`)
+**Status:** FIXED in the decomp port (`decomp/src/ft/fttypes.h`, `ft/ftcommon/ftcommonitemthrow.c`)
 
 **Class:** a union written through raw words and read through compiler-dependent bitfields
 

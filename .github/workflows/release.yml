@@ -8,7 +8,7 @@ name: Release
 # where applicable. Windows emits exactly two packages: US and JP. The US
 # package includes scripting/modding support by default; JP keeps scripting
 # disabled until the TCC mod API is region-aware. Desktop jobs build through
-# the corresponding scripts/package-*.sh|.ps1
+# the corresponding scripts/packaging/package-*.sh|.ps1
 # helper (SSB64_VERSION selects the region). A final `release` job stitches
 # the artifacts into a GitHub Release attached to the tag.
 #
@@ -47,7 +47,7 @@ jobs:
       matrix:
         version: [us, jp]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           submodules: recursive
           # fetch-depth: 0 grabs full history + all tags in one operation.
@@ -82,7 +82,7 @@ jobs:
         # the C/C++ launcher when present). First run is a cold miss that
         # populates the cache; later runs compile far less, shrinking the
         # window in which a flaky runner can stall.
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
         with:
           key: release-macos-${{ matrix.version }}
           max-size: 2G
@@ -161,8 +161,8 @@ jobs:
           MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
           MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
           MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
-        run: bash scripts/package-macos.sh
-      - uses: actions/upload-artifact@v4
+        run: bash scripts/packaging/package-macos.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         # The .dmg is the standard drag-to-Applications installer macOS
         # users expect. We don't ship the loose .app zip anymore — anyone
         # wanting the bundle alone can pop the .dmg open and drag the
@@ -200,7 +200,7 @@ jobs:
       matrix:
         version: [us, jp]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           submodules: recursive
           # fetch-depth: 0 grabs full history + all tags in one operation.
@@ -214,7 +214,7 @@ jobs:
           # fetch-depth: 0 sidesteps the conflict.
           fetch-depth: 0
       - name: Set up ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
         with:
           key: release-linux-${{ matrix.version }}
           max-size: 2G
@@ -263,8 +263,8 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           SSB64_VERSION: ${{ matrix.version }}
-        run: bash scripts/package-linux.sh
-      - uses: actions/upload-artifact@v4
+        run: bash scripts/packaging/package-linux.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: BattleShip-linux-${{ matrix.version }}
           path: dist/BattleShip${{ matrix.version == 'jp' && '-JP' || '' }}-x86_64.AppImage
@@ -291,13 +291,13 @@ jobs:
             artifact_name: BattleShip-android-armeabi-v7a
             apk_name: BattleShip-android-armeabi-v7a.apk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           submodules: recursive
           # Same as the other jobs — fetch-tags-aware history for the
           # BATTLESHIP_VERSION string the CMake derives from `git describe`.
           fetch-depth: 0
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4
         with:
           distribution: temurin
           java-version: '17'
@@ -307,7 +307,7 @@ jobs:
         # + png_to_c_array.py) needs PIL here too.
         run: sudo apt-get update && sudo apt-get install -y python3-pil
       - name: Install Android SDK + NDK r29
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407  # v3
         with:
           # Match android/app/build.gradle.kts: ndkVersion = "29.0.14206865"
           # and compileSdk = 34. ssb64-port has confirmed r29 + API 34
@@ -362,7 +362,7 @@ jobs:
         # The ssb64.abis Gradle property drives AGP's externalNativeBuild to
         # configure and compile the full native dependency graph for the
         # selected Android ABI.
-        working-directory: android
+        working-directory: platforms/android
         run: ./gradlew --no-daemon assembleRelease -Pssb64.abis=${{ matrix.abi }}
       - name: Stage release APK under a stable name
         # Gradle drops the file at app/build/outputs/apk/release/ with
@@ -372,15 +372,15 @@ jobs:
         run: |
           mkdir -p dist
           shopt -s nullglob
-          apk=(android/app/build/outputs/apk/release/app-release*.apk)
+          apk=(platforms/android/app/build/outputs/apk/release/app-release*.apk)
           if (( ${#apk[@]} == 0 )); then
-            echo "::error::no APK produced under android/app/build/outputs/apk/release/"
-            ls -la android/app/build/outputs/apk/release/ || true
+            echo "::error::no APK produced under platforms/android/app/build/outputs/apk/release/"
+            ls -la platforms/android/app/build/outputs/apk/release/ || true
             exit 1
           fi
           cp "${apk[0]}" "dist/${{ matrix.apk_name }}"
           ls -la dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/${{ matrix.apk_name }}
@@ -403,7 +403,7 @@ jobs:
             artifact_name: BattleShip-windows-jp
             artifact_path: dist/BattleShip-JP-windows.zip
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           submodules: recursive
           # fetch-depth: 0 grabs full history + all tags in one operation.
@@ -433,9 +433,9 @@ jobs:
         env:
           SSB64_VERSION: ${{ matrix.version }}
           SSB64_ENABLE_SCRIPTING: ${{ matrix.enable_scripting }}
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/packaging/package-windows.ps1
         shell: pwsh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
@@ -448,10 +448,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           path: artifacts
           merge-multiple: true
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          submodules: true   # sbom resolves submodule SHAs from the tree
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.x'
+      - name: Generate SBOM
+        run: python tools/lint/gen_sbom.py --out artifacts/smash-classic.cdx.json
       - name: Generate SHA256SUMS.txt
         run: |
           find artifacts -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
@@ -464,15 +472,15 @@ jobs:
               done > artifacts/SHA256SUMS.txt
           cat artifacts/SHA256SUMS.txt
       - name: Attest release assets
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4
         with:
           subject-checksums: release-subjects.sha256
       - name: Attest checksum manifest
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4
         with:
           subject-path: artifacts/SHA256SUMS.txt
       - name: Publish Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
           # Android: sideload APKs only (no Play Store distribution, so
           # the AAB is skipped). Android is US-only so there's no -JP.
@@ -488,6 +496,7 @@ jobs:
             artifacts/BattleShip-android.apk
             artifacts/BattleShip-android-armeabi-v7a.apk
             artifacts/SHA256SUMS.txt
+            artifacts/smash-classic.cdx.json
           generate_release_notes: true
           draft: true   # land as a draft so a human can sanity-check
                         # before the release is visible to the public.

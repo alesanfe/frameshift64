@@ -48,7 +48,7 @@ SIGBUS and the original backtrace is lost.
 
 ## Fix
 
-`port/port_watchdog.cpp`:
+`src/application/port_watchdog.cpp`:
 
 - `ProbeReadable` now writes the probed bytes to a **self-pipe**. Pipe
   writes must `copyin` the source into the kernel pipe buffer, so they

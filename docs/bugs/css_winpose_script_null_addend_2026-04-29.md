@@ -8,14 +8,14 @@ Locking in a character on the VS / 1P / Bonus / Training Character Select Screen
 
 ## Root cause
 
-In `ftMainSetStatus` (`src/ft/ftmain.c` ~line 4949–4992), the win-pose path resolves the motion-event script via:
+In `ftMainSetStatus` (`decomp/src/ft/ftmain.c` ~line 4949–4992), the win-pose path resolves the motion-event script via:
 
 ```c
 event_file_head = *fp->data->p_file_submotion;            // or p_file_mainmotion
 event_script_ptr = motion_desc->offset + event_file_head; // BE original
 ```
 
-`motion_desc->offset` for opening / win-pose / results entries is **already a fully-resolved script pointer** — the submotion-desc tables in `src/sc/scsubsys/scsubsysdata*.c` cast `D_ovl1_*` symbol addresses (e.g. `(intptr_t)D_ovl1_80391C08` for Yoshi Win2's `ftMotionPlayFGM(nSYAudioVoiceYoshiAppeal)` blob) into the offset slot. On N64 the addend `event_file_head` came from dereferencing a NULL `p_file_submotion`, which on the N64 RDRAM map reads `0`, so `pointer + 0 = pointer` worked.
+`motion_desc->offset` for opening / win-pose / results entries is **already a fully-resolved script pointer** — the submotion-desc tables in `decomp/src/sc/scsubsys/scsubsysdata*.c` cast `D_ovl1_*` symbol addresses (e.g. `(intptr_t)D_ovl1_80391C08` for Yoshi Win2's `ftMotionPlayFGM(nSYAudioVoiceYoshiAppeal)` blob) into the offset slot. On N64 the addend `event_file_head` came from dereferencing a NULL `p_file_submotion`, which on the N64 RDRAM map reads `0`, so `pointer + 0 = pointer` worked.
 
 Commit `f255803` (2026-04-06, "Fix NULL pointer crashes in fighter animation and motion script setup") added a defensive guard for the (real) NULL deref crash on PC:
 
@@ -30,7 +30,7 @@ The `pkind`/`is_muted` gates are unrelated red herrings — `is_muted` is only s
 
 ## Fix
 
-`src/ft/ftmain.c`: drop the addend NULL guard, keep the deref guard. `motion_desc->offset + event_file_head` always produces the right value — when `event_file_head == 0` (table stores absolute pointer) it returns the pointer; when nonzero (legitimate file-relative offset) it returns the resolved address.
+`decomp/src/ft/ftmain.c`: drop the addend NULL guard, keep the deref guard. `motion_desc->offset + event_file_head` always produces the right value — when `event_file_head == 0` (table stores absolute pointer) it returns the pointer; when nonzero (legitimate file-relative offset) it returns the resolved address.
 
 ```c
 event_file_head = (fp->data->p_file_submotion != NULL) ? (intptr_t)*fp->data->p_file_submotion : 0;

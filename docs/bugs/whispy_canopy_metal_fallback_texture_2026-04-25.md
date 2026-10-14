@@ -9,12 +9,12 @@ canopy.  Fix lives in libultraship's Metal backend.
 
 In Pupupu, Whispy Woods' middle-tree canopy section renders with
 visible horizontal striping / smearing.  The earlier `SSB64_CURR_EQ_NEXT=1`
-runtime override at `src/sys/objdisplay.c` masked it by forcing
+runtime override at `decomp/src/sys/objdisplay.c` masked it by forcing
 `mobj->texture_id_curr` to equal `mobj->texture_id_next` so the cycle-2
 combine mixed two copies of the same texture instead of two genuinely
 different figatree frames.
 
-OpenGL backend (toggle `port/port.cpp` to `FAST3D_SDL_OPENGL`) renders
+OpenGL backend (toggle `src/application/port.cpp` to `FAST3D_SDL_OPENGL`) renders
 correctly without the workaround.
 
 ## Why OpenGL was OK and Metal was not
@@ -79,19 +79,19 @@ binding looked stale (`tid == 0`, null tex, null sampler).  Running the
 auto-cycle demo into Pupupu produced 29 hits within a single Whispy
 draw burst, all reporting `tid=0` (= screen FB) at slot 1.  That made
 the feedback loop concrete and confirmed the OpenGL/GLD-zero-texture
-hypothesis from `port/port.cpp`'s comment.
+hypothesis from `src/application/port.cpp`'s comment.
 
 The diagnostic was removed once the fallback fix was verified.
 
 ## Related
 
-- `docs/whispy_canopy_metal_only_2026-04-25.md` — earlier handoff that
+- `docs/investigations/whispy_canopy_metal_only_2026-04-25.md` — earlier handoff that
   narrowed the bug to the Metal backend; superseded by this entry.
-- `port/port.cpp:49-65` — comment block that called out the
+- `src/application/port.cpp:49-65` — comment block that called out the
   GLD-zero-texture substitution and forced Metal as the macOS default
   to silence the GLD warning.  Still valid; the warning was a hint at
   the real divergence.
-- `src/sys/objdisplay.c` — `MOBJ_FLAG_FRAC` / `MOBJ_FLAG_SPLIT` /
+- `decomp/src/sys/objdisplay.c` — `MOBJ_FLAG_FRAC` / `MOBJ_FLAG_SPLIT` /
   `MOBJ_FLAG_ALPHA` matanim cycle-2 emission.  The
   `SSB64_CURR_EQ_NEXT=1` workaround there can stay as an emergency
   toggle but is no longer needed for default rendering.

@@ -11,7 +11,7 @@ build, always**. Dev builds are unaffected.
 
 This was initially suspected to be a regression ("the icons used to work"),
 but inspection of the v1.3 and v1.6 Linux AppImages proved otherwise:
-no shipped desktop artifact has ever contained `assets/css_icons/` PNGs,
+no shipped desktop artifact has ever contained assets/css_icons/ (runtime dir, staged next to binary) PNGs,
 and no shipped binary had derivation code (`strings` shows only the loader).
 The icons only ever worked in dev builds, where CMake's `DeriveStageAssets`
 step extracts the PNGs from the local baserom and stages them next to the
@@ -20,9 +20,9 @@ binary.
 ## Root Cause
 
 The extra-stage CSS pipeline had exactly one desktop asset source:
-build-time PNGs from `tools/derive_stage_assets.py`. Those are ROM-derived,
+build-time PNGs from `tools/asset-pipeline/derive_stage_assets.py`. Those are ROM-derived,
 so packaging scripts can never legally bundle them, and the first-run
-extraction flow (`port/first_run.cpp`) never produced them. Release users
+extraction flow (`src/application/first_run.cpp`) never produced them. Release users
 therefore had no PNG → `portCSSGetStageIconSprite()` returned NULL →
 `mnMapsMakeIcons()` fell back to the question-mark sprite
 (`decomp/src/mn/mnmaps/mnmaps.c`).
@@ -35,7 +35,7 @@ desktop and Android get the file. Desktop never got its answer.
 
 ## Fix
 
-`port/css_icons/port_css_stage_assets.cpp` gained a second, platform-neutral
+`src/resources/css_icons/port_css_stage_assets.cpp` gained a second, platform-neutral
 source: derive the background and icon at runtime from the user's own
 extracted archive (`BattleShip.o2r`). The stage's reloc file
 (`STAGE_TABLE.wp_file_id` — 96 / 0x62 / 0x61, all with the 300x220 RGBA16
@@ -80,7 +80,7 @@ degrades to the old question-mark behavior, never a garbage image.
 ## Related: "Bonus Stages" Toggle (issue #267)
 
 The same issue asked for a way to hide the three stages entirely.
-`port/enhancements/BonusStages.cpp` adds `gEnhancements.BonusStagesEnabled`
+`src/features/BonusStages.cpp` adds `gEnhancements.BonusStagesEnabled`
 (LUS menu → Settings → Gameplay → "Bonus Stages", default ON). When off,
 `mnMapsCheckLocked()` reports every stage on page 1+ as locked — membership
 is derived from `dMNMapsPageGkinds` via `mnMapsGetPageForGkind`, not a
@@ -103,9 +103,9 @@ the icons.
 
 A ROM-derived runtime asset now has three sources (dev build-time PNG,
 Android first-run PNG, o2r derivation). When adding a fourth stage, update
-all three manifests together: `STAGES` in `tools/derive_stage_assets.py`,
-`kAndroidCssStages` in `port/android_torch_bridge.cpp`, and `STAGE_TABLE`
-in `port/css_icons/port_css_stage_assets.cpp` (the latter now carries
+all three manifests together: `STAGES` in `tools/asset-pipeline/derive_stage_assets.py`,
+`kAndroidCssStages` in `src/platform/android/android_torch_bridge.cpp`, and `STAGE_TABLE`
+in `src/resources/css_icons/port_css_stage_assets.cpp` (the latter now carries
 `wp_file_id`/`wp_sprite_off` for the o2r path). The Bonus Stages toggle
 needs no update — it keys off `dMNMapsPageGkinds` page membership.
 

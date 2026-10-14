@@ -14,22 +14,22 @@ Fighter reloc files (`reloc_animations/FT*`, `reloc_submotions/FT*`)
 are loaded through two port-layer byte-swap passes:
 
 1. **Blanket `BSWAP32`** over the whole blob in
-   `port/bridge/lbreloc_byteswap.cpp:pass1_swap_u32`. Makes u32 reads
+   `src/bridge/lbreloc_byteswap.cpp:pass1_swap_u32`. Makes u32 reads
    produce the same value as on N64 (BE-native).
 2. **u16 half-swap** of every non-reloc u32 slot in
-   `portRelocFixupFighterFigatree` (`port/bridge/lbreloc_bridge.cpp:134`):
+   `portRelocFixupFighterFigatree` (`src/bridge/lbreloc_bridge.cpp:134`):
    `w = (w << 16) | (w >> 16)`. Reloc-chain slots (pointer tokens) are
    skipped by this pass.
 
 Pass 2 is **correct** for `AObjEvent16` figatree data — a file u32 slot
 holds two u16 commands side-by-side, the blanket u32 swap inverts the
 u16 pair order, and the half-swap restores it. That path is covered by
-`ftAnimParseDObjFigatree` (`src/ft/ftanim.c`) and confirmed good across
+`ftAnimParseDObjFigatree` (`decomp/src/ft/ftanim.c`) and confirmed good across
 all 40 fighter files (see `memory/project_fighter_intro_anim.md`).
 
 Pass 2 **corrupts** `AObjEvent32` data in the same file. `AObjEvent32`
 uses the u32 as a bitfield `{ payload:15, flags:10, opcode:7 }` (LE
-layout in `src/sys/objtypes.h`). After the half-swap, the opcode field
+layout in `decomp/src/sys/objtypes.h`). After the half-swap, the opcode field
 lands at bits 9-15 instead of 25-31, and flags split across the
 half-swap boundary in a way no bitfield can express. The in-place fix
 at read time has to happen on the full u32 value, not the bitfield.
@@ -40,7 +40,7 @@ pass 1, RAM contains the same value `0x03080080` (LE u32 read yields the
 BE value). After pass 2 half-swap, RAM contains `0x80000803`. LE
 bitfield extraction reads opcode from bits 25-31 and gets `0x40 = 64`.
 
-`gcParseDObjAnimJoint` (`src/sys/objanim.c`) switches on opcode 0-17 and
+`gcParseDObjAnimJoint` (`decomp/src/sys/objanim.c`) switches on opcode 0-17 and
 falls into `default: break;` for 18+. The original N64 `break` leaves
 `event32` unadvanced and `anim_wait` still ≤ 0, so the outer
 `while (anim_wait <= 0)` loop spins forever — the beach-ball freeze.
@@ -54,7 +54,7 @@ decided at runtime via `fp->anim_desc.flags.is_anim_joint` per motion.
 ## Fix
 
 Lazy per-stream un-half-swap at the EVENT32 reader entry points, in a
-new module `port/port_aobj_fixup.{h,cpp}`:
+new module `src/compatibility/port_aobj_fixup.{h,cpp}`:
 
 - `port_aobj_register_halfswapped_range(base, size)` — called from
   `portRelocByteSwapBlob`'s caller in `lbreloc_bridge.cpp` after
@@ -73,7 +73,7 @@ new module `port/port_aobj_fixup.{h,cpp}`:
   Jump/SetAnim targets with cycle protection.
 
 The event-size table mirrors the decomp parser's switch in
-`src/sys/objanim.c:455` (DObj) and `:1049` (MObj). Token slots inside
+`decomp/src/sys/objanim.c:455` (DObj) and `:1049` (MObj). Token slots inside
 Jump/SetAnim/SetInterp are left alone — the reloc chain already wrote
 native u32 token indices there.
 

@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose an enhancement or new capability
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What + why
+      placeholder: The problem it solves, not just the feature
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - gameplay/enhancements
+        - netplay
+        - mods/SDK
+        - platform support
+        - UI/presentation
+        - build/tooling
+        - other
+  - type: textarea
+    id: notes
+    attributes:
+      label: Compatibility notes
+      placeholder: Affects simulation? Determinism? Netplay?

@@ -19,7 +19,7 @@ Net effect: every demo script died at its first `Subroutine`/`Goto`. 62 call sit
 Same pattern as `gmColScriptsLinkRelocTargets()` (`gmcolscripts.c`, the collision-script equivalent):
 
 - `decomp/src/sc/scsubsys/scsubsysportfix.c` (new, PORT-only): a generated table of 62 `{ script, operand_index, target }` links; `scSubsysMotionLinkRelocTargets()` writes `portRelocRegisterPointer(target)` into each operand slot. Each entry validates that the preceding word's opcode is `Subroutine`/`Goto` before patching, so future `scsubsysdata*.c` edits that shift word indices produce a log line instead of a mispatched script. The table was generated mechanically from the `ftMotionCommandSubroutine`/`Goto` call sites (each macro spans two `s32` words: opcode, operand).
-- `port/bridge/lbreloc_bridge.cpp`: `lbRelocInitSetup` calls it right after `gmColScriptsLinkRelocTargets()` (every scene init; overwrite-idempotent).
+- `src/bridge/lbreloc_bridge.cpp`: `lbRelocInitSetup` calls it right after `gmColScriptsLinkRelocTargets()` (every scene init; overwrite-idempotent).
 - `decomp/src/ft/ftmain.c`: the Subroutine/Goto parse cases now log (once per run each) when a token resolves to NULL — the silence of `PORT_RESOLVE(0)` is what let this survive multiple animation investigations.
 
 ## Verification
@@ -42,5 +42,5 @@ If the scene-30 flake ever recurs: `SSB64_NO_MOTIONFIX=1` disables only this fix
 
 ## Follow-up / audit hook
 
-- `docs/fighter_intro_animation_investigation.md` Lead 1 ("Yoshi's mouth doesn't open / Fox's eye blink" in the opening movie) chased a matanim/`AObjEvent32` hypothesis; opening statuses index the same `submotion` scripts, so re-test the opening movie before spending more time there.
+- `docs/investigations/fighter_intro_animation_investigation.md` Lead 1 ("Yoshi's mouth doesn't open / Fox's eye blink" in the opening movie) chased a matanim/`AObjEvent32` hypothesis; opening statuses index the same `submotion` scripts, so re-test the opening movie before spending more time there.
 - Audit hook: any compiled-C data table that emits `0` where the N64 build stored a pointer needs a port-side link pass — search for `#ifdef PORT` placeholder macros in `ftdef.h`-style headers. `PORT_RESOLVE(0)` is silent by design (NULL token); treat an unexpectedly-NULL script/jump target as a stubbed operand until proven otherwise.

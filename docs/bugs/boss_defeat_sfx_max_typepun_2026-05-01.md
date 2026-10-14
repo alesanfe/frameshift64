@@ -26,13 +26,13 @@ fault_addr=0x0  (or another small/garbage value depending on run)
 
 ## Root cause
 
-`D_8009EDD0_406D0` is **defined** in `src/libultra/n_audio/n_env.c`:
+`D_8009EDD0_406D0` is **defined** in `decomp/src/libultra/n_audio/n_env.c`:
 
 ```c
 ALWhatever8009EDD0 D_8009EDD0_406D0;     // u8 **fgm_table_data, etc.
 ```
 
-But it's **declared** in `src/sc/sc1pmode/sc1pgame.c` as a different type:
+But it's **declared** in `decomp/src/sc/sc1pmode/sc1pgame.c` as a different type:
 
 ```c
 extern alSoundEffect D_8009EDD0_406D0;   // u16 sfx_max, etc.
@@ -104,7 +104,7 @@ forced the search outside `n_env.c` and pointed at sc1pgame.c's
 
 ## Fix
 
-Two `#ifdef PORT` accessors in `src/libultra/n_audio/n_env.c` that
+Two `#ifdef PORT` accessors in `decomp/src/libultra/n_audio/n_env.c` that
 operate on `D_8009EDD0_406D0.fgm_ucode_count` (the field that actually
 carried the "FGM gate" semantic on N64):
 
@@ -113,7 +113,7 @@ void portAudioSaveAndBlockFGMs(u16 *out_saved);
 void portAudioRestoreFGMs(u16 saved);
 ```
 
-`src/sc/sc1pmode/sc1pgame.c` calls these under `#ifdef PORT` instead of
+`decomp/src/sc/sc1pmode/sc1pgame.c` calls these under `#ifdef PORT` instead of
 the type-punned `D_8009EDD0_406D0.sfx_max` reads/writes.  The non-PORT
 path keeps the original alSoundEffect-typed accesses so IDO byte-matching
 on the decomp source isn't disturbed.

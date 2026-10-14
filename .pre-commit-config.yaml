@@ -1,5 +1,5 @@
 # Lightweight checks on every commit; heavyweight analysis (clang-tidy,
-# cppcheck, semgrep) stays manual / PR / nightly via run_project_lint.py.
+# cppcheck, semgrep) stays manual / PR / nightly via tools/lint/run_project_lint.py.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -11,11 +11,11 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
-        exclude: ^yamls/
+        exclude: ^assets/configuration/extraction/
       - id: end-of-file-fixer
-        exclude: ^(decomp|libultraship|torch|workspace|server/cloudflare/node_modules)/
+        exclude: ^(decomp|libultraship|torch|mods/examples|services/netplay-lobby/cloudflare/node_modules)/
       - id: trailing-whitespace
-        exclude: ^(decomp|libultraship|torch|workspace|server/cloudflare/node_modules)/
+        exclude: ^(decomp|libultraship|torch|mods/examples|services/netplay-lobby/cloudflare/node_modules)/
       - id: mixed-line-ending
         args: [--fix=no]
 
@@ -26,15 +26,15 @@ repos:
         args:
           - --filter=-whitespace/line_length,-build/include_subdir,-whitespace/tab,-whitespace/braces,-readability/casting,-legal/copyright,-build/header_guard,-whitespace/comments,-whitespace/newline,-whitespace/indent_namespace,-whitespace/indent,-whitespace/parens,-runtime/int,-runtime/string,-runtime/explicit,-build/include_order,-build/include_what_you_use,-build/namespaces,-readability/todo,-runtime/printf,-runtime/references,-runtime/arrays,-readability/casting,-runtime/threadsafe_fn,-runtime/nonconst
           - --extensions=c,cc,cpp,cxx,h,hh,hpp,hxx
-        files: ^(port|include|android|uwp|tools|debug_tools)/
-        exclude: ^(decomp|libultraship|torch|workspace)/
+        files: ^(src|include|platforms|tools|services|mods|tests)/
+        exclude: ^(decomp|libultraship|torch|mods/examples)/
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:
       - id: codespell
         args: [--config, .codespellrc]
-        exclude: ^(decomp|libultraship|torch|workspace|assets|gamecontrollerdb\.txt|server/cloudflare/node_modules)/
+        exclude: ^(decomp|libultraship|torch|mods/examples|assets|services/netplay-lobby/cloudflare/node_modules)/
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.0
@@ -48,7 +48,7 @@ repos:
     hooks:
       - id: project-static-analysis
         name: Project static analysis (clang-tidy + cppcheck + semgrep)
-        entry: python run_project_lint.py --skip-configure
+        entry: python tools/lint/run_project_lint.py --skip-configure
         language: system
         pass_filenames: false
         stages: [manual]

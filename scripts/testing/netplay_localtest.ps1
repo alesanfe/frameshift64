@@ -3,8 +3,8 @@
 # simulated bad network, then diffs the two peers' confirmed-state traces.
 # Identical traces = the peers never desynced. See docs/rollback_design.md.
 #
-#   .\scripts\netplay_localtest.ps1 -Seconds 60 -LatencyMs 50 -JitterMs 20 -LossPct 5
-#   .\scripts\netplay_localtest.ps1 -DupPct 5 -ReorderPct 10 -CorruptPct 1
+#   .\scripts\testing\netplay_localtest.ps1 -Seconds 60 -LatencyMs 50 -JitterMs 20 -LossPct 5
+#   .\scripts\testing\netplay_localtest.ps1 -DupPct 5 -ReorderPct 10 -CorruptPct 1
 #
 # Exit code: 0 in sync, 1 desync, 2 a peer produced no trace.
 param(
@@ -26,8 +26,8 @@ param(
     # Injects <n> seeded pseudo-random datagrams per drain into the packet
     # parser (tiers from pure garbage to checksum-valid). Oracle = no crash.
     [int]$PacketFuzz = 0,
-    [string]$BuildDir = "$PSScriptRoot\..\..\build\us\Release",
-    [string]$OutDir = "$PSScriptRoot\..\..\build\us\netplay-test"
+    [string]$BuildDir = "$PSScriptRoot\..\..\out\build\windows-release\Release",
+    [string]$OutDir = "$PSScriptRoot\..\..\out\logs\netplay-test"
 )
 
 $build = Resolve-Path $BuildDir

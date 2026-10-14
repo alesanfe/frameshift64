@@ -41,7 +41,7 @@ Audit of what actually constrains the floor:
 
 Two real constraints, both removable/lowerable from 26:
 
-1. **AAudio (API 26).** `port/port.cpp` forced
+1. **AAudio (API 26).** `src/application/port.cpp` forced
    `SDL_SetHint(SDL_HINT_AUDIODRIVER, "aaudio")`. AAudio's `libaaudio.so` only
    exists at API 26+. The in-code comment claimed "SDL falls back to OpenSL ES
    if the device rejects it" — **false**: with a driver name pinned,
@@ -73,7 +73,7 @@ So the lowest buildable-and-audible floor for the 32-bit ARM target is **API 24
 
 ## Fix
 
-- **`port/port.cpp`** — gate the AAudio hint behind
+- **`src/application/port.cpp`** — gate the AAudio hint behind
   `android_get_device_api_level() >= 26`; below 26, leave the hint unset so SDL
   auto-selects OpenSL ES (works to API 9). Modern devices keep low-latency
   AAudio; API 24/25 devices get working audio instead of a dead audio subsystem.
@@ -138,7 +138,7 @@ render entry biases the nondeterministic crash toward SIGSEGV). Symbolicated:
 SIGSEGV invalid permissions, fault addr = 0x3003083c   (data deref of a garbage pointer)
 pc = Fast3dWindow::EndFrame()            libultraship/src/fast/Fast3dWindow.cpp:183
        (inlined std::shared_ptr<Fast::Interpreter>::operator->)
-lr = port_drain_pending_display_list     port/gameloop.cpp:393
+lr = port_drain_pending_display_list     src/application/gameloop.cpp:393
 ```
 
 `Fast3dWindow::EndFrame()` (line 183 = `mInterpreter->EndFrame();`) faults reading

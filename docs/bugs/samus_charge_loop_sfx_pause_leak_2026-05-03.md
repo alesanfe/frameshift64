@@ -15,7 +15,7 @@ Worked correctly on IDO/N64.
 ## Root cause — the IDO/LP64 divergence
 
 The pause-entry path `ifCommonBattlePauseInitInterface`
-(`src/if/ifcommon.c:3029`) does not contain an explicit "silence active
+(`decomp/src/if/ifcommon.c:3029`) does not contain an explicit "silence active
 loops" call on either platform. Reading the function:
 
 ```c
@@ -29,7 +29,7 @@ void ifCommonBattlePauseInitInterface(s32 player)
 ```
 
 The naïve read of (1) is "stop all active SFX" — but
-`func_80026594_27194` (`src/libultra/n_audio/n_env.c:5414`) is a
+`func_80026594_27194` (`decomp/src/libultra/n_audio/n_env.c:5414`) is a
 **garbage collector**, not a stop-all. It walks `unk_alsound_0x3C` /
 `unk_alsound_0x40` and only relocates entries already tagged with the
 deletion bit (`unk2B & 0x80` / `_0x1F & 0x80`). The fighter-loop tag is
@@ -39,7 +39,7 @@ the charge-loop FGM, so on IDO too `func_80026594_27194` walks past the
 whoosh's siz34 slot. (2) and (3) likewise do not stop existing voices.
 
 So how does IDO silence the whoosh? **By the audio thread descheduling
-on its own.** Look at the N64-side audio thread (`src/sys/audio.c:1350`+):
+on its own.** Look at the N64-side audio thread (`decomp/src/sys/audio.c:1350`+):
 
 ```c
 while (TRUE) {
@@ -60,7 +60,7 @@ stops ticking, the looping voice's bytecode stops re-arming the next
 note, and the voice winds down within an audio frame or two.
 
 The port doesn't have an SP. Its audio thread (PORT branch in
-`src/sys/audio.c:1139`) is a plain OS thread driven by the VI tick
+`decomp/src/sys/audio.c:1139`) is a plain OS thread driven by the VI tick
 queue alone:
 
 ```c
@@ -77,7 +77,7 @@ resumed game until Samus's status next changes.
 
 Compounding the issue (not the primary cause but the same family), the
 resume-side queue-maintenance routine `func_800264A4_270A4`
-(`src/libultra/n_audio/n_env.c:5479`) is short-circuited under
+(`decomp/src/libultra/n_audio/n_env.c:5479`) is short-circuited under
 `#ifdef PORT` to dodge a macOS/arm64 NULL deref, leaving the
 deletion-queue dance the original game uses for FGM bookkeeping
 half-broken on the port too.

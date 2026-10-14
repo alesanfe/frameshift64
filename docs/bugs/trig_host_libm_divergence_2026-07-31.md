@@ -29,7 +29,7 @@ Three stacked causes:
    polynomial evaluation with Cody-Waite argument reduction (the same files
    the SM64 PC port revived). The CMake libultra allowlist
    (`SSB64_LIBULTRA_PORT`) only picked the four `mtx*`/`normalize` files;
-   `port/stubs/libc_compat.c` forwarded `__sinf`/`__cosf` to host
+   `src/compatibility/libc_compat.c` forwarded `__sinf`/`__cosf` to host
    `sinf`/`cosf` instead.
 2. **Endianness bug lay in wait.** The sources build their double constants
    from `{hi, lo}` 32-bit word pairs via the `du` union in
@@ -60,7 +60,7 @@ All on branch `agent/cody-waite`; decomp changes on the fork's
   sources type-pun floats through `int*`). `ssb64_game` additionally gets
   `-fno-builtin-sinf -fno-builtin-cosf` so GCC/Clang can't constant-fold or
   sincos-fuse the bare call sites past our definitions.
-- `port/stubs/libc_compat.c`: host-libm wrappers deleted; defines
+- `src/compatibility/libc_compat.c`: host-libm wrappers deleted; defines
   `f32 __libm_qnan_f = NAN;`. Deliberate deviation: the N64 bit pattern
   `0x7F810000` is a quiet NaN under MIPS's inverted quiet-bit convention but
   a *signaling* NaN on x86/ARM; callers only propagate or `x != x` test it,

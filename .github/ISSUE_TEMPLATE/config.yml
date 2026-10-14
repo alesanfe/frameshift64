@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/JRickey/BattleShip/security/advisories/new
+    about: Report privately — do NOT open a public issue for exploitable problems.
+  - name: Documentation
+    url: https://github.com/JRickey/BattleShip/tree/main/docs
+    about: Architecture, netplay protocol, testing, modding guides.

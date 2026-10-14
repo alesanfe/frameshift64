@@ -1,7 +1,7 @@
 # netplay_relay_production_blob_drop — 2026-10-14
 
 **Status**: FIXED (worker)
-**Component**: `server/cloudflare/src/index.js` (Durable Object relay)
+**Component**: `services/netplay-lobby/src/index.js` (Durable Object relay)
 
 ## Symptom
 
@@ -9,7 +9,7 @@ After deploying the v2 worker to `wss://smash-netplay.alesanfe.workers.dev`,
 forced-relay matches never synchronized: both peers sent binary `SSBL HELLO`
 frames (`relay send ... ptype=17740`) but no `relay recv` ever logged, and the
 lobby fell back to `unreachable (punch + relay failed)`. Identical code passed
-2–4 player relay tests locally against `server/node-lobby.js` and under
+2–4 player relay tests locally against `services/netplay-lobby/src/node-lobby.js` and under
 `wrangler dev`'s text path.
 
 ## Root cause

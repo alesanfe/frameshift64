@@ -15,8 +15,8 @@ param(
     [switch]$DebugStages,
     [int]$ReplayFrames = 0,
     [int]$DesyncTick = -1,
-    [string]$BuildDir = "$PSScriptRoot\..\..\build\x64\Release",
-    [string]$OutDir = "$PSScriptRoot\..\..\build\x64\lan-test"
+    [string]$BuildDir = "$PSScriptRoot\..\..\out\build\windows-release\Release",
+    [string]$OutDir = "$PSScriptRoot\..\..\out\logs\lan-test"
 )
 
 $build = Resolve-Path $BuildDir

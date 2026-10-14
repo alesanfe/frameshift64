@@ -16,9 +16,12 @@ of the build (cached afterwards) — there is no separate extract step.
 - Git, CMake, Python 3, Ninja (Linux/macOS), or Visual Studio 2022 +
   Windows SDK (Windows)
 - Submodules: `git submodule update --init --recursive`
-- A legal ROM at the repo root matching the version you are building:
+- A legal ROM matching the version you are building:
   - **US:** `baserom.us.z64` — `cmake -DSSB64_VERSION=us` (default)
   - **JP:** `baserom.jp.z64` — `cmake -DSSB64_VERSION=jp`
+  - ROM resolution order: `-DSSB64_BASEROM=<path>`, then the
+    `SMASH_BASEROM` environment variable, then `baserom.<version>.{z64,n64,v64}`
+    at the repo root. `.n64`/`.v64` dumps are normalized in-memory.
 
   | Version | Game code | SHA‑1 | MD5 |
   |---------|-----------|-------|-----|
@@ -35,25 +38,28 @@ Replace `<ver>` with `us` or `jp`.
 
 ```bash
 # 1. configure
-cmake -S . -B build-<ver> -GNinja -DSSB64_VERSION=<ver>
+cmake -S . -B out/build/<ver> -GNinja -DSSB64_VERSION=<ver>
 
 # 2. build (compiles the game and extracts your ROM's assets)
-cmake --build build-<ver> -j
+cmake --build out/build/<ver> -j
 
 # 3. run
-cd build-<ver> && ./BattleShip
+cd out/build/<ver> && ./BattleShip
 ```
 
 For example, to build and run both:
 
 ```bash
-cmake -S . -B build-us -GNinja -DSSB64_VERSION=us && cmake --build build-us -j && (cd build-us && ./BattleShip)
-cmake -S . -B build-jp -GNinja -DSSB64_VERSION=jp && cmake --build build-jp -j && (cd build-jp && ./BattleShip)
+cmake -S . -B out/build/us -GNinja -DSSB64_VERSION=us && cmake --build out/build/us -j && (cd out/build/us && ./BattleShip)
+cmake -S . -B out/build/jp -GNinja -DSSB64_VERSION=jp && cmake --build out/build/jp -j && (cd out/build/jp && ./BattleShip)
 ```
 
 Add `-DCMAKE_BUILD_TYPE=Release` to the configure command for an
 optimized build (Ninja is single-config, so the build type is fixed at
-configure time — use a distinct build dir, e.g. `build-<ver>-release`).
+configure time — use a distinct build dir, e.g. `out/build/<ver>-release`).
+`CMakePresets.json` also ships ready-made presets (`linux-release`,
+`macos-release`, `jp-release`, …): `cmake --preset <name>` +
+`cmake --build --preset <name>` lands in `out/build/<name>`.
 
 ## Windows
 
@@ -62,18 +68,20 @@ From a Developer PowerShell, replace `<ver>` with `us` or `jp`
 
 ```powershell
 # 1. configure
-cmake -S . -B "build\<ver>" -A x64 -DSSB64_VERSION=<ver>
+cmake -S . -B "out\build\<ver>" -A x64 -DSSB64_VERSION=<ver>
 
 # 2. build (compiles the game and extracts your ROM's assets)
-cmake --build "build\<ver>" --config Release
+cmake --build "out\build\<ver>" --config Release
 
 # 3. run
-.\build\<ver>\Release\BattleShip.exe
+.\out\build\<ver>\Release\BattleShip.exe
 ```
 
-Use `--config Debug` (and run `.\build\<ver>\Debug\BattleShip.exe`) for a
+Use `--config Debug` (and run `.\out\build\<ver>\Debug\BattleShip.exe`) for a
 debug build. CMake auto-detects the newest installed Visual Studio; pin
-it with `-G "Visual Studio 17 2022" -T v143` if a runner has several.
+it with `-G "Visual Studio 17 2022" -T v143` if a runner has several. The
+`windows-debug` / `windows-release` presets in `CMakePresets.json` cover
+the same flow (`cmake --preset windows-release`).
 
 ## Notes
 
@@ -84,10 +92,10 @@ it with `-G "Visual Studio 17 2022" -T v143` if a runner has several.
 - Switching versions is just a different build dir + `-DSSB64_VERSION`;
   both can be built and kept side by side.
 - A normal build also produces the standalone `torch` sidecar and copies
-  `config.yml`, `yamls/<ver>`, `f3d.o2r`, `gamecontrollerdb.txt`, and the
+  `config.yml`, `assets/configuration/extraction/<ver>`, `f3d.o2r`, `assets/configuration/controllers/gamecontrollerdb.txt`, and the
   menu fonts next to the executable.
-- The checked-in reloc YAMLs (`yamls/<ver>/reloc_*.yml`) and the
-  generated `port/resource/RelocFileTable.<ver>.cpp` are treated as
+- The checked-in reloc YAMLs (`assets/configuration/extraction/<ver>/reloc_*.yml`) and the
+  generated `src/resources/RelocFileTable.<ver>.cpp` are treated as
   source inputs, not rebuilt on every compile.
 
 ### GameCube adapter (WUP-028) device access
@@ -134,7 +142,7 @@ there with the fix for your platform.
 ### Advanced / manual targets
 
 Normally unnecessary (the build does these for you). Append the target to
-`cmake --build build-<ver>`:
+`cmake --build out/build/<ver>`:
 
 | Target | Purpose |
 |--------|---------|

@@ -8,7 +8,7 @@
 
 Not a path mismatch — Torch writes exactly where Phase 4.4 checks (`gDestinationDirectory / config["output"]["binary"]` = `externalFilesDir/BattleShip.o2r`).
 
-`Companion::Process()` has four log-and-`return;` bail-outs that throw nothing: config.yml missing, **ROM SHA-1 not in config.yml** (the overwhelmingly likely user trigger — v1.1/iQue/trimmed/headered/overdumped dumps), no config node for the hash, bad `gbi:` value. Byte order is *not* a trigger: `N64::Cartridge::Normalize` (`torch/src/n64/Cartridge.cpp`) converts .v64/.n64 to big-endian in memory **before** the SHA-1 is computed, on every platform including Android — all three endian variants are fully supported. The JNI bridge (`port/android_torch_bridge.cpp`) mapped only *exceptions* to non-zero codes and returned 0 unconditionally otherwise — so an unrecognized ROM reported success with no archive on disk.
+`Companion::Process()` has four log-and-`return;` bail-outs that throw nothing: config.yml missing, **ROM SHA-1 not in config.yml** (the overwhelmingly likely user trigger — v1.1/iQue/trimmed/headered/overdumped dumps), no config node for the hash, bad `gbi:` value. Byte order is *not* a trigger: `N64::Cartridge::Normalize` (`torch/src/n64/Cartridge.cpp`) converts .v64/.n64 to big-endian in memory **before** the SHA-1 is computed, on every platform including Android — all three endian variants are fully supported. The JNI bridge (`src/platform/android/android_torch_bridge.cpp`) mapped only *exceptions* to non-zero codes and returned 0 unconditionally otherwise — so an unrecognized ROM reported success with no archive on disk.
 
 Compounding it, Torch's spdlog diagnostics (including `ROM not recognized. Got SHA-1: …` plus the supported-hash list) went to spdlog's default **stdout** sink, which Android discards for app processes — the one message explaining the failure was invisible even in logcat.
 
@@ -16,9 +16,9 @@ Desktop never hits this because the ROM is the developer's known-good baserom an
 
 ## Fix
 
-- `port/android_torch_bridge.cpp`: after `Init()`, capture `Companion::GetOutputPath()` — empty means `Process()` bailed before configuring output → **rc 3**; non-empty but not on disk → **rc 4**. Also routes Torch's spdlog default logger to a logcat `android_sink` (tag `ssb64.torch`) before extraction, and fixes the stale `src_dir` doc comment (`getExternalFilesDir(null)`, not `filesDir/torch_data`).
+- `src/platform/android/android_torch_bridge.cpp`: after `Init()`, capture `Companion::GetOutputPath()` — empty means `Process()` bailed before configuring output → **rc 3**; non-empty but not on disk → **rc 4**. Also routes Torch's spdlog default logger to a logcat `android_sink` (tag `ssb64.torch`) before extraction, and fixes the stale `src_dir` doc comment (`getExternalFilesDir(null)`, not `filesDir/torch_data`).
 - `BootActivity.extractFromAbsolutePath`: rc 3 → "That ROM isn't a supported dump…" and **re-shows the ROM picker** (recoverable); rc 4 → "free up storage"; the old Phase-4.4 `haveExtractedRom()` branch is now a last-resort assertion.
-- `torch` (`src/archive/ZWrapper.cpp`, `src/Companion.cpp`): `ZWrapper::Close()` owns the ofstream and returns non-zero on failed open / short write (miniz_cpp's `save(path)` never checks stream state — an ENOSPC half-written archive succeeded silently on every platform); both `Close()` call sites throw on failure.
+- `torch` (`torch/src/archive/ZWrapper.cpp`, `torch/src/Companion.cpp`): `ZWrapper::Close()` owns the ofstream and returns non-zero on failed open / short write (miniz_cpp's `save(path)` never checks stream state — an ENOSPC half-written archive succeeded silently on every platform); both `Close()` call sites throw on failure.
 
 ## Verification
 

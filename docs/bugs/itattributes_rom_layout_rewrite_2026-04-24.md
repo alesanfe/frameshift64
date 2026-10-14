@@ -46,14 +46,14 @@ from `baserom.us.z64` with rabbitizer and decoding every `lw / sll / srl /
 andi` sequence against `$v1 = attr`. Cross-checked bit positions against ROM
 values extracted from reloc file 251 for every item.
 
-Rewrote `struct ITAttributes` in `src/it/ittypes.h` to match IDO's actual
+Rewrote `struct ITAttributes` in `decomp/src/it/ittypes.h` to match IDO's actual
 layout: `sizeof = 0x48`, no artificial pads, `type / hitstatus` moved into
 Word `0x3C` alongside `priority / kb_base / can_*`, `spin_speed` declared as
 `u32 : 16` bitfield packed into `0x44`. Bit counts per word are verified
 against upstream decomp field-width sums: Word `0x3C` = 28 data bits + 4 pad
 bits (not 2).
 
-`src/it/itmanager.c` now reads every attribute directly:
+`decomp/src/it/itmanager.c` now reads every attribute directly:
 - `portFixupStructU16(attr, 0x14, 8)` replaces the old `0x20, 6` + `0x4C, 1`
   pair. Covers the eight u32 words spanning `0x14..0x33` that hold plain
   s16/u16 halves needing the post-BSWAP32 half-rotation.
@@ -85,16 +85,16 @@ rest on platforms correctly. Action routing by item `type` works.
   override; superseded, override removed.
 - `docs/bugs/item_map_coll_bottom_sign_2026-04-20.md` — `map_coll_bottom`
   negation workaround; superseded, negation removed.
-- `docs/itattributes_rom_layout_handoff.md` — this handoff is the work item
+- `docs/investigations/itattributes_rom_layout_handoff.md` — this handoff is the work item
   that got done.
-- `docs/debug_ido_bitfield_layout.md` — the audit methodology used here.
+- `docs/development/debug_ido_bitfield_layout.md` — the audit methodology used here.
 
 ## Tooling notes
 
-Disassembly: `/tmp/rvenv/bin/python debug_tools/rom_disasm/disasm.py
+Disassembly: `/tmp/rvenv/bin/python tools/debugging/rom_disasm/disasm.py
 0x8016E174 --rom baserom.us.z64 --count 800 --base v1`. Bitfield decoder at
-`debug_tools/rom_disasm/decode_bitfields.py`. ROM extraction via
-`debug_tools/reloc_extract/reloc_extract.py extract baserom.us.z64 251
+`tools/debugging/rom_disasm/decode_bitfields.py`. ROM extraction via
+`tools/debugging/reloc_extract/reloc_extract.py extract baserom.us.z64 251
 /tmp/itcommon.bin`. Per-item word values at `0x34/0x38/0x3C` and per-word
 bit-position breakdowns are in the git blame of this commit's changes to
-`src/it/ittypes.h`.
+`decomp/src/it/ittypes.h`.

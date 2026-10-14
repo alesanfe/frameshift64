@@ -11,8 +11,8 @@
 param(
     [switch]$Legacy,
     [int]$Port = 47500,
-    [string]$BuildDir = "$PSScriptRoot\..\..\build\x64\Release",
-    [string]$OutDir = "$PSScriptRoot\..\..\build\x64\compat-test"
+    [string]$BuildDir = "$PSScriptRoot\..\..\out\build\windows-release\Release",
+    [string]$OutDir = "$PSScriptRoot\..\..\out\logs\compat-test"
 )
 
 $build = Resolve-Path $BuildDir
@@ -36,9 +36,16 @@ function Start-Peer([string]$name, [int]$fighter, [hashtable]$extra) {
 }
 
 $host_ = Start-Peer 'host' 0 @{ SSB64_LAN_HOST = "$Port" }
-Start-Sleep -Seconds 2
+# Poll instead of fixed sleeps: exit as soon as the logs show an outcome
+# (mismatch rejection or a started match), bounded by a deadline.
+$deadline = (Get-Date).AddSeconds($(if ($Legacy) { 30 } else { 20 }))
 $client = Start-Peer 'client1' 1 @{ SSB64_LAN_JOIN = "127.0.0.1:$Port"; SSB64_COMPAT_TOKEN = $(if ($Legacy) { 'none' } else { 'bogus:0000000000000000' }) }
-Start-Sleep -Seconds $(if ($Legacy) { 20 } else { 10 })
+while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 500
+    $sofar = @((Get-Content "$out\host.log" -ErrorAction SilentlyContinue) +
+             (Get-Content "$out\client1.log" -ErrorAction SilentlyContinue))
+    if (($sofar -match 'mismatch') -or ($sofar -match 'online match')) { break }
+}
 foreach ($p in @($host_, $client)) { if (-not $p.HasExited) { $p.CloseMainWindow() | Out-Null } }
 Start-Sleep -Seconds 2
 foreach ($p in @($host_, $client)) { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force } }

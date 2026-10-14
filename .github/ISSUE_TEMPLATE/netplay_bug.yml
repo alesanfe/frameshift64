@@ -1,0 +1,75 @@
+name: Netplay bug
+description: Desync, drop, lobby, or rollback problems in online play
+labels: ["type:bug", "area:netplay", "status:needs-reproduction"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Netplay bugs need protocol-level detail — see
+        `docs/netplay/protocol/` for what the fields below mean.
+  - type: input
+    id: version
+    attributes:
+      label: Game version (both peers)
+      placeholder: e.g. v1.4.1 + v1.4.1
+    validations:
+      required: true
+  - type: input
+    id: protocol
+    attributes:
+      label: Protocol / lobby version
+      placeholder: SSNP 3, lobby v2
+  - type: input
+    id: platforms
+    attributes:
+      label: Platforms of both peers
+      placeholder: e.g. Windows x64 ↔ Android arm64
+    validations:
+      required: true
+  - type: dropdown
+    id: topology
+    attributes:
+      label: Topology
+      options:
+        - Direct (2 players)
+        - Star relay (3-4 players)
+        - Spectator involved
+        - Unknown
+  - type: input
+    id: lobby
+    attributes:
+      label: Lobby used
+      placeholder: Cloudflare / node-lobby / other
+  - type: input
+    id: players
+    attributes:
+      label: Player count
+      placeholder: "2"
+  - type: dropdown
+    id: failure_kind
+    attributes:
+      label: Failure type
+      options:
+        - Desync (confirmed-hash mismatch)
+        - Connection drop / stall
+        - Could not join room
+        - Lobby error message
+        - Rollback stalls / freeze
+        - Spectator issue
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: divergent_frame
+    attributes:
+      label: First divergent frame (if known)
+      placeholder: e.g. 14821 — from desync summary or trace diff
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      placeholder: |
+        Mods active? Ruleset? Reconnect involved? Reproducible?
+        Attach the diagnostics bundle / traces if you have them.
+    validations:
+      required: true

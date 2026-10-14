@@ -1,7 +1,7 @@
 """One-shot static-analysis runner for the Smash Classic tree.
 
 Runs every configured linter, writes one report per tool under
-lint-reports/, and exits non-zero if any *required* check failed.
+out/reports/lint/, and exits non-zero if any *required* check failed.
 
     python run_project_lint.py                 # own code only
     python run_project_lint.py --skip-configure
@@ -21,16 +21,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-ROOT = Path(__file__).resolve().parent
-REPORTS = ROOT / "lint-reports"
-BUILD = ROOT / "build-lint"
+ROOT = Path(__file__).resolve().parents[2]  # tools/lint/ -> repo root
+REPORTS = ROOT / "out" / "reports" / "lint"
+BUILD = ROOT / "out" / "build" / "lint"
 
-OWN_CODE_DIRS = ["port", "include", "android", "uwp", "tools", "debug_tools", "scripts"]
+OWN_CODE_DIRS = ["src", "include", "platforms", "tools", "scripts", "services", "mods", "tests"]
 
 EXCLUDED_DIR_NAMES = {
     ".git", ".venv", ".venv-lint", ".claude",
     "build", "build-lint", "out", "dist", "x64",
-    "decomp", "libultraship", "torch", "workspace",
+    "decomp", "libultraship", "torch", "mods/examples",
     "node_modules", "assets", "expected",
 }
 
@@ -124,7 +124,7 @@ def build_checks(args) -> list:
         # compile_commands.json uses absolute paths with backslashes on Windows.
         # '.' matches either separator without needing backslash escapes.
         pattern = (r".*" if args.include_vendor
-                   else r"smash-classic.(port|include|android|uwp|tools|debug_tools).")
+                   else r"smash-classic.(src|include|platforms|tools|services|mods|tests).")
         checks.append(Check("clang-tidy",
             [resolve("run-clang-tidy"), "-p", str(BUILD),
              "-config-file", str(ROOT / ".clang-tidy"),
@@ -133,7 +133,7 @@ def build_checks(args) -> list:
         cpp = [resolve("cppcheck"), f"--project={BUILD / 'compile_commands.json'}",
                "--enable=warning,performance,portability,style",
                "--inconclusive", "--inline-suppr", "--std=c++20"]
-        supp = ROOT / "cppcheck-suppressions.txt"
+        supp = ROOT / "config" / "static-analysis" / "cppcheck-suppressions.txt"
         if supp.exists():
             cpp.append(f"--suppressions-list={supp}")
         checks.append(Check("cppcheck", cpp, "cppcheck.txt", required=False))
@@ -144,11 +144,11 @@ def build_checks(args) -> list:
     cpplint_cmd = [resolve("cpplint"), "--recursive",
                    "--extensions=c,cc,cpp,cxx,h,hh,hpp,hxx",
                    "--filter=-whitespace/line_length,-build/include_subdir",
-                   "--exclude=build", "--exclude=build-lint",
+                   "--exclude=build", "--exclude=build-lint", "--exclude=out",
                    "--exclude=.venv-lint"]
     if not args.include_vendor:
         cpplint_cmd += ["--exclude=decomp", "--exclude=libultraship",
-                        "--exclude=torch", "--exclude=workspace"]
+                        "--exclude=torch", "--exclude=mods/examples"]
     cpplint_cmd += dirs if not args.include_vendor else ["."]
     checks.append(Check("cpplint", cpplint_cmd, "cpplint.txt", required=False))
 
@@ -164,21 +164,25 @@ def build_checks(args) -> list:
               "yamllint.txt", required=False),
         Check("ruff", [resolve("ruff"), "check", ".",
                        "--exclude", ".venv-lint", "--exclude", "build",
-                       "--exclude", "build-lint", "--exclude", "decomp",
+                       "--exclude", "build-lint", "--exclude", "out", "--exclude", "decomp",
                        "--exclude", "libultraship", "--exclude", "torch",
                        "--output-format", "full"],
               "ruff.txt", required=False),
         Check("bandit", [resolve("bandit"), "-r"] +
-              [p for p in ("scripts", "tools", "debug_tools")
+              [p for p in ("scripts", "tools")
                if (ROOT / p).exists()] + ["-x", "*/tests/*,*/build/*"],
               "bandit.txt", required=False),
+        Check("module-deps",
+              [sys.executable, str(ROOT / "tools" / "lint" /
+                                   "check_module_deps.py")],
+              "module-deps.txt", required=True),
     ]
 
-    sem = ROOT / "semgrep-smash.yml"
+    sem = ROOT / "config" / "semgrep" / "smash-classic.yml"
     if sem.exists():
         checks.append(Check("semgrep-smash",
             [resolve("semgrep"), "scan", "--config", str(sem)] + dirs,
-            "semgrep-smash.txt", required=False))
+            "semgrep.txt", required=False))
     return checks
 
 
@@ -191,7 +195,7 @@ def main() -> int:
     ap.add_argument("--jobs", type=int, default=4)
     args = ap.parse_args()
 
-    REPORTS.mkdir(exist_ok=True)
+    REPORTS.mkdir(parents=True, exist_ok=True)
     rc = configure_cmake(args)
     if rc != 0:
         print(f"cmake configure failed ({rc}); running tools that don't "

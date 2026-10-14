@@ -1,7 +1,7 @@
 # N_ALCSPlayer alt-bank pointer-array stride (LP64)
 
 **Date:** 2026-04-24
-**Status:** Fix shipped. Audio synthesis still silent — see handoff `docs/audio_buildout_2026-04-24.md`.
+**Status:** Fix shipped. Audio synthesis still silent — see handoff `docs/investigations/audio_buildout_2026-04-24.md`.
 **Class:** LP64 pointer-array stride over mismatched field widths — same family as `file_pointer_array_lp64_stride` and `mball_effect_filehead_lp64`.
 
 ## Symptom
@@ -23,13 +23,13 @@ The MIDI handler in `n_env.c` picks between the three banks via the idiom `*(&se
 - **N64:** `ALBank *` is 4 bytes and `s32` is 4 bytes. `(&seqp->bank)[0..2]` walks three 4-byte slots cleanly, each interpreted as an `ALBank *`.
 - **LP64:** `ALBank *` is 8 bytes, `s32` is 4 bytes. `(&seqp->bank)[1]` reads 8 bytes starting 8 bytes past `&bank`, which means it reads `unknown0 || unknown1` concatenated — a garbage pointer. `(&seqp->bank)[2]` reads 8 bytes past that into `uspt`.
 
-Compounding the problem, the alt-bank *writes* at `case (AL_SEQ_END_EVT+20)/+21` used `(s32)(intptr_t)seqp->nextEvent.msg.spseq.seq` — the exact pattern in the [Implicit-int LP64 trunc trap](../project_itstruct_arrow_trunc.md) memo, truncating a 64-bit host pointer to 32 bits before storing.
+Compounding the problem, the alt-bank *writes* at `case (AL_SEQ_END_EVT+20)/+21` used `(s32)(intptr_t)seqp->nextEvent.msg.spseq.seq` — the exact pattern in the Implicit-int LP64 trunc trap memo, truncating a 64-bit host pointer to 32 bits before storing.
 
 Effect: any `AL_MIDI_FX_CTRL_4` with `byte2 ∈ {1, 2}` would read a bogus pointer; any `n_alCSPSetBank_Alt(seqp, bank, 1|2)` would truncate the bank pointer on write.
 
 ## Fix
 
-`include/n_audio/n_libaudio.h` — widen `unknown0` / `unknown1` to `ALBank *` on PORT in both `N_ALSeqPlayer` and `N_ALCSPlayer` so the `(&seqp->bank)[N]` idiom walks three adjacent `ALBank *` slots correctly:
+decomp/include/n_audio/n_libaudio.h — widen `unknown0` / `unknown1` to `ALBank *` on PORT in both `N_ALSeqPlayer` and `N_ALCSPlayer` so the `(&seqp->bank)[N]` idiom walks three adjacent `ALBank *` slots correctly:
 
 ```c
 ALBank *bank;
@@ -42,7 +42,7 @@ s32 unknown1;
 #endif
 ```
 
-`src/libultra/n_audio/n_env.c` — drop the `(s32)(intptr_t)` truncation cast in the two bank-set handlers; write the pointer directly under PORT.
+`decomp/src/libultra/n_audio/n_env.c` — drop the `(s32)(intptr_t)` truncation cast in the two bank-set handlers; write the pointer directly under PORT.
 
 ## Scope of this fix
 
@@ -50,7 +50,7 @@ This is a latent correctness fix: SSB64 BGM 33 (attract demo) doesn't actually u
 
 ## Still-open issue
 
-The real reason we can't yet hear audio is a separate problem: for every NoteOn in BGM 33, `__n_lookupSoundQuick` returns NULL. The music bank's instrument has `soundCount=322` but all its keymaps look degenerate (`keyMin=keyMax=0` with `velMin=velMax=N`), so the binary search never matches the MIDI `key=86..105` notes actually played. That investigation is captured in `docs/audio_buildout_2026-04-24.md`.
+The real reason we can't yet hear audio is a separate problem: for every NoteOn in BGM 33, `__n_lookupSoundQuick` returns NULL. The music bank's instrument has `soundCount=322` but all its keymaps look degenerate (`keyMin=keyMax=0` with `velMin=velMax=N`), so the binary search never matches the MIDI `key=86..105` notes actually played. That investigation is captured in `docs/investigations/audio_buildout_2026-04-24.md`.
 
 ## Fingerprint for the next time
 

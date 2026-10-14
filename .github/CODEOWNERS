@@ -1,0 +1,12 @@
+# Code owners — review is auto-requested from the repo owner on these paths.
+*                       @fatty8me2
+
+# High-risk surfaces — always require owner review.
+/decomp/src/sys/net*    @fatty8me2
+/src/netplay/           @fatty8me2
+/services/netplay-lobby/ @fatty8me2
+/.github/workflows/     @fatty8me2
+/include/smash_classic/ @fatty8me2
+/docs/netplay/protocol/ @fatty8me2
+/docs/compatibility/    @fatty8me2
+/docs/security/         @fatty8me2

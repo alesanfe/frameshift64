@@ -1,19 +1,86 @@
-# Generated YAMLs are written by tools/generate_yamls.py with explicit LF
-# line endings. Without this attribute, a Windows checkout with
-# core.autocrlf=true would convert them to CRLF on checkout and then show a
-# spurious "modified" diff on every regen. Force LF so the working tree
-# matches what generate_yamls.py writes on every platform.
-yamls/**/*.yml text eol=lf
+# ---------------------------------------------------------------------------
+# Line endings
+# ---------------------------------------------------------------------------
+# Generated YAMLs are written by tools/codegen/generate_yamls.py with explicit
+# LF endings. Without this, a Windows checkout with core.autocrlf=true would
+# convert them to CRLF and show a spurious "modified" diff on every regen.
+assets/configuration/extraction/**/*.yml text eol=lf
 
-# Same logic for the other gitignored-but-actually-tracked codegen output.
-include/reloc_data.h text eol=lf
-port/resource/RelocFileTable.cpp text eol=lf
+# Committed codegen output — same rule.
+include/reloc_data*.h text eol=lf
+src/resources/RelocFileTable.* text eol=lf
+src/bridge/ssb64_reloc_rebuild*.cpp text eol=lf
+assets/configuration/extraction/**/manifests/*.json text eol=lf
 
-# Python tooling: keep LF on all platforms so committed sources don't drift.
+# Python tooling: LF on all platforms so committed sources don't drift.
 *.py text eol=lf
 
-# Shell scripts must remain LF on Windows or bash refuses to parse them.
+# Shell scripts must stay LF or bash refuses to parse them.
 *.sh text eol=lf
 
-# PowerShell tolerates either, but pinning LF keeps the repo consistent.
+# PowerShell tolerates either; pinning LF keeps the repo consistent.
 *.ps1 text eol=lf
+
+# Batch files are Windows-native; CRLF is correct there.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ---------------------------------------------------------------------------
+# Binary — never let git touch these
+# ---------------------------------------------------------------------------
+*.z64 binary
+*.n64 binary
+*.v64 binary
+*.o2r binary
+*.otr binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.trace binary
+*.dmp binary
+
+# ---------------------------------------------------------------------------
+# Linguist — external/vendored trees shouldn't count toward language stats
+# ---------------------------------------------------------------------------
+decomp/** linguist-vendored
+libultraship/** linguist-vendored
+torch/** linguist-vendored
+services/netplay-lobby/cloudflare/node_modules/** linguist-vendored
+**/package-lock.json linguist-generated=true
+
+# Generated code: collapse in PR diffs, exclude from stats.
+src/resources/RelocFileTable.* linguist-generated=true
+include/reloc_data*.h linguist-generated=true
+
+# ---------------------------------------------------------------------------
+# Release export — don't ship dev plumbing in `git archive` artifacts
+# ---------------------------------------------------------------------------
+.github/** export-ignore
+.claude/** export-ignore
+tests/** export-ignore
+docs/** export-ignore
+out/** export-ignore
+.clang-tidy export-ignore
+.codespellrc export-ignore
+.yamllint.yml export-ignore
+.pre-commit-config.yaml export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore
+.gitmodules export-ignore
+config/lint/** export-ignore
+config/semgrep/** export-ignore
+config/static-analysis/** export-ignore

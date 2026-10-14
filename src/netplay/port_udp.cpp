@@ -81,11 +81,13 @@ std::mt19937 sSimRng(1);
 std::deque<PendingPacket> sSimQueue;
 bool sSimConfigured = false;
 
+#ifdef SSB64_TEST_HOOKS
 unsigned int env_uint(const char *name, unsigned int fallback)
 {
     const char *value = std::getenv(name);
     return (value != nullptr) ? static_cast<unsigned int>(std::strtoul(value, nullptr, 10)) : fallback;
 }
+#endif
 
 void configure_sim(void)
 {
@@ -93,6 +95,10 @@ void configure_sim(void)
         return;
     }
     sSimConfigured = true;
+    /* Network impairment is a test harness: it deliberately drops, corrupts
+     * and delays real traffic. Compiled in only for test builds
+     * (-DSSB64_TEST_HOOKS=ON); shipped binaries never honor these vars. */
+#ifdef SSB64_TEST_HOOKS
     sSimLatencyMs = env_uint("SSB64_NETPLAY_SIM_LATENCY_MS", 0);
     sSimJitterMs = env_uint("SSB64_NETPLAY_SIM_JITTER_MS", 0);
     sSimLossPct = env_uint("SSB64_NETPLAY_SIM_LOSS_PCT", 0);
@@ -108,6 +114,7 @@ void configure_sim(void)
                  sSimLatencyMs, sSimJitterMs, sSimLossPct,
                  sSimDupPct, sSimReorderPct, sSimReorderWindowMs, sSimCorruptPct);
     }
+#endif
 }
 
 bool startup(void)

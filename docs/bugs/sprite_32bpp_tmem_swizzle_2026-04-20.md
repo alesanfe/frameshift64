@@ -23,8 +23,8 @@ as-swizzled.
 
 Two dead-end writeups covered this before the root cause was found:
 
-- `docs/smash_title_32bpp_sprite.md` — the SMASH-specific handoff.
-- `docs/sprite_broken_textures_handoff_2026-04-19.md` — the broader set,
+- `docs/investigations/smash_title_32bpp_sprite.md` — the SMASH-specific handoff.
+- `docs/investigations/sprite_broken_textures_handoff_2026-04-19.md` — the broader set,
   which also (incorrectly) lumped in tutorial CI8/RGBA16 artifacts and a
   misidentified "portraits" file (`file=168 = llMNTitleFireAnimFileID`, which
   really is a fire animation — "just fire" was literal, not an artifact).
@@ -46,7 +46,7 @@ swap granularity than 4b/8b/16b, not just a different on/off flag.**
 ## Root cause
 
 Sprite `LOAD_BLOCK` sequences in `lbCommonDrawSObjBitmap`
-(`src/lb/lbcommon.c:2570-2680`) differ between ≤16bpp and 32bpp:
+(`decomp/src/lb/lbcommon.c:2570-2680`) differ between ≤16bpp and 32bpp:
 
 | bpp    | LoadBlock size                              | SetTile `line`                              | TMEM layout |
 |--------|---------------------------------------------|---------------------------------------------|-------------|
@@ -63,7 +63,7 @@ row to defeat bank conflicts. At DRAM level that becomes a byte-address XOR:
   two 8-byte halves of each 16-byte group (= 2 RGBA32 pixels with the next
   2) on odd rows.
 
-`G_IM_SIZ_32b_LINE_BYTES = 2` (not 4, see `include/PR/gbi.h:455`) and the
+`G_IM_SIZ_32b_LINE_BYTES = 2` (not 4, see decomp/include/PR/gbi.h:455`) and the
 compensating `line_size *= 2` at `libultraship/src/fast/interpreter.cpp:2149-
 2151` both corroborate this bank-split layout — the tile's line stride is
 encoded at half the real DRAM stride precisely because the encoding is in
@@ -98,7 +98,7 @@ artifact.
 ## Fix
 
 Extended the existing sprite deswizzle in `portFixupSpriteBitmapData`
-(`port/bridge/lbreloc_byteswap.cpp`) to pick `group_size` based on bpp:
+(`src/bridge/lbreloc_byteswap.cpp`) to pick `group_size` based on bpp:
 
 ```cpp
 size_t group_size = (bpp == 32) ? 16 : 8;
@@ -112,10 +112,10 @@ deswizzle).
 
 ## Files
 
-- `port/bridge/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`, extended
+- `src/bridge/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`, extended
   deswizzle for bpp=32.
-- `docs/smash_title_32bpp_sprite.md` — superseded by this writeup.
-- `docs/sprite_broken_textures_handoff_2026-04-19.md` — superseded by this
+- `docs/investigations/smash_title_32bpp_sprite.md` — superseded by this writeup.
+- `docs/investigations/sprite_broken_textures_handoff_2026-04-19.md` — superseded by this
   writeup for items 1, 5 (SMASH, portraits). Items 2–4 (tutorial CI8/RGBA16
   "How to Play" / "HereText" / textbox) and item 6 (unknown "player card") are
   separate investigations; the 32bpp fix does not address them.

@@ -49,17 +49,17 @@ Same family as the existing **File pointer-array LP64 stride** class (sc1pbonuss
 
 ## Fix
 
-`src/sc/sc1pmode/sc1pgameboss.c::sc1PGameBossSetupBackgroundDObjs`: under `#ifdef PORT`, walk both pointer levels as `u32*` (4-byte stride) and resolve every slot through `PORT_RESOLVE`. Mirrors the `anim_joints` walker in `sc1pbonusstage.c::sc1PBonusStageMakeTargets`. Non-PORT path is byte-identical to the original (decomp preserved).
+`decomp/src/sc/sc1pmode/sc1pgameboss.c::sc1PGameBossSetupBackgroundDObjs`: under `#ifdef PORT`, walk both pointer levels as `u32*` (4-byte stride) and resolve every slot through `PORT_RESOLVE`. Mirrors the `anim_joints` walker in `sc1pbonusstage.c::sc1PBonusStageMakeTargets`. Non-PORT path is byte-identical to the original (decomp preserved).
 
 ## Test hook (also landed)
 
-To make this stage trivially reproducible without playing through the whole 1P run, the boot-time scene override at `src/sc/scmanager.c` was extended with `SSB64_SPGAME_STAGE`, and `src/mn/mnplayers/mnplayers1pgame.c::mnPlayers1PGameSetSceneData` re-applies it after the menu unconditionally zeros `spgame_stage`:
+To make this stage trivially reproducible without playing through the whole 1P run, the boot-time scene override at `decomp/src/sc/scmanager.c` was extended with `SSB64_SPGAME_STAGE`, and `decomp/src/mn/mnplayers/mnplayers1pgame.c::mnPlayers1PGameSetSceneData` re-applies it after the menu unconditionally zeros `spgame_stage`:
 
 ```bash
 SSB64_START_SCENE=17 SSB64_SPGAME_STAGE=13 ./BattleShip
 ```
 
-`SSB64_START_SCENE=17` lands at the 1P character select (so the 1P-game overlays load); `SSB64_SPGAME_STAGE=13` (`nSC1PGameStageBoss`) selects Master Hand. Stage indices are in `nSC1PGameStageKind` (`src/sc/scdef.h`).
+`SSB64_START_SCENE=17` lands at the 1P character select (so the 1P-game overlays load); `SSB64_SPGAME_STAGE=13` (`nSC1PGameStageBoss`) selects Master Hand. Stage indices are in `nSC1PGameStageKind` (`decomp/src/sc/scdef.h`).
 
 ## Verification
 

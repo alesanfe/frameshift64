@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Severity: P0 (any room participant could inject inputs as any other player)
-Found by: multiplayer security audit (`docs/audit_netplay_multiplayer_2026-10-13.md`)
+Found by: multiplayer security audit (`docs/investigations/netplay/audit_netplay_multiplayer_2026-10-13.md`)
 
 ## Root cause
 
@@ -22,7 +22,7 @@ Three missing checks combined into a full spoofing chain:
 
 ## Fix
 
-- `server/cloudflare/src/index.js`, `server/node-lobby.js`: per-slot
+- `services/netplay-lobby/src/index.js`, `services/netplay-lobby/src/node-lobby.js`: per-slot
   `upkey` issued in `welcome`, required on the uplink upgrade; star
   topology enforced (clients → slot 0 only, host → client slots only);
   relayed binary only flows on links the owner marked `relay`;
@@ -32,15 +32,15 @@ Three missing checks combined into a full spoofing chain:
   links other than the host link, and when the inner `src_player` has a
   direct link; `session_id` is now a lobby-generated token independent
   of `rng_seed` (0 = legacy seed fallback for old peers).
-- `port/net/port_udp.cpp`: `link_of` validates the relayed frame's slot
+- `src/netplay/port_udp.cpp`: `link_of` validates the relayed frame's slot
   byte against an active relay-backed link.
-- `port/net/netlobby.cpp`: `upkey` from `welcome` sent as `&key=` on the
+- `src/netplay/netlobby.cpp`: `upkey` from `welcome` sent as `&key=` on the
   uplink; session id generated on match start and carried in
   `STARTM`/`START`.
 
 ## Verification
 
-`node server/test-lobby-security.js` — 15/15 checks covering uplink key
+`node services/netplay-lobby/tests/test-lobby-security.js` — 15/15 checks covering uplink key
 accept/reject, client→client drops, relay-flag gating in both
 directions, `from_slot` stamping and the join/text rate limits.
 

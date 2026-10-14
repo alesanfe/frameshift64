@@ -28,11 +28,11 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           submodules: recursive
           fetch-depth: 0
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action@9f759ee644a3e7c15c1390abf49868036c00067b  # v3
         with:
           languages: cpp
           build-mode: manual
@@ -55,7 +55,7 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DNON_PORTABLE=ON
           cmake --build build -j"$(nproc)"
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action@9f759ee644a3e7c15c1390abf49868036c00067b  # v3
         with:
           category: cpp
 
@@ -64,11 +64,11 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: github/codeql-action@9f759ee644a3e7c15c1390abf49868036c00067b  # v3
         with:
           languages: javascript-typescript
           build-mode: none
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action@9f759ee644a3e7c15c1390abf49868036c00067b  # v3
         with:
           category: js

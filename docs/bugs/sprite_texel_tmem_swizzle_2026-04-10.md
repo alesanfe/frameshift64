@@ -3,7 +3,7 @@
 **Symptoms:** All sprite-rendered content (N64 logo, HUD, menus) had garbled textures on the port — colors were roughly right but the image had a sheared/zigzag/sawtooth pattern. Letters were unreadable. The 3D N64 logo's diagonals stairstepped wrong. Looked like a Fast3D rendering bug or texture filter issue.
 
 **Diagnostic path:**
-1. Captured GBI traces from both port and Mupen64Plus (via the `mupen64plus-rsp-trace` plugin) and diffed with `debug_tools/gbi_diff/gbi_diff.py`. Across the entire N64 logo scene (54 frames) the port emitted **byte-perfect identical** GBI commands (0 opcode/w0/w1 mismatches with `--ignore-addresses`). That ruled out game code's display list construction.
+1. Captured GBI traces from both port and Mupen64Plus (via the `mupen64plus-rsp-trace` plugin) and diffed with `tools/debugging/gbi_diff/gbi_diff.py`. Across the entire N64 logo scene (54 frames) the port emitted **byte-perfect identical** GBI commands (0 opcode/w0/w1 mismatches with `--ignore-addresses`). That ruled out game code's display list construction.
 2. Logged the actual texel bytes for `bitmap[0].buf` at runtime in `lbCommonMakeSObjForGObj` and compared against the raw .o2r file. After the first BSWAP32 fix the bytes matched the file but the rendered image was still wrong.
 3. Forced point sampling and 4x internal resolution — neither helped, ruling out filter/upscale.
 4. Found a real but unrelated DX11 filter-default bug (`gfx_direct3d_common.h` defaulted `mCurrentFilterMode = FILTER_NONE` so `linear_filter && mCurrentFilterMode == FILTER_LINEAR` was always false → DX11 always point-sampled regardless of game request). Fixed independently by changing the default to `FILTER_LINEAR`.
@@ -17,16 +17,16 @@
 
 2. **N64 RDP TMEM line swizzle.** Even with bytes in correct BE order, sprite textures still rendered with a shear because the N64 stores RGBA16 textures in DRAM **pre-swizzled** to avoid TMEM bank conflicts when sampled. The hardware XORs the byte address based on row parity: for 16bpp/IA/CI, odd rows have the byte address XOR'd with 0x4 (i.e., the two 4-byte halves of each 8-byte qword are swapped). `LOAD_BLOCK` with `dxt=0` loads the swizzled data into TMEM as-is; the sampler unscrambles it during reads. Fast3D doesn't emulate TMEM addressing, so it would render the swizzled data linearly and produce a sheared image.
 
-**Fix:** Added `portFixupSpriteBitmapData(sprite, bitmaps)` in `port/bridge/lbreloc_byteswap.cpp`. Walks the bitmap array, resolves each `bm->buf` via `portRelocResolvePointer`, then per bitmap:
+**Fix:** Added `portFixupSpriteBitmapData(sprite, bitmaps)` in `src/bridge/lbreloc_byteswap.cpp`. Walks the bitmap array, resolves each `bm->buf` via `portRelocResolvePointer`, then per bitmap:
 1. Apply BSWAP32 over `width_img × actualHeight × bpp / 8` bytes to restore N64 BE byte order.
 2. For 16bpp textures, apply the inverse TMEM line swizzle: on every odd row of the bitmap, swap the two 4-byte halves within each 8-byte qword. Strip-local row indexing (each LOAD_BLOCK is independent in TMEM).
 
 Idempotent via the existing `sStructU16Fixups` tracking set. Called from `lbCommonMakeSObjForGObj` right after `portFixupBitmapArray`. Sprite struct field offsets read directly with hard-coded byte offsets — `bmsiz` is at `0x31` (not `0x32`): the C struct packs `u8 bmfmt; u8 bmsiz;` followed by 2 bytes of padding before the next u32, and the field offset must match the C compiler's natural placement.
 
 **Files:**
-- `port/bridge/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`
-- `port/bridge/lbreloc_byteswap.h` — declaration + doc
-- `src/lb/lbcommon.c` — call site in `lbCommonMakeSObjForGObj`
+- `src/bridge/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`
+- `src/bridge/lbreloc_byteswap.h` — declaration + doc
+- `decomp/src/lb/lbcommon.c` — call site in `lbCommonMakeSObjForGObj`
 - `libultraship/include/fast/backends/gfx_direct3d_common.h` — separate DX11 filter-default fix (`FILTER_NONE` → `FILTER_LINEAR`); was hiding the bug because every sample was point-sampled regardless of game request.
 
 **Latent issues not yet addressed:**

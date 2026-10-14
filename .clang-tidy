@@ -26,7 +26,7 @@ Checks: >
   -cert-msc32-c,
   -cert-msc30-c
 WarningsAsErrors: ''
-HeaderFilterRegex: '^(port|include|server|android|uwp|tools|debug_tools)/.*'
+HeaderFilterRegex: '^(src|include|services|platforms|tools|mods|tests)/.*'
 FormatStyle: file
 CheckOptions:
   bugprone-argument-comment.StrictMode: 'true'

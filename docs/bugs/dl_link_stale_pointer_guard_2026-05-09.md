@@ -51,7 +51,7 @@ Three-part defense-in-depth:
    allocation that's `memset(0)` between scenes. Same VA stays mapped+
    writable forever; stale reads on Linux now return zero/stale bytes (like
    macOS) instead of faulting. Calls `port_taskman_evict_arena_caches`
-   (new wrapper in `port/bridge/lbreloc_bridge.cpp`) to clear the four
+   (new wrapper in `src/bridge/lbreloc_bridge.cpp`) to clear the four
    port-side caches that hold pointers into the arena (DL widening,
    texture upload, struct fixup, reloc file ranges).
 
@@ -63,7 +63,7 @@ Three-part defense-in-depth:
    walk indefinitely past the relocData sentinel `{ ARRAY_COUNT, NULL }`.
    First occurrence per frame is logged via `port_log` for triage.
 
-3. **Revert libultraship `beb5b9a1`** (`src/fast/interpreter.cpp`). Drop
+3. **Revert libultraship `beb5b9a1`** (`libultraship/src/fast/interpreter.cpp`). Drop
    the new top-of-handler `< 4 GB` guard; restore the original 256 MB
    N64-segmented-range guard at the bottom of the handler. Catches
    unresolved tokens (always `≤ 0x0FFFFFFF` on hardware) without rejecting
@@ -125,11 +125,11 @@ been observed crashing on Linux yet.
 ## References
 
 - `decomp/src/sys/taskman.c:1316–1352` — Part 1 band-aid
-- `port/bridge/lbreloc_bridge.cpp:146–162` — Part 1 eviction wrapper
+- `src/bridge/lbreloc_bridge.cpp:146–162` — Part 1 eviction wrapper
 - `decomp/src/sys/objdisplay.c:gcDrawDObjTreeDLLinks` — Part 2 guard
 - `libultraship/src/fast/interpreter.cpp:gfx_set_timg_handler_rdp` —
   Part 3 revert
-- `docs/linux_intro_skip_crash_handoff_2026-05-09.md` — investigation
-- `docs/linux_intro_skip_crash_handoff_2026-05-09-session2.md` — bisect
+- docs/linux_intro_skip_crash_handoff_2026-05-09.md — investigation
+- docs/linux_intro_skip_crash_handoff_2026-05-09-session2.md — bisect
   + recommended ship state
 - `docs/bugs/g_vtx_unresolved_addr_guard_2026-05-03.md` — sibling

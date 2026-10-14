@@ -27,7 +27,7 @@ empty banks gracefully." That was half-true:
 1. `efParticleGetLoadBankID` never called `lbParticleSetupBankID`.
 2. `lbParticleSetupBankID` is the only writer of
    `sLBParticleScriptBanksNum[bank_id]` and
-   `sLBParticleTextureBanksNum[bank_id]` in `src/lb/lbparticle.c`.
+   `sLBParticleTextureBanksNum[bank_id]` in `decomp/src/lb/lbparticle.c`.
 3. Those counter arrays live in `.bss` and stayed zero-initialized.
 4. Every `lbParticleMakeChildScriptID(id, script_id)` call hit the bounds
    check `if (script_id >= sLBParticleScriptBanksNum[id]) return NULL;`
@@ -42,10 +42,10 @@ across every scene disappeared at once.
 
 Real bank loading through the O2R pipeline.
 
-- `yamls/us/particles.yml` already defined 12 BLOB entries (6 script +
+- `assets/configuration/extraction/us/particles.yml` already defined 12 BLOB entries (6 script +
   6 texture pairs, plus 3 extra `unk0/1/2` pairs used by fighter-data
   banks). Torch packs them into `ssb64.o2r` under `particles/<name>`.
-- New bridge `port/bridge/particle_bank_bridge.{h,cpp}` exposes
+- New bridge `src/bridge/particle_bank_bridge.{h,cpp}` exposes
   `portParticleLoadBank(scripts_lo, bank_id)`:
   1. Maps `scripts_lo` (the address of `l<Module>ParticleScriptBankLo`
      or `particles_unk{0,1,2}_scb_ROM_START`) to the matching O2R path
@@ -72,7 +72,7 @@ Real bank loading through the O2R pipeline.
      a fresh copy out of the pristine cache, and hands it to
      `lbParticleSetupBankID` which pointerizes the offset tables into
      `PORT_REGISTER` tokens as the decomp layer expects.
-- `src/ef/efparticle.c` `#ifdef PORT` block now calls `portParticleLoadBank`
+- `decomp/src/ef/efparticle.c` `#ifdef PORT` block now calls `portParticleLoadBank`
   immediately after assigning the bank_id. If the lookup or load fails
   the bank stays empty (matching the prior stub behavior), logged via
   `port_log` for diagnosis.
@@ -103,9 +103,9 @@ Texture blob:
 
 ## Files touched
 
-- `port/bridge/particle_bank_bridge.h` (new).
-- `port/bridge/particle_bank_bridge.cpp` (new).
-- `src/ef/efparticle.c` — PORT guard now calls the bridge; the old
+- `src/bridge/particle_bank_bridge.h` (new).
+- `src/bridge/particle_bank_bridge.cpp` (new).
+- `decomp/src/ef/efparticle.c` — PORT guard now calls the bridge; the old
   "register dummy bank" paragraph replaced with a docstring that
   describes the bridge path and the empty-bank fallback.
 

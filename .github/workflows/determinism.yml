@@ -107,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: determinism-traces
-          path: build/us/netplay-test/
+          path: out/logs/netplay-test/
           retention-days: 30
           if-no-files-found: ignore
 
@@ -154,12 +154,12 @@ jobs:
       - name: Trace compare Release vs Debug
         if: env.BASEROM_B64 != ''
         run: |
-          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -OutDir build/xb-rel -Seconds 60 -Seed 777
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -OutDir out/logs/xb-rel -Seconds 60 -Seed 777
           if ($LASTEXITCODE -ne 0) { Write-Error "Release run not in sync"; exit 1 }
-          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Debug -OutDir build/xb-dbg -Seconds 60 -Seed 777
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Debug -OutDir out/logs/xb-dbg -Seconds 60 -Seed 777
           if ($LASTEXITCODE -ne 0) { Write-Error "Debug run not in sync"; exit 1 }
-          $rel = Get-Content build/xb-rel/host.trace
-          $dbg = Get-Content build/xb-dbg/host.trace
+          $rel = Get-Content out/logs/xb-rel/host.trace
+          $dbg = Get-Content out/logs/xb-dbg/host.trace
           if (-not $rel -or -not $dbg) { Write-Error "missing trace"; exit 1 }
           $n = [Math]::Min($rel.Count, $dbg.Count)
           if ($rel.Count -ne $dbg.Count) { Write-Output "warn: trace length differs rel=$($rel.Count) dbg=$($dbg.Count)" }
@@ -177,7 +177,7 @@ jobs:
         with:
           name: crossbuild-traces
           path: |
-            build/xb-rel/
-            build/xb-dbg/
+            out/logs/xb-rel/
+            out/logs/xb-dbg/
           retention-days: 30
           if-no-files-found: ignore

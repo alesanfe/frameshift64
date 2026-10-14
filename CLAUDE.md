@@ -2,21 +2,34 @@
 
 PC port of Super Smash Bros. 64 built from the complete decompilation at github.com/VetriTheRetri/ssb-decomp-re. Target integration: libultraship (LUS) + Torch asset pipeline.
 
+## Repository layout
+
+The tree is organized by responsibility (see `docs/architecture/overview.md` and the ADRs under `docs/decisions/`):
+
+- `src/` — modern port layer (application, bridge, net, gui, enhancements, mods, resources, platform, compatibility).
+- `decomp/` `libultraship/` `torch/` — external submodules, kept at the root for now so worktree/submodule tooling stays intact.
+- `assets/` — source art + `configuration/extraction/<region>` recipes + `configuration/controllers/`; runtime `assets/configuration/extraction/` is staged next to the binary at build time.
+- `services/netplay-lobby/` — Cloudflare lobby service (independent deployable).
+- `mods/` — example/template mods; `tools/` — reusable tools; `scripts/` — orchestration; `config/` — tool configuration.
+- `out/` — all generated build/report output (gitignored).
+- `platforms/` — Android and UWP project wrappers.
+- Build via `CMakePresets.json` presets or `cmake -B out/build/<name>`; generated artifacts never live in the source root.
+
 ## Documentation
 
 Detailed reference material lives under `docs/`. Read the file that matches the task before touching code. When looking for a topic not listed here, run `ls docs/` and `ls docs/bugs/` to see what's available.
 
 | Topic | File |
 |-------|------|
-| Project status, ROM info, dependencies, source tree layout | `docs/architecture.md` |
-| C type system, decomp naming prefixes, code style, macros | `docs/c_conventions.md` |
-| RDRAM / RSP / RDP / GBI / audio / threading / controller / endianness | `docs/n64_reference.md` |
-| CMake build, reloc stub regen, runtime logs, LP64 compat notes | `docs/build_and_tooling.md` |
-| GBI trace capture (port + M64P plugin) and `gbi_diff.py` usage | `docs/debug_gbi_trace.md` |
-| IDO BE bitfield layout audit (compile + rabbitizer disasm to verify port struct bit positions) | `docs/debug_ido_bitfield_layout.md` |
+| Project status, ROM info, dependencies, source tree layout | `docs/architecture/overview.md` |
+| C type system, decomp naming prefixes, code style, macros | `docs/development/c_conventions.md` |
+| RDRAM / RSP / RDP / GBI / audio / threading / controller / endianness | `docs/development/n64_reference.md` |
+| CMake build, reloc stub regen, runtime logs, LP64 compat notes | `docs/architecture/build_and_tooling.md` |
+| GBI trace capture (port + M64P plugin) and `gbi_diff.py` usage | `docs/development/debug_gbi_trace.md` |
+| IDO BE bitfield layout audit (compile + rabbitizer disasm to verify port struct bit positions) | `docs/development/debug_ido_bitfield_layout.md` |
 | Resolved bugs (index + per-bug root cause / fix write-ups) | `docs/bugs/README.md` |
 
-Ongoing investigations and handoff notes are loose `.md` files at the top level of `docs/` — check there before starting work on rendering, collision, or animation issues so you don't duplicate prior effort.
+Ongoing investigations and handoff notes live under `docs/investigations/` — check there before starting work on rendering, collision, or animation issues so you don't duplicate prior effort.
 
 When you fix a new significant bug, add an entry under `docs/bugs/` using the slug pattern `<topic>_<YYYY-MM-DD>.md` and link it from `docs/bugs/README.md`.
 
@@ -49,21 +62,21 @@ Multiple Claude windows working in the same checkout will clobber each other's s
 ### Spinning up a new worktree
 
 ```bash
-./scripts/new-worktree.sh <slug>           # configure only (fast)
-./scripts/new-worktree.sh <slug> --build   # configure + full Debug compile
-./scripts/new-worktree.sh <slug> --base some-branch --release
+./scripts/development/new-worktree.sh <slug>           # configure only (fast)
+./scripts/development/new-worktree.sh <slug> --build   # configure + full Debug compile
+./scripts/development/new-worktree.sh <slug> --base some-branch --release
 ```
 
 Output lands at `.claude/worktrees/<slug>` on branch `agent/<slug>`. The script:
 1. Creates the worktree and branch.
 2. Symlinks `baserom.us.z64` (gitignored, too large to duplicate).
 3. **Independently clones `libultraship`, `torch`, and `decomp`** from the main tree's local submodule checkouts (picks up pinned SHAs that may not be pushed to the forks yet), then resets each submodule's `origin` to whatever URL the main tree's submodule uses — usually SSH so pushes work.
-4. Regenerates gitignored codegen (`reloc_data.h`, `yamls/us/reloc_*.yml`, credits encodings).
+4. Regenerates gitignored codegen (`reloc_data.h`, `assets/configuration/extraction/us/reloc_*.yml`, credits encodings).
 5. Runs `cmake -B build` inside the worktree (and compiles if `--build` given).
 
 ### What this gives you
 
-- **Full edit authority everywhere** — any file under `decomp/src/`, `decomp/include/`, `port/`, `libultraship/`, `torch/` is fair game. Submodule checkouts are real independent clones, not symlinks.
+- **Full edit authority everywhere** — any file under `decomp/src/`, `decomp/include/`, `src/`, `libultraship/`, `torch/` is fair game. Submodule checkouts are real independent clones, not symlinks.
 - **Zero collision** with other windows on source, build artifacts, or submodule state.
 - **Normal git flow for submodule changes**:
   1. Edit and commit inside `<worktree>/decomp/`, `<worktree>/libultraship/`, or `<worktree>/torch/`.

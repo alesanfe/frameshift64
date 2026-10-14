@@ -2,7 +2,7 @@
 
 **Status:** RESOLVED 2026-05-01
 
-**Where:** `libultraship` — `include/fast/backends/gfx_sdl.h`, `src/fast/backends/gfx_sdl2.cpp`. Commit `053ec17` on `JRickey/libultraship#ssb64`.
+**Where:** `libultraship` — `libultraship/include/fast/backends/gfx_sdl.h`, `libultraship/src/fast/backends/gfx_sdl2.cpp`. Commit `053ec17` on `JRickey/libultraship#ssb64`.
 
 ## Symptom
 

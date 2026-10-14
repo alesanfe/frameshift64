@@ -35,7 +35,7 @@ Two compounding bugs in our port:
 
 ### Bug 1 — `chain_fixup_settimg` only fixes `count*2` rounded down to a u32 word
 
-`port/bridge/lbreloc_byteswap.cpp:chain_fixup_settimg` walks the reloc chain at
+`src/bridge/lbreloc_byteswap.cpp:chain_fixup_settimg` walks the reloc chain at
 file-load time and BSWAPs the bytes a CI palette LOADTLUT will sample. For
 `count=3` it computed `tex_bytes = (3*2 + 3) & ~3 = 8`, fixing 2 words. That's
 correct on its own. But the **runtime** fixup used by `GfxDpLoadTlut` had its
@@ -66,13 +66,13 @@ palette before the arrow's count=3 fired.
 
 Three coordinated changes:
 
-1. **`port/bridge/lbreloc_byteswap.cpp:chain_fixup_settimg`** — also record
+1. **`src/bridge/lbreloc_byteswap.cpp:chain_fixup_settimg`** — also record
    per-word entries in `sTexFixupWords` and the texture extent in
    `sTexFixupExtent[target]`. This lets the runtime fixup's early-skip
    correctly recognize chain-fixed targets, fall through to the per-word loop,
    and BSWAP only the words chain didn't cover.
 
-2. **`port/bridge/lbreloc_byteswap.cpp:portRelocFixupTextureAtRuntime`** —
+2. **`src/bridge/lbreloc_byteswap.cpp:portRelocFixupTextureAtRuntime`** —
    round `num_bytes` UP to a 4-byte boundary instead of down. A count=3
    LOADTLUT's 6-byte `num_bytes` becomes 8, so word 1 (containing pal[2..3])
    gets fixed and the outline reads as black.
@@ -124,7 +124,7 @@ LOADTLUT log entry — a 6-byte count=3 from `ExternDataBank120+0x598` left the
 last 26 bytes of palette block 0 holding stale Mario character bytes.
 
 The diagnostic hooks were removed before commit; the file-scope ROM extractor
-(`debug_tools/reloc_extract/reloc_extract.py extract <rom> 120 /tmp/file120.bin`)
+(`tools/debugging/reloc_extract/reloc_extract.py extract <rom> 120 /tmp/file120.bin`)
 and the `tex_fixup.log` env-var (`SSB64_TEX_FIXUP_LOG=1`) remain available for
 future runs. The IDO+rabbitizer struct-layout audit confirmed the `Sprite`
 struct's `nTLUT` field reads correctly on both targets — the cmd's `count=3`

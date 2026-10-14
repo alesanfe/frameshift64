@@ -85,11 +85,11 @@ Effectively: the struct has been wrong since the initial decomp import, the BE b
 
 ## Struct size mismatch (also observed, deferred)
 
-The port's `_Static_assert(sizeof(ITAttributes) == 0x50)` claims the struct is 80 bytes, but the ROM item-offset table in `tools/reloc_data_symbols.us.txt` shows 72-byte (0x48) strides between most items in file 251 (`llITCommonDataHeartItemAttributes = 0x100`, `llITCommonDataStarItemAttributes = 0x148`, diff = `0x48`). The extra 8 bytes in our declaration (Word B5 + `spin_speed` + pad) read into the next item's pointer fields at runtime. This didn't cause visible breakage in the items we tested (most items have 0 or reasonable values at those offsets, and `smash_sfx` / `vel_scale` / `spin_speed` reads land in the next item's reloc tokens which happen to decode to plausible-enough numbers), but fields past offset `0x48` should be considered unreliable. **Deferred: confirm the real sizeof and move `smash_sfx`/`vel_scale`/`spin_speed` either to their real location or out of the ROM-backed struct.**
+The port's `_Static_assert(sizeof(ITAttributes) == 0x50)` claims the struct is 80 bytes, but the ROM item-offset table in `tools/codegen/reloc_data_symbols.us.txt` shows 72-byte (0x48) strides between most items in file 251 (`llITCommonDataHeartItemAttributes = 0x100`, `llITCommonDataStarItemAttributes = 0x148`, diff = `0x48`). The extra 8 bytes in our declaration (Word B5 + `spin_speed` + pad) read into the next item's pointer fields at runtime. This didn't cause visible breakage in the items we tested (most items have 0 or reasonable values at those offsets, and `smash_sfx` / `vel_scale` / `spin_speed` reads land in the next item's reloc tokens which happen to decode to plausible-enough numbers), but fields past offset `0x48` should be considered unreliable. **Deferred: confirm the real sizeof and move `smash_sfx`/`vel_scale`/`spin_speed` either to their real location or out of the ROM-backed struct.**
 
 ## Fix
 
-Applied in `src/it/itmanager.c:280-299`. On the PC (PORT) build, bypass the broken bitfield declaration and extract `type` from the known-correct word position:
+Applied in `decomp/src/it/itmanager.c:280-299`. On the PC (PORT) build, bypass the broken bitfield declaration and extract `type` from the known-correct word position:
 
 ```c
 #ifdef PORT
@@ -106,11 +106,11 @@ Kept the original `attr->type` path on BE (it has been living with the bug all a
 
 ### Safety net
 
-`ftCommonItemShootSetStatus` in `src/ft/ftcommon/ftcommonitemshoot.c:301` previously had no `default:` case in its `switch (ip->kind)`. Any unexpected kind would fall through with `status_id` and `proc_accessory` left uninitialized. Added a PORT-only default that logs and returns cleanly — defense in depth for any remaining decode bugs that route non-LGun/FFlower items here.
+`ftCommonItemShootSetStatus` in `decomp/src/ft/ftcommon/ftcommonitemshoot.c:301` previously had no `default:` case in its `switch (ip->kind)`. Any unexpected kind would fall through with `status_id` and `proc_accessory` left uninitialized. Added a PORT-only default that logs and returns cleanly — defense in depth for any remaining decode bugs that route non-LGun/FFlower items here.
 
 ### Diagnostic plumbing
 
-Added `port_dump_backtrace()` to `port/port_watchdog.cpp` + `.h` as an extern "C" wrapper around the pre-existing `DumpBacktraceBoth` (which was in an anonymous namespace). Called from `ftMainSetStatus` when `status_id < 0` to surface the caller if any similar miscoded path ever reappears.
+Added `port_dump_backtrace()` to `src/application/port_watchdog.cpp` + `.h` as an extern "C" wrapper around the pre-existing `DumpBacktraceBoth` (which was in an anonymous namespace). Called from `ftMainSetStatus` when `status_id < 0` to surface the caller if any similar miscoded path ever reappears.
 
 ## Verification
 
@@ -131,12 +131,12 @@ Post-fix: Pokeball/Capsule/Egg/MSBomb route through `ftCommonItemThrowSetStatus`
 
 ## Files touched
 
-- `src/it/itmanager.c` — surgical fix for `ip->type` decode (PORT guard).
-- `src/ft/ftcommon/ftcommonitemshoot.c` — added `default:` case safety net.
-- `src/ft/ftmain.c` — `status_id < 0` diagnostic guard at `ftMainSetStatus` entry.
-- `port/port_watchdog.cpp`, `port/port_watchdog.h` — `port_dump_backtrace()` C wrapper.
+- `decomp/src/it/itmanager.c` — surgical fix for `ip->type` decode (PORT guard).
+- `decomp/src/ft/ftcommon/ftcommonitemshoot.c` — added `default:` case safety net.
+- `decomp/src/ft/ftmain.c` — `status_id < 0` diagnostic guard at `ftMainSetStatus` entry.
+- `src/application/port_watchdog.cpp`, `src/application/port_watchdog.h` — `port_dump_backtrace()` C wrapper.
 
 ## Related
 
 - `docs/bugs/samus_charge_shot_hit_detection_2026-04-13.md` — suspected same class of bitfield miscoding may still affect WPAttributes' `attack_count` decode on the intro-bypass path. Worth re-examining in light of this finding.
-- `src/wp/wptypes.h` — WPAttributes and ITAttributes share Word B2 declaration shape; WPAttributes has no `type` field so the bits that ITAttributes uses for `type:4` really are `attack_count:2 + can_setoff:1 + top-bit-of-sfx:1` in WPAttributes (confirmed by weapon-decoded counts in `samus_charge_shot_hit_detection_2026-04-13.md`: FoxBlaster=1, SamusBomb=2, MarioFireball=2, SamusChargeShot=0). So the WP layout is fine as-is; only IT is misdeclared.
+- `decomp/src/wp/wptypes.h` — WPAttributes and ITAttributes share Word B2 declaration shape; WPAttributes has no `type` field so the bits that ITAttributes uses for `type:4` really are `attack_count:2 + can_setoff:1 + top-bit-of-sfx:1` in WPAttributes (confirmed by weapon-decoded counts in `samus_charge_shot_hit_detection_2026-04-13.md`: FoxBlaster=1, SamusBomb=2, MarioFireball=2, SamusChargeShot=0). So the WP layout is fine as-is; only IT is misdeclared.

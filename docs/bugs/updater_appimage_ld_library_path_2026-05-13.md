@@ -4,7 +4,7 @@
 
 **Issue:** [#174 Updater doesn't work in Fedora 44 KDE](https://github.com/JRickey/BattleShip/issues/174)
 
-**Where:** `port/enhancements/Updater.cpp`, `port/gui/PortMenu.cpp`
+**Where:** `src/features/Updater.cpp`, `src/presentation/PortMenu.cpp`
 
 ## Symptom
 
@@ -23,7 +23,7 @@ The AppImage `AppRun` script prepends its bundled library directory to `LD_LIBRA
 
 The updater used plain `popen("curl ...")` for both the release check and the artifact download. On Fedora, `/usr/bin/curl` loaded the AppImage's bundled `libcrypto.so.3` from `/tmp/.mount_.../usr/lib` while also resolving the host distro's `libssl.so.3`. The host `libssl` expected newer OpenSSL symbol versions than the bundled `libcrypto` provided, so `curl` died during dynamic loading.
 
-`port/native_dialog.cpp` had already fixed the same class for `zenity` / `kdialog` by launching them under `env -u LD_LIBRARY_PATH -u LD_PRELOAD`. The updater was missing that guard.
+`src/presentation/native_dialog.cpp` had already fixed the same class for `zenity` / `kdialog` by launching them under `env -u LD_LIBRARY_PATH -u LD_PRELOAD`. The updater was missing that guard.
 
 Two adjacent updater bugs made the failure mode worse:
 

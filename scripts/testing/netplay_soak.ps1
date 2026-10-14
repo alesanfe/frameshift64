@@ -20,8 +20,8 @@ param(
     [int]$Seconds = 45,
     [int]$SynctestMinutes = 0,
     [int]$SynctestDistance = 3,
-    [string]$BuildDir = "$PSScriptRoot\..\..\build\us\Release",
-    [string]$OutDir = "$PSScriptRoot\..\..\build\us\netplay-test",
+    [string]$BuildDir = "$PSScriptRoot\..\..\out\build\windows-release\Release",
+    [string]$OutDir = "$PSScriptRoot\..\..\out\logs\netplay-test",
     # Sim conditions applied to every round; vary per round for coverage.
     [int]$LatencyMs = 50,
     [int]$JitterMs = 15,

@@ -10,7 +10,7 @@ A separate visual clue matters: in the original N64, Samus's arm cannon flashes 
 
 ## The intro cinematic bypass (this is the key)
 
-`mvOpeningJungleMakeFighters` at `src/mv/mvopening/mvopeningjungle.c:343` presets Samus's charge level directly:
+`mvOpeningJungleMakeFighters` at `decomp/src/mv/mvopening/mvopeningjungle.c:343` presets Samus's charge level directly:
 
 ```c
 fp->passive_vars.samus.charge_level = 6;
@@ -58,7 +58,7 @@ IEEE NaN propagates through the Cohen-Sutherland line-clip loop.  NaN comparison
 
 ## The file's `attack_count = 0` is intentional, not a bug
 
-With the padded-layout fix applied (`u16 _pad_before_combat_bits;` in `wptypes.h`, mirroring the ITAttributes workaround at `ittypes.h:243`), the bitfield read of `attr->attack_count` from the SamusSpecial1 ROM file (`file_id = 218`, offset 0, bitfield word 2 `= 0x0160013c` LE) decodes as `0` in both SGI BE MSB-first and clang LE LSB-first packing.  Verified against the ROM bytes directly via `python3 debug_tools/reloc_extract/reloc_extract.py extract baserom.us.z64 218`.  Other weapons decode correctly:
+With the padded-layout fix applied (`u16 _pad_before_combat_bits;` in `wptypes.h`, mirroring the ITAttributes workaround at `ittypes.h:243`), the bitfield read of `attr->attack_count` from the SamusSpecial1 ROM file (`file_id = 218`, offset 0, bitfield word 2 `= 0x0160013c` LE) decodes as `0` in both SGI BE MSB-first and clang LE LSB-first packing.  Verified against the ROM bytes directly via `python3 tools/debugging/reloc_extract/reloc_extract.py extract baserom.us.z64 218`.  Other weapons decode correctly:
 
 | Weapon | `attack_count` from file |
 |---|---|
@@ -107,20 +107,20 @@ This is exactly right: the intro sets `passive_vars.samus.charge_level = 6` dire
 
 ## File references
 
-- `src/mv/mvopening/mvopeningjungle.c:343` — intro presets `charge_level = 6`
-- `src/mv/mvopening/mvopeningjungle.c:72`  — `dMVOpeningJungleSamusKeyEvents` with the back-to-back B taps
-- `src/ft/ftchar/ftsamus/ftsamusspecialn.c:54`  — `ftSamusSpecialNStartProcUpdate` (transition from Start → Loop or End)
-- `src/ft/ftchar/ftsamus/ftsamusspecialn.c:73`  — `ftSamusSpecialNStartProcInterrupt` (second B press sets `is_release = TRUE`)
-- `src/ft/ftchar/ftsamus/ftsamusspecialn.c:205` — `ftSamusSpecialNEndProcUpdate` with the `charge_gobj == NULL` bypass branch at line 234
-- `src/wp/wpsamus/wpsamuschargeshot.c:152` — `wpSamusChargeShotLaunch` (where the fix attempts live)
-- `src/wp/wpsamus/wpsamuschargeshot.c:309` — `wpSamusChargeShotMakeWeapon` (is_release=TRUE path at line 324)
-- `src/wp/wpmanager.c:199` — `wp->attack_coll.attack_state = nGMAttackStateNew` set unconditionally at spawn
-- `src/wp/wpmanager.c:250` — `wp->attack_coll.attack_count = attr->attack_count;` (loads `0` from file for charge shot)
-- `src/wp/wpprocess.c:26`  — `wpProcessUpdateHitPositions` (only updates `attack_pos[0]` if `attack_count > 0`; state-machine `New → Transfer → Interpolate`)
-- `src/ft/ftmain.c:3354` — `ftMainSearchHitWeapon` outer gate: `attack_state != nGMAttackStateOff`
-- `src/ft/ftmain.c:3435` — hit-detection loop gated on `attack_count`
-- `src/gm/gmcollision.c:661` — `gmCollisionTestRectangle` with the `opkind == 2` (point test) vs swept-test branches
-- `src/wp/wptypes.h` — current attempt at padded WPAttributes layout (`u16 _pad_before_combat_bits;` under `#ifdef PORT`)
+- `decomp/src/mv/mvopening/mvopeningjungle.c:343` — intro presets `charge_level = 6`
+- `decomp/src/mv/mvopening/mvopeningjungle.c:72`  — `dMVOpeningJungleSamusKeyEvents` with the back-to-back B taps
+- `decomp/src/ft/ftchar/ftsamus/ftsamusspecialn.c:54`  — `ftSamusSpecialNStartProcUpdate` (transition from Start → Loop or End)
+- `decomp/src/ft/ftchar/ftsamus/ftsamusspecialn.c:73`  — `ftSamusSpecialNStartProcInterrupt` (second B press sets `is_release = TRUE`)
+- `decomp/src/ft/ftchar/ftsamus/ftsamusspecialn.c:205` — `ftSamusSpecialNEndProcUpdate` with the `charge_gobj == NULL` bypass branch at line 234
+- `decomp/src/wp/wpsamus/wpsamuschargeshot.c:152` — `wpSamusChargeShotLaunch` (where the fix attempts live)
+- `decomp/src/wp/wpsamus/wpsamuschargeshot.c:309` — `wpSamusChargeShotMakeWeapon` (is_release=TRUE path at line 324)
+- `decomp/src/wp/wpmanager.c:199` — `wp->attack_coll.attack_state = nGMAttackStateNew` set unconditionally at spawn
+- `decomp/src/wp/wpmanager.c:250` — `wp->attack_coll.attack_count = attr->attack_count;` (loads `0` from file for charge shot)
+- `decomp/src/wp/wpprocess.c:26`  — `wpProcessUpdateHitPositions` (only updates `attack_pos[0]` if `attack_count > 0`; state-machine `New → Transfer → Interpolate`)
+- `decomp/src/ft/ftmain.c:3354` — `ftMainSearchHitWeapon` outer gate: `attack_state != nGMAttackStateOff`
+- `decomp/src/ft/ftmain.c:3435` — hit-detection loop gated on `attack_count`
+- `decomp/src/gm/gmcollision.c:661` — `gmCollisionTestRectangle` with the `opkind == 2` (point test) vs swept-test branches
+- `decomp/src/wp/wptypes.h` — current attempt at padded WPAttributes layout (`u16 _pad_before_combat_bits;` under `#ifdef PORT`)
 
 ## Related: the padding fix in `wptypes.h` is independently correct
 

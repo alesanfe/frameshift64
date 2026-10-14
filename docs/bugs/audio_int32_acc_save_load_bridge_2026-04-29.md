@@ -52,7 +52,7 @@ similarly fail to reach the int32 acc.
 
 ## Fingerprint via runtime telemetry
 
-`port/audio/mixer.c:aInterleaveImpl` instrumented (since reverted) to log peak
+`src/resources/audio/mixer.c:aInterleaveImpl` instrumented (since reverted) to log peak
 abs values across all four bus accumulators every ~120 audio frames:
 
 ```
@@ -94,7 +94,7 @@ copies right back to left.
 
 ## Fix
 
-`port/audio/mixer.c`:
+`src/resources/audio/mixer.c`:
 
 - `aLoadBufferImpl`: after the DRAM → `BUF_U8` memcpy, if `rspa.out` aliases
   a fixed-bus accumulator, copy the just-loaded s16 mirror into the int32

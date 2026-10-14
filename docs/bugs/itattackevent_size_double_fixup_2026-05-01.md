@@ -42,7 +42,7 @@ Only the explosion-progression events were broken.
 
 ## Verification
 
-`debug_tools/reloc_extract/reloc_extract.py extract baserom.us.z64 251`
+`tools/debugging/reloc_extract/reloc_extract.py extract baserom.us.z64 251`
 gives the bomb's attack events at offset 0x46C, 4×8 bytes:
 
 ```
@@ -58,7 +58,7 @@ size=300 at offset 0x04 and `fgm_id` at offset 0x20 (low half of its u32
 word, so `fgm_id` does need its own `portFixupStructU16(0x20, 1)` rotation
 — that one is kept).
 
-IDO probe (`docs/debug_ido_bitfield_layout.md` method) of the BE struct
+IDO probe (`docs/development/debug_ido_bitfield_layout.md` method) of the BE struct
 emits `lhu 0x6($a0)` for `ev->size`, confirming the LE-PORT layout's choice
 of struct-offset 0x06 matches IDO. So the struct decl is correct and the
 fixup was the problem.
@@ -68,20 +68,20 @@ fixup was the problem.
 Removed `portFixupStructU16(&ev[ip->event_id], 0x04, 1)` from all 7 call
 sites:
 
-- `src/it/itmain.c::itMainUpdateAttackEvent`
-- `src/it/itcommon/itbombhei.c::itBombHeiCommonUpdateAttackEvent`
-- `src/it/itcommon/itmsbomb.c::itMSBombExplodeUpdateAttackEvent`
-- `src/it/itground/itmarumine.c::itMarumineExplodeUpdateAttackEvent`
-- `src/it/itground/itporygon.c::itPorygonCommonUpdateMonsterEvent`
-- `src/it/itground/itfushigibana.c::itFushigibanaCommonUpdateMonsterEvent`
-- `src/it/itfighter/itlinkbomb.c::itLinkBombExplodeUpdateAttackEvent`
+- `decomp/src/it/itmain.c::itMainUpdateAttackEvent`
+- `decomp/src/it/itcommon/itbombhei.c::itBombHeiCommonUpdateAttackEvent`
+- `decomp/src/it/itcommon/itmsbomb.c::itMSBombExplodeUpdateAttackEvent`
+- `decomp/src/it/itground/itmarumine.c::itMarumineExplodeUpdateAttackEvent`
+- `decomp/src/it/itground/itporygon.c::itPorygonCommonUpdateMonsterEvent`
+- `decomp/src/it/itground/itfushigibana.c::itFushigibanaCommonUpdateMonsterEvent`
+- `decomp/src/it/itfighter/itlinkbomb.c::itLinkBombExplodeUpdateAttackEvent`
 
 Kept the legitimate `portFixupStructU16(&ev[i], 0x20, 1)` calls in the two
 ITMonsterEvent callers — `fgm_id` is at offset 0x20 (low half of its word)
 so it genuinely needs the rotation.
 
 Updated `ITAttackEvent` and `ITMonsterEvent` struct comments in
-`src/it/ittypes.h` with a do-not-fixup-size warning so a future "looks like
+`decomp/src/it/ittypes.h` with a do-not-fixup-size warning so a future "looks like
 a missed u16 fixup" sweep doesn't reintroduce the bug.
 
 ## Class
@@ -103,9 +103,9 @@ required.
 
 ## Validation tools used
 
-- `debug_tools/reloc_extract/reloc_extract.py` to dump file 251 / 264.
+- `tools/debugging/reloc_extract/reloc_extract.py` to dump file 251 / 264.
 - IDO probe (`/tmp/probe_itattackevent.c` + rabbitizer) to confirm the BE
-  struct's compiled access offsets, per `docs/debug_ido_bitfield_layout.md`.
+  struct's compiled access offsets, per `docs/development/debug_ido_bitfield_layout.md`.
 - Hitbox-view enhancement (`gEnhancements.HitboxView`) shipped in the prior
   commit — toggle to "Filled" in the Port Menu to see explosion hitboxes
   expanding through the 350→250→150 progression after the fix.

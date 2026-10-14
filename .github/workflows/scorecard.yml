@@ -1,0 +1,36 @@
+name: OpenSSF Scorecard
+
+# Weekly + on-push supply-chain posture measurement (TD-012). The action is
+# read-only against the repo; results upload to code scanning when SARIF
+# upload is permitted, and to the Scorecard API either way.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '30 6 * * 1'  # weekly
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # SARIF upload to code scanning
+      id-token: write          # optional OIDC publish token
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Run analysis
+        uses: ossf/scorecard-action@05b42c624433fc40578a4040d5cf5e36ddca8cde # v2.4.2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
+        with:
+          sarif_file: results.sarif
