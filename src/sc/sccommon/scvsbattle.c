@@ -118,6 +118,13 @@ void scVSBattleFuncUpdate(void)
 	syNetSyncRecordTick();
 	syNetReplayUpdate();
 	syNetPeerUpdate();
+
+#ifdef PORT
+	/* A catching-up spectator burns through the streamed input history at
+	 * several sim ticks per display frame until it lands on the live edge;
+	 * a no-op for players and for specs already at live. */
+	syNetPeerSpectateCatchUp(ifCommonBattleUpdateInterfaceAll);
+#endif
 }
 
 // neutral spawn interceptor

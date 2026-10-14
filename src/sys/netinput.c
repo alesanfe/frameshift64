@@ -761,6 +761,18 @@ void syNetInputFuncRead(void)
 		sSYNetInputHardware[player] = gSYControllerDevices[player];
 	}
 	syNetPeerBeginFrame();
+
+#ifdef PORT
+	/* A spectator never predicts: when no confirmed inputs exist for the
+	 * current tick it must hold the tick instead of resolving a predicted
+	 * frame and advancing anyway. Specs have no rollback to repair a skipped
+	 * or wrongly-predicted tick, so advancing here would desync them
+	 * permanently (and freeze them once they reached the live edge). */
+	if ((sSYNetPeerIsSpectator != FALSE) && (syNetPeerCheckBattleExecutionReady() == FALSE))
+	{
+		return;
+	}
+#endif
 	tick = syNetInputGetTick();
 
 	for (player = 0; player < MAXCONTROLLERS; player++)

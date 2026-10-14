@@ -12,6 +12,8 @@
 #ifdef PORT
 extern char *getenv(const char *name);
 extern int atoi(const char *s);
+extern unsigned long strtoul(const char *s, char **end, int base);
+extern int snprintf(char *s, unsigned long size, const char *fmt, ...);
 extern void port_log(const char *fmt, ...);
 #endif
 
@@ -77,7 +79,7 @@ extern void port_log(const char *fmt, ...);
  * frames so a lost packet converges instead of leaving peers asymmetric. */
 #define SYNETPEER_MAX_INPUT_DELAY 6
 #define SYNETPEER_DELAY_CHECK_FRAMES 300
-#define SYNETPEER_DELAY_STALL_TRIGGER 30
+#define SYNETPEER_DELAY_STALL_TRIGGER 15
 #define SYNETPEER_DELAY_REPEAT_FRAMES 10
 
 void syNetPeerReceiveRemoteInput(void);
@@ -170,6 +172,7 @@ u32 sSYNetPeerLateFrames;
 u32 sSYNetPeerInputChecksum;
 u32 sSYNetPeerDelayLastStallCheck;
 u32 sSYNetPeerDelayCheckStallBase;
+u32 sSYNetPeerDelayCheckLateBase;
 s32 sSYNetPeerDelayRepeatLeft;
 u32 sSYNetPeerLastLogTick;
 u32 sSYNetPeerSendSeq;
@@ -393,6 +396,11 @@ void syNetPeerAddSpecLink(s32 link)
 	}
 }
 
+extern u32 sSYNetPeerSpecHistoryCursor[8];
+extern u32 sSYNetPeerSpecProgress[8];
+extern sb32 sSYNetPeerSpecCatchUp[8];
+extern u32 sSYNetPeerSpecStallFrames[8];
+
 void syNetPeerRemoveSpecLink(s32 link)
 {
 	s32 i;
@@ -402,9 +410,302 @@ void syNetPeerRemoveSpecLink(s32 link)
 		if (sSYNetPeerSpecLinks[i] == link)
 		{
 			sSYNetPeerSpecLinks[i] = sSYNetPeerSpecLinks[--sSYNetPeerSpecLinkCount];
+			sSYNetPeerSpecHistoryCursor[i] = sSYNetPeerSpecHistoryCursor[sSYNetPeerSpecLinkCount];
+			sSYNetPeerSpecProgress[i] = sSYNetPeerSpecProgress[sSYNetPeerSpecLinkCount];
+			sSYNetPeerSpecCatchUp[i] = sSYNetPeerSpecCatchUp[sSYNetPeerSpecLinkCount];
+			sSYNetPeerSpecStallFrames[i] = sSYNetPeerSpecStallFrames[sSYNetPeerSpecLinkCount];
 			return;
 		}
 	}
+}
+
+/* ── Mid-match spectator catch-up ───────────────────────────────────────
+ * The host auto-records every online match (syNetReplayArmAutoSave), so a
+ * spectator joining mid-match doesn't need a state snapshot: the spec
+ * starts at tick 0, the host streams the recorded input log FORWARD-wrapped
+ * like live traffic, and the spec runs several sim ticks per display frame
+ * (syNetPeerSpectateCatchUp) until it lands on the live edge.
+ *
+ * Flow control: the spec reports its consumed tick in SPEC_PROGRESS packets
+ * and the host never streams past spec_tick + SYNETPEER_SPEC_WINDOW - the
+ * spec's remote-input ring is only 720 deep and stores by (tick % 720), so
+ * overrunning it would overwrite unconsumed frames and wedge the spec on a
+ * permanent gap. If progress stops (a stream packet was lost) the host
+ * rewinds the cursor and resends the whole unacked window. */
+
+#define SYNETPEER_SPEC_WINDOW 512                 /* ring is 720; stay clear */
+#define SYNETPEER_SPEC_HISTORY_PKTS 4             /* INPUT packets per player per call */
+#define SYNETPEER_SPEC_STALL_FRAMES 120           /* resend window after ~2s no progress */
+#define SYNETPEER_SPEC_PROGRESS_INTERVAL 15       /* spec reports every N frames */
+#define SYNETPEER_SPEC_CATCHUP_TICKS 16           /* max sim ticks per display frame */
+
+u32 sSYNetPeerSpecHistoryCursor[8];
+u32 sSYNetPeerSpecProgress[8];
+sb32 sSYNetPeerSpecCatchUp[8];
+u32 sSYNetPeerSpecStallFrames[8];
+u32 sSYNetPeerSpecReportCounter;
+
+/* Drops every spec link AND its catch-up state: a stale TRUE in
+ * sSYNetPeerSpecCatchUp at index i would otherwise leak into the next
+ * match's spec at the same index. */
+static void syNetPeerResetSpecLinks(void)
+{
+	sSYNetPeerSpecLinkCount = 0;
+	memset(sSYNetPeerSpecHistoryCursor, 0, sizeof(sSYNetPeerSpecHistoryCursor));
+	memset(sSYNetPeerSpecProgress, 0, sizeof(sSYNetPeerSpecProgress));
+	memset(sSYNetPeerSpecCatchUp, 0, sizeof(sSYNetPeerSpecCatchUp));
+	memset(sSYNetPeerSpecStallFrames, 0, sizeof(sSYNetPeerSpecStallFrames));
+}
+
+static s32 syNetPeerGetSpecIndex(s32 link)
+{
+	s32 i;
+
+	for (i = 0; i < sSYNetPeerSpecLinkCount; i++)
+	{
+		if (sSYNetPeerSpecLinks[i] == link)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* Host: arm the history stream for a spec link that joined mid-match.
+ * Safe to call again for an already-armed link (idempotent). */
+void syNetPeerBeginSpecCatchUp(s32 link)
+{
+	s32 i;
+
+	if ((sSYNetPeerIsActive == FALSE) || (sSYNetPeerBootstrapIsHost == FALSE))
+	{
+		return;
+	}
+	i = syNetPeerGetSpecIndex(link);
+	if (i < 0)
+	{
+		return;
+	}
+	sSYNetPeerSpecCatchUp[i] = TRUE;
+	sSYNetPeerSpecHistoryCursor[i] = 0;
+	sSYNetPeerSpecProgress[i] = 0;
+	sSYNetPeerSpecStallFrames[i] = 0;
+	port_log("SSB64 NetPeer: spec link %d mid-match - streaming input history\n", link);
+}
+
+/* Host: a progress report arrived on a spec link. Specs ride the relay,
+ * which only lets SSBL text payloads through spec→host - so the report is
+ * the text line "SSBL SPECTICK <tick>". (The SPEC_PROGRESS binary packet
+ * is also accepted for direct/non-relay links.) */
+static void syNetPeerHandleSpecProgress(const u8 *buffer, s32 size, s32 link)
+{
+	s32 i;
+	u32 tick = 0;
+
+	if ((size > 13) && (memcmp(buffer, "SSBL SPECTICK ", 14) == 0))
+	{
+		tick = (u32)strtoul((const char *)buffer + 14, NULL, 10);
+	}
+	else if (nbNetPacketParseSpecProgress(buffer, size, sSYNetPeerSessionID, &tick) != NB_NETPACKET_OK)
+	{
+		sSYNetPeerPacketsDropped++;
+		return;
+	}
+	i = syNetPeerGetSpecIndex(link);
+	if (i < 0)
+	{
+		return;
+	}
+	if (tick > sSYNetPeerSpecProgress[i])
+	{
+		sSYNetPeerSpecProgress[i] = tick;
+		sSYNetPeerSpecStallFrames[i] = 0;
+	}
+}
+
+/* Host: each frame, push the next slice of recorded inputs to catching-up
+ * spec links. One cursor per spec covers all players - every slot was
+ * recorded for the same ticks. */
+void syNetPeerServeSpecHistory(void)
+{
+#ifdef PORT
+	u8 buffer[SYNETPEER_PACKET_BYTES];
+	u32 live;
+	s32 i;
+
+	if ((sSYNetPeerBootstrapIsHost == FALSE) || (sSYNetPeerSpecLinkCount == 0))
+	{
+		return;
+	}
+	live = syNetInputGetTick();
+	for (i = 0; i < sSYNetPeerSpecLinkCount; i++)
+	{
+		u32 progress;
+		u32 cursor;
+		u32 ceiling;
+		u32 sent;
+
+		if (sSYNetPeerSpecCatchUp[i] == FALSE)
+		{
+			continue;
+		}
+		progress = sSYNetPeerSpecProgress[i];
+		cursor = sSYNetPeerSpecHistoryCursor[i];
+		ceiling = progress + SYNETPEER_SPEC_WINDOW;
+		if (ceiling > live)
+		{
+			ceiling = live;
+		}
+		if (cursor >= ceiling)
+		{
+			if (cursor < live)
+			{
+				/* Stream stalled waiting on the spec: if its progress hasn't
+				 * moved, packets were lost - rewind and resend the window. */
+				if (++sSYNetPeerSpecStallFrames[i] >= SYNETPEER_SPEC_STALL_FRAMES)
+				{
+					sSYNetPeerSpecStallFrames[i] = 0;
+					sSYNetPeerSpecHistoryCursor[i] = progress;
+				}
+				continue;
+			}
+			/* Caught up to the live edge: the spec rides the normal live
+			 * FORWARD stream from here. */
+			sSYNetPeerSpecCatchUp[i] = FALSE;
+			port_log("SSB64 NetPeer: spec link %d caught up at tick %u\n",
+					 sSYNetPeerSpecLinks[i], live);
+			continue;
+		}
+		sent = 0;
+		while ((cursor < ceiling) && (sent < SYNETPEER_SPEC_HISTORY_PKTS * NB_NETPACKET_MAX_PACKET_FRAMES))
+		{
+			s32 player;
+			sb32 any_sent = FALSE;
+			u32 chunk = ceiling - cursor;
+
+			if (chunk > NB_NETPACKET_MAX_PACKET_FRAMES)
+			{
+				chunk = NB_NETPACKET_MAX_PACKET_FRAMES;
+			}
+			/* Cover every slot that was in the match: remotes AND the host's
+			 * own stream (the spec gets those live via send-forwards too). */
+			for (player = 0; player < MAXCONTROLLERS; player++)
+			{
+				NBNetPacketInput pkt;
+				u32 f;
+
+				if ((sSYNetPeerRemotes[player].player != player) && (player != sSYNetPeerLocalPlayer))
+				{
+					continue;
+				}
+				memset(&pkt, 0, sizeof(pkt));
+				pkt.remote_advantage = 0;
+				pkt.session_id = sSYNetPeerSessionID;
+				pkt.ack_tick = 0;
+				pkt.seq = cursor / NB_NETPACKET_MAX_PACKET_FRAMES;
+				pkt.player = (u8)player;
+				pkt.local_player = (u8)player;
+				pkt.remote_player = 0;
+				pkt.check_tick = NB_NETPACKET_NO_CHECK_TICK;
+				pkt.frame_count = 0;
+				for (f = 0; f < chunk; f++)
+				{
+					SYNetInputFrame frame;
+
+					if (syNetInputGetReplayFrame(player, cursor + f, &frame) == FALSE)
+					{
+						break;   /* not recorded (past the 21600-frame cap) */
+					}
+					pkt.frames[f].tick = frame.tick;
+					pkt.frames[f].buttons = frame.buttons;
+					pkt.frames[f].stick_x = frame.stick_x;
+					pkt.frames[f].stick_y = frame.stick_y;
+					pkt.frame_count++;
+				}
+				if (pkt.frame_count == 0)
+				{
+					continue;
+				}
+				nbNetPacketBuildInput(buffer, &pkt);
+				syNetPeerSendForwardPacket(sSYNetPeerSpecLinks[i], player, buffer, SYNETPEER_PACKET_BYTES);
+				any_sent = TRUE;
+			}
+			if (any_sent == FALSE)
+			{
+				break;
+			}
+			cursor += chunk;
+			sent += chunk;
+		}
+		sSYNetPeerSpecHistoryCursor[i] = cursor;
+	}
+#endif
+}
+
+/* Spectator: report our consumed sim tick to the host so it can pace the
+ * catch-up stream. Sent on the remote link the host's FORWARDs arrive on;
+ * the host maps it back to our spec link via the relay slot. */
+void syNetPeerSendSpecProgress(void)
+{
+#ifdef PORT
+	char buffer[40];
+	s32 size;
+
+	/* A spec's player remotes all have link -1 - its only channel is the
+	 * relay link to the host's room slot (0), the same link the FORWARD
+	 * datagrams arrive on. The relay only forwards SSBL-prefixed payloads
+	 * spec→host, so the report rides the text channel. */
+	size = snprintf(buffer, sizeof(buffer), "SSBL SPECTICK %u", syNetInputGetTick());
+	if (size > 0)
+	{
+		port_udp_link_send(0, buffer, size + 1);
+	}
+#endif
+}
+
+/* Spectator-side catch-up: while the confirmed input lead exceeds our tick,
+ * run extra sim ticks in this display frame. Each iteration re-drains the
+ * socket via syNetInputFuncRead, so the stream keeps flowing while we
+ * consume; at the live edge the tick holds and the loop exits. */
+void syNetPeerSpectateCatchUp(void (*update)(void))
+{
+#ifdef PORT
+	s32 budget;
+	const char *env;
+
+	if (sSYNetPeerIsSpectator == FALSE)
+	{
+		return;
+	}
+	budget = SYNETPEER_SPEC_CATCHUP_TICKS;
+	env = getenv("SSB64_SPEC_CATCHUP_TPF");
+	if (env != NULL)
+	{
+		budget = atoi(env);
+		if (budget < 0)
+		{
+			budget = SYNETPEER_SPEC_CATCHUP_TICKS;
+		}
+	}
+	/* Report our consumed tick every N display frames so the host can pace
+	 * (and resume) the history stream. Kept unconditional: falling behind
+	 * again after a loss burst resumes the stream by itself. */
+	if (++sSYNetPeerSpecReportCounter >= SYNETPEER_SPEC_PROGRESS_INTERVAL)
+	{
+		sSYNetPeerSpecReportCounter = 0;
+		syNetPeerSendSpecProgress();
+	}
+	while ((budget-- > 0) &&
+		   (syNetInputGetTick() < syNetPeerGetRemoteConfirmedTick()))
+	{
+		syNetInputFuncRead();
+		if (syNetPeerCheckBattleExecutionReady() == FALSE)
+		{
+			break;
+		}
+		update();
+	}
+#endif
 }
 #endif
 
@@ -674,17 +975,34 @@ void syNetPeerHandleDelayPacket(const u8 *buffer, s32 size, SYNetPeerRemote *rem
 	{
 		syNetPeerTouchRemote(remote);
 	}
-	syNetPeerApplyInputDelay(delay);
+	/* Monotonic within a match: a lower value is a stale/stray packet and
+	 * must not shrink the local delay. */
+	if (delay > sSYNetPeerInputDelay)
+	{
+		syNetPeerApplyInputDelay(delay);
+		/* Star topology: clients only link the host, so a bump must be
+		 * re-flooded through it for every other client to converge. */
+		if (sSYNetPeerDelayRepeatLeft < SYNETPEER_DELAY_REPEAT_FRAMES)
+		{
+			sSYNetPeerDelayRepeatLeft = SYNETPEER_DELAY_REPEAT_FRAMES;
+		}
+	}
 }
 
-/* Host-side escalation, one step per check window: sustained prediction
- * stalls mean the remote inputs consistently arrive too late, so bump the
- * session's delay and re-send for a few frames to converge after loss. */
+/* Escalation, one step per check window: late remote inputs are the
+ * mispredict source (each forces a prediction that may roll back), so the
+ * peer that observes them broadcasts a DELAY bump — every peer applies
+ * max(local, received), converging to the same value without a dedicated
+ * authority. Delay is per-sender scheduling (inputs are tick-addressed),
+ * so temporary asymmetry can't desync; the uniform value keeps input-lag
+ * feel identical for everyone. Re-sent for a few frames to converge
+ * through loss. */
 void syNetPeerUpdateAdaptiveDelay(void)
 {
 	u32 tick;
+	u32 late_delta;
 
-	if ((sSYNetPeerBootstrapIsHost == FALSE) || (sSYNetPeerIsRollback == FALSE))
+	if (sSYNetPeerIsRollback == FALSE)
 	{
 		return;
 	}
@@ -701,15 +1019,17 @@ void syNetPeerUpdateAdaptiveDelay(void)
 	}
 	sSYNetPeerDelayLastStallCheck = tick;
 
-	if (((sSYNetPeerStallFrames - sSYNetPeerDelayCheckStallBase) >= SYNETPEER_DELAY_STALL_TRIGGER) &&
+	late_delta = sSYNetPeerLateFrames - sSYNetPeerDelayCheckLateBase;
+	if (((late_delta >= SYNETPEER_DELAY_STALL_TRIGGER) ||
+	     ((sSYNetPeerStallFrames - sSYNetPeerDelayCheckStallBase) >= SYNETPEER_DELAY_STALL_TRIGGER)) &&
 	    (sSYNetPeerInputDelay < SYNETPEER_MAX_INPUT_DELAY))
 	{
 		syNetPeerApplyInputDelay(sSYNetPeerInputDelay + 1);
 		sSYNetPeerDelayRepeatLeft = SYNETPEER_DELAY_REPEAT_FRAMES;
-		port_log("SSB64 NetPeer: sustained stalls (%u in %u frames) — bumping delay to %u\n",
-		         sSYNetPeerStallFrames - sSYNetPeerDelayCheckStallBase,
-		         SYNETPEER_DELAY_CHECK_FRAMES, sSYNetPeerInputDelay);
+		port_log("SSB64 NetPeer: sustained late inputs (%u in %u frames) — bumping delay to %u\n",
+		         late_delta, SYNETPEER_DELAY_CHECK_FRAMES, sSYNetPeerInputDelay);
 	}
+	sSYNetPeerDelayCheckLateBase = sSYNetPeerLateFrames;
 	sSYNetPeerDelayCheckStallBase = sSYNetPeerStallFrames;
 }
 #endif
@@ -1151,6 +1471,7 @@ void syNetPeerStartVSSession(void)
 	sSYNetPeerFrameReady = FALSE;
 	sSYNetPeerStallFrames = 0;
 	sSYNetPeerDelayCheckStallBase = 0;
+	sSYNetPeerDelayCheckLateBase = 0;
 	sSYNetPeerDelayLastStallCheck = syNetInputGetTick();
 	sSYNetPeerDelayRepeatLeft = 0;
 	sSYNetPeerLockstepStallFrames = 0;
@@ -1923,7 +2244,17 @@ void syNetPeerReceiveRemoteInput(void)
 			remote = syNetPeerGetRemoteByLink(link);
 			if (remote == NULL)
 			{
-				sSYNetPeerPacketsDropped++;
+				/* Spec links aren't remotes: a catching-up spectator sends
+				 * SPEC_PROGRESS on its link so the host can pace the history
+				 * stream. Anything else on a spec link is noise. */
+				if (syNetPeerGetSpecIndex(link) >= 0)
+				{
+					syNetPeerHandleSpecProgress(buffer, size, link);
+				}
+				else
+				{
+					sSYNetPeerPacketsDropped++;
+				}
 				continue;
 			}
 		}
@@ -2247,6 +2578,11 @@ void syNetPeerUpdate(void)
 	}
 	syNetPeerUpdateBattleGate();
 
+#ifdef PORT
+	/* History streaming is host-only and independent of the execution gate:
+	 * a stalled host must still feed catching-up spectators. */
+	syNetPeerServeSpecHistory();
+#endif
 	if (syNetPeerCheckBattleExecutionReady() == FALSE)
 	{
 		return;
@@ -2286,7 +2622,7 @@ void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is
 	sSYNetPeerIsConfigured = TRUE;
 	sSYNetPeerIsSocketExternal = TRUE;
 	sSYNetPeerIsSpectator = FALSE;
-	sSYNetPeerSpecLinkCount = 0;            /* the lobby re-registers watchers each match */
+	syNetPeerResetSpecLinks();            /* the lobby re-registers watchers each match */
 	sSYNetPeerLocalPlayer = local_player;
 	syNetPeerResetRemotes();
 	if (is_host != FALSE)
@@ -2315,6 +2651,7 @@ void syNetPeerStartOnline(s32 local_player, s32 player_count, u32 delay, sb32 is
 	sSYNetPeerInputDelay = delay;
 	sSYNetPeerDelayLastStallCheck = 0;
 	sSYNetPeerDelayCheckStallBase = 0;
+	sSYNetPeerDelayCheckLateBase = 0;
 	sSYNetPeerDelayRepeatLeft = 0;
 	/* session id comes from the lobby, generated independently of the
 	 * broadcast rng_seed; 0 keeps the legacy seed-derived behavior for
@@ -2433,7 +2770,7 @@ void syNetPeerStartOnlineSpectate(s32 player_count, u32 delay, u32 stage, u32 st
 	sSYNetPeerIsConfigured = TRUE;
 	sSYNetPeerIsSocketExternal = TRUE;
 	sSYNetPeerIsSpectator = TRUE;
-	sSYNetPeerSpecLinkCount = 0;
+	syNetPeerResetSpecLinks();
 	sSYNetPeerLocalPlayer = -1;
 	syNetPeerResetRemotes();
 	/* every player is a remote with no direct link: their packets all
@@ -2481,7 +2818,7 @@ void syNetPeerStopVSSession(void)
 		sSYNetPeerBootstrapIsEnabled = FALSE;
 		sSYNetPeerIsSocketExternal = FALSE;
 		sSYNetPeerIsSpectator = FALSE;
-		sSYNetPeerSpecLinkCount = 0;
+		syNetPeerResetSpecLinks();
 		syNetRollbackRestoreTickTimer();
 		port_netlobby_on_match_end();
 	}

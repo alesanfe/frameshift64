@@ -23,8 +23,11 @@ extern void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 
                                         u32 player_count, const u8 *fighter_kinds, const u8 *costumes);
 
 #ifdef PORT
+extern sb32 sSYNetPeerIsSpectator;
 extern void syNetPeerAddSpecLink(s32 link);
 extern void syNetPeerRemoveSpecLink(s32 link);
+extern void syNetPeerBeginSpecCatchUp(s32 link);
+extern void syNetPeerSpectateCatchUp(void (*update)(void));
 extern void syNetPeerStartOnlineSpectate(s32 player_count, u32 delay, u32 stage, u32 stocks, s32 is_items, u32 seed,
                                          u32 session_id, const s32 *fkinds, const s32 *costumes);
 #endif
