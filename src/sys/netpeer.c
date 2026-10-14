@@ -17,7 +17,7 @@ extern void port_log(const char *fmt, ...);
 
 #ifdef PORT
 #include <string.h>
-#include <netplay/transport/port_udp.h>
+#include <netplay/transport/udp_transport.h>
 #include <netplay/protocol/netpacket.h>
 
 /* The codec provides the wire primitives; keep the historical syNetPeer*
@@ -93,6 +93,23 @@ static void syNetPeerSendForwardPacket(s32 link, s32 src_player, const u8 *buffe
  * many milliseconds: its fighter freezes on the last input but the other
  * players keep playing. */
 #define SYNETPEER_REMOTE_DROP_MS 10000
+
+/* Test rigs may need a longer leash: several same-machine peers can stall
+ * a process past the default 10s (rollback resims blocking the netloop on
+ * starved CPU) without the peer actually being dead. Overridable via
+ * SSB64_NETPLAY_DROP_MS in test-hook builds. */
+static u32 syNetPeerRemoteDropMs(void)
+{
+#ifdef SSB64_TEST_HOOKS
+	const char *env = getenv("SSB64_NETPLAY_DROP_MS");
+
+	if ((env != NULL) && (atoi(env) > 0))
+	{
+		return (u32)atoi(env);
+	}
+#endif
+	return SYNETPEER_REMOTE_DROP_MS;
+}
 
 typedef NBNetPacketFrame SYNetPeerPacketFrame;
 
@@ -2047,12 +2064,13 @@ void syNetPeerUpdateStartBarrier(void)
 #endif
 }
 
-/* A remote that has gone silent for SYNETPEER_REMOTE_DROP_MS is excluded
+/* A remote that has gone silent for syNetPeerRemoteDropMs() is excluded
  * from pacing so one lost player can't freeze everyone else's match. */
 void syNetPeerUpdateRemoteDrops(void)
 {
 #ifdef PORT
 	u32 now = port_udp_now_ms();
+	u32 drop_ms = syNetPeerRemoteDropMs();
 	s32 player;
 
 	for (player = 0; player < MAXCONTROLLERS; player++)
@@ -2061,7 +2079,7 @@ void syNetPeerUpdateRemoteDrops(void)
 
 		if ((remote->player == player) && (remote->dropped == FALSE) &&
 			(remote->last_heard_ms != 0) &&
-			(now - remote->last_heard_ms > SYNETPEER_REMOTE_DROP_MS))
+			(now - remote->last_heard_ms > drop_ms))
 		{
 			remote->dropped = TRUE;
 			port_log("SSB64 NetPeer: remote player %d silent for %ums - dropping from pacing\n",

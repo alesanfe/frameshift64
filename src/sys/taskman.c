@@ -378,6 +378,17 @@ void syTaskmanCheckBufferLengths(void)
 {
 	s32 i;
 
+#ifdef PORT
+	/* Rollback shadow draws swap the DL heads for private scratch buffers
+	 * (see syTaskmanShadowDraw) — comparing them against the real buffers'
+	 * bounds reports a bogus multi-MB overflow. The live draw's heads are
+	 * checked once it resumes. */
+	if (syNetRollbackIsResimulating() != FALSE)
+	{
+		return;
+	}
+#endif
+
 	for (i = 0; i < (ARRAY_COUNT(gSYTaskmanDLHeads) + ARRAY_COUNT(sSYTaskmanDLBranches) + ARRAY_COUNT(sSYTaskmanDLBuffers[0])) / 3; i++)
 	{
 		if (sSYTaskmanDLBuffers[gSYTaskmanTaskID][i].length + (uintptr_t)sSYTaskmanDLBuffers[gSYTaskmanTaskID][i].start < (uintptr_t)gSYTaskmanDLHeads[i])
