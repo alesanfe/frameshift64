@@ -47,7 +47,7 @@
  *   - ftSamusSpecialNGetChargeShotPosition (SR ball_position_fix_)
  *
  * Convention matches EngineEvent.h: REGISTER_EVENT in PortRegisterEvents
- * (port/hooks/Events.cpp) allocates the EventID at engine init; CALL_EVENT
+ * (src/bridge/hooks/Events.cpp) allocates the EventID at engine init; CALL_EVENT
  * fires it; mods subscribe with REGISTER_LISTENER.
  */
 #pragma once

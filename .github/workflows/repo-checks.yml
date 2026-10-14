@@ -26,6 +26,8 @@ jobs:
         run: python tools/lint/check_env_vars.py
       - name: Module dependency rules
         run: python tools/lint/check_module_deps.py
+      - name: Retired-path regression guard
+        run: python tools/lint/check_retired_paths.py
       - name: Extraction recipes (structure + golden hashes)
         run: |
           pip install pyyaml

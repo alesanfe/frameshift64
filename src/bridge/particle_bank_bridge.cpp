@@ -38,7 +38,7 @@ extern "C" {
 #include "bridge/particle_bank_bridge.h"
 extern void port_log(const char *fmt, ...);
 
-/* Stub symbols from port/stubs/segment_symbols.c. Their addresses are the
+/* Stub symbols from src/compatibility/segment_symbols.c. Their addresses are the
  * per-bank keys passed into efParticleGetLoadBankID. Types (u/i ptr_t) match
  * the stub declarations exactly — getting this wrong would change the
  * external linkage name via C++ name mangling only if we were using C++
@@ -53,7 +53,7 @@ extern uintptr_t lMNTitleParticleScriptBankLo;
 
 /* Fighter-data-side banks: ftdata.c passes (uintptr_t)&particles_unk{0,1,2}_scb_ROM_START
  * from FTData structs, distinct from the stub-address convention used by the six
- * named banks above. Declared as s32 in port/stubs/segment_symbols.c. */
+ * named banks above. Declared as s32 in src/compatibility/segment_symbols.c. */
 extern int32_t particles_unk0_scb_ROM_START;
 extern int32_t particles_unk1_scb_ROM_START;
 extern int32_t particles_unk2_scb_ROM_START;

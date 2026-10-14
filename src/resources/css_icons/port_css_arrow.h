@@ -32,8 +32,8 @@
  *   3. Run.
  *
  * To re-render at a new apex angle:
- *   python3 tools/generate_arrow_svg.py port/assets/css_icons/arrow.png      <W> <H>
- *   python3 tools/generate_arrow_svg.py port/assets/css_icons/arrow_left.png <W> <H> --mirror
+ *   python3 tools/generate_arrow_svg.py assets/css_icons/arrow.png      <W> <H>
+ *   python3 tools/generate_arrow_svg.py assets/css_icons/arrow_left.png <W> <H> --mirror
  */
 
 #ifdef PORT

@@ -29,7 +29,7 @@ int port_udp_send(const void *data, int size);
  * error. Datagrams from addresses other than the peer are ignored. */
 int port_udp_recv(void *buffer, int capacity);
 
-/* Lobby / NAT traversal (port/net/netlobby.cpp). */
+/* Lobby / NAT traversal (src/netplay/netlobby.cpp). */
 int port_udp_send_to(const char *spec, const void *data, int size);
 
 /* Like port_udp_recv but from anyone; writes the sender's "ip:port" (or

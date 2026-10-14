@@ -56,7 +56,7 @@ sockaddr_in sPeer;
 bool sHasPeer = false;
 
 /* Relay fallback: game packets travel through the lobby server instead of
- * UDP (port/net/netlobby.cpp installs WebSocket send/receive hooks). */
+ * UDP (src/netplay/netlobby.cpp installs WebSocket send/receive hooks). */
 port_udp_relay_send_fn sRelaySend = nullptr;
 port_udp_relay_recv_fn sRelayRecv = nullptr;
 bool sRelayFramed = false;   /* v2 protocol: relayed frames carry a slot byte */

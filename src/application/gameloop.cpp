@@ -66,7 +66,7 @@ extern "C" int portFastCaptureBackbufferPNG(const char *path);
 /* Simulated N64 VI VBlank: propagates the queued framebuffer to "current"
  * so the scheduler's CheckReadyFramebuffer fnCheck can correctly stall a
  * gfx task when VI is still using the slot the game wants to draw into.
- * Implemented in port/stubs/n64_stubs.c. */
+ * Implemented in src/compatibility/n64_stubs.c. */
 extern "C" void port_vi_simulate_vblank(void);
 
 /* Save-write failure reporting — sticky flag in port_save.cpp polled once

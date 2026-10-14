@@ -17,7 +17,7 @@
  * "Loaded" is keyed by the manifest name, which is the same key
  * ScriptLoader stores its loaded modules under (mLoadedScripts[Name]).
  *
- * Only compiled when scripting is enabled (the whole port/mods/ tree is
+ * Only compiled when scripting is enabled (the whole src/bridge/modding/ tree is
  * filtered out under DISABLE_SCRIPTING by the top-level CMakeLists).
  */
 #pragma once

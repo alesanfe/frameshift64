@@ -622,7 +622,7 @@ static std::string PortLocateFile(const std::string& basename) {
 }
 
 /* ── Console "reset" command ─────────────────────────────────────────────
- * The ESC-menu Reset button (port/gui/Menu.cpp) and the Ctrl/Cmd-R shortcut
+ * The ESC-menu Reset button (src/presentation/Menu.cpp) and the Ctrl/Cmd-R shortcut
  * (libultraship Gui.cpp) both Dispatch("reset") at the LUS console, but the
  * command was never registered, so both fell through to "[LUS] Command not
  * found" and did nothing.
@@ -1092,7 +1092,7 @@ static int PortInitImpl(int argc, char* argv[]) {
 	if (!sContext->InitEventSystem()) { port_log("SSB64: InitEventSystem failed\n"); return 1; }
 	port_log("SSB64: EventSystem initialized\n");
 
-	// Allocate runtime EventIDs for every event declared in port/hooks/list/*.
+	// Allocate runtime EventIDs for every event declared in src/bridge/hooks/list/*.
 	// Must happen AFTER InitEventSystem (PortRegisterEvents calls
 	// EventSystemRegisterEvent, which dereferences Context::GetEventSystem()).
 	PortRegisterEvents();

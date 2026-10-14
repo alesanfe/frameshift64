@@ -71,7 +71,7 @@ static const std::map<int32_t, const char*> kTextureFilteringMap = {
 };
 
 // Enhanced framerate mode: CVar stores the target render fps; game logic
-// always stays at 60 Hz (see port/interpolation/frame_interpolation.h).
+// always stays at 60 Hz (see src/resources/interpolation/frame_interpolation.h).
 static const std::map<int32_t, const char*> kEnhancedFpsMap = {
     { 0, "Off (60 FPS)" },
     { 120, "120 FPS" },
@@ -361,7 +361,7 @@ void RenderPostProcessDiagnostics(WidgetInfo& /*widget*/) {
 #if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
 // Shader-pack downloader UI is gated off on Android (the libretro
 // catalog fetch + ZIP-extract pipeline doesn't fit Play Store distro;
-// port/enhancements/ShaderDownloader.cpp is not compiled into libmain.so).
+// src/features/ShaderDownloader.cpp is not compiled into libmain.so).
 // The matching menu entry under Settings → Graphics is wrapped in the
 // same guard, so this block is dead code on Android — gate the whole
 // definition so the link doesn't reach for the missing symbols.
@@ -393,7 +393,7 @@ static char s_shaderPackFilter[128] = {};
 // Renders the "Get more shaders…" affordance immediately beneath the
 // picker. Click opens the modal; the modal handles the catalog fetch,
 // the user's selection, and the install in sequence.
-/* Online play: room-code lobby (port/net/netlobby.cpp). The host picks the
+/* Online play: room-code lobby (src/netplay/netlobby.cpp). The host picks the
  * rules and gets a 6-character code; the other player joins with it. */
 static const char* const kNetplayFighters[] = { "Mario", "Fox", "Donkey Kong", "Samus", "Luigi", "Link",
                                                 "Yoshi", "Captain Falcon", "Kirby", "Pikachu", "Jigglypuff", "Ness" };
