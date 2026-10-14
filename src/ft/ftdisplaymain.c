@@ -6,8 +6,8 @@
 #include <sys/develop.h>
 
 #ifdef PORT
-#include <features/enhancements.h>
-#include "bridge/hooks/Events.h"
+#include <gameplay/enhancements.h>
+#include "integration/hooks/Events.h"
 extern float port_widescreen_clip_x_scale(void);
 #endif
 

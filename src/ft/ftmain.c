@@ -7,7 +7,7 @@
 extern void port_log(const char *fmt, ...);
 extern void port_dump_backtrace(void);
 #include "fighter_registry.h"
-#include "bridge/hooks/Events.h"
+#include "integration/hooks/Events.h"
 #endif
 #include <sys/controller.h>
 

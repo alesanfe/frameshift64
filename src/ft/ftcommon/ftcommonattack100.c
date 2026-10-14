@@ -8,7 +8,7 @@
  * rapid jab. Resolve the synth's PARENT kind first via the
  * FighterParentKindResolveEvent query (no-op for vanilla fighters / with no
  * listener — the payload comes back unchanged). */
-#include "bridge/hooks/Events.h"
+#include "integration/hooks/Events.h"
 static s32 ftCommonAttack100ResolveParentKind(s32 fkind)
 {
     CALL_EVENT(FighterParentKindResolveEvent, fkind, fkind);

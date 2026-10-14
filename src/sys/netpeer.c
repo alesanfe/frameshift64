@@ -18,18 +18,32 @@ extern void port_log(const char *fmt, ...);
 #ifdef PORT
 #include <string.h>
 #include <netplay/transport/port_udp.h>
+#include <netplay/protocol/netpacket.h>
+
+/* The codec provides the wire primitives; keep the historical syNetPeer*
+ * names as aliases so the call sites below stay in decomp style. */
+#define syNetPeerWriteU8  nbNetPacketWriteU8
+#define syNetPeerWriteU16 nbNetPacketWriteU16
+#define syNetPeerWriteU32 nbNetPacketWriteU32
+#define syNetPeerReadU8   nbNetPacketReadU8
+#define syNetPeerReadU16  nbNetPacketReadU16
+#define syNetPeerReadU32  nbNetPacketReadU32
+#define syNetPeerChecksumBytes nbNetPacketChecksumBytes
+#define syNetPeerChecksumAccumulateU32 nbNetPacketChecksumAccumulateU32
+#define syNetPeerChecksumAccumulateFrame(c, f) \
+	nbNetPacketChecksumAccumulateFrame((c), (const NBNetPacketFrame *)(f))
 #endif
 
-#define SYNETPEER_MAGIC 0x53534E50 // SSNP
-/* v4: the checksum now covers the entire datagram (remote_advantage and the
- * sync-check trailer used to ride unprotected — a bit-flip there produced
- * false DESYNCs under corruption). Mixed v3/v4 sessions drop each other. */
-#define SYNETPEER_VERSION 4
-#define SYNETPEER_MAX_PACKET_FRAMES 16
-#define SYNETPEER_FRAME_BYTES 8
-#define SYNETPEER_INPUT_HEADER_BYTES (4 + 2 + 2 + 4 + 4 + 4 + 1 + 1 + 1 + 1)
-#define SYNETPEER_SYNC_CHECK_BYTES (4 + 4)
-#define SYNETPEER_PACKET_BYTES ((SYNETPEER_INPUT_HEADER_BYTES) + ((SYNETPEER_MAX_PACKET_FRAMES) * (SYNETPEER_FRAME_BYTES)) + SYNETPEER_SYNC_CHECK_BYTES + 4)
+/* Wire format lives in the pure codec — src/netplay/protocol/netpacket.*.
+ * The SYNETPEER_* names stay as aliases so this file keeps its decomp
+ * naming while the codec (and its unit tests) share one source of truth. */
+#define SYNETPEER_MAGIC NB_NETPACKET_MAGIC
+#define SYNETPEER_VERSION NB_NETPACKET_VERSION
+#define SYNETPEER_MAX_PACKET_FRAMES NB_NETPACKET_MAX_PACKET_FRAMES
+#define SYNETPEER_FRAME_BYTES NB_NETPACKET_FRAME_BYTES
+#define SYNETPEER_INPUT_HEADER_BYTES NB_NETPACKET_INPUT_HEADER_BYTES
+#define SYNETPEER_SYNC_CHECK_BYTES NB_NETPACKET_SYNC_CHECK_BYTES
+#define SYNETPEER_PACKET_BYTES NB_NETPACKET_PACKET_BYTES
 #define SYNETPEER_VALIDATION_INPUT_WINDOW 120
 #define SYNETPEER_METADATA_BYTES (11 * 4 + 8 + (MAXCONTROLLERS * 7))
 #define SYNETPEER_BOOTSTRAP_PACKET_BYTES (4 + 2 + 2 + 4 + SYNETPEER_METADATA_BYTES + 4)
@@ -61,33 +75,26 @@ void syNetPeerUpdateStartBarrier(void);
 void syNetPeerSendLocalInput(void);
 static void syNetPeerSendForwardPacket(s32 link, s32 src_player, const u8 *buffer, s32 size);
 
-#define SYNETPEER_PACKET_INPUT 0
-#define SYNETPEER_PACKET_MATCH_CONFIG 1
-#define SYNETPEER_PACKET_READY 2
-#define SYNETPEER_PACKET_START 3
-#define SYNETPEER_PACKET_BATTLE_READY 4
-#define SYNETPEER_PACKET_BATTLE_START 5
-#define SYNETPEER_PACKET_FORWARD 6
+#define SYNETPEER_PACKET_INPUT NB_NETPACKET_PACKET_INPUT
+#define SYNETPEER_PACKET_MATCH_CONFIG NB_NETPACKET_PACKET_MATCH_CONFIG
+#define SYNETPEER_PACKET_READY NB_NETPACKET_PACKET_READY
+#define SYNETPEER_PACKET_START NB_NETPACKET_PACKET_START
+#define SYNETPEER_PACKET_BATTLE_READY NB_NETPACKET_PACKET_BATTLE_READY
+#define SYNETPEER_PACKET_BATTLE_START NB_NETPACKET_PACKET_BATTLE_START
+#define SYNETPEER_PACKET_FORWARD NB_NETPACKET_PACKET_FORWARD
 
 /* FORWARD packets let the star-topology host relay one client's input
  * datagram to the other clients: [magic][version][type][session]
  * [src_player][inner packet][checksum]. */
-#define SYNETPEER_FORWARD_HEADER_BYTES (4 + 2 + 2 + 4 + 1)
-#define SYNETPEER_FORWARD_PACKET_BYTES (SYNETPEER_FORWARD_HEADER_BYTES + SYNETPEER_PACKET_BYTES + 4)
+#define SYNETPEER_FORWARD_HEADER_BYTES NB_NETPACKET_FORWARD_HEADER_BYTES
+#define SYNETPEER_FORWARD_PACKET_BYTES NB_NETPACKET_FORWARD_PACKET_BYTES
 
 /* A remote that goes silent mid-match stops pacing the session after this
  * many milliseconds: its fighter freezes on the last input but the other
  * players keep playing. */
 #define SYNETPEER_REMOTE_DROP_MS 10000
 
-typedef struct SYNetPeerPacketFrame
-{
-	u32 tick;
-	u16 buttons;
-	s8 stick_x;
-	s8 stick_y;
-
-} SYNetPeerPacketFrame;
+typedef NBNetPacketFrame SYNetPeerPacketFrame;
 
 /* One per remote participant, indexed by game slot. link is the port_udp
  * link the remote is reached on (equal to its slot in lobby matches);
@@ -369,81 +376,6 @@ void syNetPeerRemoveSpecLink(s32 link)
 }
 #endif
 
-u32 syNetPeerChecksumAccumulateU32(u32 checksum, u32 value)
-{
-	checksum ^= value;
-	checksum *= 16777619U;
-
-	return checksum;
-}
-
-u32 syNetPeerChecksumAccumulateFrame(u32 checksum, const SYNetPeerPacketFrame *frame)
-{
-	checksum = syNetPeerChecksumAccumulateU32(checksum, frame->tick);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, frame->buttons);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, (u8)frame->stick_x);
-	checksum = syNetPeerChecksumAccumulateU32(checksum, (u8)frame->stick_y);
-
-	return checksum;
-}
-
-u32 syNetPeerChecksumBytes(const u8 *bytes, u32 size)
-{
-	u32 checksum = 2166136261U;
-	u32 i;
-
-	for (i = 0; i < size; i++)
-	{
-		checksum ^= bytes[i];
-		checksum *= 16777619U;
-	}
-	return checksum;
-}
-
-void syNetPeerWriteU8(u8 **cursor, u8 value)
-{
-	*(*cursor)++ = value;
-}
-
-void syNetPeerWriteU16(u8 **cursor, u16 value)
-{
-	*(*cursor)++ = (value >> 8) & 0xFF;
-	*(*cursor)++ = value & 0xFF;
-}
-
-void syNetPeerWriteU32(u8 **cursor, u32 value)
-{
-	*(*cursor)++ = (value >> 24) & 0xFF;
-	*(*cursor)++ = (value >> 16) & 0xFF;
-	*(*cursor)++ = (value >> 8) & 0xFF;
-	*(*cursor)++ = value & 0xFF;
-}
-
-u8 syNetPeerReadU8(const u8 **cursor)
-{
-	return *(*cursor)++;
-}
-
-u16 syNetPeerReadU16(const u8 **cursor)
-{
-	u16 value = (u16)(*(*cursor)++) << 8;
-
-	value |= *(*cursor)++;
-
-	return value;
-}
-
-u32 syNetPeerReadU32(const u8 **cursor)
-{
-	u32 value = (u32)(*(*cursor)++) << 24;
-
-	value |= (u32)(*(*cursor)++) << 16;
-	value |= (u32)(*(*cursor)++) << 8;
-	value |= *(*cursor)++;
-
-	return value;
-}
-
 void syNetPeerWriteMetadata(u8 **cursor, const SYNetInputReplayMetadata *metadata)
 {
 	s32 player;
@@ -642,16 +574,9 @@ void syNetPeerSendControlPacket(u16 packet_type)
 {
 #ifdef PORT
 	u8 buffer[SYNETPEER_CONTROL_PACKET_BYTES];
-	u8 *cursor = buffer;
-	u32 checksum;
 	s32 player;
 
-	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
-	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
-	syNetPeerWriteU16(&cursor, packet_type);
-	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
-	checksum = syNetPeerChecksumBytes(buffer, cursor - buffer);
-	syNetPeerWriteU32(&cursor, checksum);
+	nbNetPacketBuildControl(buffer, packet_type, sSYNetPeerSessionID);
 	for (player = 0; player < MAXCONTROLLERS; player++)
 	{
 		SYNetPeerRemote *remote = &sSYNetPeerRemotes[player];
@@ -671,10 +596,7 @@ void syNetPeerSendMatchConfigPacket(void)
 	u8 *cursor = buffer;
 	u32 checksum;
 
-	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
-	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
-	syNetPeerWriteU16(&cursor, SYNETPEER_PACKET_MATCH_CONFIG);
-	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
+	nbNetPacketWritePrefix(&cursor, SYNETPEER_PACKET_MATCH_CONFIG, sSYNetPeerSessionID);
 	syNetPeerWriteMetadata(&cursor, &sSYNetPeerBootstrapMetadata);
 	checksum = syNetPeerChecksumBytes(buffer, cursor - buffer);
 	syNetPeerWriteU32(&cursor, checksum);
@@ -683,29 +605,15 @@ void syNetPeerSendMatchConfigPacket(void)
 
 void syNetPeerHandleControlPacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote)
 {
-	const u8 *cursor = buffer;
-	u32 magic;
-	u32 session_id;
-	u32 checksum;
-	u32 expected_checksum;
-	u16 version;
-	u16 packet_type;
 	s32 remote_player = (remote != NULL) ? remote->player : sSYNetPeerRemotePlayer;
+	s32 packet_type;
 
 	if (size != SYNETPEER_CONTROL_PACKET_BYTES)
 	{
 		return;
 	}
-	expected_checksum = syNetPeerChecksumBytes(buffer, SYNETPEER_CONTROL_PACKET_BYTES - 4);
-
-	magic = syNetPeerReadU32(&cursor);
-	version = syNetPeerReadU16(&cursor);
-	packet_type = syNetPeerReadU16(&cursor);
-	session_id = syNetPeerReadU32(&cursor);
-	checksum = syNetPeerReadU32(&cursor);
-
-	if ((magic != SYNETPEER_MAGIC) || (version != SYNETPEER_VERSION) ||
-		(session_id != sSYNetPeerSessionID) || (checksum != expected_checksum))
+	packet_type = nbNetPacketParseControl(buffer, size, sSYNetPeerSessionID);
+	if (packet_type < 0)
 	{
 		sSYNetPeerPacketsDropped++;
 		return;
@@ -1234,19 +1142,14 @@ sb32 syNetPeerCheckStartBarrierReleased(void)
 
 void syNetPeerBuildPacket(u8 *buffer, u32 *out_size, const SYNetPeerRemote *remote)
 {
+	NBNetPacketInput pkt;
 	SYNetInputFrame history_frame;
-	SYNetPeerPacketFrame frames[SYNETPEER_MAX_PACKET_FRAMES];
-	SYNetPeerPacketFrame zero_frame;
-	u8 *cursor = buffer;
 	u32 latest_tick;
 	u32 ack_tick = syNetPeerGetAckTick((SYNetPeerRemote *)remote);
-	u32 checksum;
 	s32 frame_count = 0;
 	s32 back;
-	s32 i;
 
-	memset(frames, 0, sizeof(frames));
-	memset(&zero_frame, 0, sizeof(zero_frame));
+	memset(&pkt, 0, sizeof(pkt));
 
 	/* The newest sample was scheduled for (tick being published) + delay; the
 	 * packet repeats the last 16 scheduled frames for loss tolerance. */
@@ -1257,56 +1160,35 @@ void syNetPeerBuildPacket(u8 *buffer, u32 *out_size, const SYNetPeerRemote *remo
 		if ((latest_tick >= (u32)back) &&
 			(syNetInputGetLocalScheduledFrame(sSYNetPeerLocalPlayer, latest_tick - back, &history_frame) != FALSE))
 		{
-			frames[frame_count].tick = history_frame.tick;
-			frames[frame_count].buttons = history_frame.buttons;
-			frames[frame_count].stick_x = history_frame.stick_x;
-			frames[frame_count].stick_y = history_frame.stick_y;
+			pkt.frames[frame_count].tick = history_frame.tick;
+			pkt.frames[frame_count].buttons = history_frame.buttons;
+			pkt.frames[frame_count].stick_x = history_frame.stick_x;
+			pkt.frames[frame_count].stick_y = history_frame.stick_y;
 			frame_count++;
 		}
 	}
-	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
-	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
 	{
 		s32 remote_slot = (remote != NULL) ? remote->player : sSYNetPeerRemotePlayer;
 		s32 advantage = (s32)syNetInputGetTick() - (s32)syNetInputGetRemoteNextUnconfirmed(remote_slot);
 
 		advantage = (advantage < -32768) ? -32768 : (advantage > 32767) ? 32767 : advantage;
-		syNetPeerWriteU16(&cursor, (u16)(s16)advantage);
+		pkt.remote_advantage = (s16)advantage;
 	}
-	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
-	syNetPeerWriteU32(&cursor, ack_tick);
-	syNetPeerWriteU32(&cursor, sSYNetPeerSendSeq);
-	syNetPeerWriteU8(&cursor, (u8)sSYNetPeerLocalPlayer);
-	syNetPeerWriteU8(&cursor, (u8)frame_count);
-	syNetPeerWriteU8(&cursor, (u8)sSYNetPeerLocalPlayer);
-	syNetPeerWriteU8(&cursor, (u8)((remote != NULL) ? remote->player : sSYNetPeerRemotePlayer));
-
-	for (i = 0; i < SYNETPEER_MAX_PACKET_FRAMES; i++)
+	pkt.session_id = sSYNetPeerSessionID;
+	pkt.ack_tick = ack_tick;
+	pkt.seq = sSYNetPeerSendSeq;
+	pkt.player = (u8)sSYNetPeerLocalPlayer;
+	pkt.frame_count = (u8)frame_count;
+	pkt.local_player = (u8)sSYNetPeerLocalPlayer;
+	pkt.remote_player = (u8)((remote != NULL) ? remote->player : sSYNetPeerRemotePlayer);
+	if (syNetRollbackGetLatestConfirmedHash(&pkt.check_tick, &pkt.check_hash) == FALSE)
 	{
-		SYNetPeerPacketFrame *frame = (i < frame_count) ? &frames[i] : &zero_frame;
-
-		syNetPeerWriteU32(&cursor, frame->tick);
-		syNetPeerWriteU16(&cursor, frame->buttons);
-		syNetPeerWriteU8(&cursor, (u8)frame->stick_x);
-		syNetPeerWriteU8(&cursor, (u8)frame->stick_y);
-	}
-	{
-		u32 check_tick;
-		u32 check_hash;
-
-		if (syNetRollbackGetLatestConfirmedHash(&check_tick, &check_hash) == FALSE)
-		{
-			check_tick = 0xFFFFFFFFU;
-			check_hash = 0;
-		}
-		syNetPeerWriteU32(&cursor, check_tick);
-		syNetPeerWriteU32(&cursor, check_hash);
+		pkt.check_tick = NB_NETPACKET_NO_CHECK_TICK;
+		pkt.check_hash = 0;
 	}
 	/* Byte-wise over the whole datagram so the advantage and sync-check
 	 * trailer are authenticated too. */
-	checksum = syNetPeerChecksumBytes(buffer, SYNETPEER_PACKET_BYTES - 4);
-	syNetPeerWriteU32(&cursor, checksum);
-	*out_size = SYNETPEER_PACKET_BYTES;
+	*out_size = nbNetPacketBuildInput(buffer, &pkt);
 }
 
 void syNetPeerSendLocalInput(void)
@@ -1377,23 +1259,15 @@ static void syNetPeerSendForwardPacket(s32 link, s32 src_player, const u8 *buffe
 {
 #ifdef PORT
 	u8 wrapper[SYNETPEER_FORWARD_PACKET_BYTES];
-	u8 *cursor = wrapper;
-	u32 checksum;
+	u32 wrapper_size;
 
-	if ((size <= 0) || (size + SYNETPEER_FORWARD_HEADER_BYTES + 4 > SYNETPEER_FORWARD_PACKET_BYTES))
+	wrapper_size = nbNetPacketBuildForward(wrapper, sizeof(wrapper), buffer, (u32)size,
+										 (u8)src_player, sSYNetPeerSessionID);
+	if (wrapper_size == 0)
 	{
 		return;
 	}
-	syNetPeerWriteU32(&cursor, SYNETPEER_MAGIC);
-	syNetPeerWriteU16(&cursor, SYNETPEER_VERSION);
-	syNetPeerWriteU16(&cursor, SYNETPEER_PACKET_FORWARD);
-	syNetPeerWriteU32(&cursor, sSYNetPeerSessionID);
-	syNetPeerWriteU8(&cursor, (u8)src_player);
-	memcpy(cursor, buffer, size);
-	cursor += size;
-	checksum = syNetPeerChecksumBytes(wrapper, cursor - wrapper);
-	syNetPeerWriteU32(&cursor, checksum);
-	port_udp_link_send(link, wrapper, (s32)(cursor - wrapper));
+	port_udp_link_send(link, wrapper, (s32)wrapper_size);
 #endif
 }
 
@@ -1433,20 +1307,10 @@ void syNetPeerForwardPacket(const SYNetPeerRemote *from, const u8 *buffer, s32 s
  * check because the inner datagram was addressed to the host. */
 void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, sb32 forwarded)
 {
-	const u8 *cursor = buffer;
-	SYNetPeerPacketFrame frames[SYNETPEER_MAX_PACKET_FRAMES];
-	u32 magic;
-	u32 session_id;
+	NBNetPacketInput pkt;
 	u32 ack_tick;
 	u32 packet_seq;
-	u32 checksum;
-	u32 expected_checksum;
-	u16 version;
-	u8 player;
 	u8 frame_count;
-	u8 packet_local_player;
-	u8 packet_remote_player;
-	s32 remote_advantage;
 	u32 check_tick;
 	u32 check_hash;
 	u32 current_tick = syNetInputGetTick();
@@ -1465,53 +1329,34 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 		sSYNetPeerPacketsDropped++;
 		return;
 	}
-	memset(frames, 0, sizeof(frames));
-
-	magic = syNetPeerReadU32(&cursor);
-	version = syNetPeerReadU16(&cursor);
-	remote_advantage = (s16)syNetPeerReadU16(&cursor);
-	session_id = syNetPeerReadU32(&cursor);
-	ack_tick = syNetPeerReadU32(&cursor);
-	packet_seq = syNetPeerReadU32(&cursor);
-	player = syNetPeerReadU8(&cursor);
-	frame_count = syNetPeerReadU8(&cursor);
-	packet_local_player = syNetPeerReadU8(&cursor);
-	packet_remote_player = syNetPeerReadU8(&cursor);
-
-	if ((magic != SYNETPEER_MAGIC) || (version != SYNETPEER_VERSION) ||
-		((session_id != sSYNetPeerSessionID) && (sSYNetPeerMutantBadSession == FALSE)) ||
-		(player != (u8)src_player) ||
-		(packet_local_player != (u8)src_player) ||
-		((forwarded == FALSE) && (packet_remote_player != (u8)sSYNetPeerLocalPlayer)) ||
-		(frame_count > SYNETPEER_MAX_PACKET_FRAMES))
 	{
-		sSYNetPeerPacketsDropped++;
-		return;
-	}
-	for (i = 0; i < SYNETPEER_MAX_PACKET_FRAMES; i++)
-	{
-		frames[i].tick = syNetPeerReadU32(&cursor);
-		frames[i].buttons = syNetPeerReadU16(&cursor);
-		frames[i].stick_x = (s8)syNetPeerReadU8(&cursor);
-		frames[i].stick_y = (s8)syNetPeerReadU8(&cursor);
-	}
-	check_tick = syNetPeerReadU32(&cursor);
-	check_hash = syNetPeerReadU32(&cursor);
-	checksum = syNetPeerReadU32(&cursor);
-	expected_checksum = syNetPeerChecksumBytes(buffer, SYNETPEER_PACKET_BYTES - 4);
+		NBNetPacketContext ctx;
 
-	if ((checksum != expected_checksum) && (sSYNetPeerMutantBadChecksum == FALSE))
-	{
-		sSYNetPeerPacketsDropped++;
-		return;
+		ctx.session_id = sSYNetPeerSessionID;
+		ctx.src_player = src_player;
+		ctx.local_player = sSYNetPeerLocalPlayer;
+		ctx.forwarded = (forwarded != FALSE) ? 1 : 0;
+		ctx.ignore_session = (sSYNetPeerMutantBadSession != FALSE) ? 1 : 0;
+		ctx.ignore_checksum = (sSYNetPeerMutantBadChecksum != FALSE) ? 1 : 0;
+		if (nbNetPacketParseInput(buffer, size, &ctx, &pkt) != NB_NETPACKET_OK)
+		{
+			sSYNetPeerPacketsDropped++;
+			return;
+		}
 	}
+	ack_tick = pkt.ack_tick;
+	packet_seq = pkt.seq;
+	frame_count = pkt.frame_count;
+	check_tick = pkt.check_tick;
+	check_hash = pkt.check_hash;
+
 	sSYNetPeerPacketsReceived++;
 	if (remote != NULL)
 	{
-		remote->remote_advantage = remote_advantage;
+		remote->remote_advantage = pkt.remote_advantage;
 		syNetPeerTouchRemote(remote);
 	}
-	sSYNetPeerRemoteAdvantage = remote_advantage;
+	sSYNetPeerRemoteAdvantage = pkt.remote_advantage;
 
 	if (check_tick != 0xFFFFFFFFU)
 	{
@@ -1550,18 +1395,18 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 
 	if (frame_count > 0)
 	{
-		u32 oldest_tick_bundle = frames[0].tick;
-		u32 newest_tick_bundle = frames[0].tick;
+		u32 oldest_tick_bundle = pkt.frames[0].tick;
+		u32 newest_tick_bundle = pkt.frames[0].tick;
 
 		for (i = 1; i < frame_count; i++)
 		{
-			if (frames[i].tick < oldest_tick_bundle)
+			if (pkt.frames[i].tick < oldest_tick_bundle)
 			{
-				oldest_tick_bundle = frames[i].tick;
+				oldest_tick_bundle = pkt.frames[i].tick;
 			}
-			if (frames[i].tick > newest_tick_bundle)
+			if (pkt.frames[i].tick > newest_tick_bundle)
 			{
-				newest_tick_bundle = frames[i].tick;
+				newest_tick_bundle = pkt.frames[i].tick;
 			}
 		}
 		if (remote != NULL)
@@ -1586,27 +1431,27 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 	for (i = 0; i < frame_count; i++)
 	{
 		u32 *highest = (remote != NULL) ? &remote->highest_remote_tick : &sSYNetPeerHighestRemoteTick;
-		sb32 is_new_remote_tick = (frames[i].tick > *highest) ? TRUE : FALSE;
+		sb32 is_new_remote_tick = (pkt.frames[i].tick > *highest) ? TRUE : FALSE;
 
-		if ((is_new_remote_tick != FALSE) && (frames[i].tick < current_tick))
+		if ((is_new_remote_tick != FALSE) && (pkt.frames[i].tick < current_tick))
 		{
 			sSYNetPeerLateFrames++;
 		}
 		if (is_new_remote_tick != FALSE)
 		{
-			*highest = frames[i].tick;
+			*highest = pkt.frames[i].tick;
 		}
 		syNetInputSetRemoteInput
 		(
 			src_player,
-			frames[i].tick,
-			frames[i].buttons,
-			frames[i].stick_x,
-			frames[i].stick_y
+			pkt.frames[i].tick,
+			pkt.frames[i].buttons,
+			pkt.frames[i].stick_x,
+			pkt.frames[i].stick_y
 		);
 		sSYNetPeerFramesStaged++;
 		sSYNetPeerInputChecksum = syNetPeerChecksumAccumulateU32(sSYNetPeerInputChecksum, src_player);
-		sSYNetPeerInputChecksum = syNetPeerChecksumAccumulateFrame(sSYNetPeerInputChecksum, &frames[i]);
+		sSYNetPeerInputChecksum = syNetPeerChecksumAccumulateFrame(sSYNetPeerInputChecksum, &pkt.frames[i]);
 	}
 	if ((remote != NULL) && (forwarded == FALSE))
 	{
@@ -1622,14 +1467,8 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size, s32 link)
 {
 #ifdef PORT
-	const u8 *cursor = buffer;
-	const u8 *check_cursor;
-	u32 magic;
-	u32 session_id;
-	u32 checksum;
-	u32 expected_checksum;
-	u16 version;
-	u16 packet_type;
+	const u8 *inner;
+	u32 inner_size;
 	u8 src_player;
 	SYNetPeerRemote *remote;
 	SYNetPeerRemote *host;
@@ -1653,23 +1492,18 @@ void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size, s32 link)
 		sSYNetPeerPacketsDropped++;
 		return;
 	}
-	expected_checksum = syNetPeerChecksumBytes(buffer, size - 4);
-
-	magic = syNetPeerReadU32(&cursor);
-	version = syNetPeerReadU16(&cursor);
-	packet_type = syNetPeerReadU16(&cursor);
-	session_id = syNetPeerReadU32(&cursor);
-	src_player = syNetPeerReadU8(&cursor);
-	check_cursor = buffer + size - 4;
-	checksum = syNetPeerReadU32(&check_cursor);
-
-	if ((magic != SYNETPEER_MAGIC) || (version != SYNETPEER_VERSION) ||
-		(packet_type != SYNETPEER_PACKET_FORWARD) ||
-		(session_id != sSYNetPeerSessionID) || (checksum != expected_checksum) ||
-		(src_player == (u8)sSYNetPeerLocalPlayer))
 	{
-		sSYNetPeerPacketsDropped++;
-		return;
+		NBNetPacketContext ctx;
+
+		memset(&ctx, 0, sizeof(ctx));
+		ctx.session_id = sSYNetPeerSessionID;
+		ctx.local_player = sSYNetPeerLocalPlayer;
+		if (nbNetPacketParseForward(buffer, size, &ctx, &src_player,
+								  &inner, &inner_size) != NB_NETPACKET_OK)
+		{
+			sSYNetPeerPacketsDropped++;
+			return;
+		}
 	}
 	remote = syNetPeerGetRemoteByPlayer(src_player);
 	/* The wrapped sender must be a remote we have no direct link to — on a
@@ -1681,7 +1515,7 @@ void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size, s32 link)
 		sSYNetPeerPacketsDropped++;
 		return;
 	}
-	syNetPeerHandlePacket(cursor, size - SYNETPEER_FORWARD_HEADER_BYTES - 4, remote, TRUE);
+	syNetPeerHandlePacket(inner, (s32)inner_size, remote, TRUE);
 #endif
 }
 
@@ -1755,21 +1589,7 @@ static void syNetPeerFuzzFillInputPacket(u8 *buf, u32 session, SYNetPeerRemote *
 
 sb32 syNetPeerCheckForwardPacket(const u8 *buffer, s32 size)
 {
-	const u8 *cursor = buffer;
-	u32 magic;
-	u16 version;
-	u16 packet_type;
-
-	if (size < SYNETPEER_FORWARD_HEADER_BYTES + 4)
-	{
-		return FALSE;
-	}
-	magic = syNetPeerReadU32(&cursor);
-	version = syNetPeerReadU16(&cursor);
-	packet_type = syNetPeerReadU16(&cursor);
-
-	return ((magic == SYNETPEER_MAGIC) && (version == SYNETPEER_VERSION) &&
-	        (packet_type == SYNETPEER_PACKET_FORWARD)) ? TRUE : FALSE;
+	return (nbNetPacketIsForward(buffer, size) != 0) ? TRUE : FALSE;
 }
 
 void syNetPeerReceiveRemoteInput(void)
