@@ -1,14 +1,22 @@
 # ------------------------------------------------------------------------------
 # Quality gates
 # ------------------------------------------------------------------------------
+# verify-fast — daily-driver gate (structure + format + arch + quick tests)
+verify-fast: layout-check format-check module-deps retired-paths-check test
+	@$(call success,Fast verification passed)
+
 quick-check: module-deps retired-paths-check test ## Fast local gate
-check: lint module-deps env-check docs-check retired-paths-check \
+check: layout-check lint module-deps env-check docs-check retired-paths-check \
        cvar-check gen-headers-check test-suite ## Standard local gate
 	@$(MAKE) --no-print-directory TEST_SUITE=pull-request test-suite
 	@$(call success,Quality gate passed)
 
 ci: submodules-check check security lobby-test codegen-check ## Local CI replay
 	@$(call success,CI-equivalent checks passed)
+
+# verify — full validation chain (what a release-candidate must pass)
+verify: layout-check doctor check security generated-check build
+	@$(call success,Full verification passed)
 
 lint: ## tools/lint/run_project_lint.py (configures its own build dir)
 	@mkdir -p "$(REPORT_DIR)/lint"
