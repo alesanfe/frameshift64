@@ -22,7 +22,10 @@
 .DELETE_ON_ERROR:
 .SUFFIXES:
 .ONESHELL:
-SHELL := /usr/bin/env bash
+# GNU make invokes $(SHELL) $(.SHELLFLAGS) literally — "/usr/bin/env bash"
+# is a path-with-spaces it cannot exec (Error 127 on Linux CI). Plain "bash"
+# resolves through PATH on every runner and on Git Bash for Windows.
+SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
 # ------------------------------------------------------------------------------

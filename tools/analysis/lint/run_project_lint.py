@@ -147,8 +147,7 @@ def build_checks(args) -> list:
                    "--exclude=build", "--exclude=build-lint", "--exclude=out",
                    "--exclude=.venv-lint"]
     if not args.include_vendor:
-        cpplint_cmd += ["--exclude=decomp", "--exclude=libultraship",
-                        "--exclude=torch", "--exclude=mods/examples"]
+        cpplint_cmd += ["--exclude=components", "--exclude=mods/examples"]
     cpplint_cmd += dirs if not args.include_vendor else ["."]
     checks.append(Check("cpplint", cpplint_cmd, "cpplint.txt", required=False))
 
@@ -165,8 +164,8 @@ def build_checks(args) -> list:
               "yamllint.txt", required=False),
         Check("ruff", [resolve("ruff"), "check", ".",
                        "--exclude", ".venv-lint", "--exclude", "build",
-                       "--exclude", "build-lint", "--exclude", "out", "--exclude", "decomp",
-                       "--exclude", "libultraship", "--exclude", "torch",
+                       "--exclude", "build-lint", "--exclude", "out",
+                       "--exclude", "components",
                        "--output-format", "full"],
               "ruff.txt", required=False),
         Check("bandit", [resolve("bandit"), "-r"] +

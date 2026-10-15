@@ -1991,6 +1991,29 @@ extern "C" int port_netlobby_peer_ping_at(int index)
     return (p != nullptr) ? p->ping_ms : -1;
 }
 
+extern "C" int port_netlobby_peer_stats_at(int index, unsigned *gaps, unsigned *dups, unsigned *ooo,
+                                           int *advantage)
+{
+    /* sys/netpeer.c keeps per-remote counters keyed by game slot. */
+    extern void portNetPeerGetRemoteStats(int player, unsigned *g, unsigned *d, unsigned *o, int *a);
+    const int slot = port_netlobby_peer_slot(index);
+    unsigned g = 0, d = 0, o = 0;
+    int adv = 0;
+
+    if (slot < 0) {
+        return 0;
+    }
+    portNetPeerGetRemoteStats(slot, &g, &d, &o, &adv);
+    if (g == 0 && d == 0 && o == 0 && adv == 0) {
+        return 0; /* no stats yet (or never netpeer'd — local slot etc.) */
+    }
+    if (gaps != nullptr) *gaps = g;
+    if (dups != nullptr) *dups = d;
+    if (ooo != nullptr) *ooo = o;
+    if (advantage != nullptr) *advantage = adv;
+    return 1;
+}
+
 extern "C" int port_netlobby_is_relay(void)
 {
     for (const Peer &p : sLobby.peers) {

@@ -11,6 +11,7 @@
 #include "UIWidgets.hpp"
 #include "Compat.h"
 #include "networking/netplay/session/netlobby.h"
+#include "networking/netplay/transport/websocket_transport.h"
 
 #include <ship/Context.h>
 #include <ship/window/Window.h>
@@ -20,8 +21,10 @@
 
 #include <spdlog/fmt/fmt.h>
 
+#include <chrono>
 #include <cctype>
 #include <cstring>
+#include <string>
 
 namespace ssb64 {
 
@@ -93,10 +96,66 @@ static NetStatusView NetStatusViewFor(int state) {
     }
 }
 
+/* §25 — one-shot reachability probe for the configured lobby server. Opens
+ * a WebSocket against the server's root path: a 101 upgrade means full
+ * TCP+TLS+WS reachability; any other HTTP answer still proves the server is
+ * up (the upgrade only lives under /ws) so it counts as reachable; anything
+ * else is a real connectivity failure. Zero side effects — no room is
+ * created or joined. Runs only while the lobby is idle: the control socket
+ * is shared, so an in-flight test is cancelled when a session starts. */
+enum class ConnTestState { Idle, Running, Done };
+struct ConnTest {
+    ConnTestState state = ConnTestState::Idle;
+    std::chrono::steady_clock::time_point started{};
+    std::string result;
+    bool ok = false;
+};
+
+static void StartConnTest(ConnTest& test, const char* server) {
+    std::string url = (server != nullptr && server[0] != '\0') ? server : PORT_NETLOBBY_DEFAULT_SERVER;
+    while (!url.empty() && url.back() == '/') {
+        url.pop_back();
+    }
+    url += "/";
+    port_ws_connect(url.c_str());
+    test.state = ConnTestState::Running;
+    test.started = std::chrono::steady_clock::now();
+    test.result.clear();
+    test.ok = false;
+}
+
+static void PollConnTest(ConnTest& test) {
+    if (test.state != ConnTestState::Running) {
+        return;
+    }
+    const auto elapsedMs = static_cast<int>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - test.started)
+            .count());
+    const int ws = port_ws_state();
+    if (ws == PORT_WS_OPEN || ws == PORT_WS_FAILED || ws == PORT_WS_CLOSED ||
+        elapsedMs > 10000 /* hard timeout */) {
+        const char* err = port_ws_error();
+        const bool httpReply = (err != nullptr) && (std::strncmp(err, "server answered HTTP", 20) == 0);
+        if (ws == PORT_WS_OPEN || httpReply) {
+            test.result = fmt::format("Server reachable — handshake answered in {} ms", elapsedMs);
+            test.ok = true;
+        } else if (elapsedMs > 10000) {
+            test.result = "Timed out — the server did not answer within 10 seconds";
+            test.ok = false;
+        } else {
+            test.result = fmt::format("Unreachable — {}", (err != nullptr && err[0] != '\0') ? err : "no error detail");
+            test.ok = false;
+        }
+        port_ws_close();
+        test.state = ConnTestState::Done;
+    }
+}
+
 static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
     static char serverBuf[128] = {};
     static char codeBuf[8] = {};
     static bool loaded = false;
+    static ConnTest connTest;
 
     if (!loaded) {
         std::snprintf(serverBuf, sizeof(serverBuf), "%s", CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER));
@@ -257,7 +316,17 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
     } else {
         ImGui::SeparatorText("Status");
     }
-    ImGui::TextWrapped("%s", port_netlobby_status());
+    {
+        const NetStatusView statusView = NetStatusViewFor(state);
+        if (statusView.color != nullptr) {
+            ImGui::TextColored(*statusView.color, "[%s]", statusView.tag);
+            ImGui::SameLine(0.0f, 6.0f);
+        }
+        ImGui::TextWrapped("%s", port_netlobby_status());
+        if (statusView.hint != nullptr) {
+            ImGui::TextDisabled("%s", statusView.hint);
+        }
+    }
 
     if (port_netlobby_code()[0] != '\0' && port_netlobby_is_host() && !idle) {
         ImGui::Text("Room code: %s", GroupRoomCode(port_netlobby_code()).c_str());

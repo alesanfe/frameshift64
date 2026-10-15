@@ -64,6 +64,11 @@ int port_netlobby_peer_fkind_at(int index);      /* -1 until the peer picks */
 int port_netlobby_peer_connected_at(int index);
 int port_netlobby_peer_ping_at(int index);       /* -1 unknown */
 
+/* Per-peer wire stats during a match (packet sequence gaps/duplicates/
+ * out-of-order counts + the remote's declared advantage, i.e. our rollback
+ * depth for its inputs). Returns 0 when the peer has no live netpeer stats. */
+int port_netlobby_peer_stats_at(int index, unsigned *gaps, unsigned *dups, unsigned *ooo, int *advantage);
+
 /* 1 after an online match has ended while the players are still connected
  * (each is back in their own local menus; the host can start a rematch). */
 int port_netlobby_after_match(void);
