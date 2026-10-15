@@ -7,7 +7,7 @@
 # __file__.parents[2]; creditsTextConverter gets absolute args).
 ################################################################################
 # Reloc YAML category files (same category set for every version; the
-# per-version ROM offsets differ inside them). assets/configuration/extraction/${SSB64_VERSION}/ is
+# per-version ROM offsets differ inside them). assets/recipes/${SSB64_VERSION}/ is
 # produced by tools/codegen/generate_yamls.py --version ${SSB64_VERSION}.
 set(SSB64_RELOC_YAML_CATEGORIES
     animations bonus effects extern_data fighters_common fighters_main
@@ -17,7 +17,7 @@ set(SSB64_RELOC_YAML_CATEGORIES
 set(SSB64_RELOC_YAML_FILES "")
 foreach(_cat ${SSB64_RELOC_YAML_CATEGORIES})
     list(APPEND SSB64_RELOC_YAML_FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets/configuration/extraction/${SSB64_VERSION}/reloc_${_cat}.yml)
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/recipes/${SSB64_VERSION}/reloc_${_cat}.yml)
 endforeach()
 
 set(SSB64_CREDITS_GENERATED_FILES

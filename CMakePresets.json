@@ -1,128 +1,168 @@
 {
-  "version": 6,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 25,
-    "patch": 0
+ "version": 6,
+ "cmakeMinimumRequired": {
+  "major": 3,
+  "minor": 25,
+  "patch": 0
+ },
+ "configurePresets": [
+  {
+   "name": "base",
+   "hidden": true,
+   "binaryDir": "${sourceDir}/out/build/${presetName}",
+   "cacheVariables": {
+    "NON_PORTABLE": "ON"
+   }
   },
-  "configurePresets": [
-    {
-      "name": "base",
-      "hidden": true,
-      "binaryDir": "${sourceDir}/out/build/${presetName}",
-      "cacheVariables": {
-        "NON_PORTABLE": "ON"
-      }
-    },
-    {
-      "name": "ninja-base",
-      "hidden": true,
-      "inherits": "base",
-      "generator": "Ninja"
-    },
-    {
-      "name": "windows-debug",
-      "displayName": "Windows Debug (US)",
-      "inherits": "base",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
-      "cacheVariables": {
-        "SSB64_VERSION": "us"
-      }
-    },
-    {
-      "name": "windows-release",
-      "displayName": "Windows Release (US)",
-      "inherits": "windows-debug",
-      "binaryDir": "${sourceDir}/out/build/windows-release"
-    },
-    {
-      "name": "linux-debug",
-      "displayName": "Linux Debug (US)",
-      "inherits": "ninja-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "SSB64_VERSION": "us"
-      }
-    },
-    {
-      "name": "linux-release",
-      "displayName": "Linux Release (US)",
-      "inherits": "ninja-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "SSB64_VERSION": "us"
-      }
-    },
-    {
-      "name": "macos-debug",
-      "displayName": "macOS Debug (US)",
-      "inherits": "ninja-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "SSB64_VERSION": "us"
-      }
-    },
-    {
-      "name": "macos-release",
-      "displayName": "macOS Release (US)",
-      "inherits": "ninja-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "SSB64_VERSION": "us"
-      }
-    },
-    {
-      "name": "jp-release",
-      "displayName": "JP ROM release",
-      "inherits": "ninja-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "SSB64_VERSION": "jp"
-      }
-    },
-    {
-      "name": "lint",
-      "displayName": "Lint build (compile_commands.json)",
-      "inherits": "ninja-base",
-      "binaryDir": "${sourceDir}/out/build/lint",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "SSB64_VERSION": "us"
-      }
-    }
-  ],
-  "buildPresets": [
-    {
-      "name": "windows-debug",
-      "configurePreset": "windows-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "windows-release",
-      "configurePreset": "windows-release",
-      "configuration": "Release"
-    },
-    {
-      "name": "linux-debug",
-      "configurePreset": "linux-debug"
-    },
-    {
-      "name": "linux-release",
-      "configurePreset": "linux-release"
-    },
-    {
-      "name": "macos-debug",
-      "configurePreset": "macos-debug"
-    },
-    {
-      "name": "macos-release",
-      "configurePreset": "macos-release"
-    },
-    {
-      "name": "jp-release",
-      "configurePreset": "jp-release"
-    }
-  ]
+  {
+   "name": "ninja-base",
+   "hidden": true,
+   "inherits": "base",
+   "generator": "Ninja"
+  },
+  {
+   "name": "windows-debug",
+   "displayName": "Windows Debug (US)",
+   "inherits": "base",
+   "generator": "Visual Studio 17 2022",
+   "architecture": "x64",
+   "cacheVariables": {
+    "SSB64_VERSION": "us"
+   }
+  },
+  {
+   "name": "windows-release",
+   "displayName": "Windows Release (US)",
+   "inherits": "windows-debug",
+   "binaryDir": "${sourceDir}/out/build/windows-release"
+  },
+  {
+   "name": "linux-debug",
+   "displayName": "Linux Debug (US)",
+   "inherits": "ninja-base",
+   "cacheVariables": {
+    "CMAKE_BUILD_TYPE": "Debug",
+    "SSB64_VERSION": "us"
+   }
+  },
+  {
+   "name": "linux-release",
+   "displayName": "Linux Release (US)",
+   "inherits": "ninja-base",
+   "cacheVariables": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "SSB64_VERSION": "us"
+   }
+  },
+  {
+   "name": "macos-debug",
+   "displayName": "macOS Debug (US)",
+   "inherits": "ninja-base",
+   "cacheVariables": {
+    "CMAKE_BUILD_TYPE": "Debug",
+    "SSB64_VERSION": "us"
+   }
+  },
+  {
+   "name": "macos-release",
+   "displayName": "macOS Release (US)",
+   "inherits": "ninja-base",
+   "cacheVariables": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "SSB64_VERSION": "us"
+   }
+  },
+  {
+   "name": "jp-release",
+   "displayName": "JP ROM release",
+   "inherits": "ninja-base",
+   "cacheVariables": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "SSB64_VERSION": "jp"
+   }
+  },
+  {
+   "name": "lint",
+   "displayName": "Lint build (compile_commands.json)",
+   "inherits": "ninja-base",
+   "binaryDir": "${sourceDir}/out/build/lint",
+   "cacheVariables": {
+    "CMAKE_BUILD_TYPE": "Debug",
+    "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+    "SSB64_VERSION": "us"
+   }
+  },
+  {
+   "name": "windows-asan",
+   "displayName": "Windows ASan (US, dev)",
+   "inherits": "windows-debug",
+   "binaryDir": "${sourceDir}/out/build/windows-asan",
+   "cacheVariables": {
+    "SSB64_ENABLE_ASAN": "ON"
+   }
+  },
+  {
+   "name": "linux-asan",
+   "displayName": "Linux ASan (US, dev)",
+   "inherits": "linux-debug",
+   "binaryDir": "${sourceDir}/out/build/linux-asan",
+   "cacheVariables": {
+    "SSB64_ENABLE_ASAN": "ON"
+   }
+  },
+  {
+   "name": "linux-ubsan",
+   "displayName": "Linux UBSan (US, dev)",
+   "inherits": "linux-debug",
+   "binaryDir": "${sourceDir}/out/build/linux-ubsan",
+   "cacheVariables": {
+    "SSB64_ENABLE_UBSAN": "ON"
+   }
+  }
+ ],
+ "buildPresets": [
+  {
+   "name": "windows-debug",
+   "configurePreset": "windows-debug",
+   "configuration": "Debug"
+  },
+  {
+   "name": "windows-release",
+   "configurePreset": "windows-release",
+   "configuration": "Release"
+  },
+  {
+   "name": "linux-debug",
+   "configurePreset": "linux-debug"
+  },
+  {
+   "name": "linux-release",
+   "configurePreset": "linux-release"
+  },
+  {
+   "name": "macos-debug",
+   "configurePreset": "macos-debug"
+  },
+  {
+   "name": "macos-release",
+   "configurePreset": "macos-release"
+  },
+  {
+   "name": "jp-release",
+   "configurePreset": "jp-release"
+  },
+  {
+   "name": "windows-asan",
+   "configurePreset": "windows-asan",
+   "configuration": "Debug"
+  },
+  {
+   "name": "linux-asan",
+   "configurePreset": "linux-asan"
+  },
+  {
+   "name": "linux-ubsan",
+   "configurePreset": "linux-ubsan"
+  }
+ ]
 }

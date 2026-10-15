@@ -9,7 +9,7 @@
 # of a stale copy committed at the source root.
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     configure_file(
-        ${CMAKE_SOURCE_DIR}/assets/configuration/controllers/gamecontrollerdb.txt
+        ${CMAKE_SOURCE_DIR}/assets/controllers/gamecontrollerdb.txt
         ${CMAKE_BINARY_DIR}/gamecontrollerdb.txt
         COPYONLY
     )
@@ -34,7 +34,7 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT CMAKE_SYSTEM_NAME STREQUAL 
             ${CMAKE_BINARY_DIR}/f3d.o2r
             $<TARGET_FILE_DIR:${PROJECT_NAME}>/f3d.o2r
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/assets/configuration/controllers/gamecontrollerdb.txt
+            ${CMAKE_SOURCE_DIR}/assets/controllers/gamecontrollerdb.txt
             $<TARGET_FILE_DIR:${PROJECT_NAME}>/gamecontrollerdb.txt
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_SOURCE_DIR}/assets/custom/fonts/Montserrat-Regular.ttf

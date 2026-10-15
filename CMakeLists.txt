@@ -130,6 +130,11 @@ option(NON_EQUIVALENT "Build without equivalent decomp constraints" ON)
 option(USE_AUTO_VCPKG "Use automated vcpkg for dependency management" ON)
 option(SSB64_STAGE_CYCLE_DEMO "Boot directly into attract-demo stage cycle for rendering regression testing" OFF)
 option(SSB64_ENABLE_COVERAGE "Instrument the build for LLVM source-based coverage" OFF)
+option(SSB64_ENABLE_HARDENING "Production hardening (CFI/stack-protector/RELRO)" ON)
+option(SSB64_WARNINGS_AS_ERRORS "Treat first-party warnings as errors" OFF)
+option(SSB64_ENABLE_ASAN "AddressSanitizer (dev only — never ship)" OFF)
+option(SSB64_ENABLE_UBSAN "UndefinedBehaviorSanitizer (dev only, GCC/Clang)" OFF)
+option(SSB64_ENABLE_CLANG_TIDY "clang-tidy on first-party targets" OFF)
 
 # LLVM source-based coverage (clang/gcc only — MSVC has no
 # -fcoverage-mapping equivalent; use a clang-cl or Unix toolchain build
@@ -225,6 +230,19 @@ endif()
 
 add_subdirectory(libultraship ${CMAKE_BINARY_DIR}/libultraship)
 
+# Vendored engine: upstream ships without warning hygiene for MSVC's level-3
+# diagnostics (int/size_t conversions, precedence parens, narrowing). These
+# are upstream's debt — silence them on the target instead of patching
+# vendored sources we re-pull on upgrades.
+if (MSVC AND TARGET libultraship)
+    target_compile_options(libultraship PRIVATE
+        /wd4005 /wd4018 /wd4068 /wd4099 /wd4101 /wd4244 /wd4267
+        /wd4305 /wd4309 /wd4312 /wd4554 /wd4805 /wd4834 /wd4838)
+    # LUS objects reference libultraship.pdb but Release never emits one
+    # (LNK4099); /Zi produces it so /DEBUG linking finds real LUS symbols.
+    target_compile_options(libultraship PRIVATE /Zi)
+endif()
+
 ################################################################################
 # funchook - cross-platform runtime function-detouring lib used by the mod
 # loader. Replaces MinHook (which is x86/x64-Windows-only) so the hook system
@@ -260,6 +278,20 @@ if (NOT DISABLE_SCRIPTING)
                        -P ${CMAKE_SOURCE_DIR}/cmake/funchook_capstone_bump.cmake
     )
     FetchContent_MakeAvailable(funchook)
+
+    # funchook compiles with the toolchain default CRT (/MD); mixing its
+    # objects into the static-CRT (/MT) binary produces LNK4217 __imp_*
+    # imports and the LNK4098 MSVCRT conflict — and two different CRT heaps
+    # in one process is a real bug class, not noise.
+    if (MSVC)
+        foreach(_fh_target funchook-static distorm)
+            if (TARGET ${_fh_target})
+                set_target_properties(${_fh_target} PROPERTIES
+                    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+            endif()
+        endforeach()
+        unset(_fh_target)
+    endif()
 
     # Stale-cache guard. FetchContent runs PATCH_COMMAND only on the FIRST
     # populate of funchook-src; an already-populated _deps/funchook-src (e.g.
@@ -642,6 +674,17 @@ add_library(ssb64_port_options INTERFACE)
 set_target_properties(ssb64_port_options PROPERTIES
     INTERFACE_POSITION_INDEPENDENT_CODE ON)
 
+# First-party quality flags — attached ONCE to the options interface so
+# every smash_* object lib and the executable inherit them. External code
+# (decomp/, libultraship/, torch/, FetchContent) never consumes it.
+include(cmake/CompilerWarnings.cmake)
+include(cmake/Hardening.cmake)
+include(cmake/Sanitizers.cmake)
+include(cmake/StaticAnalysis.cmake)
+ssb64_apply_warnings(ssb64_port_options)
+ssb64_apply_hardening(ssb64_port_options)
+ssb64_apply_sanitizers(ssb64_port_options)
+
 set(SSB64_MODULE_DIRS
     application audio compatibility config diagnostics distribution game
     gameplay input integration netplay observability persistence platform
@@ -655,6 +698,7 @@ foreach(mod IN LISTS SSB64_MODULE_DIRS)
         add_library(smash_${mod} OBJECT ${_mod_srcs})
         target_sources(smash_${mod} PRIVATE ${SSB64_GEN_HEADER_SRCS})
         target_link_libraries(smash_${mod} PRIVATE ssb64_port_options)
+        ssb64_apply_static_analysis(smash_${mod})
         add_dependencies(smash_${mod} ExtractAssetHeaders)
         list(APPEND SSB64_MODULE_OBJECTS $<TARGET_OBJECTS:smash_${mod}>)
         list(FILTER SSB64_SRC_PORT_TOPLEVEL EXCLUDE REGEX "/src/${mod}/")
@@ -733,12 +777,12 @@ file(GLOB_RECURSE SSB64_TORCH_RECIPE_INPUTS CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/torch/cmake/*.cmake)
 list(APPEND SSB64_TORCH_RECIPE_INPUTS ${CMAKE_CURRENT_SOURCE_DIR}/torch/CMakeLists.txt)
 # GLOB_RECURSE: the deblob child yamls live in per-category subdirectories
-# (assets/configuration/extraction/<v>/reloc_fighters_main/*.yml,
+# (assets/recipes/<v>/reloc_fighters_main/*.yml,
 # docs/deblob.md) and must invalidate the recipe hash — a stale archive
 # missing slices would fail synthesis.
 file(GLOB_RECURSE SSB64_RECIPE_YAMLS CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/configuration/extraction/${SSB64_VERSION}/*.yml
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/configuration/extraction/${SSB64_VERSION}/*.yaml)
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/recipes/${SSB64_VERSION}/*.yml
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/recipes/${SSB64_VERSION}/*.yaml)
 set(SSB64_RECIPE_INPUTS ${SSB64_TORCH_RECIPE_INPUTS} ${SSB64_RECIPE_YAMLS}
     ${CMAKE_CURRENT_SOURCE_DIR}/config/project/config.yml)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SSB64_RECIPE_INPUTS})
@@ -860,6 +904,14 @@ endif()
 ################################################################################
 
 add_library(ssb64_game OBJECT ${SSB64_DECOMP_SOURCES})
+# Sanitizers/static-analysis cover the game objects too (they are ours to
+# patch); strict warnings do NOT — decomp source would not survive /W4.
+if(SSB64_ENABLE_ASAN OR SSB64_ENABLE_UBSAN)
+    add_library(ssb64_game_sanitizers INTERFACE)
+    ssb64_apply_sanitizers(ssb64_game_sanitizers)
+    target_link_libraries(ssb64_game PRIVATE ssb64_game_sanitizers)
+endif()
+ssb64_apply_static_analysis(ssb64_game)
 
 # Port stub definitions (C code that satisfies N64 linker symbols)
 file(GLOB SSB64_STUBS "src/compatibility/*.c")
@@ -1144,6 +1196,7 @@ else()
     # (US) or `BattleShip-JP` (JP), so the two are distinct applications.
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "${SSB64_APP_NAME}")
 endif()
+ssb64_apply_static_analysis(${PROJECT_NAME})
 
 # Share the runtime destination with the staging prerequisite. Referencing
 # TARGET_FILE_DIR here creates a back-edge with Visual Studio even under
@@ -1199,6 +1252,24 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
                 set_target_properties(smash_${mod} PROPERTIES
                     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
                 target_compile_options(smash_${mod} PRIVATE /FS)
+            endif()
+        endforeach()
+        # Vendored deps default to /MD too — one CRT for everything that
+        # links into the exe, or we get LNK4098 and split heaps.
+        foreach(vendored IN ITEMS
+            libultraship funchook-static distorm discord-rpc prism
+            glslang glslang-default-resource-limits
+            GenericCodeGen MachineIndependent OSDependent SPIRV
+            spirv-cross-core spirv-cross-glsl spirv-cross-hlsl spirv-cross-msl
+            hidapi hidapi_winapi ed25519_verify
+            tcc tcc1 libtcc libtcc1 ImGui stb usb-1.0)
+            if(TARGET ${vendored})
+                get_target_property(_vendored_aliased ${vendored} ALIASED_TARGET)
+                if(NOT _vendored_aliased)
+                    set_target_properties(${vendored} PROPERTIES
+                        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+                endif()
+                unset(_vendored_aliased)
             endif()
         endforeach()
     else()
@@ -1351,6 +1422,11 @@ add_library(ed25519_verify STATIC
     ${ed25519_SOURCE_DIR}/src/sha512.c
     ${ed25519_SOURCE_DIR}/src/verify.c)
 target_include_directories(ed25519_verify PUBLIC ${ed25519_SOURCE_DIR}/src)
+if (MSVC)
+    # Created after the vendored-CRT foreach above — same static runtime.
+    set_target_properties(ed25519_verify PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE ed25519_verify)
 target_link_libraries(ssb64_port_options INTERFACE ed25519_verify)
 

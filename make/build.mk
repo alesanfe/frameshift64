@@ -26,6 +26,15 @@ dev-build: configure codegen build ## configure + codegen + build (comfort path)
 
 rebuild: clean-build configure codegen build
 
+# Sanitizer presets — dev-only instrumented builds (never ship these)
+asan: ## Configure+build+test with AddressSanitizer (<host>-asan preset)
+	@$(MAKE) --no-print-directory PRESET="$(HOST_PLATFORM)-asan" configure build test-suite
+
+ubsan: ## Configure+build+test with UBSan (<host>-ubsan preset)
+	@$(MAKE) --no-print-directory PRESET="$(HOST_PLATFORM)-ubsan" configure build test-suite
+
+sanitizers: asan ubsan ## ASan + UBSan passes
+
 run: build guard-rom guard-exe ## Build and launch the game
 	@$(call heading,Running $(EXECUTABLE_NAME))
 	@exe_dir="$(dir $(EXE_DIR))"; \
