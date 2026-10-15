@@ -131,6 +131,12 @@ ROM_PATH := $(ROM_JP)
 else
 ROM_PATH := baserom.$(REGION).z64
 endif
+# Prefer the roms/ drop dir; fall back to repo-root legacy location.
+ifeq ($(wildcard $(ROM_PATH)),)
+ifneq ($(wildcard roms/$(notdir $(ROM_PATH))),)
+ROM_PATH := roms/$(notdir $(ROM_PATH))
+endif
+endif
 
 # ------------------------------------------------------------------------------
 # Real scripts / dirs (verified against the tree — keep in sync)
@@ -344,7 +350,13 @@ layout-check: ## Verify required files/dirs exist
 
 doctor: ## Validate the local development environment
 	@$(call heading,Checking development environment)
-	@status=0; \
+	@[[ -f tools/versions.env ]] && . tools/versions.env; \
+	status=0; \
+	ver_ge() { \
+	  printf '%s\n%s\n' "$$2" "$$1" | sort -V -C 2>/dev/null \
+	  || { IFS=. read -r a b c <<<"$$1"; IFS=. read -r x y z <<<"$$2"; \
+	       [[ $$((a*1000000 + b*1000 + c)) -ge $$((x*1000000 + y*1000 + z)) ]]; }; \
+	}; \
 	for cmd in "$(GIT)" "$(CMAKE)" "$(PYTHON)"; do \
 	  if command -v "$$cmd" >/dev/null 2>&1; then \
 	    printf "$(GREEN)[OK]$(RESET)       %-10s %s\n" "$$cmd" "$$(command -v "$$cmd")"; \
@@ -359,6 +371,30 @@ doctor: ## Validate the local development environment
 	    printf "$(YELLOW)[OPTIONAL]$(RESET)  %s\n" "$$cmd"; \
 	  fi; \
 	done; \
+	cv="$$($(CMAKE) --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"; \
+	pv="$$($(PYTHON) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"; \
+	nv="$$($(NODE) --version 2>/dev/null | tr -d v || true)"; \
+	if [[ -n "$$cv" && -n "$${MIN_CMAKE:-}" ]]; then \
+	  if ver_ge "$$cv" "$$MIN_CMAKE"; then \
+	    printf "$(GREEN)[OK]$(RESET)       cmake %s (>= %s)\n" "$$cv" "$$MIN_CMAKE"; \
+	  else \
+	    printf "$(RED)[OLD]$(RESET)      cmake %s < %s\n" "$$cv" "$$MIN_CMAKE"; status=1; \
+	  fi; \
+	fi; \
+	if [[ -n "$$pv" && -n "$${MIN_PYTHON:-}" ]]; then \
+	  if ver_ge "$$pv" "$$MIN_PYTHON"; then \
+	    printf "$(GREEN)[OK]$(RESET)       python %s (>= %s)\n" "$$pv" "$$MIN_PYTHON"; \
+	  else \
+	    printf "$(RED)[OLD]$(RESET)      python %s < %s\n" "$$pv" "$$MIN_PYTHON"; status=1; \
+	  fi; \
+	fi; \
+	if [[ -n "$$nv" && -n "$${MIN_NODE:-}" ]]; then \
+	  if ver_ge "$$nv" "$$MIN_NODE"; then \
+	    printf "$(GREEN)[OK]$(RESET)       node %s (>= %s)\n" "$$nv" "$$MIN_NODE"; \
+	  else \
+	    printf "$(YELLOW)[OLD]$(RESET)   node %s < %s\n" "$$nv" "$$MIN_NODE"; \
+	  fi; \
+	fi; \
 	if [[ -f "$(ROM_PATH)" ]]; then \
 	  printf "$(GREEN)[OK]$(RESET)       ROM        %s\n" "$(ROM_PATH)"; \
 	else \
@@ -384,13 +420,18 @@ dependencies: install
 
 install: submodules install-python install-node ## Install all dependencies
 
-install-python: ## Create .venv + install pyproject [test] deps
+install-python: ## Create .venv + install locked deps (requirements.lock)
 	@$(call heading,Installing python dependencies)
 	@if [[ ! -x "$(VENV_PYTHON)" ]]; then \
 	  $(PYTHON) -m venv .venv; \
 	fi
-	@"$(VENV_PYTHON)" -m pip install -e ".[test]"
+	@"$(VENV_PYTHON)" -m pip install -r requirements.lock
+	@"$(VENV_PYTHON)" -m pip install -e . --no-deps
 	@$(call success,Python deps installed (.venv))
+
+lock-python: ## Regenerate requirements.lock from pyproject [test] (needs uv)
+	@uv pip compile pyproject.toml --extra test -o requirements.lock
+	@$(call success,requirements.lock regenerated)
 
 install-node: lobby-install ## npm ci for services/netplay-lobby
 
