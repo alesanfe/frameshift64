@@ -158,26 +158,19 @@ def run_shot(exe: Path, cwd: Path, env: dict, tmp: Path, dest: Path) -> bool:
     return False
 
 
-def app_cfg_path(exe_dir: Path) -> Path:
-    # Portable builds keep the config next to the exe; NON_PORTABLE builds
-    # (the default verify preset) use platform app storage. Detect which one
-    # this build is from its CMake cache rather than guessing from file
-    # presence — a stale local cfg must not shadow the real one.
-    cache = exe_dir.parent / "CMakeCache.txt"
-    non_portable = False
-    if cache.is_file():
-        for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
-            if line.startswith("NON_PORTABLE:BOOL="):
-                non_portable = line.rsplit("=", 1)[-1].strip() == "ON"
-                break
-    if not non_portable:
-        local = exe_dir / "BattleShip.cfg.json"
-        if local.is_file():
-            return local
+def app_cfg_paths(exe_dir: Path) -> list:
+    """Every location the runtime may resolve its config from. The platform
+    app dir (%APPDATA%\BattleShip) is authoritative for this build, but a
+    BattleShip.cfg.json next to the exe is used by portable runs — seed
+    both so the menu selection lands regardless of which one wins."""
+    paths = []
     appdata = os.environ.get("APPDATA")
     if appdata:
-        return Path(appdata) / "BattleShip" / "BattleShip.cfg.json"
-    return Path.home() / ".config" / "BattleShip" / "BattleShip.cfg.json"
+        paths.append(Path(appdata) / "BattleShip" / "BattleShip.cfg.json")
+    else:
+        paths.append(Path.home() / ".config" / "BattleShip" / "BattleShip.cfg.json")
+    paths.append(exe_dir / "BattleShip.cfg.json")
+    return paths
 
 
 def parse_size(text: str) -> tuple:
@@ -239,7 +232,7 @@ def main() -> int:
         print(f"error: {exe} not found", file=sys.stderr)
         return 2
 
-    cfg_path = app_cfg_path(args.bin)
+    cfg_paths = app_cfg_paths(args.bin)
     tmp = args.bin / ".menu_shots_tmp"
     args.out.mkdir(parents=True, exist_ok=True)
     tmp.mkdir(exist_ok=True)
@@ -268,15 +261,35 @@ def main() -> int:
     capture_size = args.size or CAPTURE_SIZE
 
     produced = []  # (name, dest_path)
-    old_cfg = cfg_path.read_bytes() if cfg_path.is_file() else None
+    old_cfgs = {p: p.read_bytes() if p.is_file() else None for p in cfg_paths}
     results = []
 
-    def capture(name: str, dest: Path, shot_env: dict) -> bool:
+    seed_fails = []
+
+    def capture(name: str, dest: Path, shot_env: dict, expect_header: str | None = None) -> bool:
         ok = run_shot(exe, args.bin, shot_env, tmp, dest)
         results.append((name, ok))
         print(f"{'OK  ' if ok else 'FAIL'} {name}")
         if ok:
             produced.append((name, dest))
+        # The runtime writes the last-rendered header back to the cfg on
+        # exit — with no input it must equal the seed. A mismatch means the
+        # seed was ignored (e.g. a shadowing cfg took precedence).
+        if expect_header:
+            rendered = None
+            for p in cfg_paths:
+                if p.is_file():
+                    try:
+                        rendered = json.loads(p.read_text(encoding="utf-8")) \
+                            .get("CVars", {}).get("gSettings", {}).get("Menu", {}) \
+                            .get("ActiveHeader")
+                        if rendered is not None:
+                            break
+                    except (json.JSONDecodeError, OSError):
+                        continue
+            if rendered is not None and rendered != expect_header:
+                seed_fails.append(name)
+                print(f"SEED? {name}: rendered '{rendered}', seeded '{expect_header}'")
         return ok
 
     try:
@@ -288,32 +301,37 @@ def main() -> int:
                         if args.only and name not in args.only:
                             continue
                         out_name = f"{name}-{tag}"
-                        write_cfg(cfg_path, header, scvar, sidebar, size=size, ui_scale=scale)
-                        capture(out_name, args.out / f"{out_name}.png", env)
+                        for p in cfg_paths:
+                            write_cfg(p, header, scvar, sidebar, size=size, ui_scale=scale)
+                        capture(out_name, args.out / f"{out_name}.png", env,
+                                expect_header=header)
         else:
             for header, scvar, sidebar, name in sections:
                 if args.only and name not in args.only:
                     continue
-                write_cfg(cfg_path, header, scvar, sidebar,
-                          size=capture_size, ui_scale=args.ui_scale)
-                capture(name, args.out / f"{name}.png", env)
+                for p in cfg_paths:
+                    write_cfg(p, header, scvar, sidebar,
+                              size=capture_size, ui_scale=args.ui_scale)
+                capture(name, args.out / f"{name}.png", env, expect_header=header)
 
             # Floating windows & alt states — default context is Settings>General
             for entry in windows:
                 name = entry["name"]
                 if args.only and name not in args.only:
                     continue
-                write_cfg(cfg_path, "Settings", "SettingsSidebarSection",
-                          entry.get("sidebar", "General"), entry["cvars"],
-                          entry.get("size", capture_size), args.ui_scale)
+                for p in cfg_paths:
+                    write_cfg(p, "Settings", "SettingsSidebarSection",
+                              entry.get("sidebar", "General"), entry["cvars"],
+                              entry.get("size", capture_size), args.ui_scale)
                 shot_env = dict(env)
                 shot_env.update(EXTRA_ENV.get(name, {}))
                 capture(name, args.out / f"{name}.png", shot_env)
     finally:
-        if old_cfg is not None:
-            cfg_path.write_bytes(old_cfg)
-        elif cfg_path.is_file():
-            cfg_path.unlink()
+        for p, old in old_cfgs.items():
+            if old is not None:
+                p.write_bytes(old)
+            elif p.is_file():
+                p.unlink()
         shutil.rmtree(tmp, ignore_errors=True)
 
     if args.baseline:
@@ -338,9 +356,11 @@ def main() -> int:
     print(f"\n{len(results) - len(fails)}/{len(results)} captured -> {args.out}")
     if fails:
         print("failed:", ", ".join(fails))
+    if seed_fails:
+        print("seed ignored:", ", ".join(seed_fails))
     if diff_fails:
         print("diff exceeded:", ", ".join(diff_fails))
-    return 1 if (fails or diff_fails) else 0
+    return 1 if (fails or seed_fails or diff_fails) else 0
 
 
 if __name__ == "__main__":

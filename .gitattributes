@@ -4,7 +4,10 @@
 # Generated YAMLs are written by tools/code-generation/generate_yamls.py with explicit
 # LF endings. Without this, a Windows checkout with core.autocrlf=true would
 # convert them to CRLF and show a spurious "modified" diff on every regen.
-assets/game/**/*.yml text eol=lf
+# Extended to ALL yaml: yamllint enforces LF and CRLF checkouts keep
+# breaking the lint gate.
+*.yml text eol=lf
+*.yaml text eol=lf
 
 # Committed codegen output — same rule.
 generated/**/*.h text eol=lf

@@ -1,5 +1,6 @@
 #include "first_run.h"
 #include "app_paths.h"
+#include "core/i18n/Locale.h"
 #include "native_dialog.h"
 #include "port_log.h"
 
@@ -657,22 +658,19 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
                                        ImGuiWindowFlags_AlwaysAutoResize |
                                        ImGuiWindowFlags_NoMove |
                                        ImGuiWindowFlags_NoSavedSettings)) {
-                ImGui::TextWrapped(
-                    "BattleShip needs to extract assets from your "
-                    "Nintendo 64 ROM before it can launch.");
+                ImGui::TextWrapped("%s", TR("BattleShip needs to extract assets from your "
+                    "Nintendo 64 ROM before it can launch."));
                 ImGui::Spacing();
-                ImGui::TextWrapped(
-                    "Required: a %s dump in .z64, .n64, or .v64 format.",
-                    kRomDesc);
+                ImGui::TextWrapped(TR("Required: a %s dump in .z64, .n64, or .v64 format."), kRomDesc);
                 ImGui::Separator();
 
-                ImGui::Text("ROM path:");
+                ImGui::Text("%s", TR("ROM path:"));
                 // InputText takes most of the row, Browse takes the right
                 // edge. -100 reserves room for a 90 px button + padding.
                 ImGui::SetNextItemWidth(-100);
                 ImGui::InputText("##rompath", romPath, sizeof(romPath));
                 ImGui::SameLine();
-                if (ImGui::Button("Browse...", ImVec2(90, 0))) {
+                if (ImGui::Button(TR("Browse..."), ImVec2(90, 0))) {
                     std::string picked = ssb64::OpenFileDialog(
                         "Select your Super Smash Bros. ROM",
                         {"z64", "n64", "v64"});
@@ -685,10 +683,8 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
                     }
                 }
 
-                ImGui::TextDisabled(
-                    "Tip: drag a .z64/.n64/.v64 onto the window, or click");
-                ImGui::TextDisabled(
-                    "     Browse... and pick your ROM dump.");
+                ImGui::TextDisabled("%s", TR("Tip: drag a .z64/.n64/.v64 onto the window, or click"));
+                ImGui::TextDisabled("%s", TR("     Browse... and pick your ROM dump."));
                 ImGui::Spacing();
 
                 if (state == State::Extracting) {
@@ -712,7 +708,7 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
                 const bool busy = (state == State::Extracting);
                 ImGui::BeginDisabled(busy);
 
-                if (ImGui::Button("Extract", ImVec2(120, 0))) {
+                if (ImGui::Button(TR("Extract"), ImVec2(120, 0))) {
                     if (!fs::exists(romPath)) {
                         statusMsg = "ROM not found at that path.";
                     } else {
@@ -728,7 +724,7 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
                 }
 
                 ImGui::SameLine();
-                if (ImGui::Button("Quit", ImVec2(120, 0))) {
+                if (ImGui::Button(TR("Quit"), ImVec2(120, 0))) {
                     state = State::Cancelled;
                     ImGui::CloseCurrentPopup();
                 }

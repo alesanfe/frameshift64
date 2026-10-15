@@ -73,10 +73,16 @@ ALL_PRODUCT = {"src/application", "src/application/update",
 FORBIDDEN = {
     # leaf modules — no product deps (external/decomp headers only)
     "src/core/observability": ALL_PRODUCT | {"src/core/persistence",
-                          "src/core/config"},
+                          "src/core/config", "src/core/i18n"},
     # leaf modules may log through observability — it's the shared sink.
-    "src/core/persistence":   ALL_PRODUCT | {"src/core/config"},
-    "src/core/config":        ALL_PRODUCT | {"src/core/persistence"},
+    "src/core/persistence":   ALL_PRODUCT | {"src/core/config",
+                          "src/core/i18n"},
+    "src/core/config":        ALL_PRODUCT | {"src/core/persistence",
+                          "src/core/i18n"},
+    # i18n leaf — may use platform filesystem probing (lang/ lookup) and the
+    # observability log sink; nothing else.
+    "src/core/i18n":          ALL_PRODUCT - {"src/platform"}
+                          | {"src/core/config", "src/core/persistence"},
     # rendering/cosmetics + widescreen are gameplay features that live in the
     # rendering module — they may pull the gameplay facade (enhancements.h).
     "src/interfaces/rendering": ALL_PRODUCT - {"src/game/gameplay"}
@@ -93,7 +99,8 @@ FORBIDDEN = {
                           "src/application/update", "src/networking/netplay",
                           "src/game/engine", "src/game/modding",
                           "src/resources", "src/interfaces/rendering",
-                          "src/core/persistence", "src/core/config"},
+                          "src/core/persistence", "src/core/config",
+                          "src/core/i18n"},
     "src/resources":     {"src/application", "src/interfaces/presentation",
                           "src/game/gameplay", "src/interfaces/audio",
                           "src/networking/social", "src/interfaces/input",

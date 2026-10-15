@@ -90,11 +90,14 @@ def run_check(check: Check) -> int:
 def find_cmake_files() -> list:
     files = []
     for path in ROOT.rglob("*"):
-        if not path.is_file():
-            continue
         rel = path.relative_to(ROOT)
         if any(part in EXCLUDED_DIR_NAMES for part in rel.parts):
             continue
+        try:
+            if not path.is_file():
+                continue
+        except OSError:
+            continue  # dangling symlink/junction (e.g. under _deps)
         if path.name == "CMakeLists.txt" or path.suffix == ".cmake":
             files.append(str(rel))
     return sorted(files)

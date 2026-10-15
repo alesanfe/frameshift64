@@ -70,6 +70,24 @@ blind approval of a broken one.
 
 ![Netplay lobby](online-netplay.png)
 
+| | |
+|---|---|
+| ![Room — host](online-room-host.png) | ![Room — client](online-room-client.png) |
+| Host waiting in room | Client waiting for host |
+
+The live room states are captured against the local lobby adapter
+(`services/netplay-lobby`, needs `npm ci` once):
+
+```bash
+python tools/developer/testing/shoot_netplay_room.py
+```
+
+It spins up `node-lobby.mjs` on :8799, launches two instances
+(`SSB64_LOBBY_HOST` / `SSB64_LOBBY_JOIN` + `SSB64_LOBBY_CODE_FILE`), and
+dumps each framebuffer mid-room at 960×800. If a stale lobby process is
+already bound to :8799 the script silently reuses it — kill leftover
+`node.exe` instances when room state looks wrong.
+
 ## Customization
 
 | | |
@@ -111,13 +129,14 @@ blind approval of a broken one.
 | Menu in popout window | Menu with controller nav hints |
 | ![Opaque background](menu-opaque-bg.png) | ![Compact](menu-compact.png) |
 | Menu background: Opaque preset | Compact layout at 320×240 |
-| ![Toast notifications](toasts.png) | |
-| Non-blocking toasts (info/success/warning/error) | |
+| ![Toast notifications](toasts.png) | ![Spanish UI](menu-language-es.png) |
+| Non-blocking toasts (info/success/warning/error) | Language: Español (lang/es.json) |
 
 ## Not capturable automatically
 
 - First-run wizard — requires a real ROM and a clean profile; capture manually.
 - Update prompt — only appears when the updater finds a newer release.
-- Lobby "in room" / "in match" states — need an active netplay session.
+- Lobby "in match" state — `shoot_netplay_room.py` captures the room;
+  an in-match shot still needs a real match start.
 - Online Status window — only has meaningful content during a live netplay
   session; removed from auto-capture.

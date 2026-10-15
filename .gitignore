@@ -67,6 +67,7 @@ assets/*
 # tools/code-generation/generate_reloc_table.py). Controller db lives in
 # config/controllers/ (not ignored).
 !assets/game/
+!assets/lang/
 __pycache__
 bin/
 # Hi-res texture pack drops — src/resources/textures HiResPack scans

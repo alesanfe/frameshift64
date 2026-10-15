@@ -1298,6 +1298,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
                 if(NOT _vendored_aliased)
                     set_target_properties(${vendored} PROPERTIES
                         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+                    target_compile_options(${vendored} PRIVATE /FS)
                 endif()
                 unset(_vendored_aliased)
             endif()
@@ -2004,7 +2005,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/platforms/switch/cmake/Switch.cmake)
 ################################################################################
 # Test harness (tests/). Off by default — enables CTest + smash_add_test
 # registrations. See tests/README.md for the level/domain layout and
-# tests/config/test-suites.yml for suite presets.
+# tests/support/config/test-suites.yml for suite presets.
 ################################################################################
 option(SSB64_BUILD_TESTING "Build the CTest-registered test harness (tests/)" OFF)
 if (SSB64_BUILD_TESTING)

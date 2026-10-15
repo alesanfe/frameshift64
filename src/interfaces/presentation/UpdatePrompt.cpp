@@ -5,6 +5,7 @@
 #include <imgui.h>
 
 #include <string>
+#include "core/i18n/Locale.h"
 
 namespace ssb64 {
 
@@ -72,40 +73,40 @@ void UpdatePromptWindow::DrawElement() {
     const std::string current = enhancements::GetCurrentVersion();
     const bool busy = enhancements::IsDownloading() || enhancements::IsDownloadComplete();
 
-    ImGui::Text("Smash Classic %s is out - you have %s.", latest.c_str(), current.c_str());
+    ImGui::Text(TR("Smash Classic %s is out - you have %s."), latest.c_str(), current.c_str());
     ImGui::Spacing();
 
     const std::string notes = NotesExcerpt(enhancements::GetReleaseNotes());
     if (!notes.empty()) {
         ImGui::BeginChild("##UpdateNotes", ImVec2(500, 220), true);
-        ImGui::TextWrapped("%s", notes.c_str());
+        ImGui::TextWrapped(TR("%s"), notes.c_str());
         ImGui::EndChild();
         ImGui::Spacing();
     }
 
     const std::string status = enhancements::GetDownloadStatus();
     if (!status.empty()) {
-        ImGui::TextWrapped("%s", status.c_str());
+        ImGui::TextWrapped(TR("%s"), status.c_str());
         ImGui::Spacing();
     }
 
     ImGui::BeginDisabled(busy);
-    if (ImGui::Button("Update now", ImVec2(150, 0))) {
+    if (ImGui::Button(TR("Update now"), ImVec2(150, 0))) {
         enhancements::StartGameUpdate();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Later", ImVec2(150, 0))) {
+    if (ImGui::Button(TR("Later"), ImVec2(150, 0))) {
         Hide();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Skip this version", ImVec2(170, 0))) {
+    if (ImGui::Button(TR("Skip this version"), ImVec2(170, 0))) {
         enhancements::SkipLatestVersion();
         Hide();
     }
     ImGui::EndDisabled();
 
     ImGui::Spacing();
-    ImGui::TextDisabled("The game restarts by itself once the update is installed. Saves and settings are kept.");
+    ImGui::TextDisabled("%s", TR("The game restarts by itself once the update is installed. Saves and settings are kept."));
 }
 
 } // namespace ssb64

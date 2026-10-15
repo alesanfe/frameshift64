@@ -1604,11 +1604,17 @@ void update_auto(void)
             sAuto.host = true;
             port_netlobby_lan_host(std::atoi(lan_port), fkind, stage, 3, 0, 2);
             sLobby.my_fkind = fkind;
+        /* The menu's "Your fighter" combo and the "(you)" roster entry read
+         * gNetplay.Fighter — keep it in sync with the env-forced pick. */
+        CVarSetInteger("gNetplay.Fighter", fkind);
             return;
         }
         if (const char *lan_ep = env("SSB64_LAN_JOIN")) {
             port_netlobby_lan_join(lan_ep, fkind);
             sLobby.my_fkind = fkind;
+        /* The menu's "Your fighter" combo and the "(you)" roster entry read
+         * gNetplay.Fighter — keep it in sync with the env-forced pick. */
+        CVarSetInteger("gNetplay.Fighter", fkind);
             sAuto.join = false;
             return;
         }
@@ -1618,6 +1624,9 @@ void update_auto(void)
             port_netlobby_host(sAuto.server.c_str(), fkind, stage, 3, 0, 2);
         }
         sLobby.my_fkind = fkind;
+        /* The menu's "Your fighter" combo and the "(you)" roster entry read
+         * gNetplay.Fighter — keep it in sync with the env-forced pick. */
+        CVarSetInteger("gNetplay.Fighter", fkind);
     }
     if (sAuto.host && !sAuto.code_written && sLobby.state == PORT_NETLOBBY_WAITING) {
         if (FILE *f = std::fopen(sAuto.code_file.c_str(), "w")) {

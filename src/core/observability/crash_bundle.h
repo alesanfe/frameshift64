@@ -48,6 +48,13 @@ void port_diag_set_crash_dir(const char *dir);
  * `reason` is a short tag: "SIGSEGV", "unhandled", "signal", ... */
 void port_diag_write_crash_marker(const char *reason, uintptr_t fault_addr);
 
+/* Safe mode: when active, the port layer skips risky startup content
+ * (scripted mods, hi-res texture packs) without touching persisted CVars.
+ * Set at boot when CollectPendingCrashBundle() returns a bundle or the
+ * SSB64_SAFE_MODE env var is set; read by startup gates and the menu UI. */
+void port_diag_set_safe_mode(int active);
+int port_diag_safe_mode_active(void);
+
 #ifdef __cplusplus
 }
 #endif

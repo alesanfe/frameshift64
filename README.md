@@ -133,12 +133,14 @@ Work in progress.
 | ![Settings → Image Quality](docs/screenshots/menu/settings-image-quality.png) | ![Customization → Shaders](docs/screenshots/menu/customization-shaders.png) |
 | ![Settings → Match Rules](docs/screenshots/menu/settings-match-rules.png) | ![Settings → Accessibility](docs/screenshots/menu/settings-accessibility.png) |
 | ![Online → Netplay](docs/screenshots/menu/online-netplay.png) | ![Game Files → Extraction](docs/screenshots/menu/gamefiles-extraction.png) |
+| ![Online room → host](docs/screenshots/menu/online-room-host.png) | ![Online room → client](docs/screenshots/menu/online-room-client.png) |
 | ![Support → Actions](docs/screenshots/menu/support-actions.png) | ![About → Build](docs/screenshots/menu/about-build.png) |
 
 All 26 sections: [docs/screenshots/menu/](docs/screenshots/menu/README.md) —
 visual baseline in `docs/screenshots/baseline/`, resolution/UI-scale matrix in
 `docs/screenshots/matrix/` (regenerate/diff via `shoot_menu_sections.py
---baseline|--diff|--matrix`).
+--baseline|--diff|--matrix`; live room states via `shoot_netplay_room.py`
+against the local lobby adapter).
 
 </details>
 

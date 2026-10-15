@@ -13,6 +13,7 @@
 #include "UIWidgets.hpp"
 #include "Compat.h"
 #include "app_paths.h"
+#include "core/i18n/Locale.h"
 #include "game/gameplay/enhancements.h"
 #include "core/persistence/port_save.h"
 #include "resources/interpolation/frame_interpolation.h"
@@ -90,6 +91,23 @@ static const std::map<int32_t, const char*> kMenuThemeOptions = {
     { UIWidgets::Colors::DarkGray, "Dark Gray" },
 };
 
+static const std::map<int32_t, const char*> kMenuBaseThemeOptions = {
+    { 0, "Dark" },
+    { 1, "Light" },
+    { 2, "High Contrast" },
+};
+
+/* Mirrors PortI18n::kLangCodes (src/core/i18n/Locale.cpp). Labels stay in
+ * each language's own name on purpose — a user who picked a language they
+ * can't read must still be able to find theirs. */
+static const std::map<int32_t, const char*> kMenuLanguageOptions = {
+    { 0, "English" },
+    { 1, "Español" },
+    { 2, "Français" },
+    { 3, "Deutsch" },
+    { 4, "Português" },
+};
+
 static const std::map<int32_t, const char*> kTextureFilteringMap = {
     { Fast::FILTER_THREE_POINT, "Three-Point" },
     { Fast::FILTER_LINEAR, "Linear" },
@@ -138,7 +156,7 @@ static void ApplyGraphicsPreset(int preset) {
     CVarSave();
     Ship::Context::GetInstance()->GetWindow()->SetResolutionMultiplier(res);
     Ship::Context::GetInstance()->GetWindow()->SetMsaaLevel(msaa);
-    ToastSuccess(fmt::format("Graphics preset applied: {} — widescreen applies on next launch",
+    ToastSuccess(fmt::format(fmt::runtime(TR("Graphics preset applied: {} — widescreen applies on next launch")),
                              kGraphicsPresetMap.at(preset)));
 }
 
@@ -313,14 +331,12 @@ static void RenderReplayBrowser(WidgetInfo&) {
                            "Online session in progress — leave it from Online -> Netplay first.");
     }
     if (s_replayFiles.empty()) {
-        ImGui::TextWrapped(
-            "No replays found. Online matches record automatically and land in\n%s",
-            ReplayDir().c_str());
-        if (ImGui::Button("Rescan")) {
+        ImGui::TextWrapped(TR("No replays found. Online matches record automatically and land in\n%s"), ReplayDir().c_str());
+        if (ImGui::Button(TR("Rescan"))) {
             RefreshReplayList();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Open Folder")) {
+        if (ImGui::Button(TR("Open Folder"))) {
             std::error_code ec;
             fs::create_directories(ReplayDir(), ec);
             SDL_OpenURL(("file:///" + fs::absolute(ReplayDir()).string()).c_str());
@@ -342,7 +358,7 @@ static void RenderReplayBrowser(WidgetInfo&) {
         ImGui::EndCombo();
     }
     ImGui::BeginDisabled(netBusy);
-    if (ImGui::Button("Play Replay")) {
+    if (ImGui::Button(TR("Play Replay"))) {
         const std::string fullPath = ReplayDir() + "/" + s_replayFiles[s_replayIndex];
         if (portNetReplayPlayFile(fullPath.c_str())) {
             ToastInfo("Loading replay...");
@@ -352,16 +368,16 @@ static void RenderReplayBrowser(WidgetInfo&) {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Rescan")) {
+    if (ImGui::Button(TR("Rescan"))) {
         RefreshReplayList();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Open Folder")) {
+    if (ImGui::Button(TR("Open Folder"))) {
         std::error_code ec;
         fs::create_directories(ReplayDir(), ec);
         SDL_OpenURL(("file:///" + fs::absolute(ReplayDir()).string()).c_str());
     }
-    ImGui::TextDisabled("Playback runs the recorded inputs; the match ends into the results screen.");
+    ImGui::TextDisabled("%s", TR("Playback runs the recorded inputs; the match ends into the results screen."));
 }
 
 void PortMenu::AddMenuPlay() {
@@ -385,23 +401,23 @@ void PortMenu::AddMenuPlay() {
             .Callback([scene](WidgetInfo&) { portSCManagerRequestPortScene(scene); })
             .Options(ButtonOptions().Tooltip(tip).Size(Sizes::Inline));
     };
-    sceneButton("Versus — Character Select", PlayScene::VSCharSelect,
-                "Straight to the VS character select — pick fighters, then a stage.");
-    sceneButton("Versus — Mode Menu", PlayScene::VSModeMenu,
-                "The VS mode menu (versus rules, item switch, stage select).");
-    sceneButton("1P Mode Menu", PlayScene::Mode1PMenu,
-                "Classic/1P mode menu — 1P Game, Training, Bonus stages.");
-    sceneButton("Training — Character Select", PlayScene::TrainingCharSelect,
-                "Straight to the Training character select.");
-    sceneButton("Main Menu", PlayScene::MainMenu, "The game's own main menu.");
-    sceneButton("Title Screen", PlayScene::Title, "Back to the title screen.");
+    sceneButton(TR("Versus — Character Select"), PlayScene::VSCharSelect,
+                TR("Straight to the VS character select — pick fighters, then a stage."));
+    sceneButton(TR("Versus — Mode Menu"), PlayScene::VSModeMenu,
+                TR("The VS mode menu (versus rules, item switch, stage select)."));
+    sceneButton(TR("1P Mode Menu"), PlayScene::Mode1PMenu,
+                TR("Classic/1P mode menu — 1P Game, Training, Bonus stages."));
+    sceneButton(TR("Training — Character Select"), PlayScene::TrainingCharSelect,
+                TR("Straight to the Training character select."));
+    sceneButton(TR("Main Menu"), PlayScene::MainMenu, TR("The game's own main menu."));
+    sceneButton(TR("Title Screen"), PlayScene::Title, TR("Back to the title screen."));
 
     path.sidebarName = "Records";
     AddSidebarEntry("Play", "Records", 1);
     AddWidget(path, "Progress and records live on the cartridge save — these screens are the game's own.",
               WIDGET_TEXT);
-    sceneButton("VS Records", PlayScene::VSRecords, "Win/loss records per fighter.");
-    sceneButton("Character Data", PlayScene::CharData, "Per-character stats and bios.");
+    sceneButton(TR("VS Records"), PlayScene::VSRecords, TR("Win/loss records per fighter."));
+    sceneButton(TR("Character Data"), PlayScene::CharData, TR("Per-character stats and bios."));
 
     path.sidebarName = "Replays";
     AddSidebarEntry("Play", "Replays", 1);
@@ -417,10 +433,27 @@ void PortMenu::AddMenuSettings() {
 
     WidgetPath path = { "Settings", "General", SECTION_COLUMN_1 };
     AddWidget(path, "Menu Settings", WIDGET_SEPARATOR_TEXT);
-    AddWidget(path, "Menu Theme", WIDGET_CVAR_COMBOBOX)
+    AddWidget(path, "Language", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_SETTING("Language"))
+        .RaceDisable(false)
+        .SearchTerms({ "idioma", "langue", "sprache", "translation", "localisation" })
+        .Options(ComboboxOptions().Tooltip("UI language. Translations load from lang/<code>.json next to the "
+                                           "binary and apply immediately — missing strings stay in English.")
+                     .ComboMap(kMenuLanguageOptions)
+                     .DefaultIndex(0));
+    AddWidget(path, "Base theme", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_SETTING("Menu.BaseTheme"))
+        .RaceDisable(false)
+        .SearchTerms({ "dark", "light", "contrast", "appearance" })
+        .Options(ComboboxOptions().Tooltip("Surface palette of the port menu. High Contrast uses pure-white text, "
+                                           "hard borders and an opaque backdrop.")
+                     .ComboMap(kMenuBaseThemeOptions)
+                     .DefaultIndex(0));
+    AddWidget(path, "Accent color", WIDGET_CVAR_COMBOBOX)
         .CVar(CVAR_SETTING("Menu.Theme"))
         .RaceDisable(false)
-        .Options(ComboboxOptions().Tooltip("Changes the theme of the menu widgets.")
+        .SearchTerms({ "theme", "color", "highlight" })
+        .Options(ComboboxOptions().Tooltip("Highlight color of the menu widgets, independent of the base theme.")
                      .ComboMap(kMenuThemeOptions)
                      .DefaultIndex(Colors::LightBlue));
 
@@ -456,7 +489,7 @@ void PortMenu::AddMenuSettings() {
                 preset = 2;
             }
             static const char* const kPresets[] = { "Transparent", "Dim", "Opaque", "Custom" };
-            ImGui::TextUnformatted("Menu background");
+            ImGui::TextUnformatted(TR("Menu background"));
             ImGui::SetNextItemWidth(-FLT_MIN);
             if (ImGui::Combo("##MenuBgPreset", &preset, kPresets, IM_ARRAYSIZE(kPresets))) {
                 static const float kValues[] = { 0.40f, 0.75f, 1.0f, 0.85f };
@@ -464,8 +497,7 @@ void PortMenu::AddMenuSettings() {
                 CVarSave();
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("How solid the menu backdrop is. Opaque hides the running game "
-                                  "entirely — best for readability and reduced motion.");
+                ImGui::SetTooltip("%s", TR("How solid the menu backdrop is. Opaque hides the running game entirely — best for readability and reduced motion."));
             }
         });
 
@@ -875,25 +907,25 @@ void PortMenu::AddMenuSettings() {
     AddSidebarEntry("Settings", "Control Enhancements", 1);
 
     for (int p = 0; p < PORT_ENHANCEMENT_MAX_PLAYERS; ++p) {
-        const std::string playerLabel = fmt::format("Player {}", p + 1);
+        const std::string playerLabel = fmt::format(fmt::runtime(TR("Player {}")), p + 1);
         AddWidget(path, playerLabel, WIDGET_SEPARATOR_TEXT);
 
-        AddWidget(path, fmt::format("Disable Tap Jump (P{})", p + 1), WIDGET_CVAR_CHECKBOX)
+        AddWidget(path, fmt::format(fmt::runtime(TR("Disable Tap Jump (P{})")), p + 1), WIDGET_CVAR_CHECKBOX)
             .CVar(enhancements::TapJumpCVarName(p))
             .RaceDisable(false)
             .Options(CheckboxOptions().Tooltip("Disables jumping by pushing up on the analog stick."));
 
-        AddWidget(path, fmt::format("C-Stick Smash (P{})", p + 1), WIDGET_CVAR_CHECKBOX)
+        AddWidget(path, fmt::format(fmt::runtime(TR("C-Stick Smash (P{})")), p + 1), WIDGET_CVAR_CHECKBOX)
             .CVar(enhancements::CStickSmashCVarName(p))
             .RaceDisable(false)
             .Options(CheckboxOptions().Tooltip("Replaces C-Button inputs with instant smash attacks."));
 
-        AddWidget(path, fmt::format("D-Pad to Jump (P{})", p + 1), WIDGET_CVAR_CHECKBOX)
+        AddWidget(path, fmt::format(fmt::runtime(TR("D-Pad to Jump (P{})")), p + 1), WIDGET_CVAR_CHECKBOX)
             .CVar(enhancements::DPadJumpCVarName(p))
             .RaceDisable(false)
             .Options(CheckboxOptions().Tooltip("Translates N64 D-Pad inputs into C-Up (Jump)."));
 
-        AddWidget(path, fmt::format("NRage Analog Stick Remap (P{})", p + 1), WIDGET_CVAR_CHECKBOX)
+        AddWidget(path, fmt::format(fmt::runtime(TR("NRage Analog Stick Remap (P{})")), p + 1), WIDGET_CVAR_CHECKBOX)
             .CVar(enhancements::AnalogRemapCVarName(p))
             .RaceDisable(false)
             .Options(CheckboxOptions().Tooltip(
@@ -904,7 +936,7 @@ void PortMenu::AddMenuSettings() {
 
         const char* deadzoneCVar = enhancements::AnalogRemapDeadzoneCVarName(p);
         const char* enableCVar   = enhancements::AnalogRemapCVarName(p);
-        AddWidget(path, fmt::format("Remap Deadzone (P{})", p + 1), WIDGET_CVAR_SLIDER_FLOAT)
+        AddWidget(path, fmt::format(fmt::runtime(TR("Remap Deadzone (P{})")), p + 1), WIDGET_CVAR_SLIDER_FLOAT)
             .CVar(deadzoneCVar)
             .RaceDisable(false)
             .PreFunc([enableCVar](WidgetInfo& info) {
@@ -924,7 +956,7 @@ void PortMenu::AddMenuSettings() {
                                   "max deflection on each axis read as 0."));
 
         const char* rangeCVar = enhancements::AnalogRemapRangeCVarName(p);
-        AddWidget(path, fmt::format("Remap Range (P{})", p + 1), WIDGET_CVAR_SLIDER_FLOAT)
+        AddWidget(path, fmt::format(fmt::runtime(TR("Remap Range (P{})")), p + 1), WIDGET_CVAR_SLIDER_FLOAT)
             .CVar(rangeCVar)
             .RaceDisable(false)
             .PreFunc([enableCVar](WidgetInfo& info) {
@@ -1129,26 +1161,26 @@ static void RenderExtractionStatus(WidgetInfo&) {
                       ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (exists) {
-        ImGui::TextColored(SemanticColors::Success, "Status: Ready");
+        ImGui::TextColored(SemanticColors::Success, "%s", TR("Status: Ready"));
     } else {
-        ImGui::TextColored(SemanticColors::Error, "Status: Missing");
+        ImGui::TextColored(SemanticColors::Error, "%s", TR("Status: Missing"));
     }
     if (exists) {
-        ImGui::TextDisabled("Archive:  %s (%.1f MB)", SSB64_O2R_NAME, sizeMb);
+        ImGui::TextDisabled(TR("Archive:  %s (%.1f MB)"), SSB64_O2R_NAME, sizeMb);
     } else {
-        ImGui::TextDisabled("Archive:  %s", SSB64_O2R_NAME);
+        ImGui::TextDisabled(TR("Archive:  %s"), SSB64_O2R_NAME);
     }
-    ImGui::TextDisabled("Region:   %s", region);
+    ImGui::TextDisabled(TR("Region:   %s"), region);
     if (bakExists) {
-        ImGui::TextColored(SemanticColors::Warning, "Backup:   " SSB64_O2R_NAME ".bak present");
+        ImGui::TextColored(SemanticColors::Warning, TR("Backup:   %s.bak present"), SSB64_O2R_NAME);
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", UIWidgets::WrappedText(
+            ImGui::SetTooltip(TR("%s"), UIWidgets::WrappedText(
                 "A previous archive was kept as a backup. If the current one is broken, "
                 "restore it by deleting the incomplete archive and renaming .bak back.").c_str());
         }
     }
     if (!exists) {
-        ImGui::TextWrapped("%s", UIWidgets::WrappedText(
+        ImGui::TextWrapped(TR("%s"), UIWidgets::WrappedText(
             "The game archive has not been generated yet — it is created from your ROM "
             "on first launch.").c_str());
     }
@@ -1181,8 +1213,8 @@ void PortMenu::AddMenuAssets() {
     path.sidebarName = "Paths";
     AddSidebarEntry("Game Files", "Paths", 1);
     AddWidget(path, "Runtime Paths", WIDGET_SEPARATOR_TEXT);
-    AddWidget(path, fmt::format("App directory: {}", Ship::Context::GetPathRelativeToAppDirectory("")), WIDGET_TEXT);
-    AddWidget(path, fmt::format("Main archive: {}", Ship::Context::GetPathRelativeToAppDirectory(SSB64_O2R_NAME)),
+    AddWidget(path, fmt::format(fmt::runtime(TR("App directory: {}")), Ship::Context::GetPathRelativeToAppDirectory("")), WIDGET_TEXT);
+    AddWidget(path, fmt::format(fmt::runtime(TR("Main archive: {}")), Ship::Context::GetPathRelativeToAppDirectory(SSB64_O2R_NAME)),
               WIDGET_TEXT);
     AddWidget(path, "Open App Files Folder", WIDGET_BUTTON)
         .RaceDisable(false)
@@ -1383,7 +1415,7 @@ void PortMenu::DrawElement() {
         ImGui::TextWrapped(
             SSB64_O2R_NAME " will be regenerated from your ROM the next time the game launches.");
         ImGui::Spacing();
-        if (ImGui::Button("OK", ImVec2(120, 0))) {
+        if (ImGui::Button(TR("OK"), ImVec2(120, 0))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -1405,15 +1437,15 @@ void PortMenu::DrawElement() {
             mDisplayRevertArmed = false;
             ImGui::CloseCurrentPopup();
         } else {
-            ImGui::TextWrapped("The display mode was changed. Reverting automatically in %d seconds "
-                               "if it isn't confirmed.", static_cast<int>(std::ceil(secondsLeft)));
+            ImGui::TextWrapped(TR("The display mode was changed. Reverting automatically in %d seconds "
+                               "if it isn't confirmed."), static_cast<int>(std::ceil(secondsLeft)));
             ImGui::Spacing();
-            if (ImGui::Button("Keep", ImVec2(140, 0))) {
+            if (ImGui::Button(TR("Keep"), ImVec2(140, 0))) {
                 mDisplayRevertArmed = false;
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Revert now", ImVec2(140, 0))) {
+            if (ImGui::Button(TR("Revert now"), ImVec2(140, 0))) {
                 Ship::Context::GetInstance()->GetWindow()->ToggleFullscreen();
                 mDisplayRevertArmed = false;
                 ImGui::CloseCurrentPopup();
@@ -1429,14 +1461,14 @@ void PortMenu::DrawElement() {
     ImGui::SetNextWindowPos(viewportCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopupModal("Quit during online session?", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
-        ImGui::TextWrapped("You're still in an online session. Quitting now will disconnect you.");
+        ImGui::TextWrapped("%s", TR("You're still in an online session. Quitting now will disconnect you."));
         ImGui::Spacing();
-        if (ImGui::Button("Quit anyway", ImVec2(140, 0))) {
+        if (ImGui::Button(TR("Quit anyway"), ImVec2(140, 0))) {
             ImGui::CloseCurrentPopup();
             Ship::Context::GetInstance()->GetWindow()->Close();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Stay", ImVec2(140, 0))) {
+        if (ImGui::Button(TR("Stay"), ImVec2(140, 0))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();

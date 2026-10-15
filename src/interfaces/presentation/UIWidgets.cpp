@@ -6,6 +6,7 @@
 // Licensed under the MIT License; see LICENSE at repository root.
 
 #include "UIWidgets.hpp"
+#include "core/i18n/Locale.h"
 #include "Compat.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
@@ -62,7 +63,7 @@ void PaddedSeparator(bool padTop, bool padBottom, float extraVerticalTopPadding,
 
 void Tooltip(const char* text) {
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s", WrappedText(text).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(text)).c_str());
     }
 }
 
@@ -182,9 +183,9 @@ bool Button(const char* label, const ButtonOptions& options) {
     ImGui::EndDisabled();
     if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
         !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.disabledTooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
     } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.tooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
     }
     return dirty;
 }
@@ -250,7 +251,7 @@ void InsertHelpHoverText(const std::string& text) {
     ImGui::TextColored(SemanticColors::Muted, "?");
     if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
-        ImGui::Text("%s", WrappedText(text, 60).c_str());
+        ImGui::Text("%s", WrappedText(TR(text.c_str()), 60).c_str());
         ImGui::EndTooltip();
     }
 }
@@ -260,7 +261,7 @@ void InsertHelpHoverText(const char* text) {
     ImGui::TextColored(SemanticColors::Muted, "?");
     if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
-        ImGui::Text("%s", WrappedText(text, 60).c_str());
+        ImGui::Text("%s", WrappedText(TR(text), 60).c_str());
         ImGui::EndTooltip();
     }
 }
@@ -385,9 +386,9 @@ bool Checkbox(const char* _label, bool* value, const CheckboxOptions& options) {
     ImGui::EndDisabled();
     if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
         !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.disabledTooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
     } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.tooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
     }
     return pressed;
 }
@@ -615,9 +616,9 @@ bool SliderInt(const char* label, int32_t* value, const IntSliderOptions& option
     ImGui::EndGroup();
     if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
         !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.disabledTooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
     } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.tooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
     }
     ImGui::PopID();
     return dirty;
@@ -746,9 +747,9 @@ bool SliderFloat(const char* label, float* value, const FloatSliderOptions& opti
     ImGui::EndGroup();
     if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
         !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.disabledTooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
     } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.tooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
     }
     ImGui::PopID();
     return dirty;
@@ -820,12 +821,12 @@ bool InputString(const char* label, std::string* value, const InputOptions& opti
     ImGui::EndGroup();
     if (options.hasError && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
         !Ship_IsCStringEmpty(options.errorText)) {
-        ImGui::SetTooltip("%s", WrappedText(options.errorText).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.errorText)).c_str());
     } else if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
                !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.disabledTooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
     } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.tooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
     }
     ImGui::PopID();
     return dirty;
@@ -874,9 +875,9 @@ bool InputInt(const char* label, int32_t* value, const InputOptions& options) {
     ImGui::EndGroup();
     if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
         !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.disabledTooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
     } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.tooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
     }
     ImGui::PopID();
     return dirty;
@@ -1060,7 +1061,7 @@ bool CVarRadioButton(const char* text, const char* cvarName, int32_t id, const R
     ImGui::Text("%s", text);
     PopStyleCheckbox();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(options.tooltip).c_str());
+        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
     }
 
     return ret;

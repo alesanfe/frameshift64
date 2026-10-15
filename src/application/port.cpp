@@ -882,6 +882,9 @@ static int PortInitImpl(int /*argc*/, char* /*argv*/[]) {
 	// the gHiResTextures.Enabled CVar (default 1) — toggled from the
 	// Assets → Mods menu, takes effect next cache miss. US-only (see
 	// CMakeLists.txt — JP builds drop port/hires/ entirely).
+	if (port_diag_safe_mode_active()) {
+		port_log("SSB64: safe mode — skipping hi-res texture pack scan\n");
+	} else {
 	ssb64::hires::HiResPack::Get().Init();
 	// Warm the decoded-texture cache on background threads (issue #215) so
 	// first use of a pack texture doesn't stall the game/render thread on a
@@ -889,6 +892,7 @@ static int PortInitImpl(int /*argc*/, char* /*argv*/[]) {
 	// for desktop, off on Android).
 	ssb64::hires::HiResPack::Get().StartPreload();
 	ssb64_hires_register();
+	}
 #endif
 
 	/* Pillarbox the framebuffer to 4:3 every launch. The game emits 4:3
@@ -1394,6 +1398,9 @@ static int PortInitImpl(int /*argc*/, char* /*argv*/[]) {
 #ifndef DISABLE_SCRIPTING
 	/* Mount mods/ entries (folders, .o2r, .zip) into the LUS
 	 * ArchiveManager so ScriptLoader can iterate them. */
+	if (port_diag_safe_mode_active()) {
+		port_log("SSB64: safe mode — skipping mods/ mount and scripted mods\n");
+	} else {
 	ssb64::MountModsDir();
 
 	// TCC scripting: compile + load any .o2r / folder mod under mods/ that
@@ -1416,6 +1423,7 @@ static int PortInitImpl(int /*argc*/, char* /*argv*/[]) {
 		} catch (const std::exception& e) {
 			port_log("SSB64: TCC ScriptLoader threw — continuing without scripted mods: %s\n", e.what());
 		}
+	}
 	}
 #endif
 
@@ -1543,6 +1551,21 @@ int main(int argc, char* argv[]) {
 		if (!bundle.empty()) {
 			port_log("SSB64: previous run crashed — bundle at %s\n", bundle.c_str());
 		}
+		/* Safe mode: a collected crash bundle means the last run died, so
+		 * boot without scripted mods or hi-res packs this launch — a bad
+		 * mod can't crash-loop the game. SSB64_SAFE_MODE=1 forces the same
+		 * without a crash. Nothing here touches persisted CVars. */
+		{
+			const char* safeEnv = std::getenv("SSB64_SAFE_MODE");
+			const bool forced = safeEnv != nullptr && safeEnv[0] != '\0' &&
+				!(safeEnv[0] == '0' && safeEnv[1] == '\0');
+			port_diag_set_safe_mode((!bundle.empty() || forced) ? 1 : 0);
+			if (port_diag_safe_mode_active()) {
+				port_log("SSB64: safe mode active (%s) — mods and hi-res packs skipped this launch\n",
+				         !bundle.empty() ? "previous run crashed" : "SSB64_SAFE_MODE set");
+			}
+		}
+
 		/* Tell the crash handlers where to drop crash.marker for the NEXT
 		 * run: the same directory the log lives in. */
 		const size_t sep = logPath.find_last_of("/\\");

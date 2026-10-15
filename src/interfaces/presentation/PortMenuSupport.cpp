@@ -11,6 +11,7 @@
 #include "UIWidgets.hpp"
 #include "Compat.h"
 #include "app_paths.h"
+#include "core/i18n/Locale.h"
 #include "game/gameplay/enhancements.h"
 #include "networking/netplay/session/netlobby.h"
 #ifndef DISABLE_SCRIPTING
@@ -31,6 +32,8 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+extern "C" int port_diag_safe_mode_active(void);
 
 namespace ssb64 {
 
@@ -76,34 +79,37 @@ static void RenderDiagnostics(WidgetInfo&) {
 
     ImGui::BeginChild("##diag_card", ImVec2(0, 0), ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::Text("Version:     %s (%s)", BATTLESHIP_CURRENT_VERSION, region);
-    ImGui::Text("Renderer:    %s", backend);
-    ImGui::Text("Audio:       %s", audio);
-    ImGui::Text("Game data:   %s", o2rOk ? "Verified present" : "MISSING — first-run will re-extract");
-    ImGui::Text("Mods:        %d mounted, %d loaded, %d problem%s",
-                mountedMods, loadedMods, badMods, badMods == 1 ? "" : "s");
-    ImGui::Text("Netplay:     %s", port_netlobby_status());
+    ImGui::Text(TR("Version:     %s (%s)"), BATTLESHIP_CURRENT_VERSION, region);
+    ImGui::Text(TR("Renderer:    %s"), backend);
+    ImGui::Text(TR("Audio:       %s"), audio);
+    ImGui::Text(TR("Game data:   %s"), o2rOk ? "Verified present" : "MISSING — first-run will re-extract");
+    ImGui::Text(TR("Mods:        %d mounted, %d loaded, %d problem%s"), mountedMods, loadedMods, badMods, badMods == 1 ? "" : "s");
+    ImGui::Text(TR("Netplay:     %s"), port_netlobby_status());
+    if (port_diag_safe_mode_active()) {
+        ImGui::TextColored(SemanticColors::Warning, "%s",
+                           TR("Safe mode:   ON — mods & texture packs skipped this run"));
+    }
     ImGui::EndChild();
 
-    ImGui::SeparatorText("Actions");
-    if (ImGui::Button("Copy diagnostics summary")) {
+    ImGui::SeparatorText(TR("Actions"));
+    if (ImGui::Button(TR("Copy diagnostics summary"))) {
         std::string summary =
-            fmt::format("BattleShip {} ({})\nRenderer: {}\nAudio: {}\nGame data: {}\nMods: "
-                        "{} mounted, {} loaded, {} problems\nNetplay: {}",
+            fmt::format(fmt::runtime(TR("BattleShip {} ({})\nRenderer: {}\nAudio: {}\nGame data: {}\nMods: {} mounted, {} loaded, {} problems\nNetplay: {}\nSafe mode: {}")),
                         BATTLESHIP_CURRENT_VERSION, region, backend, audio,
                         o2rOk ? "present" : "MISSING", mountedMods, loadedMods, badMods,
-                        port_netlobby_status());
+                        port_netlobby_status(),
+                        port_diag_safe_mode_active() ? "ON" : "off");
         ImGui::SetClipboardText(summary.c_str());
         ToastSuccess("Diagnostics copied to clipboard");
     }
     ImGui::SameLine();
-    if (ImGui::Button("Open data folder")) {
+    if (ImGui::Button(TR("Open data folder"))) {
         std::string appPath = Ship::Context::GetPathRelativeToAppDirectory("");
         std::error_code ec;
         fs::create_directories(appPath, ec);
         SDL_OpenURL(std::string("file:///" + fs::absolute(appPath).string()).c_str());
     }
-    ImGui::TextDisabled("The summary excludes your ROM path, room codes, and any local paths.");
+    ImGui::TextDisabled("%s", TR("The summary excludes your ROM path, room codes, and any local paths."));
 }
 
 

@@ -44,6 +44,7 @@ constexpr size_t kMaxBundlesKept = 8;
 
 char sCrashDir[1024];
 bool sCrashDirSet = false;
+bool sSafeModeActive = false;
 
 /* ── crash-marker writer (signal-handler side) ─────────────────────────── */
 
@@ -143,6 +144,14 @@ extern "C" void port_diag_set_crash_dir(const char *dir) {
     std::strncpy(sCrashDir, dir, sizeof(sCrashDir) - 1);
     sCrashDir[sizeof(sCrashDir) - 1] = '\0';
     sCrashDirSet = true;
+}
+
+extern "C" void port_diag_set_safe_mode(int active) {
+    sSafeModeActive = (active != 0);
+}
+
+extern "C" int port_diag_safe_mode_active(void) {
+    return sSafeModeActive ? 1 : 0;
 }
 
 extern "C" void port_diag_write_crash_marker(const char *reason, uintptr_t fault_addr) {

@@ -48,6 +48,22 @@ RETIRED_DIRS = {
     "src/netplay": "src/networking/netplay/",
     "src/social": "src/networking/social/",
     "src/compatibility": "src/platform/compatibility/",
+    # components/ consolidation (2026-10): submodules moved out of root
+    "decomp": "components/decomp/",
+    "libultraship": "components/libultraship/",
+    "torch": "components/game-runtime/",
+    # tools/ regrouping (2026-10): analysis / developer / code-generation
+    "tools/lint": "tools/analysis/lint/",
+    "tools/fuzz": "tools/analysis/fuzz/",
+    "tools/testing": "tools/developer/testing/",
+    "tools/modding": "tools/developer/modding/",
+    "tools/codegen": "tools/code-generation/",
+    "tools/asset-pipeline": "tools/assets/pipeline/",
+    # packaging/ hoisted to root; tests/config -> tests/support/config
+    "platforms/windows/packaging": "packaging/windows/",
+    "platforms/linux/packaging": "packaging/linux/",
+    "platforms/macos/packaging": "packaging/macos/",
+    "tests/config": "tests/support/config/",
 }
 
 # path fragments that must not appear in source includes / build files
@@ -102,7 +118,13 @@ RETIRED_REF = re.compile(
     r'|src/(?:diagnostics|distribution|integration|gameplay|observability'
     r'|persistence|compatibility|netplay|social|audio|input|rendering'
     r'|presentation)/'
-    r'|src/config/)'
+    r'|src/config/'
+    # tools/ + packaging/ regrouping (2026-10). The components/* submodule
+    # roots aren't scanned here: <libultraship/...> include prefixes stay
+    # legal (the move changed disk location, not include namespace).
+    r'|tools/(?:lint|codegen|fuzz|testing|modding|asset-pipeline)/'
+    r'|platforms/(?:windows|linux|macos)/packaging/'
+    r'|tests/config/)'
 )
 
 SCAN_EXT = {".c", ".cpp", ".h", ".hpp", ".cmake", ".txt"}

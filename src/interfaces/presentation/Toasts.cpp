@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <deque>
 #include <utility>
+#include "core/i18n/Locale.h"
 
 namespace ssb64 {
 
@@ -155,12 +156,12 @@ void ToastsWindow::Draw() {
 
         ImGui::PushID(static_cast<int>(shown));
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
-        ImGui::TextColored(style.color, "%s", style.icon);
+        ImGui::TextColored(style.color, TR("%s"), style.icon);
         ImGui::SameLine();
         /* AlwaysAutoResize + TextWrapped collapses to a one-char column —
          * pin the wrap point so toasts keep a readable width. */
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 220.0f);
-        ImGui::TextWrapped("%s", it->message.c_str());
+        ImGui::TextWrapped(TR("%s"), it->message.c_str());
         ImGui::PopTextWrapPos();
         if (shown + 1 < (std::min)(q.size(), kMaxVisible)) {
             ImGui::Separator();

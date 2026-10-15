@@ -12,6 +12,7 @@
 #include "UIWidgets.hpp"
 #include "Compat.h"
 #include "app_paths.h"
+#include "core/i18n/Locale.h"
 #include "game/gameplay/enhancements.h"
 #ifdef PORT_HIRES_ENABLED
 #include "resources/loading/textures/hires/HiResPack.h"
@@ -66,9 +67,9 @@ static void DrawPostProcessCompatBadge(const Fast::PostProcessShaderInfo& info) 
         ? SemanticColors::Success
         : SemanticColors::Warning;
     ImGui::SameLine();
-    ImGui::TextColored(color, "%s", text);
+    ImGui::TextColored(color, TR("%s"), text);
     if (!info.license.empty() && ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("License: %s", info.license.c_str());
+        ImGui::SetTooltip(TR("License: %s"), info.license.c_str());
     }
 }
 
@@ -103,7 +104,7 @@ void RenderPostProcessShaderPicker(WidgetInfo& /*widget*/) {
         }
     }
 
-    ImGui::TextUnformatted("Post-Process Shader");
+    ImGui::TextUnformatted(TR("Post-Process Shader"));
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
     if (!ImGui::BeginCombo("##gPostProcessShaderPicker", preview.c_str())) {
         return;
@@ -173,7 +174,7 @@ void RenderPostProcessShaderPicker(WidgetInfo& /*widget*/) {
     // name, just the disable affordance, and hiding it behind the
     // filter would leave the user with no way to turn the effect off
     // once they've narrowed the list.
-    if (ImGui::Selectable("Off", !enabled)) {
+    if (ImGui::Selectable(TR("Off"), !enabled)) {
         selectShader(std::string());
     }
     ImGui::Separator();
@@ -238,10 +239,10 @@ void RenderPostProcessShaderPicker(WidgetInfo& /*widget*/) {
     }
 
     if (bundledFiltered.empty() && userFolders.empty() && filter.empty()) {
-        ImGui::TextDisabled("No user shaders installed.");
-        ImGui::TextDisabled("Drop .glsl / .glslp files into:");
+        ImGui::TextDisabled("%s", TR("No user shaders installed."));
+        ImGui::TextDisabled("%s", TR("Drop .glsl / .glslp files into:"));
         const std::string userDir = Ship::Context::GetPathRelativeToAppDirectory("shaders");
-        ImGui::TextDisabled("%s", userDir.c_str());
+        ImGui::TextDisabled(TR("%s"), userDir.c_str());
     }
 
     ImGui::EndCombo();
@@ -260,23 +261,23 @@ void RenderPostProcessShaderPicker(WidgetInfo& /*widget*/) {
 void RenderPostProcessDiagnostics(WidgetInfo& /*widget*/) {
     const Fast::PostProcessRuntimeDiagnostics diag = Fast::GetPostProcessRuntimeDiagnostics();
 
-    ImGui::TextDisabled("Shader runtime diagnostics");
+    ImGui::TextDisabled("%s", TR("Shader runtime diagnostics"));
     if (diag.active) {
-        ImGui::Text("Active:  %s", diag.name.c_str());
-        ImGui::Text("Flavor:  %s", diag.flavor.c_str());
-        ImGui::Text("Passes:  %zu", diag.passCount);
+        ImGui::Text(TR("Active:  %s"), diag.name.c_str());
+        ImGui::Text(TR("Flavor:  %s"), diag.flavor.c_str());
+        ImGui::Text(TR("Passes:  %zu"), diag.passCount);
     } else if (!diag.lastError.empty()) {
-        ImGui::TextColored(SemanticColors::Error, "Inactive — last error:");
-        ImGui::TextWrapped("%s", diag.lastError.c_str());
+        ImGui::TextColored(SemanticColors::Error, "%s", TR("Inactive — last error:"));
+        ImGui::TextWrapped(TR("%s"), diag.lastError.c_str());
     } else {
-        ImGui::TextDisabled("No shader loaded.");
+        ImGui::TextDisabled("%s", TR("No shader loaded."));
     }
 
     // Reload button — flips the enabled cvar off then on to force the
     // interpreter to redo the load (which re-runs all of the
     // SPDLOG_INFO instrumentation in the load path). Helpful when
     // tweaking sidecars or replacing files on disk during testing.
-    if (ImGui::Button("Reload active shader")) {
+    if (ImGui::Button(TR("Reload active shader"))) {
         const char* currentRaw = CVarGetString("gPostProcessShader", "");
         const std::string current = currentRaw ? currentRaw : std::string();
         if (!current.empty()) {
@@ -289,11 +290,10 @@ void RenderPostProcessDiagnostics(WidgetInfo& /*widget*/) {
         }
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(
-            "Force the runtime to re-resolve, re-load, and re-compile the\n"
+        ImGui::SetTooltip("%s", TR("Force the runtime to re-resolve, re-load, and re-compile the\n"
             "currently-selected shader. Watch ssb64.log for the matching\n"
             "Post-process: ... INFO lines. Useful after editing a shader\n"
-            "file on disk or its .lus.json sidecar.");
+            "file on disk or its .lus.json sidecar."));
     }
 }
 
@@ -344,8 +344,7 @@ void RenderShaderPackDownloader(WidgetInfo& /*widget*/) {
         phase == ShaderPackPhase::AwaitingSelection ||
         phase == ShaderPackPhase::InstallingSelected;
 
-    if (UIWidgets::Button(
-            "Get more shaders...",
+    if (UIWidgets::Button(TR("Get more shaders..."),
             UIWidgets::ButtonOptions()
                 .Color(UIWidgets::Colors::LightBlue)
                 .Tooltip("Browse and install community CRT/scanline/NTSC shaders\n"
@@ -366,7 +365,7 @@ void RenderShaderPackDownloader(WidgetInfo& /*widget*/) {
         // Persistent post-install summary directly under the button
         // (the modal closes on Install, so the user wouldn't see this
         // otherwise).
-        ImGui::TextDisabled("%s", status.c_str());
+        ImGui::TextDisabled(TR("%s"), status.c_str());
     }
 }
 
@@ -415,14 +414,14 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
         const CuratedModPack& pack = packs[i];
         ImGui::PushID(pack.id);
 
-        ImGui::TextWrapped("%s %s", pack.displayName, pack.version);
-        ImGui::TextDisabled("%s", pack.summary);
+        ImGui::TextWrapped(TR("%s %s"), pack.displayName, pack.version);
+        ImGui::TextDisabled(TR("%s"), pack.summary);
 
         const bool installed = IsModPackInstalled(pack);
         if (installed) {
-            ImGui::TextColored(SemanticColors::Success, "Installed");
+            ImGui::TextColored(SemanticColors::Success, "%s", TR("Installed"));
             ImGui::SameLine();
-            if (UIWidgets::Button("Reinstall",
+            if (UIWidgets::Button(TR("Reinstall"),
                                   UIWidgets::ButtonOptions()
                                       .Size(UIWidgets::Sizes::Inline)
                                       .Tooltip("Re-download the pack (replaces the installed copy)."))) {
@@ -434,10 +433,10 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
                                    ? static_cast<float>(static_cast<double>(got) / pack.expectedSize)
                                    : 0.0f;
             ImGui::ProgressBar(frac, ImVec2(-1.0f, 0.0f),
-                               fmt::format("{} ({:.0f} / {:.0f} MB)", status,
+                               fmt::format(fmt::runtime(TR("{} ({:.0f} / {:.0f} MB)")), status,
                                            got / 1.0e6, pack.expectedSize / 1.0e6)
                                    .c_str());
-            if (UIWidgets::Button("Cancel",
+            if (UIWidgets::Button(TR("Cancel"),
                                   UIWidgets::ButtonOptions().Size(UIWidgets::Sizes::Inline))) {
                 CancelModPackInstall();
             }
@@ -445,11 +444,9 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
             const double mb = pack.expectedSize / 1.0e6;
             // Tooltip stores the pointer — build the text once so it outlives the call.
             static std::string s_packTooltip =
-                fmt::format("Downloads from {} and verifies the pinned SHA-256 before "
-                            "installing. The pack stays zipped in mods/ — no extraction "
-                            "needed.", pack.upstreamUrl);
+                fmt::format(fmt::runtime(TR("Downloads from {} and verifies the pinned SHA-256 before installing. The pack stays zipped in mods/ — no extraction needed.")), pack.upstreamUrl);
             if (UIWidgets::Button(
-                    fmt::format("Download & Install ({:.0f} MB)", mb).c_str(),
+                    fmt::format(fmt::runtime(TR("Download & Install ({:.0f} MB)")), mb).c_str(),
                     UIWidgets::ButtonOptions()
                         .Color(UIWidgets::Colors::LightBlue)
                         .Tooltip(s_packTooltip.c_str()))) {
@@ -458,13 +455,13 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
         }
 
         if (!installed && !busy && phase == ModPackInstallPhase::Error && !status.empty()) {
-            ImGui::TextColored(SemanticColors::Error, "%s", status.c_str());
+            ImGui::TextColored(SemanticColors::Error, TR("%s"), status.c_str());
         }
         ImGui::PopID();
     }
 
-    ImGui::TextDisabled("Third-party pack by GhostlyDark — downloaded from its own "
-                        "GitHub release page (not redistributed by this project).");
+    ImGui::TextDisabled("%s", TR("Third-party pack by GhostlyDark — downloaded from its own "
+                        "GitHub release page (not redistributed by this project)."));
 
     // --- Install your own --------------------------------------------------
     // Generic installer: user-supplied URL or a file/folder dropped on the
@@ -472,12 +469,11 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
     // native texture pack, or GLideN64/Rice pack (converted via the
     // bundled hash map).
     ImGui::Separator();
-    ImGui::TextDisabled("Install your own");
-    ImGui::TextWrapped("Paste a direct link to a texture pack or mod, or drag "
+    ImGui::TextDisabled("%s", TR("Install your own"));
+    ImGui::TextWrapped(TR("Paste a direct link to a texture pack or mod, or drag "
                        "a .zip / .o2r / .png / folder onto the window. "
                        "GLideN64/Rice packs (most SSB64 texture packs released "
-                       "for emulators) are converted automatically%s.",
-                       IsGliden64ConverterReady() ? ""
+                       "for emulators) are converted automatically%s."), IsGliden64ConverterReady() ? ""
                                                   : " — NOT available in this build "
                                                     "(missing bundled-data/gliden64-map.json)");
 
@@ -487,17 +483,16 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
                              sizeof(s_packUrl));
     if (busy) {
         const uint64_t got = GetModPackDownloadedBytes();
-        ImGui::TextWrapped("%s", got > 0
-                                     ? fmt::format("{} ({:.0f} MB)", status, got / 1.0e6).c_str()
+        ImGui::TextWrapped(TR("%s"), got > 0
+                                     ? fmt::format(fmt::runtime(TR("{} ({:.0f} MB)")), status, got / 1.0e6).c_str()
                                      : status.c_str());
-        if (UIWidgets::Button("Cancel##generic",
+        if (UIWidgets::Button(TR("Cancel##generic"),
                               UIWidgets::ButtonOptions().Size(UIWidgets::Sizes::Inline))) {
             CancelModPackInstall();
         }
     } else {
         const bool hasUrl = s_packUrl[0] != '\0';
-        if (UIWidgets::Button(
-                "Download & Install##generic",
+        if (UIWidgets::Button(TR("Download & Install##generic"),
                 UIWidgets::ButtonOptions()
                     .Color(UIWidgets::Colors::LightBlue)
                     .Tooltip("The download runs in the background. The kind of "
@@ -510,7 +505,7 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
         }
     }
     if (!busy && phase == ModPackInstallPhase::Error && !status.empty()) {
-        ImGui::TextColored(SemanticColors::Error, "%s", status.c_str());
+        ImGui::TextColored(SemanticColors::Error, TR("%s"), status.c_str());
     }
     // Register the SDL_DROPFILE consumer once the LUS context is up
     // (idempotent, cheap — call every frame).
@@ -590,18 +585,18 @@ void RenderShaderPackModal() {
             // the catalog phase has actually fired. Offer to retry
             // the fetch rather than leaving the user with an empty
             // window.
-            ImGui::TextWrapped("%s", !status.empty()
+            ImGui::TextWrapped(TR("%s"), !status.empty()
                 ? status.c_str()
                 : "No catalog loaded. Try fetching again.");
             ImGui::Spacing();
-            if (UIWidgets::Button("Retry",
+            if (UIWidgets::Button(TR("Retry"),
                                   UIWidgets::ButtonOptions()
                                       .Size(kSmallButton)
                                       .Color(UIWidgets::Colors::LightBlue))) {
                 ssb64::enhancements::FetchShaderPackCatalogAsync();
             }
             ImGui::SameLine();
-            if (UIWidgets::Button("Close",
+            if (UIWidgets::Button(TR("Close"),
                                   UIWidgets::ButtonOptions()
                                       .Size(kSmallButton)
                                       .Color(UIWidgets::Colors::Gray))) {
@@ -612,12 +607,12 @@ void RenderShaderPackModal() {
         case ShaderPackPhase::DownloadingCatalog:
         case ShaderPackPhase::ExtractingCatalog:
         case ShaderPackPhase::EnumeratingCatalog: {
-            ImGui::TextWrapped("%s", status.empty() ? "Working..." : status.c_str());
+            ImGui::TextWrapped(TR("%s"), status.empty() ? "Working..." : status.c_str());
             ImGui::Spacing();
-            ImGui::TextDisabled("Validating each shader against this build's\n"
-                                "post-process pipeline. Takes a few seconds.");
+            ImGui::TextDisabled("%s", TR("Validating each shader against this build's\n"
+                                "post-process pipeline. Takes a few seconds."));
             ImGui::Spacing();
-            if (UIWidgets::Button("Cancel",
+            if (UIWidgets::Button(TR("Cancel"),
                                   UIWidgets::ButtonOptions()
                                       .Size(kSmallButton)
                                       .Color(UIWidgets::Colors::Gray))) {
@@ -626,18 +621,17 @@ void RenderShaderPackModal() {
             break;
         }
         case ShaderPackPhase::AwaitingSelection: {
-            ImGui::TextWrapped("%zu shaders available. Tick the ones you'd like to install.",
-                               s_shaderPackCandidatesUi.size());
+            ImGui::TextWrapped(TR("%zu shaders available. Tick the ones you'd like to install."), s_shaderPackCandidatesUi.size());
             ImGui::Spacing();
 
-            if (UIWidgets::Button("Select all",
+            if (UIWidgets::Button(TR("Select all"),
                                   UIWidgets::ButtonOptions()
                                       .Size(kMediumButton)
                                       .Color(UIWidgets::Colors::Gray))) {
                 s_shaderPackSelected.assign(s_shaderPackCandidatesUi.size(), true);
             }
             ImGui::SameLine();
-            if (UIWidgets::Button("Select none",
+            if (UIWidgets::Button(TR("Select none"),
                                   UIWidgets::ButtonOptions()
                                       .Size(kMediumButton)
                                       .Color(UIWidgets::Colors::Gray))) {
@@ -693,7 +687,7 @@ void RenderShaderPackModal() {
                 }
             }
             if (visibleCount == 0 && !filterLower.empty()) {
-                ImGui::TextDisabled("No shaders match this filter.");
+                ImGui::TextDisabled("%s", TR("No shaders match this filter."));
             }
             ImGui::EndChild();
 
@@ -726,7 +720,7 @@ void RenderShaderPackModal() {
                 ImGui::EndDisabled();
             }
             ImGui::SameLine();
-            if (UIWidgets::Button("Cancel",
+            if (UIWidgets::Button(TR("Cancel"),
                                   UIWidgets::ButtonOptions()
                                       .Size(kSmallButton)
                                       .Color(UIWidgets::Colors::Gray))) {
@@ -735,15 +729,15 @@ void RenderShaderPackModal() {
             break;
         }
         case ShaderPackPhase::InstallingSelected: {
-            ImGui::TextWrapped("%s", status.empty() ? "Installing..." : status.c_str());
+            ImGui::TextWrapped(TR("%s"), status.empty() ? "Installing..." : status.c_str());
             ImGui::Spacing();
-            ImGui::TextDisabled("Just copying files now - this should take less than a second.");
+            ImGui::TextDisabled("%s", TR("Just copying files now - this should take less than a second."));
             break;
         }
         case ShaderPackPhase::Done: {
-            ImGui::TextWrapped("%s", status.empty() ? "Done." : status.c_str());
+            ImGui::TextWrapped(TR("%s"), status.empty() ? "Done." : status.c_str());
             ImGui::Spacing();
-            if (UIWidgets::Button("OK",
+            if (UIWidgets::Button(TR("OK"),
                                   UIWidgets::ButtonOptions()
                                       .Size(kSmallButton)
                                       .Color(UIWidgets::Colors::Green))) {
@@ -781,28 +775,30 @@ void RenderPostProcessLowResWarnModal() {
         return;
     }
 
-    ImGui::TextWrapped("\"%s\" was designed for the native 240p source resolution.",
-                       s_lowResWarnShader.c_str());
+    ImGui::TextWrapped("%s",
+                       fmt::format(fmt::runtime(TR("\"{}\" was designed for the native 240p source resolution.")),
+                                   s_lowResWarnShader)
+                           .c_str());
     ImGui::Spacing();
-    ImGui::TextWrapped("Low Resolution Mode is off, so the source framebuffer is the "
+    ImGui::TextWrapped("%s", TR("Low Resolution Mode is off, so the source framebuffer is the "
                        "full window size — the shader will render correctly, but the "
-                       "picture will live in a small corner of the screen.");
+                       "picture will live in a small corner of the screen."));
     ImGui::Spacing();
-    ImGui::TextWrapped("Enabling Low Resolution Mode forces the source FB to 320x240 "
+    ImGui::TextWrapped("%s", TR("Enabling Low Resolution Mode forces the source FB to 320x240 "
                        "and requires a restart to take effect (it's latched at boot to "
-                       "avoid mid-session Fast3D resize hazards).");
+                       "avoid mid-session Fast3D resize hazards)."));
     ImGui::Spacing();
 
-    if (ImGui::Button("Enable N64 mode (latched, restart required)")) {
+    if (ImGui::Button(TR("Enable N64 mode (latched, restart required)"))) {
         CVarSetInteger("gLowResModePending", 1);
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Keep current settings")) {
+    if (ImGui::Button(TR("Keep current settings"))) {
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Disable post-process")) {
+    if (ImGui::Button(TR("Disable post-process"))) {
         CVarSetInteger("gPostProcessEnabled", 0);
         ImGui::CloseCurrentPopup();
     }
@@ -853,7 +849,7 @@ static void RenderBundledModRows() {
     // builds; in portable mode this resolves back to next-to-exe).
     const fs::path modsRoot   = Ship::Context::GetPathRelativeToAppDirectory("mods");
 
-    ImGui::TextDisabled("Included with BattleShip");
+    ImGui::TextDisabled("%s", TR("Included with BattleShip"));
     for (const BundledModSpec& spec : kBundledMods) {
         ImGui::PushID(spec.id);
         const fs::path src = bundleRoot / spec.id;
@@ -871,21 +867,21 @@ static void RenderBundledModRows() {
             }
         }
 
-        ImGui::TextWrapped("%s", spec.manifestName);
-        ImGui::TextDisabled("%s", spec.summary);
+        ImGui::TextWrapped(TR("%s"), spec.manifestName);
+        ImGui::TextDisabled(TR("%s"), spec.summary);
         if (loaded) {
-            ImGui::TextColored(SemanticColors::Success, "Active");
+            ImGui::TextColored(SemanticColors::Success, "%s", TR("Active"));
         } else if (installed) {
-            ImGui::TextDisabled("Installed — not loaded");
+            ImGui::TextDisabled("%s", TR("Installed — not loaded"));
             ImGui::SameLine();
-            if (UIWidgets::Button("Activate",
+            if (UIWidgets::Button(TR("Activate"),
                                   UIWidgets::ButtonOptions()
                                       .Size(UIWidgets::Sizes::Inline)
                                       .Tooltip("Hot-reloads all mods so this one compiles and starts."))) {
                 DoHotReload();
             }
         } else if (bundled) {
-            if (UIWidgets::Button("Install & Enable",
+            if (UIWidgets::Button(TR("Install & Enable"),
                                   UIWidgets::ButtonOptions()
                                       .Color(UIWidgets::Colors::LightBlue)
                                       .Size(UIWidgets::Sizes::Inline)
@@ -904,7 +900,7 @@ static void RenderBundledModRows() {
                 }
             }
         } else {
-            ImGui::TextDisabled("Not bundled in this build");
+            ImGui::TextDisabled("%s", TR("Not bundled in this build"));
         }
         ImGui::PopID();
     }
@@ -997,7 +993,7 @@ void PortMenu::AddMenuCustomization() {
         })
         .Options(ButtonOptions().Tooltip("Opens the mods/ folder in your file browser. Drop pack subfolders here."));
     AddWidget(path,
-              fmt::format("Indexed PNGs: {}",
+              fmt::format(fmt::runtime(TR("Indexed PNGs: {}")),
                            ssb64::hires::HiResPack::Get().Stats().indexedTextures),
               WIDGET_TEXT);
 
@@ -1062,24 +1058,24 @@ void PortMenu::AddMenuCustomization() {
     AddWidget(path, "mods_panel", WIDGET_CUSTOM)
         .CustomFunction([](WidgetInfo&) {
             // --- Action bar -------------------------------------------------
-            if (ImGui::Button("Hot Reload")) {
+            if (ImGui::Button(TR("Hot Reload"))) {
                 DoHotReload(); // re-snapshots s_modList when it finishes
                 ToastInfo("Reloading script mods...");
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Unload + recompile + re-init all TCC mods.\n"
-                                  "Adding or removing mod folders still needs an engine restart.");
+                ImGui::SetTooltip("%s", TR("Unload + recompile + re-init all TCC mods.\n"
+                                  "Adding or removing mod folders still needs an engine restart."));
             }
             ImGui::SameLine();
-            if (ImGui::Button("Rescan")) {
+            if (ImGui::Button(TR("Rescan"))) {
                 RefreshModList();
                 ToastInfo("Mod list refreshed");
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Re-read the mods/ folder without reloading the mods.");
+                ImGui::SetTooltip("%s", TR("Re-read the mods/ folder without reloading the mods."));
             }
             ImGui::SameLine();
-            if (ImGui::Button("Open Mods Folder")) {
+            if (ImGui::Button(TR("Open Mods Folder"))) {
                 std::string modsPath = Ship::Context::GetPathRelativeToAppDirectory("mods");
                 std::error_code ec;
                 fs::create_directories(modsPath, ec);
@@ -1122,9 +1118,9 @@ void PortMenu::AddMenuCustomization() {
             ImGui::Separator();
 
             if (s_modList.empty()) {
-                ImGui::TextWrapped("No mods found. Drop a mod folder or .o2r into the mods/ "
+                ImGui::TextWrapped("%s", TR("No mods found. Drop a mod folder or .o2r into the mods/ "
                                    "folder next to the executable, then press Rescan (or "
-                                   "restart).");
+                                   "restart)."));
                 return;
             }
 
@@ -1161,47 +1157,64 @@ void PortMenu::AddMenuCustomization() {
 
                 switch (mod.state) {
                     case ModStatus::Loaded:
-                        ImGui::TextColored(SemanticColors::Success, "LOADED");
+                        ImGui::TextColored(SemanticColors::Success, "%s", TR("LOADED"));
                         break;
                     case ModStatus::NotLoaded:
-                        ImGui::TextColored(SemanticColors::Muted, "not loaded");
+                        ImGui::TextColored(SemanticColors::Muted, "%s", TR("not loaded"));
                         break;
                     case ModStatus::InvalidManifest:
-                        ImGui::TextColored(SemanticColors::Warning, "manifest issue");
+                        ImGui::TextColored(SemanticColors::Warning, "%s", TR("manifest issue"));
                         break;
                 }
 
                 ImGui::SameLine();
                 if (!mod.version.empty()) {
-                    ImGui::Text("%s  v%s", mod.name.c_str(), mod.version.c_str());
+                    ImGui::Text(TR("%s  v%s"), mod.name.c_str(), mod.version.c_str());
                 } else {
                     ImGui::TextUnformatted(mod.name.c_str());
                 }
                 if (ImGui::IsItemHovered() && !mod.archivePath.empty()) {
-                    ImGui::SetTooltip("%s", mod.archivePath.c_str());
+                    ImGui::SetTooltip(TR("%s"), mod.archivePath.c_str());
                 }
 
                 ImGui::SameLine();
                 using ssb64::appmods::SignatureStatus;
                 switch (mod.signature) {
                     case SignatureStatus::Valid:
-                        ImGui::TextColored(SemanticColors::Success, "[signed]");
+                        ImGui::TextColored(SemanticColors::Success, "%s", TR("[signed]"));
                         break;
                     case SignatureStatus::Invalid:
-                        ImGui::TextColored(SemanticColors::Error, "[signature invalid]");
+                        ImGui::TextColored(SemanticColors::Error, "%s", TR("[signature invalid]"));
                         break;
                     case SignatureStatus::None:
                         break;
                 }
 
+                // §27 — netplay compatibility tag from the manifest's
+                // "simulation" flag (it feeds the session compat hash).
+                if (!mod.simulation) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(SemanticColors::Info, "%s", TR("[netplay-safe]"));
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", TR("Cosmetic only — not part of the online compatibility check."));
+                    }
+                } else {
+                    ImGui::SameLine();
+                    ImGui::TextColored(SemanticColors::Muted, "%s", TR("[gameplay]"));
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", TR("Touches game simulation — every player in an online match "
+                                          "must run a compatible set or the lobby rejects the room."));
+                    }
+                }
+
                 if (!mod.author.empty()) {
-                    ImGui::TextDisabled("by %s", mod.author.c_str());
+                    ImGui::TextDisabled(TR("by %s"), mod.author.c_str());
                 }
                 if (!mod.description.empty()) {
-                    ImGui::TextWrapped("%s", mod.description.c_str());
+                    ImGui::TextWrapped(TR("%s"), mod.description.c_str());
                 }
                 if (!mod.note.empty()) {
-                    ImGui::TextColored(SemanticColors::Warning, "%s", mod.note.c_str());
+                    ImGui::TextColored(SemanticColors::Warning, TR("%s"), mod.note.c_str());
                 }
 
                 ImGui::PopID();
@@ -1209,7 +1222,7 @@ void PortMenu::AddMenuCustomization() {
             }
 
             if (shown == 0) {
-                ImGui::TextDisabled("No mods match the filter.");
+                ImGui::TextDisabled("%s", TR("No mods match the filter."));
             }
 
             ImGui::Spacing();

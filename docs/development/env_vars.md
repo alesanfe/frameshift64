@@ -45,6 +45,7 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_ROLLBACK_SNAPSHOT_STRIDE` | keep a rollback snapshot every N ticks (default 1); mispredicts rewind to the nearest earlier snapshot and replay the extra ticks — halves snapshot memcpy cost at N=2 |
 | `SSB64_SPECTATE_CATCHUP` | disable mid-match spectator catch-up (host streams its recorded input history and the spec resimulates to the live edge); set any value to restore wait-for-next-match behavior |
 | `SSB64_SPEC_CATCHUP_TPF` | max sim ticks a catching-up spectator runs per display frame (default 16) |
+| `SSB64_SAFE_MODE` | force safe mode for one launch — mods and hi-res texture packs skipped (also auto-arms after a crash); `0`/`empty` = unset |
 | `SSB64_SAVE_PATH` | save location override (CI/debug) |
 | `SSB64_NO_UPDATE_CHECK` | disable updater |
 | `SSB64_LOG_PATH` | log destination |

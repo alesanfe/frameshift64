@@ -5,6 +5,7 @@
 #include "networking/netplay/session/netlobby.h"
 
 #include <imgui.h>
+#include "core/i18n/Locale.h"
 
 extern "C" int syNetRollbackIsDesynced(void);
 
@@ -67,22 +68,22 @@ void OnlineStatusWindow::Draw() {
 
 void OnlineStatusWindow::DrawElement() {
     if (InMatchDesynced()) {
-        ImGui::TextColored(UIWidgets::SemanticColors::Error, "Out of sync with the other players.");
-        ImGui::TextWrapped("Your games no longer match - what you see may differ from what they see. "
-                           "The result of this match may be inaccurate.");
+        ImGui::TextColored(UIWidgets::SemanticColors::Error, "%s", TR("Out of sync with the other players."));
+        ImGui::TextWrapped("%s", TR("Your games no longer match - what you see may differ from what they see. "
+                           "The result of this match may be inaccurate."));
         ImGui::Spacing();
-        if (ImGui::Button("Return to room", ImVec2(140, 0))) {
+        if (ImGui::Button(TR("Return to room"), ImVec2(140, 0))) {
             port_netlobby_on_match_end();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Leave", ImVec2(100, 0))) {
+        if (ImGui::Button(TR("Leave"), ImVec2(100, 0))) {
             port_netlobby_cancel();
         }
         return;
     }
 
-    ImGui::TextWrapped("%s", port_netlobby_status());
-    ImGui::TextDisabled("Match complete - everyone is back in their own menus.");
+    ImGui::TextWrapped(TR("%s"), port_netlobby_status());
+    ImGui::TextDisabled("%s", TR("Match complete - everyone is back in their own menus."));
     ImGui::Spacing();
 
     // Per-player state, mirroring the lobby list so "who is still picking"
@@ -94,26 +95,26 @@ void OnlineStatusWindow::DrawElement() {
         if (slot < 0 || slot == mySlot) {
             continue;
         }
-        ImGui::BulletText("Player %d: %s", slot + 1, PeerStateLabel(i));
+        ImGui::BulletText(TR("Player %d: %s"), slot + 1, PeerStateLabel(i));
     }
 
     const int ping = port_netlobby_ping_ms();
     if (ping >= 0) {
-        ImGui::Text("Ping: %d ms%s", ping, port_netlobby_is_relay() ? " (relayed)" : "");
+        ImGui::Text(TR("Ping: %d ms%s"), ping, port_netlobby_is_relay() ? " (relayed)" : "");
     }
     ImGui::Spacing();
     if (port_netlobby_is_host()) {
         ImGui::BeginDisabled(port_netlobby_peer_fkind() < 0);
-        if (ImGui::Button("Rematch", ImVec2(140, 0))) {
+        if (ImGui::Button(TR("Rematch"), ImVec2(140, 0))) {
             port_netlobby_start_match();
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && port_netlobby_peer_fkind() < 0) {
-            ImGui::SetTooltip("Waiting for the other players to pick a fighter.");
+            ImGui::SetTooltip("%s", TR("Waiting for the other players to pick a fighter."));
         }
         ImGui::SameLine();
     }
-    if (ImGui::Button("Leave", ImVec2(100, 0))) {
+    if (ImGui::Button(TR("Leave"), ImVec2(100, 0))) {
         port_netlobby_cancel();
     }
 }

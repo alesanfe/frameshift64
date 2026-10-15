@@ -143,6 +143,9 @@ constexpr SchemaEntry kSchema[] = {
     { "gHiResTextures.MissDumpCap",   KeyType::Int,  0, 65536, false },
 
     /* ── UI / misc ────────────────────────────────────────────────────── */
+    /* UI language — index into PortI18n::kLangCodes (src/core/i18n) and the
+     * PortMenu language combo; English (0) is the identity table. */
+    { "gSettings.Language",                   KeyType::Int,  0, 4, false },
     { "gSettings.Menu.EnableDRP",             KeyType::Bool, 0, 1, false },
     { "gSettings.FocusControl.MuteOnFocusLoss", KeyType::Bool, 0, 1, false },
     /* Accessibility/UI toggles added with the menu help bar — Menu.cpp
