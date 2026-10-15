@@ -27,9 +27,9 @@
 #include <ship/window/Window.h>
 #include <ship/window/gui/Gui.h>
 #include <ship/window/gui/ConsoleWindow.h>
+#include "core/config/schema.h"
 #ifndef DISABLE_SCRIPTING
 #include "app_mods.h"
-#include "core/config/schema.h"
 #endif
 
 #include <imgui.h>

@@ -42,6 +42,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vs2022-battleship-uwp-
 
+      - name: Drop stale TorchExternal configure (cache fallback)
+        # A restore-keys fallback hit brings back a build dir whose nested
+        # Torch build was configured against the OLD source path (e.g.
+        # torch/ before the components/ move). ExternalProject can't
+        # relocate a configured cache — wipe its prefix so it reconfigures.
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          if (Test-Path build-windows/TorchExternal) {
+            Remove-Item -Recurse -Force build-windows/TorchExternal
+          }
+
       - name: Build BattleShip native DLL and asset tool
         shell: pwsh
         env:
