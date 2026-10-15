@@ -42,7 +42,7 @@ torch.hash.yml
 tex_dump/
 ssb64_save.bin
 
-# assets/configuration/extraction/<ver>/reloc_*.yml are now COMMITTED.
+# assets/recipes/<ver>/reloc_*.yml are now COMMITTED.
 # They're regenerated from tools/codegen/reloc_data_symbols.<ver>.txt +
 # ROM by tools/codegen/generate_yamls.py; regen and re-commit when
 # reloc_data_symbols.<ver>.txt changes (rare for a frozen v1.0). Same
@@ -77,7 +77,10 @@ assets/*
 # Build inputs committed under assets/ — controller db + extraction recipes.
 # Required at configure/build time on a fresh clone (RuntimeAssets.cmake,
 # tools/codegen/generate_reloc_table.py).
-!assets/configuration/
+!assets/recipes/
+!assets/recipes/**
+!assets/controllers/
+!assets/controllers/**
 __pycache__
 bin/
 # Hi-res texture pack drops — src/resources/textures HiResPack scans
@@ -141,5 +144,30 @@ test.zip
 lint-reports/
 scripts/development/configure-lint.bat
 
+# Python caches / test+report outputs (out/ holds build-side results)
+node_modules/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage/
+htmlcov/
+test-results/
+reports/
+*.log
+
+# MSBuild/CMake scratch (VS generator + tools)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+*.pdb
+*.ilk
+*.tlog
+*.lastbuildstate
+*.user
+
 # User-provided ROM drops (alternative to root baserom.*.z64)
-roms/
+roms/*
+!roms/README.md
+!roms/.gitkeep
