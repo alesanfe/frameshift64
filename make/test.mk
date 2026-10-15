@@ -54,20 +54,22 @@ e2e-local: guard-exe ## Two localhost peers, trace-diffed (rollback)
 	$(PYTHON) "$(E2E_DIR)/localtest_test.py" --seconds "$(E2E_SECONDS)" \
 	  --build-dir "$$bd" --out-dir "$$out" $(TEST_ARGS)
 
-e2e-lobby: guard-exe ## Host + N-1 clients over the local lobby
+e2e-lobby: guard-exe ## Host + N-1 clients over the local lobby (NET_PROFILE=<name>)
 	@out="$(LOG_DIR)/lobby-multi"; mkdir -p "$$out"; \
 	bd="$$(dirname '$(EXE_DIR)')"; \
+	prof=""; [[ -n "$(NET_PROFILE)" ]] && prof="--profile $(NET_PROFILE)"; \
 	$(PYTHON) "$(E2E_DIR)/lobbytest_multi_test.py" \
-	  --players "$(NETPLAY_PLAYERS)" --seconds "$(E2E_SECONDS)" \
+	  --players "$(NETPLAY_PLAYERS)" --seconds "$(E2E_SECONDS)" $$prof \
 	  --build-dir "$$bd" --out-dir "$$out" $(TEST_ARGS)
 
 e2e-netplay: e2e-lobby
 
-e2e-lan: guard-exe ## Direct-IP LAN session, no lobby
+e2e-lan: guard-exe ## Direct-IP LAN session, no lobby (NET_PROFILE=<name> for impairment)
 	@out="$(LOG_DIR)/lan"; mkdir -p "$$out"; \
 	bd="$$(dirname '$(EXE_DIR)')"; \
+	prof=""; [[ -n "$(NET_PROFILE)" ]] && prof="--profile $(NET_PROFILE)"; \
 	$(PYTHON) "$(E2E_DIR)/lan_test.py" \
-	  --players "$(NETPLAY_PLAYERS)" --seconds "$(E2E_SECONDS)" \
+	  --players "$(NETPLAY_PLAYERS)" --seconds "$(E2E_SECONDS)" $$prof \
 	  --build-dir "$$bd" --out-dir "$$out" $(TEST_ARGS)
 
 e2e-compat: guard-exe ## Compat-handshake rejection test
@@ -91,6 +93,18 @@ e2e-replay-takeover: guard-exe ## Replay playback / takeover (needs REPLAY=<file
 	$(PYTHON) "$(E2E_DIR)/replay_takeover_test.py" \
 	  --replay "$(REPLAY)" --seconds "$(E2E_SECONDS)" \
 	  --build-dir "$$bd" --out-dir "$$out" $(TEST_ARGS)
+
+e2e-impaired: guard-exe ## Lobby e2e under NET_PROFILE (default degraded)
+	@$(MAKE) --no-print-directory NET_PROFILE="$(or $(NET_PROFILE),degraded)" e2e-lobby
+
+test-determinism: guard-exe ## Replay determinism: N runs, first-divergent-tick report (needs REPLAY=<file>)
+	@if [[ -z "$(REPLAY)" ]]; then \
+	  $(call failure,Set REPLAY=<path-to.ssr>); exit 1; fi
+	@bd="$$(dirname '$(EXE_DIR)')"; \
+	$(PYTHON) tools/testing/check_determinism.py \
+	  --binary "$$bd/$(EXECUTABLE_NAME)$(EXE_SUFFIX)" \
+	  --replay "$(REPLAY)" --runs "$(DETERMINISM_RUNS)" \
+	  --output "$(TEST_OUTPUT_DIR)/determinism" $(TEST_ARGS)
 
 e2e-mutation: guard-exe ## Mutation suite (Windows: drives rollback_synctest.ps1)
 	@out="$(LOG_DIR)/mutation"; mkdir -p "$$out"; \

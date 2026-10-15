@@ -19,7 +19,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 LOBBY_HEALTH = "http://127.0.0.1:{port}/health"
 LOBBY_NODE = ROOT / "services" / "netplay-lobby" / "src" / "infrastructure" / "local" / "node-lobby.mjs"
 LOBBY_SVC = ROOT / "services" / "netplay-lobby"
@@ -163,6 +163,39 @@ def compare_traces(names, out_dir: Path, ref: str = "host",
     if worst == 0:
         return 2, "no ticks traced"
     return 0, f"IN SYNC across {len(names)} peers for {worst} ticks"
+
+
+def load_profile(name: str) -> dict:
+    """Network impairment profile -> SSB64_NETPLAY_SIM_* env entries.
+
+    Profiles live in tests/config/network-profiles.yml; values map 1:1 onto
+    the udp_transport impairment sim (env_vars.md). `seed` is passed through
+    verbatim so a profile can pin the PRNG."""
+    try:
+        import yaml
+    except ImportError:  # pragma: no cover — dev environments have pyyaml
+        raise SystemExit("pyyaml required for --profile (pip install pyyaml)")
+    cfg = yaml.safe_load(
+        (ROOT / "tests" / "config" / "network-profiles.yml").read_text())
+    prof = cfg.get("profiles", {}).get(name)
+    if prof is None:
+        known = ", ".join(sorted(cfg.get("profiles", {})))
+        raise SystemExit(f"unknown profile '{name}' — known: {known}")
+    env = {}
+    keymap = {
+        "latency_ms": "SSB64_NETPLAY_SIM_LATENCY_MS",
+        "jitter_ms": "SSB64_NETPLAY_SIM_JITTER_MS",
+        "loss_pct": "SSB64_NETPLAY_SIM_LOSS_PCT",
+        "dup_pct": "SSB64_NETPLAY_SIM_DUP_PCT",
+        "reorder_pct": "SSB64_NETPLAY_SIM_REORDER_PCT",
+        "reorder_window_ms": "SSB64_NETPLAY_SIM_REORDER_WINDOW_MS",
+        "corrupt_pct": "SSB64_NETPLAY_SIM_CORRUPT_PCT",
+        "seed": "SSB64_NETPLAY_SIM_SEED",
+    }
+    for k, envvar in keymap.items():
+        if k in prof and prof[k] is not None:
+            env[envvar] = str(prof[k])
+    return env
 
 
 def log_size_guard(path: Path, max_bytes: int, label: str) -> "str | None":

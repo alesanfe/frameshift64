@@ -64,6 +64,8 @@ E2E_SCENARIO       ?= all
 NETPLAY_PLAYERS    ?= 3
 E2E_SECONDS        ?= 45
 REPEAT             ?= 1
+NET_PROFILE        ?=
+DETERMINISM_RUNS   ?= 10
 
 ENABLE_COVERAGE    ?= 0
 ENABLE_MODDING     ?= 1

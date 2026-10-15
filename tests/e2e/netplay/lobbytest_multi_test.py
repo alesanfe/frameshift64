@@ -25,6 +25,8 @@ def main() -> int:
     ap.add_argument("--latency-ms", type=int, default=0)
     ap.add_argument("--jitter-ms", type=int, default=0)
     ap.add_argument("--loss-pct", type=int, default=0)
+    ap.add_argument("--profile", default=None,
+                    help="named impairment profile (tests/config/network-profiles.yml)")
     ap.add_argument("--server", default="")
     ap.add_argument("--stage", type=int, default=0)
     ap.add_argument("--force-relay", action="store_true")
@@ -56,9 +58,6 @@ def main() -> int:
             "SSB64_LOBBY_FKIND": fighter, "SSB64_LOBBY_STAGE": a.stage,
             "SSB64_NETPLAY_FUZZ": fuzz, "SSB64_MUTE": "1",
             "SSB64_NO_UPDATE_CHECK": "1",
-            "SSB64_NETPLAY_SIM_LATENCY_MS": a.latency_ms,
-            "SSB64_NETPLAY_SIM_JITTER_MS": a.jitter_ms,
-            "SSB64_NETPLAY_SIM_LOSS_PCT": a.loss_pct,
             "SSB64_NETPLAY_SIM_SEED": fuzz,
             "SSB64_NETPLAY_CONFIRMED_TRACE": str(out / f"{name}.trace"),
             "SSB64_LOG_PATH": str(out / f"{name}.log"),
@@ -66,6 +65,12 @@ def main() -> int:
         }
         if a.force_relay:
             env["SSB64_LOBBY_FORCE_RELAY"] = "1"
+        if a.profile:
+            env.update(sr.load_profile(a.profile))   # overrides individual flags
+        else:
+            env["SSB64_NETPLAY_SIM_LATENCY_MS"] = a.latency_ms
+            env["SSB64_NETPLAY_SIM_JITTER_MS"] = a.jitter_ms
+            env["SSB64_NETPLAY_SIM_LOSS_PCT"] = a.loss_pct
         if a.headless:
             env["SSB64_HEADLESS"] = "1"
         if a.debug_stages:
