@@ -106,7 +106,7 @@ jobs:
       - name: Parser fuzz (manifest/replay/json)
         if: env.BASEROM_B64 != ''
         run: |
-          foreach ($p in @('manifest','replay','json')) {
+          foreach ($p in @('manifest','replay','json','save')) {
             python tools/fuzz/run_parser_fuzz.py --parser $p --binary build/Release/BattleShip.exe --iters 300 --timeout 15
             if ($LASTEXITCODE -ne 0) { Write-Error "parser fuzz ($p) found crashes"; exit 1 }
           }

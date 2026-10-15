@@ -238,7 +238,7 @@ endef
         test test-unit test-integration test-contract test-suite test-list test-all ctest \
         e2e e2e-netplay e2e-lobby e2e-lan e2e-compat e2e-spectate \
         e2e-replay-takeover e2e-mutation e2e-soak e2e-local \
-        fuzz coverage coverage-python \
+        fuzz fuzz-all coverage coverage-python \
         check quick-check ci \
         lint lint-skip-configure format format-check \
         module-deps env-check docs-check retired-paths-check cvar-check gen-headers-check \
@@ -246,6 +246,7 @@ endef
         lobby-install lobby-test lobby-dev \
         mods-test \
         package package-windows package-linux package-macos package-android package-uwp \
+        artifacts artifact-manifest \
         release-check release-dry-run \
         android android-install android-test uwp \
         docs docs-serve \
@@ -288,7 +289,7 @@ REQUIRED_FILES := CMakeLists.txt CMakePresets.json Makefile pyproject.toml \
 	$(LOBBY_DIR)/package.json $(LOBBY_DIR)/package-lock.json \
 	roms/README.md
 REQUIRED_DIRS  := src include decomp libultraship torch cmake tools \
-	assets assets/recipes assets/controllers services platforms tests docs \
+	assets assets/game config/controllers services platforms tests docs \
 	config generated specs roms
 
 layout-check: ## Verify required files/dirs exist

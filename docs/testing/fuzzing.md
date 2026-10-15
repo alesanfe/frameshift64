@@ -20,6 +20,7 @@ through the real parser in a test-hooks build:
 | `manifest` | `Ship::Archive::ParseManifestBuffer` (pure manifest.json parse — no archive mount) |
 | `replay`   | `syNetReplayLoadDebugFile` (header + metadata + frame stream) |
 | `json`     | `nlohmann::json::parse` — the parser config and manifests share |
+| `save`     | `port_save_read` + `checkSaveFormat` + `.meta` sidecar sscanf — the fuzz bytes feed both the SRAM image (`SSB64_SAVE_PATH`) and the sidecar |
 
 How it works: a test-hooks build honors `SSB64_FUZZ_PARSER` +
 `SSB64_FUZZ_INPUT` as the first thing in `PortInitImpl` — parse, log,

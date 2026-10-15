@@ -78,11 +78,12 @@ e2e-compat: guard-exe ## Compat-handshake rejection test
 	$(PYTHON) "$(E2E_DIR)/compat_test.py" \
 	  --build-dir "$$bd" --out-dir "$$out" $(TEST_ARGS)
 
-e2e-spectate: guard-exe ## Players + spectator trace-diffed
+e2e-spectate: guard-exe ## Players + spectator trace-diffed (NET_PROFILE=<name>)
 	@out="$(LOG_DIR)/spectate"; mkdir -p "$$out"; \
 	bd="$$(dirname '$(EXE_DIR)')"; \
+	prof=""; [[ -n "$(NET_PROFILE)" ]] && prof="--profile $(NET_PROFILE)"; \
 	$(PYTHON) "$(E2E_DIR)/spectate_test.py" \
-	  --players "$(NETPLAY_PLAYERS)" --seconds "$(E2E_SECONDS)" \
+	  --players "$(NETPLAY_PLAYERS)" --seconds "$(E2E_SECONDS)" $$prof \
 	  --build-dir "$$bd" --out-dir "$$out" $(TEST_ARGS)
 
 e2e-replay-takeover: guard-exe ## Replay playback / takeover (needs REPLAY=<file>)
@@ -123,10 +124,15 @@ e2e-soak: guard-exe ## Rematch rounds + optional long synctest
 # ------------------------------------------------------------------------------
 PARSER ?= manifest
 ITERS  ?= 300
-fuzz: guard-exe ## Run a parser fuzz driver (PARSER=manifest|json|replay)
+fuzz: guard-exe ## Run a parser fuzz driver (PARSER=manifest|json|replay|save)
 	@bd="$$(dirname '$(EXE_DIR)')"; \
 	$(PYTHON) "$(PARSER_FUZZ)" --parser "$(PARSER)" --iters "$(ITERS)" \
 	  --binary "$$bd/$(EXECUTABLE_NAME)$(EXE_SUFFIX)" $(TEST_ARGS)
+
+fuzz-all: guard-exe ## Fuzz every parser (manifest, json, replay, save)
+	@for p in manifest json replay save; do \
+		$(MAKE) --no-print-directory fuzz PARSER="$$p" || exit 1; \
+	done
 
 coverage-python: ## Python coverage report (pytest-cov)
 	@$(PYTHON) -m pytest -m "unit or integration" \

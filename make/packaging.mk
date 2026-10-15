@@ -43,3 +43,19 @@ package-uwp: uwp ## Collect MSIX/APPX into dist/uwp
 	  \( -name '*.msix' -o -name '*.msixbundle' -o -name '*.appx' \) \
 	  -exec cp -f {} "$(DIST_DIR)/uwp/" \;
 
+# ------------------------------------------------------------------------------
+# Unified artifacts — same dist/ + SHA256SUMS.txt layout the release workflow
+# publishes, produced locally so local and CI outputs are interchangeable.
+# ------------------------------------------------------------------------------
+artifact-manifest: ## (Re)generate dist/SHA256SUMS.txt over top-level artifacts
+	@$(PYTHON) -c "\
+import hashlib, pathlib, sys; \
+d = pathlib.Path('$(DIST_DIR)'); \
+files = sorted(p for p in d.iterdir() if p.is_file() and p.name != 'SHA256SUMS.txt'); \
+(d / 'SHA256SUMS.txt').write_text(''.join( \
+    hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n' for p in files)); \
+sys.exit(0 if files else (print('artifact-manifest: no artifacts in ' + str(d)), 1)[1])"
+
+artifacts: package artifact-manifest ## Package host platform + checksum manifest -> dist/
+	@$(call success,Artifacts + SHA256SUMS.txt in $(DIST_DIR)/)
+
