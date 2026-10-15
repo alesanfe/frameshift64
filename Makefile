@@ -154,6 +154,15 @@ E2E_DIR              := tests/e2e/netplay
 ANDROID_DIR          := platforms/android
 UWP_DIR              := platforms/uwp
 
+# Project python — prefer .venv when it exists (reproducible deps)
+VENV_DIR             := .venv
+ifeq ($(HOST_PLATFORM),windows)
+VENV_PYTHON          := $(VENV_DIR)/Scripts/python.exe
+else
+VENV_PYTHON          := $(VENV_DIR)/bin/python
+endif
+PROJECT_PYTHON       := $(if $(wildcard $(VENV_PYTHON)),$(VENV_PYTHON),$(PYTHON))
+
 # ------------------------------------------------------------------------------
 # Derived flags
 # ------------------------------------------------------------------------------
@@ -307,6 +316,32 @@ guard-exe:
 	  $(call failure,$(EXECUTABLE_NAME)$(EXE_SUFFIX) not found under $(BUILD_DIR)); \
 	  printf "  run: make PRESET=%s build\n" "$(PRESET)" >&2; exit 1; fi
 
+# Files/dirs every checkout must have — first line of defense against a
+# partial clone, a forgotten submodule init, or a stale path after a move.
+REQUIRED_FILES := CMakeLists.txt CMakePresets.json Makefile pyproject.toml \
+	$(TEST_RUNNER) $(LINT_SCRIPT) $(MODULE_DEPS_SCRIPT) \
+	$(LOBBY_DIR)/package.json $(LOBBY_DIR)/package-lock.json \
+	roms/README.md
+REQUIRED_DIRS  := src include decomp libultraship torch cmake tools \
+	assets assets/recipes assets/controllers services platforms tests docs \
+	config generated specs roms
+
+layout-check: ## Verify required files/dirs exist
+	@$(call heading,Validating repository layout)
+	@status=0; \
+	for path in $(REQUIRED_FILES); do \
+	  if [[ ! -f "$$path" ]]; then \
+	    printf "$(RED)[MISSING FILE]$(RESET) %s\n" "$$path"; status=1; \
+	  fi; \
+	done; \
+	for path in $(REQUIRED_DIRS); do \
+	  if [[ ! -d "$$path" ]]; then \
+	    printf "$(RED)[MISSING DIR]$(RESET)  %s\n" "$$path"; status=1; \
+	  fi; \
+	done; \
+	if [[ $$status -eq 0 ]]; then $(call success,Layout OK); fi; \
+	exit $$status
+
 doctor: ## Validate the local development environment
 	@$(call heading,Checking development environment)
 	@status=0; \
@@ -339,13 +374,25 @@ doctor: ## Validate the local development environment
 # ------------------------------------------------------------------------------
 # Setup
 # ------------------------------------------------------------------------------
-setup: doctor bootstrap configure ## Full developer checkout setup
+setup: layout-check doctor install generate-sources configure ## Full developer checkout setup
 	@$(call success,Development checkout ready)
 
 bootstrap: dependencies ## Install project dependencies
 	@$(call success,Dependencies initialized)
 
-dependencies: submodules lobby-install
+dependencies: install
+
+install: submodules install-python install-node ## Install all dependencies
+
+install-python: ## Create .venv + install pyproject [test] deps
+	@$(call heading,Installing python dependencies)
+	@if [[ ! -x "$(VENV_PYTHON)" ]]; then \
+	  $(PYTHON) -m venv .venv; \
+	fi
+	@"$(VENV_PYTHON)" -m pip install -e ".[test]"
+	@$(call success,Python deps installed (.venv))
+
+install-node: lobby-install ## npm ci for services/netplay-lobby
 
 submodules: ## git submodule update --init --recursive
 	@$(call heading,Initializing submodules)
@@ -366,7 +413,9 @@ submodules-update: ## Update submodules to remote tracking branches
 # ------------------------------------------------------------------------------
 # Configure / build / run
 # ------------------------------------------------------------------------------
-configure: guard-region guard-preset ## cmake --preset <PRESET>
+generate-sources: generate-yamls ## Regenerate committed codegen inputs (recipes)
+
+configure: guard-region guard-preset generate-sources ## cmake --preset <PRESET>
 	@$(call heading,Configuring $(PRESET))
 	@mkdir -p "$(OUT_DIR)" "$(LOG_DIR)" "$(REPORT_DIR)"
 	@$(CMAKE) --preset "$(PRESET)" $(CMAKE_FEATURE_ARGS) $(CMAKE_ARGS)
@@ -375,17 +424,19 @@ configure: guard-region guard-preset ## cmake --preset <PRESET>
 reconfigure: configure
 configure-clean: clean-build configure
 
-build: configure ## Build the main application
+build: guard-configured ## Build the main application (needs configure first)
 	@$(call heading,Building $(APP_TARGET) @ $(PRESET))
 	@$(CMAKE) --build --preset "$(PRESET)" --target "$(APP_TARGET)" \
 	  $(BUILD_PARALLEL) $(BUILD_VERBOSE) $(BUILD_ARGS)
 	@$(call success,Build completed)
 
-build-all: configure ## Build every target
+build-all: guard-configured ## Build every target
 	@$(CMAKE) --build --preset "$(PRESET)" \
 	  $(BUILD_PARALLEL) $(BUILD_VERBOSE) $(BUILD_ARGS)
 
-rebuild: clean-build build
+dev-build: configure codegen build ## configure + codegen + build (comfort path)
+
+rebuild: clean-build configure codegen build
 
 run: build guard-rom guard-exe ## Build and launch the game
 	@$(call heading,Running $(EXECUTABLE_NAME))
@@ -396,7 +447,7 @@ run: build guard-rom guard-exe ## Build and launch the game
 # ------------------------------------------------------------------------------
 # Codegen / assets
 # ------------------------------------------------------------------------------
-codegen: configure ## Run the CMake-managed generators (reloc, asset headers)
+codegen: guard-configured ## Run the CMake-managed generators (reloc, asset headers)
 	@$(call heading,Running codegen targets)
 	@$(CMAKE) --build --preset "$(PRESET)" --target PrepareBuildInputs \
 	  --target "$(ASSET_HEADERS_TARGET)" $(BUILD_PARALLEL)
@@ -722,7 +773,7 @@ package-uwp: uwp ## Collect MSIX/APPX into dist/uwp
 	  \( -name '*.msix' -o -name '*.msixbundle' -o -name '*.appx' \) \
 	  -exec cp -f {} "$(DIST_DIR)/uwp/" \;
 
-release-check: package security release-binary-check codegen-check ## Validate a release candidate
+release-check: layout-check package security release-binary-check codegen-check ## Validate a release candidate
 	@$(call success,Release candidate validated)
 
 release-dry-run: ## release-check on the <host>-release preset
@@ -789,6 +840,38 @@ clean-tests:
 distclean: ## rm -rf out/ + lobby node_modules + dist/
 	@rm -rf -- "$(OUT_DIR)" "$(DIST_DIR)"
 	@rm -rf -- "$(LOBBY_DIR)/node_modules"
+
+# Safe-delete policy: paths must be non-empty, repo-relative, and resolved
+# inside the repo before rm -rf ever runs. NEVER delete: src include
+# assets config docs specs tests/fixtures roms decomp libultraship torch.
+define safe_rmrf
+	@p="$$(cd "$(1)" 2>/dev/null && pwd)"; \
+	root="$$(pwd)"; \
+	if [[ -z "$$p" ]]; then \
+	  printf "$(YELLOW)[SKIP]$(RESET) $(1) (absent)\n"; \
+	elif [[ "$$p" != "$$root"/* ]]; then \
+	  $(call failure,Refusing to delete outside repo: $$p); exit 1; \
+	else \
+	  rm -rf -- "$(1)" && printf "$(GREEN)[RM]$(RESET)   $(1)\n"; \
+	fi
+endef
+
+clean-generated: ## Remove regenerable outputs (out/ dist/)
+	$(call safe_rmrf,$(OUT_DIR))
+	$(call safe_rmrf,$(DIST_DIR))
+	@$(call success,Generated outputs removed)
+
+clean-dependencies: ## Remove installed deps (.venv, node_modules)
+	$(call safe_rmrf,$(VENV_DIR))
+	$(call safe_rmrf,.venv-lint)
+	$(call safe_rmrf,$(LOBBY_DIR)/node_modules)
+	@$(call success,Installed dependencies removed)
+
+regenerate: clean-generated install generate-sources configure codegen ## Rebuild all derived state
+
+generated-check: codegen-check ## Alias — regen must not change the tree
+
+prune: clean-generated clean-dependencies ## Remove outputs AND installed deps
 	@$(call success,Generated state removed)
 
 reset: distclean ## Reset submodules to recorded commits
