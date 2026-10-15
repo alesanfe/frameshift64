@@ -419,10 +419,20 @@ s32 nbNetPacketIsForward(const u8 *buffer, s32 size)
 	{
 		return 0;
 	}
-	return ((nbNetPacketReadU32(&cursor) == NB_NETPACKET_MAGIC) &&
-			(nbNetPacketReadU16(&cursor) == NB_NETPACKET_VERSION) &&
-			(nbNetPacketReadU16(&cursor) == NB_NETPACKET_PACKET_FORWARD))
-		   ? 1 : 0;
+	if ((nbNetPacketReadU32(&cursor) != NB_NETPACKET_MAGIC) ||
+		(nbNetPacketReadU16(&cursor) != NB_NETPACKET_VERSION) ||
+		(nbNetPacketReadU16(&cursor) != NB_NETPACKET_PACKET_FORWARD))
+	{
+		return 0;
+	}
+	/* INPUT datagrams keep remote_advantage where FORWARD stores its type:
+	 * an advantage of exactly PACKET_FORWARD would alias the whole packet
+	 * as a forward and starve the peer (observed freezing matches under
+	 * latency once a host's lead reached 6). Envelopes only ever wrap a
+	 * whole game datagram, so require the inner magic too - a real INPUT
+	 * would need ack_tick >= 0x53534Exx (weeks of match) to collide. */
+	cursor = buffer + NB_NETPACKET_FORWARD_HEADER_BYTES;
+	return (nbNetPacketReadU32(&cursor) == NB_NETPACKET_MAGIC) ? 1 : 0;
 }
 
 void nbNetPacketWritePrefix(u8 **cursor, u16 packet_type, u32 session_id)

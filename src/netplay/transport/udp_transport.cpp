@@ -252,6 +252,15 @@ int raw_send_to(const sockaddr_in &to, const uint8_t *data, int size)
 {
     int sent = sendto(sSocket, reinterpret_cast<const char *>(data), size, 0,
                       reinterpret_cast<const sockaddr *>(&to), sizeof(to));
+    if (sent != size) {
+        static int sSendtoErrDiag = 8;
+        if (sSendtoErrDiag-- > 0) {
+            char ip[INET_ADDRSTRLEN] = "?";
+            inet_ntop(AF_INET, &to.sin_addr, ip, sizeof(ip));
+            port_log("SSB64 UDP: sendto %s:%u failed err=%d size=%d\n", ip,
+                     static_cast<unsigned>(ntohs(to.sin_port)), port_udp_last_error(), size);
+        }
+    }
     return (sent == size) ? size : -1;
 }
 
@@ -414,6 +423,13 @@ int send_routed(const uint8_t *bytes, int size, const sockaddr_in *to, int relay
         /* the twin shares the release time: it ships back-to-back with the
          * original, the way a dup lands on the wire */
         sSimQueue.insert(it + 1, *it);
+    }
+    {
+        static size_t sSimHighWater = 0;
+        if (sSimQueue.size() > sSimHighWater + 256) {
+            sSimHighWater = sSimQueue.size();
+            port_log("SSB64 UDP: sim queue depth %zu\n", sSimQueue.size());
+        }
     }
     flush_sim_queue();
     return size;
@@ -702,6 +718,14 @@ extern "C" int port_udp_link_recv(int *out_link, void *buffer, int capacity)
         int payload = (kind == 1 && sRelayFramed) ? size - 1 : size;
 
         if (link < 0 || payload <= 0 || payload > capacity) {
+            static unsigned int sUnrouteable = 0;
+            if ((++sUnrouteable % 300u) == 1u || sUnrouteable < 4u) {
+                char ip[INET_ADDRSTRLEN] = "?";
+                inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
+                port_log("SSB64 UDP: unrouteable #%u kind=%d from=%s:%u link=%d size=%d head=%02X%02X\n",
+                         sUnrouteable, kind, ip, static_cast<unsigned>(ntohs(from.sin_port)),
+                         link, size, size > 0 ? bytes[0] : 0, size > 1 ? bytes[1] : 0);
+            }
             continue;   /* stray, oversized or unrouteable: keep draining */
         }
         std::memmove(buffer, bytes + (size - payload), payload);

@@ -456,6 +456,17 @@ static void test_type_enumeration(void)
 				   == (t == NB_NETPACKET_PACKET_FORWARD ? 1 : 0));
 		}
 	}
+	/* Regression: INPUT keeps remote_advantage at the FORWARD type
+	 * offset — advantage == PACKET_FORWARD must not alias the packet
+	 * as a forward (it starved peers once a host lead reached 6). */
+	{
+		u8 buf[NB_NETPACKET_PACKET_BYTES];
+		NBNetPacketInput in = make_input();
+
+		in.remote_advantage = NB_NETPACKET_PACKET_FORWARD;
+		nbNetPacketBuildInput(buf, &in);
+		EXPECT(nbNetPacketIsForward(buf, (s32)sizeof(buf)) == 0);
+	}
 }
 
 /* ── CUR-001: corpus of valid messages + invalid siblings ───────────── */
