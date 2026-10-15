@@ -10,6 +10,7 @@
 #include <libultraship/bridge/consolevariablebridge.h>
 #include <nlohmann/json.hpp>
 
+#include <cstdlib>
 #include <string>
 #include <unordered_map>
 
@@ -95,6 +96,14 @@ const char* T(const char* key) {
         return key;
     }
     const auto it = sTable.find(key);
+#ifdef SSB64_TEST_HOOKS
+    static int sDiagCount = 0;
+    if (std::getenv("SSB64_I18N_DIAG") != nullptr && sDiagCount < 8) {
+        port_log("i18n-diag: key='%s' lang=%d table=%zu %s\n",
+                 key, lang, sTable.size(), (it != sTable.end()) ? "HIT" : "MISS");
+        sDiagCount++;
+    }
+#endif
     return (it != sTable.end()) ? it->second.c_str() : key;
 }
 
