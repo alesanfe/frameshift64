@@ -440,6 +440,13 @@ void syNetPeerRemoveSpecLink(s32 link)
 #define SYNETPEER_SPEC_STALL_FRAMES 120           /* resend window after ~2s no progress */
 #define SYNETPEER_SPEC_PROGRESS_INTERVAL 15       /* spec reports every N frames */
 #define SYNETPEER_SPEC_CATCHUP_TICKS 16           /* max sim ticks per display frame */
+/* A spec this close to the live edge switches to the live FORWARD stream:
+ * every live INPUT packet already repeats the last MAX_PACKET_FRAMES ticks,
+ * so frames newer than live - SYNETPEER_SPEC_LIVE_MARGIN arrive either way. */
+#define SYNETPEER_SPEC_LIVE_MARGIN NB_NETPACKET_MAX_PACKET_FRAMES
+/* Re-arm the history stream when the spec falls this far behind again
+ * (hysteresis vs SYNETPEER_SPEC_LIVE_MARGIN so the mode can't flap). */
+#define SYNETPEER_SPEC_REARM_MARGIN (4 * NB_NETPACKET_MAX_PACKET_FRAMES)
 
 u32 sSYNetPeerSpecHistoryCursor[8];
 u32 sSYNetPeerSpecProgress[8];
@@ -533,13 +540,35 @@ void syNetPeerServeSpecHistory(void)
 #ifdef PORT
 	u8 buffer[SYNETPEER_PACKET_BYTES];
 	u32 live;
+	u32 servable;
 	s32 i;
+	s32 player;
 
 	if ((sSYNetPeerBootstrapIsHost == FALSE) || (sSYNetPeerSpecLinkCount == 0))
 	{
 		return;
 	}
 	live = syNetInputGetTick();
+	/* The replay record for a remote player's tick is final only once that
+	 * tick is confirmed - below it the record can still hold a prediction
+	 * that a rollback rewrites. The spec's remote store is first-write-wins,
+	 * so streaming a predicted record would pin the wrong input on the spec
+	 * forever (resends of the corrected frame are dropped as redundant).
+	 * Live FORWARDs don't need this gate: they carry the sender's own
+	 * scheduled frames, which are final by definition. */
+	servable = live;
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		if ((player != sSYNetPeerLocalPlayer) && (sSYNetPeerRemotes[player].player == player))
+		{
+			u32 edge = syNetInputGetRemoteNextUnconfirmed(player);
+
+			if (edge < servable)
+			{
+				servable = edge;
+			}
+		}
+	}
 	for (i = 0; i < sSYNetPeerSpecLinkCount; i++)
 	{
 		u32 progress;
@@ -549,39 +578,54 @@ void syNetPeerServeSpecHistory(void)
 
 		if (sSYNetPeerSpecCatchUp[i] == FALSE)
 		{
+			/* Live-mode spec fell far enough behind that the repeated frame
+			 * window can't reach its pending tick (loss burst) - re-arm the
+			 * stream from its consume point. The spec keeps reporting
+			 * SPECTICK unconditionally, so this recovers on its own. */
+			if (live >= sSYNetPeerSpecProgress[i] + SYNETPEER_SPEC_REARM_MARGIN)
+			{
+				sSYNetPeerSpecCatchUp[i] = TRUE;
+				sSYNetPeerSpecHistoryCursor[i] = sSYNetPeerSpecProgress[i];
+				sSYNetPeerSpecStallFrames[i] = 0;
+				port_log("SSB64 NetPeer: spec link %d fell behind (progress=%u live=%u) - resuming history stream\n",
+						 sSYNetPeerSpecLinks[i], sSYNetPeerSpecProgress[i], live);
+			}
 			continue;
 		}
 		progress = sSYNetPeerSpecProgress[i];
 		cursor = sSYNetPeerSpecHistoryCursor[i];
 		ceiling = progress + SYNETPEER_SPEC_WINDOW;
-		if (ceiling > live)
+		if (ceiling > servable)
 		{
-			ceiling = live;
+			ceiling = servable;
 		}
 		if (cursor >= ceiling)
 		{
-			if (cursor < live)
+			if (progress + SYNETPEER_SPEC_LIVE_MARGIN >= live)
 			{
-				/* Stream stalled waiting on the spec: if its progress hasn't
-				 * moved, packets were lost - rewind and resend the window. */
-				if (++sSYNetPeerSpecStallFrames[i] >= SYNETPEER_SPEC_STALL_FRAMES)
-				{
-					sSYNetPeerSpecStallFrames[i] = 0;
-					sSYNetPeerSpecHistoryCursor[i] = progress;
-				}
+				/* The spec consumed up to the live edge (within the repeated
+				 * frame window of the live stream): it rides the normal live
+				 * FORWARDs from here. */
+				sSYNetPeerSpecCatchUp[i] = FALSE;
+				port_log("SSB64 NetPeer: spec link %d caught up at tick %u\n",
+						 sSYNetPeerSpecLinks[i], live);
 				continue;
 			}
-			/* Caught up to the live edge: the spec rides the normal live
-			 * FORWARD stream from here. */
-			sSYNetPeerSpecCatchUp[i] = FALSE;
-			port_log("SSB64 NetPeer: spec link %d caught up at tick %u\n",
-					 sSYNetPeerSpecLinks[i], live);
+			/* Window exhausted without the spec reaching the live edge: if
+			 * its progress hasn't moved, packets were lost - rewind and
+			 * resend the unacked window. (Not gated on cursor < live: a
+			 * cursor that already raced past the live edge still has to
+			 * resend while the spec's consumed tick lags behind it.) */
+			if (++sSYNetPeerSpecStallFrames[i] >= SYNETPEER_SPEC_STALL_FRAMES)
+			{
+				sSYNetPeerSpecStallFrames[i] = 0;
+				sSYNetPeerSpecHistoryCursor[i] = progress;
+			}
 			continue;
 		}
 		sent = 0;
 		while ((cursor < ceiling) && (sent < SYNETPEER_SPEC_HISTORY_PKTS * NB_NETPACKET_MAX_PACKET_FRAMES))
 		{
-			s32 player;
 			sb32 any_sent = FALSE;
 			u32 chunk = ceiling - cursor;
 
@@ -705,7 +749,9 @@ void syNetPeerSpectateCatchUp(void (*update)(void))
 		{
 			break;
 		}
-		update();
+		/* through RunBattleUpdate so catch-up ticks store their live hash and
+		 * emit the confirmed-state trace like any other simulated tick */
+		syNetRollbackRunBattleUpdate(update);
 	}
 #endif
 }
@@ -1275,6 +1321,13 @@ void syNetPeerInitDebugEnv(void)
 	char *bootstrap_host_env;
 	char *bootstrap_seed_env;
 
+	if ((netplay_env == NULL) || (atoi(netplay_env) == 0))
+	{
+		/* No env-driven session: leave state alone — a lobby match (or a
+		 * spectator start) may have configured netplay before the run loop
+		 * even reached this init. */
+		return;
+	}
 	sSYNetPeerIsEnabled = FALSE;
 	sSYNetPeerIsConfigured = FALSE;
 	sSYNetPeerLocalPlayer = 0;
@@ -1299,10 +1352,6 @@ void syNetPeerInitDebugEnv(void)
 	sSYNetPeerExecutionHoldFrames = 0;
 	sSYNetPeerExecutionBeginLogged = FALSE;
 
-	if ((netplay_env == NULL) || (atoi(netplay_env) == 0))
-	{
-		return;
-	}
 	sSYNetPeerIsEnabled = TRUE;
 
 	local_player_env = getenv("SSB64_NETPLAY_LOCAL_PLAYER");
@@ -1715,7 +1764,14 @@ static void syNetPeerSendForwardPacket(s32 link, s32 src_player, const u8 *buffe
 #ifdef PORT
 	u8 wrapper[SYNETPEER_FORWARD_PACKET_BYTES];
 	u32 wrapper_size;
+	static s32 sFwdSendDiag = 20;
 
+	if (sFwdSendDiag-- > 0)
+	{
+		port_log("SSB64 NetPeer: fwd send link=%d src=%d size=%d speclinks=%d remotes=%d tick=%u\n",
+		         link, src_player, size, sSYNetPeerSpecLinkCount, sSYNetPeerRemoteCount,
+		         syNetInputGetTick());
+	}
 	wrapper_size = nbNetPacketBuildForward(wrapper, sizeof(wrapper), buffer, (u32)size,
 										 (u8)src_player, sSYNetPeerSessionID);
 	if (wrapper_size == 0)
@@ -1791,11 +1847,19 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 #endif
 	if (size != SYNETPEER_PACKET_BYTES)
 	{
+		static s32 sSizeDropDiag = 8;
+
 		sSYNetPeerPacketsDropped++;
+		if (sSizeDropDiag-- > 0)
+		{
+			port_log("SSB64 NetPeer: drop size=%d fwd=%d head=%02X%02X tick=%u\n",
+					 size, forwarded, buffer[0], buffer[1], syNetInputGetTick());
+		}
 		return;
 	}
 	{
 		NBNetPacketContext ctx;
+		NBNetPacketStatus parsed;
 
 		ctx.session_id = sSYNetPeerSessionID;
 		ctx.src_player = src_player;
@@ -1803,9 +1867,18 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 		ctx.forwarded = (forwarded != FALSE) ? 1 : 0;
 		ctx.ignore_session = (sSYNetPeerMutantBadSession != FALSE) ? 1 : 0;
 		ctx.ignore_checksum = (sSYNetPeerMutantBadChecksum != FALSE) ? 1 : 0;
-		if (nbNetPacketParseInput(buffer, size, &ctx, &pkt) != NB_NETPACKET_OK)
+		parsed = nbNetPacketParseInput(buffer, size, &ctx, &pkt);
+		if (parsed != NB_NETPACKET_OK)
 		{
+			static s32 sParseDropDiag = 8;
+
 			sSYNetPeerPacketsDropped++;
+			if (sParseDropDiag-- > 0)
+			{
+				port_log("SSB64 NetPeer: drop parse=%d src=%d fwd=%d tick=%u head=%02X%02X\n",
+						 (s32)parsed, src_player, forwarded, syNetInputGetTick(),
+						 buffer[0], buffer[1]);
+			}
 			return;
 		}
 	}
@@ -1860,6 +1933,8 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 
 	if (frame_count > 0)
 	{
+		/* -1 = unchecked; 0 = off; set SSB64_NETPLAY_PKTDIAG to dump frame windows. */
+		static s32 sFrameWindowDiag = -1;
 		u32 oldest_tick_bundle = pkt.frames[0].tick;
 		u32 newest_tick_bundle = pkt.frames[0].tick;
 
@@ -1883,6 +1958,17 @@ void syNetPeerHandlePacket(const u8 *buffer, s32 size, SYNetPeerRemote *remote, 
 		sSYNetPeerLastPacketOldestTick = oldest_tick_bundle;
 		sSYNetPeerLastPacketNewestTick = newest_tick_bundle;
 		sSYNetPeerLastPacketTicksValid = TRUE;
+		if (sFrameWindowDiag < 0)
+		{
+			sFrameWindowDiag = (getenv("SSB64_NETPLAY_PKTDIAG") != NULL) ? 400 : 0;
+		}
+		if ((sFrameWindowDiag != 0) && (sFrameWindowDiag-- <= 0))
+		{
+			sFrameWindowDiag = 400;
+			port_log("SSB64 NetPeer: pktdiag src=%d fwd=%d frames=[%u,%u] unconf=%u tick=%u\n",
+					 src_player, forwarded, oldest_tick_bundle, newest_tick_bundle,
+					 syNetInputGetRemoteNextUnconfirmed(src_player), syNetInputGetTick());
+		}
 	}
 	else
 	{
@@ -1977,7 +2063,21 @@ void syNetPeerHandleForwardPacket(const u8 *buffer, s32 size, s32 link)
 	 * spoofed. */
 	if ((remote == NULL) || ((remote->link != -1) && (sSYNetPeerMutantNoForwardGuard == FALSE)))
 	{
+		static s32 sFwdDropDiag = 8;
+
 		sSYNetPeerPacketsDropped++;
+		if (sFwdDropDiag-- > 0)
+		{
+			port_log("SSB64 NetPeer: drop fwd-guard src=%d remote=%p rlink=%d link=%d isize=%u tick=%u env=%02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X\n",
+					 src_player, (void *)remote,
+					 (remote != NULL) ? remote->link : -9, link, inner_size,
+					 syNetInputGetTick(),
+					 buffer[0], buffer[1], buffer[2], buffer[3],
+					 buffer[4], buffer[5], buffer[6], buffer[7],
+					 buffer[8], buffer[9], buffer[10], buffer[11],
+					 buffer[12], buffer[13], buffer[14], buffer[15],
+					 buffer[16], buffer[17], buffer[18], buffer[19]);
+		}
 		return;
 	}
 	syNetPeerHandlePacket(inner, (s32)inner_size, remote, TRUE);
@@ -2264,7 +2364,16 @@ void syNetPeerReceiveRemoteInput(void)
 				}
 				else
 				{
+					static s32 sDropDiagBudget = 8;
+
 					sSYNetPeerPacketsDropped++;
+					if (sDropDiagBudget-- > 0)
+					{
+						port_log("SSB64 NetPeer: unrouteable datagram link=%d size=%d head=%02X%02X tick=%u\n",
+								 link, size,
+								 (size > 0) ? buffer[0] : 0, (size > 1) ? buffer[1] : 0,
+								 syNetInputGetTick());
+					}
 				}
 				continue;
 			}
@@ -2374,13 +2483,13 @@ void syNetPeerLogExecutionHold(void)
 	if ((sSYNetPeerExecutionHoldFrames == 1) ||
 		((sSYNetPeerExecutionHoldFrames % SYNETPEER_BARRIER_LOG_INTERVAL) == 0))
 	{
-		port_log("SSB64 NetPeer: execution hold role=%s local=%d remote=%d tick=%u hold=%u barrier_wait=%u peer_ready=%d start_sent=%d start_recv=%d highest_remote=%u late=%u\n",
+		port_log("SSB64 NetPeer: execution hold role=%s local=%d remote=%d tick=%u hold=%u barrier_wait=%u peer_ready=%d start_sent=%d start_recv=%d highest_remote=%u late=%u recv=%u dropped=%u\n",
 		         (sSYNetPeerBootstrapIsHost != FALSE) ? "host" : "client",
 		         sSYNetPeerLocalPlayer, sSYNetPeerRemotePlayer, syNetInputGetTick(),
 		         sSYNetPeerExecutionHoldFrames, sSYNetPeerBattleBarrierWaitFrames,
 		         sSYNetPeerBattlePeerReady, sSYNetPeerBattleStartSent,
 		         sSYNetPeerBattleStartReceived, sSYNetPeerHighestRemoteTick,
-		         sSYNetPeerLateFrames);
+		         sSYNetPeerLateFrames, sSYNetPeerPacketsReceived, sSYNetPeerPacketsDropped);
 	}
 #endif
 }

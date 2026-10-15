@@ -4,6 +4,41 @@
 #include <sys/netrollback.h>
 #include <sys/taskman.h>
 
+#include <stdio.h>
+#include <stdlib.h>
+
+extern void port_log(const char *fmt, ...);
+
+/* Temporary diagnostic: SSB64_DBG_INPUT_TICKS=lo:hi dumps every frame a
+ * spectator resolves (and every remote frame it stores) in that tick
+ * window, so a trace desync can be traced to the wire value. */
+static u32 sSYNetInputDbgTickLo = 0xFFFFFFFFU;
+static u32 sSYNetInputDbgTickHi = 0;
+static sb32 sSYNetInputDbgTicksInit = FALSE;
+
+static void syNetInputDbgTicksInit(void)
+{
+	const char *env = getenv("SSB64_DBG_INPUT_TICKS");
+	u32 lo = 0;
+	u32 hi = 0;
+
+	if (sSYNetInputDbgTicksInit != FALSE)
+	{
+		return;
+	}
+	sSYNetInputDbgTicksInit = TRUE;
+	if ((env != NULL) && (sscanf(env, "%u:%u", &lo, &hi) == 2))
+	{
+		sSYNetInputDbgTickLo = lo;
+		sSYNetInputDbgTickHi = hi;
+	}
+}
+
+static sb32 syNetInputDbgTickCheck(u32 tick)
+{
+	return ((tick >= sSYNetInputDbgTickLo) && (tick <= sSYNetInputDbgTickHi)) ? TRUE : FALSE;
+}
+
 typedef struct SYNetInputSlot
 {
 	SYNetInputSource source;
@@ -41,6 +76,9 @@ u32 sSYNetInputPublishedChecksumAtLimit;
  * input on the same tick. */
 u32 sSYNetInputLocalDelay;
 SYNetInputFrame sSYNetInputLocalSchedule[MAXCONTROLLERS][SYNETINPUT_HISTORY_LENGTH];
+/* Highest tick already written into LocalSchedule, per player. 0xFFFFFFFF
+ * before the first sample so the first write stays a single point. */
+u32 sSYNetInputLocalScheduledThrough[MAXCONTROLLERS];
 /* Every remote tick below this has a confirmed input (per player). */
 u32 sSYNetInputRemoteNextUnconfirmed[MAXCONTROLLERS];
 /* Earliest already-published tick whose confirmed remote input differs from
@@ -176,6 +214,7 @@ void syNetInputReset(void)
 			syNetInputClearFrame(&sSYNetInputLocalSchedule[player][i]);
 		}
 		sSYNetInputRemoteNextUnconfirmed[player] = 0;
+		sSYNetInputLocalScheduledThrough[player] = 0xFFFFFFFFU;
 		sSYNetInputLocalDevice[player] = player;
 		for (i = 0; i < SYNETINPUT_REPLAY_MAX_FRAMES; i++)
 		{
@@ -215,15 +254,53 @@ void syNetInputSetRemoteInput(s32 player, u32 tick, u16 buttons, s8 stick_x, s8 
 	{
 		return;
 	}
+	/* A remote frame this far ahead of the consume edge would wrap the
+	 * remote-history ring and clobber the pending frame 720 ticks below it.
+	 * For a mid-match spectator the live FORWARD stream does exactly that:
+	 * live tick T lands in the slot of still-unconsumed history tick T-720
+	 * whenever the live edge runs a full ring ahead of the spec's consume
+	 * point. The guard is keyed on the consume tick, NOT on the contiguous
+	 * store edge - the clobbered slots live in the stored-but-unconsumed
+	 * band below it. Dropped frames come back through the paced history
+	 * stream or the live packets' 16-frame repeats once they enter window.
+	 * Ticks behind the consume edge still pass: they're how mispredicts get
+	 * corrected on rollback peers. */
+	if ((tick >= sSYNetInputTick) &&
+		(tick - sSYNetInputTick >= SYNETINPUT_HISTORY_LENGTH))
+	{
+		return;
+	}
 	if (syNetInputGetStoredFrame(sSYNetInputRemoteHistory, player, tick, NULL) != FALSE)
 	{
 		return;     // redundant copy (every packet repeats recent frames)
 	}
-	syNetInputMakeFrame(&frame, tick, buttons, stick_x, stick_y, nSYNetInputSourceRemoteConfirmed, FALSE);
-	syNetInputStoreFrame(sSYNetInputRemoteHistory, player, &frame);
+	{
+		/* The ring slot is shared with the tick 720 away in either direction.
+		 * A behind-edge copy arriving late (a history resend chasing a
+		 * spectator's progress, which trails its consume edge by more than
+		 * a ring turn) must not evict the still-pending newer frame - the
+		 * consume side validates the embedded tick and would resolve a
+		 * predicted frame forever. The mispredict check below reads the
+		 * incoming bytes, not the ring, so it still runs. */
+		SYNetInputFrame *slot = &sSYNetInputRemoteHistory[player][tick % SYNETINPUT_HISTORY_LENGTH];
+
+		if ((slot->is_valid == FALSE) || (slot->tick <= tick))
+		{
+			syNetInputMakeFrame(&frame, tick, buttons, stick_x, stick_y,
+								nSYNetInputSourceRemoteConfirmed, FALSE);
+			syNetInputStoreFrame(sSYNetInputRemoteHistory, player, &frame);
+			syNetInputDbgTicksInit();
+			if ((sSYNetPeerIsSpectator != FALSE) && (syNetInputDbgTickCheck(tick) != FALSE))
+			{
+				port_log("SSB64 DbgInput: spec store p%d tick=%u btn=0x%04X sx=%d sy=%d\n",
+						 player, tick, buttons, stick_x, stick_y);
+			}
+		}
+	}
 
 	if ((sSYNetInputSlots[player].last_confirmed.is_valid == FALSE) || (tick >= sSYNetInputSlots[player].last_confirmed.tick))
 	{
+		syNetInputMakeFrame(&frame, tick, buttons, stick_x, stick_y, nSYNetInputSourceRemoteConfirmed, FALSE);
 		sSYNetInputSlots[player].last_confirmed = frame;
 	}
 	while (syNetInputGetStoredFrame(sSYNetInputRemoteHistory, player, sSYNetInputRemoteNextUnconfirmed[player], NULL) != FALSE)
@@ -349,10 +426,28 @@ void syNetInputMakeLocalFrame(s32 player, u32 tick, SYNetInputFrame *out_frame)
 	}
 	/* Schedule this sample once; a stalled tick re-reads the controller but
 	 * must not rewrite a frame that may already be on the wire. */
-	if (syNetInputGetStoredFrame(sSYNetInputLocalSchedule, player, tick + sSYNetInputLocalDelay, NULL) == FALSE)
+	/* Schedule every sample once (a stalled tick re-reads the controller but
+	 * must not rewrite a frame that may already be on the wire). The write
+	 * frontier is tracked explicitly: a mid-match delay bump D -> D' leaves
+	 * ticks frontier+1 .. tick+D' never scheduled — a ring hole that never
+	 * reaches the wire and deadlocks the remote's contiguous edge for good
+	 * (observed: delay 2->3 at consume 539 left local tick 542 unsent).
+	 * The first call schedules only tick+delay, preserving the old
+	 * semantics where ticks before the delay were never sent. */
 	{
-		syNetInputMakeFrame(&scheduled, tick + sSYNetInputLocalDelay, buttons, stick_x, stick_y, nSYNetInputSourceLocal, FALSE);
-		syNetInputStoreFrame(sSYNetInputLocalSchedule, player, &scheduled);
+		u32 through = tick + sSYNetInputLocalDelay;
+		u32 from = (sSYNetInputLocalScheduledThrough[player] == 0xFFFFFFFFU)
+				   ? through : sSYNetInputLocalScheduledThrough[player] + 1;
+
+		for (; from <= through; from++)
+		{
+			if (syNetInputGetStoredFrame(sSYNetInputLocalSchedule, player, from, NULL) == FALSE)
+			{
+				syNetInputMakeFrame(&scheduled, from, buttons, stick_x, stick_y, nSYNetInputSourceLocal, FALSE);
+				syNetInputStoreFrame(sSYNetInputLocalSchedule, player, &scheduled);
+			}
+		}
+		sSYNetInputLocalScheduledThrough[player] = through;
 	}
 	if (syNetInputGetStoredFrame(sSYNetInputLocalSchedule, player, tick, out_frame) == FALSE)
 	{
@@ -478,6 +573,19 @@ void syNetInputRepublishTick(u32 tick)
 		}
 		sSYNetInputSlots[player].last_published = prev;
 		syNetInputPublishFrame(player, &frame);
+#ifdef PORT
+		/* The first pass records the resolved frame - including remote
+		 * predictions. A rollback republish re-resolves the same tick with
+		 * the now-confirmed input, so the recording must be overwritten or
+		 * it preserves inputs from the abandoned timeline (spectator
+		 * catch-up and saved .ssr replays then desync deterministically at
+		 * the first mispredicted tick). Every mispredicted tick is covered
+		 * by the resim it triggers, so the record converges to confirmed. */
+		if (sSYNetInputIsRecording != FALSE)
+		{
+			syNetInputSetReplayFrame(player, tick, &frame);
+		}
+#endif
 	}
 	syNetInputPublishMainController();
 }
@@ -783,6 +891,13 @@ void syNetInputFuncRead(void)
 		if (sSYNetInputIsRecording != FALSE)
 		{
 			syNetInputSetReplayFrame(player, tick, &frame);
+		}
+		syNetInputDbgTicksInit();
+		if ((sSYNetPeerIsSpectator != FALSE) && (syNetInputDbgTickCheck(tick) != FALSE))
+		{
+			port_log("SSB64 DbgInput: spec resolve p%d tick=%u btn=0x%04X sx=%d sy=%d src=%d pred=%d\n",
+					 player, tick, frame.buttons, frame.stick_x, frame.stick_y,
+					 frame.source, frame.is_predicted);
 		}
 	}
 	syNetInputPublishMainController();

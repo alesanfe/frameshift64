@@ -1410,6 +1410,17 @@ void syNetRollbackRunBattleUpdate(void (*update)(void))
 	if (sSYNetRollbackIsSyncTest == FALSE)
 	{
 		update();
+#ifdef PORT
+		/* Spectators never roll back, so they skip RunNetplayUpdate entirely -
+		 * but the confirmed-state trace (and the hashes it diffs against the
+		 * players') still needs the same per-tick bookkeeping. */
+		if (sSYNetPeerIsSpectator != FALSE)
+		{
+			tick = syNetInputGetTick() - 1;
+			syNetRollbackStoreLiveHash(tick);
+			syNetRollbackEmitConfirmedTrace(tick);
+		}
+#endif
 		return;
 	}
 	tick = syNetInputGetTick() - 1;    // syNetInputFuncRead already advanced past this tick
