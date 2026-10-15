@@ -26,7 +26,7 @@ portrait card.
 
 ## Root cause
 
-`libultraship/src/fast/interpreter.cpp:gfx_set_prim_depth_handler_rdp`
+`components/libultraship/src/fast/interpreter.cpp:gfx_set_prim_depth_handler_rdp`
 was a stub:
 
 ```cpp
@@ -39,14 +39,14 @@ bool gfx_set_prim_depth_handler_rdp(F3DGfx** cmd) {
 Nothing stored the value, and `Interpreter::GfxSpTri1` did not consult
 `other_mode_l & G_ZS_PRIM` either — every triangle's Z came from
 `v_arr[i]->z` regardless of the depth source the game requested. For
-the libultra sprite path (decomp/src/libultra/sp/sprite.c:207,
+the libultra sprite path (components/decomp/src/libultra/sp/sprite.c:207,
 `gDPSetPrimDepth(gl++, s->zdepth, 0)` under `SP_Z`) this meant the
 sprite's `zdepth` was thrown away and the rectangle's per-vertex Z
 (typically `-1.0` from `Interpreter::GfxDrawRectangle`) was used —
 i.e. NEAR plane = always in front.
 
 Worth noting: the same Emill-era TODO is still in upstream
-`Kenix3/libultraship` `libultraship/src/fast/interpreter.cpp` at the same callsite,
+`Kenix3/libultraship` `components/libultraship/src/fast/interpreter.cpp` at the same callsite,
 so any libultraship-lineage port that needs PrimDepth has to fix this
 locally.
 
@@ -54,18 +54,18 @@ locally.
 
 Three small hunks in `libultraship` (branch `ssb64`):
 
-1. **`libultraship/include/fast/interpreter.h`** — add `prim_depth_z` and
+1. **`components/libultraship/include/fast/interpreter.h`** — add `prim_depth_z` and
    `prim_depth_dz` (both `uint16_t`) to the `RDP` struct, alongside
    `prim_lod_fraction`.
 
-2. **`libultraship/src/fast/interpreter.cpp::gfx_set_prim_depth_handler_rdp`** —
+2. **`components/libultraship/src/fast/interpreter.cpp::gfx_set_prim_depth_handler_rdp`** —
    actually parse the command:
    ```cpp
    gfx->mRdp->prim_depth_z = (uint16_t)((cmd->words.w1 >> 16) & 0xFFFF);
    gfx->mRdp->prim_depth_dz = (uint16_t)(cmd->words.w1 & 0xFFFF);
    ```
 
-3. **`libultraship/src/fast/interpreter.cpp::GfxSpTri1`** — when `other_mode_l &
+3. **`components/libultraship/src/fast/interpreter.cpp::GfxSpTri1`** — when `other_mode_l &
    G_ZS_PRIM` is set, override per-vertex Z with `prim_depth_z` mapped
    linearly into clip space:
    ```cpp
@@ -139,9 +139,9 @@ artifacts came up:
 
 ## Files
 
-- `libultraship/include/fast/interpreter.h` — `RDP::prim_depth_z`,
+- `components/libultraship/include/fast/interpreter.h` — `RDP::prim_depth_z`,
   `RDP::prim_depth_dz`.
-- `libultraship/src/fast/interpreter.cpp` —
+- `components/libultraship/src/fast/interpreter.cpp` —
   `gfx_set_prim_depth_handler_rdp`, `Interpreter::GfxSpTri1` Z-source
   override.
 - `docs/bugs/primdepth_unimplemented_2026-04-25.md` — this writeup.
@@ -153,6 +153,6 @@ Fast3D inherits a couple of "TODO Implement this command" stubs from
 its Emill ancestor that the dominant ports never exercised. When a
 game-side render mode "should obviously work" but produces wildly
 wrong layering / depth / blending output, grep
-`libultraship/src/fast/interpreter.cpp` for `TODO Implement` — there's
+`components/libultraship/src/fast/interpreter.cpp` for `TODO Implement` — there's
 non-zero chance the bit you need is sitting unimplemented behind a
 return-false handler.

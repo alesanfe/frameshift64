@@ -1,7 +1,7 @@
 # Title-Screen Border — Missing Right-Edge Slice & MARIO Title-Card Smear
 
 **Date:** 2026-04-14
-**Files touched:** `libultraship/src/fast/interpreter.cpp` (`ImportTextureIA8`, `ImportTextureI4`, new `ClampUploadWidthToTile` helper); `src/integration/decomp/lbreloc_byteswap.cpp` — revert of the ce89700 trailing-column workaround.
+**Files touched:** `components/libultraship/src/fast/interpreter.cpp` (`ImportTextureIA8`, `ImportTextureI4`, new `ClampUploadWidthToTile` helper); `src/game/engine/decomp/lbreloc_byteswap.cpp` — revert of the ce89700 trailing-column workaround.
 **Supersedes:** `ce89700` ("Zero sprite trailing columns to kill MARIO title-card bleed") — the workaround is removed because the root cause is fixed in Fast3D.
 **Related:** [sprite_trailing_column_bleed](../investigations/sprite_trailing_column_bleed.md)
 
@@ -9,7 +9,7 @@
 
 Two bugs with the same underlying cause:
 
-1. **Title-screen top border** — `llMNTitleBorderUpperSprite` in `decomp/src/mn/mncommon/mntitle.c:95`, a 300×10 I4 sprite drawn at `(160, 15)`, rendered with a ~1-texel vertical slice of its rightmost column visibly dimmed. Introduced by the ce89700 workaround.
+1. **Title-screen top border** — `llMNTitleBorderUpperSprite` in `components/decomp/src/mn/mncommon/mntitle.c:95`, a 300×10 I4 sprite drawn at `(160, 15)`, rendered with a ~1-texel vertical slice of its rightmost column visibly dimmed. Introduced by the ce89700 workaround.
 2. **Fighter-intro title cards** ("MARIO", "FOX", "PIKACHU", …) — per-letter IA8 sprites from `IFCommonAnnounceCommon` (file 37) drawn by `mvOpening<Fighter>MakeName`. Rendered with faint horizontal smears extending right out of every letter. Fixed by ce89700 by zero-filling trailing columns, then the fix was revised to edge-replicate, which fixed the border but reintroduced the letter smear.
 
 ## Root cause
@@ -64,6 +64,6 @@ With the Fast3D upload clamped, cols `[width, width_img)` of the sprite data are
 
 ## Files
 
-- `libultraship/src/fast/interpreter.cpp` — `ClampUploadWidthToTile` helper + calls from `ImportTextureIA8`, `ImportTextureI4`.
-- `src/integration/decomp/lbreloc_byteswap.cpp` — trailing-column block removed from `portFixupSpriteBitmapData`.
+- `components/libultraship/src/fast/interpreter.cpp` — `ClampUploadWidthToTile` helper + calls from `ImportTextureIA8`, `ImportTextureI4`.
+- `src/game/engine/decomp/lbreloc_byteswap.cpp` — trailing-column block removed from `portFixupSpriteBitmapData`.
 - `docs/investigations/sprite_trailing_column_bleed.md` — marked superseded, points here.

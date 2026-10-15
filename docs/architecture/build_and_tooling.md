@@ -17,7 +17,7 @@
   `ssb64_port_options` INTERFACE (compile defs, include paths, dep usage
   requirements). Objects still link into the single binary; the split
   gives each module its own compile surface (TD-002). Inter-module
-  include rules stay enforced by `tools/lint/check_module_deps.py`.
+  include rules stay enforced by `tools/analysis/lint/check_module_deps.py`.
 
 ### ROM version (US / JP)
 
@@ -25,7 +25,7 @@
 version. The decomp game code is region-conditionally compiled
 (`#if REGION_US/REGION_JP`), so **US and JP are separate builds — use a
 separate build dir per version.** The switch drives the region defines,
-`assets/configuration/extraction/<v>` extraction configs, `baserom.<v>.{z64,n64,v64}` selection,
+`assets/game/<v>` extraction configs, `baserom.<v>.{z64,n64,v64}` selection,
 credits text, the JP-only source exclusions (`mncongra.c`/`mnstartup.c`),
 and the per-version generated reloc artifacts
 (`reloc_data.<v>.h`, `RelocFileTable.<v>.{cpp,h}`, selected via committed
@@ -51,18 +51,18 @@ The decompiled C code contains patterns that are artifacts of the original IDO 7
 
 **The LP64 `long` class of bug.** The N64 SDK headers type several fixed-width 32-bit fields as `long`, which is 4 bytes under MSVC LLP64 and 8 bytes under clang/gcc LP64. Every such field silently doubles in size on macOS/Linux, corrupting every struct that mirrors N64 file data or that gets shared with libultraship (which uses 32-bit field types internally). A full sweep of `include/` and `src/` under the `\blong\b` pattern found only three real offenders — all fixed:
 
-- **decomp/include/PR/ultratypes.h** — `u32`/`s32`/`vu32`/`vs32` were `unsigned long`/`long`. Every decomp struct that packed N64 file data is affected. Fixed under `#ifdef PORT && !defined(_MSC_VER)` to use `unsigned int`/`int`. MSVC keeps the original definitions.
-- **decomp/include/PR/gbi.h** — `Mtx_t` was `long[4][4]`. Doubles the matrix from 64 to 128 bytes on LP64, so `guMtxF2L`'s 4-byte-stride int writes land in alternating padding slots and Fast3D's reader sees garbage. The smoking gun was that `libultraship/include/fast/types.h:3` *already* defined `Mtx_t` as `int[4][4]` — LUS and the decomp headers disagreed about the matrix element size, and MSVC accidentally reconciled them because `long == int` under LLP64. On LP64 the two headers diverge and every 3D transform collapses to `x==y, z=0, w=0`. Fixed by aligning `gbi.h`'s `Mtx_t` to `int[4][4]` under `PORT && !_MSC_VER`.
-- **decomp/include/PR/gbi.h** — `Gsetcolor::color`, `TexRect::w{0..3}`, `Hilite::force_structure_alignment`, `Gsetcolor`-family typed union views — all declared as `long` but **never accessed by field name** anywhere in `src/` / `decomp/` / `libultraship/`. The decomp builds display lists exclusively through the raw `Gwords` view (`g->words.w0`/`w1`), so the typed-struct LP64 drift is invisible and harmless. Left as-is.
+- **components/decomp/include/PR/ultratypes.h** — `u32`/`s32`/`vu32`/`vs32` were `unsigned long`/`long`. Every decomp struct that packed N64 file data is affected. Fixed under `#ifdef PORT && !defined(_MSC_VER)` to use `unsigned int`/`int`. MSVC keeps the original definitions.
+- **components/decomp/include/PR/gbi.h** — `Mtx_t` was `long[4][4]`. Doubles the matrix from 64 to 128 bytes on LP64, so `guMtxF2L`'s 4-byte-stride int writes land in alternating padding slots and Fast3D's reader sees garbage. The smoking gun was that `components/libultraship/include/fast/types.h:3` *already* defined `Mtx_t` as `int[4][4]` — LUS and the decomp headers disagreed about the matrix element size, and MSVC accidentally reconciled them because `long == int` under LLP64. On LP64 the two headers diverge and every 3D transform collapses to `x==y, z=0, w=0`. Fixed by aligning `gbi.h`'s `Mtx_t` to `int[4][4]` under `PORT && !_MSC_VER`.
+- **components/decomp/include/PR/gbi.h** — `Gsetcolor::color`, `TexRect::w{0..3}`, `Hilite::force_structure_alignment`, `Gsetcolor`-family typed union views — all declared as `long` but **never accessed by field name** anywhere in `src/` / `components/decomp/` / `components/libultraship/`. The decomp builds display lists exclusively through the raw `Gwords` view (`g->words.w0`/`w1`), so the typed-struct LP64 drift is invisible and harmless. Left as-is.
 
 **Audit clean at time of writing:**
 - `src/` contains no `long`-typed struct fields (comment / macro-name matches only).
-- decomp/include/PR/ramrom.h, `u64gio.h`, `PRimage.h`, `stdlib.h::ldiv_t` are `long`-typed but none of them are referenced by any compiled translation unit — the port never pulls in the N64 ramrom debug I/O path or the SGI image format.
-- decomp/include/PR/gu.h's `FTOFIX32(x)` macro returns `long`, but every caller assigns the result to an `int` before further use, so the extra width is truncated harmlessly.
+- components/decomp/include/PR/ramrom.h, `u64gio.h`, `PRimage.h`, `stdlib.h::ldiv_t` are `long`-typed but none of them are referenced by any compiled translation unit — the port never pulls in the N64 ramrom debug I/O path or the SGI image format.
+- components/decomp/include/PR/gu.h's `FTOFIX32(x)` macro returns `long`, but every caller assigns the result to an `int` before further use, so the extra width is truncated harmlessly.
 - `stdarg.h`'s `(long)list` alignment macros use `long` as a pointer-sized integer; LP64 actually makes that *more* correct than LLP64.
 - Every `_Static_assert(sizeof(X) == N)` struct (Bitmap, Sprite, DObjDesc, MObjSub, FTAccessPart, …) compiles clean, which means the reconciled types produce the correct byte layouts on both ABIs.
 
-When adding new decomp sources or vendored SDK headers, re-run this sweep (`grep -rn '\blong\b' decomp/include/ decomp/src/ src/ | grep -v 'long long'`) before assuming the new code is LP64-safe.
+When adding new decomp sources or vendored SDK headers, re-run this sweep (`grep -rn '\blong\b' components/decomp/include/ components/decomp/src/ src/ | grep -v 'long long'`) before assuming the new code is LP64-safe.
 
 Other compiler-compat notes:
 - `ultratypes.h` defines `u32`/`s32` as `unsigned int`/`int` under `#ifdef PORT && !defined(_MSC_VER)` (and as `unsigned long`/`long` everywhere else). This is the LP64 fix: on clang/gcc `long` is 8 bytes, which silently corrupts every file-backed N64 struct the decomp touches. MSVC (LLP64) keeps the original SDK definitions.

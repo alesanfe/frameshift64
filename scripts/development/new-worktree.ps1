@@ -108,20 +108,21 @@ foreach ($sm in 'libultraship', 'torch', 'decomp') {
         continue
     }
 
-    $pinnedSha = (git -C $WtDir rev-parse "HEAD:$sm").Trim()
+    $pinnedSha = (git -C $WtDir rev-parse "HEAD:$smPath").Trim()
     # Prefer the main tree's configured origin (often SSH) over .gitmodules URL
     # (often HTTPS) so the worktree inherits whatever auth method the user has
     # set up for push.
-    $originUrl = & git -C (Join-Path $Root $sm) remote get-url origin 2>$null
+    $originUrl = & git -C (Join-Path $Root $smPath) remote get-url origin 2>$null
     if (-not $originUrl) {
         $originUrl = (git -C $Root config -f .gitmodules "submodule.$sm.url").Trim()
     }
     $smBranch = & git -C $Root config -f .gitmodules "submodule.$sm.branch" 2>$null
 
-    Step "Submodule $sm → $pinnedSha (origin: $originUrl)"
-    $smTarget = Join-Path $WtDir $sm
+    Step "Submodule $smPath → $pinnedSha (origin: $originUrl)"
+    $smTarget = Join-Path $WtDir $smPath
+    New-Item -ItemType Directory -Force -Path (Split-Path $smTarget) | Out-Null
     if (Test-Path $smTarget) { Remove-Item -Recurse -Force $smTarget }
-    git clone --no-local --quiet (Join-Path $Root $sm) $smTarget
+    git clone --no-local --quiet (Join-Path $Root $smPath) $smTarget
     if ($LASTEXITCODE -ne 0) { Fail "git clone $sm failed" }
 
     git -C $smTarget remote set-url origin $originUrl
@@ -145,28 +146,28 @@ foreach ($sm in 'libultraship', 'torch', 'decomp') {
 # ── 4. Regenerate codegen ──
 # reloc_data.h and credits .encoded/.metadata are gitignored and must be
 # rebuilt on every fresh checkout before CMake runs. The extraction yamls
-# (assets/configuration/extraction/<ver>/reloc_*.yml) are committed but
+# (assets/game/<ver>/reloc_*.yml) are committed but
 # regenerated too, so worktrees stay consistent with the main tree.
 $Python = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' }
           elseif (Get-Command python  -ErrorAction SilentlyContinue) { 'python' }
           else { Fail "python3 (or python) not found in PATH" }
 
 Step "Regenerating reloc codegen"
-& $Python (Join-Path $WtDir "tools\codegen\generate_reloc_stubs.py")
+& $Python (Join-Path $WtDir "tools\code-generation\generate_reloc_stubs.py")
 Push-Location $WtDir
 try {
-    & $Python "tools\codegen\generate_yamls.py"
-    & $Python "tools\codegen\generate_reloc_table.py"
+    & $Python "tools\code-generation\generate_yamls.py"
+    & $Python "tools\code-generation\generate_reloc_table.py"
 } finally { Pop-Location }
 
 Step "Encoding credits text"
-Push-Location (Join-Path $WtDir "decomp\src\credits")
+Push-Location (Join-Path $WtDir "components\decomp\src\credits")
 try {
     foreach ($f in 'staff.credits.us.txt', 'titles.credits.us.txt') {
-        & $Python (Join-Path $WtDir "tools\asset-pipeline\creditsTextConverter.py") $f | Out-Null
+        & $Python (Join-Path $WtDir "tools\assets\pipeline\creditsTextConverter.py") $f | Out-Null
     }
     foreach ($f in 'info.credits.us.txt', 'companies.credits.us.txt') {
-        & $Python (Join-Path $WtDir "tools\asset-pipeline\creditsTextConverter.py") -paragraphFont $f | Out-Null
+        & $Python (Join-Path $WtDir "tools\assets\pipeline\creditsTextConverter.py") -paragraphFont $f | Out-Null
     }
 } finally { Pop-Location }
 
@@ -187,14 +188,19 @@ Step "Copying extracted assets (BattleShip.o2r / f3d.o2r)"
 $linkedAny = $false
 foreach ($asset in 'BattleShip.o2r', 'BattleShip-JP.o2r', 'f3d.o2r') {
     $src = $null
-    foreach ($cand in (Join-Path $Root "build\$asset"), (Join-Path $Root $asset)) {
-        if (Test-Path $cand) { $src = $cand; break }
+    # out\build\<preset>\ is the main-tree convention; build\ + repo root
+    # cover legacy/manual layouts.
+    $cands = @((Get-ChildItem (Join-Path $Root 'out\build') -Directory -ErrorAction SilentlyContinue |
+                ForEach-Object { Join-Path $_.FullName $asset }),
+               (Join-Path $Root "build\$asset"), (Join-Path $Root $asset))
+    foreach ($cand in $cands) {
+        if ($cand -and (Test-Path $cand)) { $src = $cand; break }
     }
     if ($src) {
         Copy-Item -Path $src -Destination (Join-Path $WtDir "build\$asset") -Force
         $linkedAny = $true
     } else {
-        Write-Host ("  warn: {0} not found in main tree ({1}\build or {1}) - extract it there first" -f $asset, $Root) -ForegroundColor Yellow
+        Write-Host ("  warn: {0} not found in main tree ({1}\out\build\* or {1}\build) - extract it there first" -f $asset, $Root) -ForegroundColor Yellow
     }
 }
 if (-not $linkedAny) {

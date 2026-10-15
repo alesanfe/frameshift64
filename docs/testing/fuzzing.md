@@ -9,10 +9,10 @@
 
 ## Binary-level parser fuzzing (TD-010)
 
-`tools/fuzz/run_parser_fuzz.py` mutates seed inputs and feeds each one
+`tools/analysis/fuzz/run_parser_fuzz.py` mutates seed inputs and feeds each one
 through the real parser in a test-hooks build:
 
-    python tools/fuzz/run_parser_fuzz.py --parser manifest \
+    python tools/analysis/fuzz/run_parser_fuzz.py --parser manifest \
         --binary out/build/<preset>/BattleShip --iters 2000 --seed 1
 
 | `--parser` | input → parser under test |

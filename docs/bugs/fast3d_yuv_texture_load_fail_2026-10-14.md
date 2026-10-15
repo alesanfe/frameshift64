@@ -1,7 +1,7 @@
 # Fast3D YUV Texture Silent Load Fail
 
 **Status:** FIXED — 2026-10-14
-**Files:** `libultraship/src/fast/interpreter.cpp` (`ImportTextureYuv`, `ImportTexture`), `libultraship/include/fast/interpreter.h`
+**Files:** `components/libultraship/src/fast/interpreter.cpp` (`ImportTextureYuv`, `ImportTexture`), `components/libultraship/include/fast/interpreter.h`
 **Source:** `docs/investigations/audit_fast3d_gaps_2026-04-28.md` item 1 (HIGH)
 
 ## Symptom
@@ -10,7 +10,7 @@ Any sprite whose `Bitmap` data is `G_IM_FMT_YUV` never uploaded a texture:
 `ImportTexture` hit `case G_IM_FMT_YUV: SPDLOG_ERROR("YUV Textures not supported")`
 and returned, so the draw sampled whatever was previously bound (stale texture,
 black quad, or nothing). `bmfmt` arrives from ROM sprite assets, not C code —
-no grep hits for the format in `decomp/src/` — so the failure surface was
+no grep hits for the format in `components/decomp/src/` — so the failure surface was
 content-driven and only visible as misrendered sprites (wallpapers, menu
 imagery, and any `SP_FASTCOPY` YUV bitmap).
 
@@ -20,7 +20,7 @@ Upstream Fast3D never implemented the YUV importer. The correct fix is *not*
 a shader-side `YUV2RGB` combiner: on hardware the Texture Filter converts
 YUV→RGB during sampling, so by the time the Color Combiner runs, `TEXEL0` is
 already RGB. SSB64 confirms this — the sprite path
-(`decomp/src/lb/lbcommon.c:2881+`) selects `G_CC_DECALRGBA` for
+(`components/decomp/src/lb/lbcommon.c:2881+`) selects `G_CC_DECALRGBA` for
 `bmfmt == G_IM_FMT_YUV` (the `default:` case) and never emits
 `gDPSetConvert`. The `G_CC_1CYUV2RGB`/`G_CC_YUV2RGB` macros exist in `gbi.h`
 but have no SSB64 call sites.

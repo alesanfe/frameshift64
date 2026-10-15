@@ -28,7 +28,6 @@ import os
 import struct
 import sys
 
-
 # Resample table copied verbatim from src/resources/audio/mixer.c (64×4 s16, hex).
 RESAMPLE_TABLE = [
     [0x0c39, 0x66ad, 0x0d46, 0xffdf], [0x0b39, 0x6696, 0x0e5f, 0xffd8],
@@ -95,7 +94,6 @@ def resample(flags: int, pitch: int, nbytes: int, in_off: int, out_off: int,
         struct.pack_into('<h', dmem, byte_off, v & 0xffff)
 
     in_byte_off  = in_off
-    out_byte_off = out_off
     in_initial_byte = in_byte_off
 
     tmp = [0] * 16
@@ -195,7 +193,7 @@ def main():
     print(f"   nbytes={d['nbytes']}  in=0x{d['in_off']:04x}  out=0x{d['out_off']:04x}")
     print(f"   prior_state={d['prior_state']}")
     # Print input samples around in_off
-    in_samples = list(struct.unpack_from(f"<32h", d['dmem'], d['in_off']))
+    in_samples = list(struct.unpack_from("<32h", d['dmem'], d['in_off']))
     print(f"   input samples [{d['in_off']:#06x}..+64]: {in_samples}")
 
     ref_out, ref_state, _ = resample(
@@ -210,7 +208,7 @@ def main():
             head = f.read(4)
             n_samples = struct.unpack("<i", head)[0]
             port_out = list(struct.unpack(f"<{n_samples}h", f.read(n_samples * 2)))
-            port_state = list(struct.unpack(f"<16h", f.read(32)))
+            port_state = list(struct.unpack("<16h", f.read(32)))
 
         print(f"\n== Port output {output_path}: {n_samples} samples")
         print(f"   first 16: {port_out[:16]}")
@@ -224,13 +222,13 @@ def main():
             print(f"\n[DIFF] {len(diffs)} divergences in first {n} samples. First 8:")
             for i, r, p in diffs[:8]:
                 print(f"   sample {i:5d}: ref={r:+6d}  port={p:+6d}  delta={p-r:+6d}")
-            print(f"\n   Side-by-side first 16 samples:")
+            print("\n   Side-by-side first 16 samples:")
             for i in range(min(16, n)):
                 marker = "" if ref_out[i] == port_out[i] else "  ←"
                 print(f"     [{i:3d}] ref={ref_out[i]:+6d}  port={port_out[i]:+6d}{marker}")
 
         if ref_state != port_state:
-            print(f"\n[DIFF] final state mismatch:")
+            print("\n[DIFF] final state mismatch:")
             for i, (r, p) in enumerate(zip(ref_state, port_state)):
                 if r != p:
                     print(f"     state[{i}]: ref={r}  port={p}")

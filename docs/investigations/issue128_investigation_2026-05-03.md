@@ -30,7 +30,7 @@ Four converging leads. Listed in order of confidence.
 
 ### Lead 1 — `sPortPackedDisplayListCache` missing per-load eviction (HIGH)
 
-**Location:** `libultraship/src/fast/interpreter.cpp:91`, populated by
+**Location:** `components/libultraship/src/fast/interpreter.cpp:91`, populated by
 `portNormalizeDisplayListPointer` at line 229.
 
 **Key:** raw heap `const void*` of the source packed DL.
@@ -39,7 +39,7 @@ Four converging leads. Listed in order of confidence.
 `fileBase`/`fileSize` of the originating reloc file *at widening time*.
 
 **Bug:** evicted only by `portResetPackedDisplayListCache()`, called from a
-single site — `lbRelocInitSetup` (`src/integration/decomp/lbreloc_bridge.cpp:885`,
+single site — `lbRelocInitSetup` (`src/game/engine/decomp/lbreloc_bridge.cpp:885`,
 full scene reset). NOT evicted by `lbRelocLoadAndRelocFile`
 (`lbreloc_bridge.cpp:335-389`), even though peer caches at the same call
 site (`portEvictStructFixupsInRange`, `portTextureCacheDeleteRange`,
@@ -68,7 +68,7 @@ in the new range. Requires libultraship submodule bump.
 
 **The decisive fingerprint:** `addr=0x01000010` is N64 segment 1 + offset
 0x10. There is **exactly one** `gSPSegment(..., 0x1, ...)` call in the
-entire decomp tree — `decomp/src/lb/lbtransition.c:221`, binding segment 1
+entire decomp tree — `components/decomp/src/lb/lbtransition.c:221`, binding segment 1
 to `sLBTransitionPhotoHeap`.
 
 **Only consumer of `lbTransitionMakeTransition`:** `mnvsresults.c:3388`
@@ -86,7 +86,7 @@ walk dereferences transition-file Gfx whose intra-file w1 resolves through
 seg-1 — which was never re-bound this frame.
 
 **Compounding factor:** `Interpreter::SpReset`
-(`libultraship/src/fast/interpreter.cpp:5755-5770`) does **not** clear
+(`components/libultraship/src/fast/interpreter.cpp:5755-5770`) does **not** clear
 `mSegmentPointers[]` between frames. A segment pointer written in frame N
 survives unless overwritten — and segment 1 is only ever written by
 `lbtransition.c:221`, so once the transition stops running, segment 1 is
@@ -113,11 +113,11 @@ log line in the same frame, this is confirmed.
 `figatree_heap`. The 1P-mode siblings have the same struct layout and
 identical lifecycle but were not fixed:
 
-- `decomp/src/mn/mnplayers/mnplayers1pgame.c:3436-3473`
+- `components/decomp/src/mn/mnplayers/mnplayers1pgame.c:3436-3473`
   (`mnPlayers1PGameInitPlayer`) — clears only `flash`, `p_sfx`, `player`.
-- `decomp/src/mn/mnplayers/mnplayers1ptraining.c:3034-3071`
+- `components/decomp/src/mn/mnplayers/mnplayers1ptraining.c:3034-3071`
   (`mnPlayers1PTrainingInitPlayer`) — same gap.
-- `decomp/src/mn/mnplayers/mnplayers1pbonus.c:2787-2800`
+- `components/decomp/src/mn/mnplayers/mnplayers1pbonus.c:2787-2800`
   (`mnPlayers1PBonusInitPlayer`) — same gap. **The reporter's repro hit
   bonus stages.**
 
@@ -132,7 +132,7 @@ freed memory. Matches the G_VTX fault signature.
 
 **Architectural finding** that explains why the existing `scmanager.c:954-958`
 clear is insufficient. `sc1PManagerUpdateScene`
-(`decomp/src/sc/sc1pmode/sc1pmanager.c:372,384,391,414,477,489,496,504,522,529`)
+(`components/decomp/src/sc/sc1pmode/sc1pmanager.c:372,384,391,414,477,489,496,504,522,529`)
 calls `XxxStartScene()` functions **directly**, never returning to
 `scManagerRunLoop` between transitions. This means
 `gSCManager1PGameBattleState.players[*].fighter_gobj` is **not nulled**

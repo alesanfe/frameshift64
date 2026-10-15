@@ -5,9 +5,9 @@ Status: implemented. SyncTest passes 7-frame rollback on all stages. Online play
 This builds on `docs/netplay/netplay_architecture.md` (input boundary, debug P2P) and `docs/development/state_trace.md` (the verification oracle).
 
 Code:
-- `decomp/src/sys/netrollback.{c,h}`
-- `src/netplay/rollback/netrollback_seg.h`
-- `src/diagnostics/port_symbolize.cpp`
+- `components/decomp/src/sys/netrollback.{c,h}`
+- `src/networking/netplay/rollback/netrollback_seg.h`
+- `src/core/observability/port_symbolize.cpp`
 - `scripts/development/rollback_synctest.ps1`
 
 ## Tick boundary
@@ -24,7 +24,7 @@ VS runs `syTaskmanRunTask` → `syTaskmanCommonTaskUpdate`:
 
 | Region | How |
 |---|---|
-| Gameplay-module globals | MSVC `/FI src/netplay/rollback/netrollback_seg.h` puts every global of `ef ft gm gr if it mp sc wp` and `lb/lbcommon lb/lbparticle sys/objanim sys/objhelper sys/objman sys/objscript sys/utils` into the `.ssbd`/`.ssbb` sections. Markers in `netrollback.c` bound them, and save/restore is one `memcpy` each (about 280 KB of data plus 35 KB of BSS). The list lives in `CMakeLists.txt` as `SSB64_ROLLBACK_SEG_SOURCES`. |
+| Gameplay-module globals | MSVC `/FI src/networking/netplay/rollback/netrollback_seg.h` puts every global of `ef ft gm gr if it mp sc wp` and `lb/lbcommon lb/lbparticle sys/objanim sys/objhelper sys/objman sys/objscript sys/utils` into the `.ssbd`/`.ssbb` sections. Markers in `netrollback.c` bound them, and save/restore is one `memcpy` each (about 280 KB of data plus 35 KB of BSS). The list lives in `CMakeLists.txt` as `SSB64_ROLLBACK_SEG_SOURCES`. |
 | Scene arena | `[watermark, gSYTaskmanGeneralHeap.ptr)`. The watermark is taken at the top of `scVSBattleStartBattle`/`scVSBattleStartSuddenDeath`, so the render buffers below it are excluded. The allocator struct is saved too. This came to about 1.2 MB per snapshot in testing. |
 | Excluded file ranges | Every reloc file copied into the arena is reported via `syNetRollbackNoteFileLoad` and skipped. Gameplay never writes file data. The port's lazy endian fixups do, and those are tracked in host-side "already fixed" sets that are not rolled back, so restoring file bytes would desync the two. |
 | Fighter figatree heaps | Not excluded: status changes reload them, so their bytes are gameplay state. Their fixup verdicts live in per-range bitmaps in `port_aobj_fixup.cpp`, which are snapshotted alongside (`port_aobj_fixup_snapshot_*`). |

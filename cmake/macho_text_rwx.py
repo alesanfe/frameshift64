@@ -79,9 +79,9 @@ def main(path):
     if any_changed:
         with open(path, "wb") as f:
             f.write(buf)
-        print("macho_text_rwx: __TEXT maxprot -> rwx in %s" % path)
+        print(f"macho_text_rwx: __TEXT maxprot -> rwx in {path}")
     else:
-        print("macho_text_rwx: __TEXT maxprot already rwx in %s (noop)" % path)
+        print(f"macho_text_rwx: __TEXT maxprot already rwx in {path} (noop)")
 
 
 if __name__ == "__main__":

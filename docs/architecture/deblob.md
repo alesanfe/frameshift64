@@ -53,11 +53,11 @@ re-derive structure from raw bytes.
 ```
 L0  ROM bytes                inspector: tools/debugging/reloc_extract
 L1  reloc parse              table entry + decompressed bundle + chains
-      tools/codegen/ssb64_reloc_lib.py == torch RelocFactory semantics (pinned by I4)
-L2  MANIFEST (canonical IR)  assets/configuration/extraction/<v>/reloc_fighters_main/manifests/<Symbol>.json
+      tools/code-generation/ssb64_reloc_lib.py == torch RelocFactory semantics (pinned by I4)
+L2  MANIFEST (canonical IR)  assets/game/<v>/reloc_fighters_main/manifests/<Symbol>.json
 L3  derived views (same tool, same parse — cannot drift; I10):
       child yaml <Symbol>.yml (torch input)
-      src/integration/decomp/ssb64_reloc_rebuild.<v>.cpp (runtime spec)
+      src/game/engine/decomp/ssb64_reloc_rebuild.<v>.cpp (runtime spec)
 L4  o2r archive              inspector: unzip -l build/extracted/BattleShip.o2r
 L5  runtime synthesis        inspector: SSB64_SYNTH_INSPECT=<id> → JSON
 L6  game heap                existing token/byteswap machinery, unchanged
@@ -127,8 +127,8 @@ of these by ID, in the format
 
 | Intent | Command |
 |---|---|
-| Regenerate manifests + child yamls + specs | `python tools/codegen/generate_fighter_slices.py --version {us,jp}` |
-| Validate one bundle without writing | `python tools/codegen/generate_fighter_slices.py --only <Symbol> --check` |
+| Regenerate manifests + child yamls + specs | `python tools/code-generation/generate_fighter_slices.py --version {us,jp}` |
+| Validate one bundle without writing | `python tools/code-generation/generate_fighter_slices.py --only <Symbol> --check` |
 | Extract a bundle's raw bytes from ROM | `tools/debugging/reloc_extract/reloc_extract.py extract <rom> <file_id> out.bin` |
 | Full vanilla byte-exactness gate | `cmake --build build --target synth_verify` (ROM-independent: spec CRCs are the ROM-anchored truth via generator I4; results in `debug_traces/synth_verify_results.json`) |
 | Dump a synthesized bundle's bytes | `SSB64_DUMP_SYNTH_RELOC=1` (all) or `SSB64_DUMP_SYNTH_RELOC_FILE_ID=<id>` |
@@ -138,13 +138,13 @@ of these by ID, in the format
 | Build a mod test artifact | `python tools/debugging/deblob_modkit.py grow-dl LinkModel dLinkModel_Gfx_0x1D88` |
 
 Deblobbing another category later: add it to
-`tools/codegen/deblob_categories.py::DEBLOBBED_CATEGORIES`, regenerate, done — no
+`tools/code-generation/deblob_categories.py::DEBLOBBED_CATEGORIES`, regenerate, done — no
 runtime, spec-schema, or CMake edits.
 
 ## Replacing a character asset (mod quickstart)
 
 1. `unzip -l BattleShip.o2r | grep <Symbol>/` lists the slices; the
-   manifest (`assets/configuration/extraction/us/reloc_fighters_main/manifests/<Symbol>.json`)
+   manifest (`assets/game/us/reloc_fighters_main/manifests/<Symbol>.json`)
    describes each one (kind, vanilla offset/size, what references it).
 2. Author a replacement typed resource. DisplayList and Vertex accept both
    Torch binary and Fast64 XML. Named DL, vertex and texture references may
@@ -193,7 +193,7 @@ LinkMain/LinkModel template (multiset-validated):
 **Known follow-up**: sprite-region textures (batch-loaded via Sprite
 structs, e.g. LinkModel 0xB1B0–0xC6xx shield/sword art) stay BLOB — typing
 them needs a Sprite-struct walker (layout documented in
-`src/integration/decomp/lbreloc_byteswap.cpp` `portFixupSprite`). Recorded per-file in
+`src/game/engine/decomp/lbreloc_byteswap.cpp` `portFixupSprite`). Recorded per-file in
 the manifest's `demotions` report.
 
 ## Failure playbook
@@ -209,7 +209,7 @@ the manifest's `demotions` report.
 
 ## Spec schema (generator ↔ runtime contract)
 
-Defined in `src/integration/decomp/ssb64_reloc_rebuild.h`; data in generated
+Defined in `src/game/engine/decomp/ssb64_reloc_rebuild.h`; data in generated
 `ssb64_reloc_rebuild.<v>.cpp` (file_id-sorted, binary-searched). All
 offsets slice-relative where possible, self-validating at generation:
 

@@ -20,7 +20,7 @@ install and re-extracting assets.
 ## Root cause
 
 `ExtractAssetsIfNeeded` only checked `fs::exists(o2r)`. A `BattleShip.o2r`
-extracted by an older torch/yaml pipeline is format-incompatible with a
+extracted by an older components/game-runtime/yaml pipeline is format-incompatible with a
 newer binary (the torch SHA ⇒ wipe-and-re-extract coupling has been a known
 dev-side rule for weeks — see `project_torch_reloc_walker_dead` memory),
 but end users had no signal: the game loaded the stale archive and walked
@@ -29,7 +29,7 @@ mismatched struct layouts as garbage.
 ## Fix
 
 - CMake computes `SSB64_ASSET_RECIPE_HASH` at configure time: SHA1 over the
-  torch submodule HEAD + `config.yml` + every `assets/configuration/extraction/<region>/*.yml`.
+  torch submodule HEAD + `config.yml` + every `assets/game/<region>/*.yml`.
 - After a successful extraction, `first_run.cpp` writes the hash to a
   `<o2r>.recipe` sidecar.
 - At boot, an existing archive whose sidecar is missing or mismatched

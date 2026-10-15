@@ -1,5 +1,5 @@
-# EditorConfig — applies to project code; submodules (decomp/, libultraship/,
-# torch/) keep their own conventions and are not reformatted.
+# EditorConfig — applies to project code; submodules (components/decomp/, components/libultraship/,
+# components/game-runtime/) keep their own conventions and are not reformatted.
 root = true
 
 [*]

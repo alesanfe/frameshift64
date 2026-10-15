@@ -46,7 +46,7 @@ swap granularity than 4b/8b/16b, not just a different on/off flag.**
 ## Root cause
 
 Sprite `LOAD_BLOCK` sequences in `lbCommonDrawSObjBitmap`
-(`decomp/src/lb/lbcommon.c:2570-2680`) differ between ≤16bpp and 32bpp:
+(`components/decomp/src/lb/lbcommon.c:2570-2680`) differ between ≤16bpp and 32bpp:
 
 | bpp    | LoadBlock size                              | SetTile `line`                              | TMEM layout |
 |--------|---------------------------------------------|---------------------------------------------|-------------|
@@ -63,8 +63,8 @@ row to defeat bank conflicts. At DRAM level that becomes a byte-address XOR:
   two 8-byte halves of each 16-byte group (= 2 RGBA32 pixels with the next
   2) on odd rows.
 
-`G_IM_SIZ_32b_LINE_BYTES = 2` (not 4, see decomp/include/PR/gbi.h:455`) and the
-compensating `line_size *= 2` at `libultraship/src/fast/interpreter.cpp:2149-
+`G_IM_SIZ_32b_LINE_BYTES = 2` (not 4, see components/decomp/include/PR/gbi.h:455`) and the
+compensating `line_size *= 2` at `components/libultraship/src/fast/interpreter.cpp:2149-
 2151` both corroborate this bank-split layout — the tile's line stride is
 encoded at half the real DRAM stride precisely because the encoding is in
 low-bank 2-byte words.
@@ -98,7 +98,7 @@ artifact.
 ## Fix
 
 Extended the existing sprite deswizzle in `portFixupSpriteBitmapData`
-(`src/integration/decomp/lbreloc_byteswap.cpp`) to pick `group_size` based on bpp:
+(`src/game/engine/decomp/lbreloc_byteswap.cpp`) to pick `group_size` based on bpp:
 
 ```cpp
 size_t group_size = (bpp == 32) ? 16 : 8;
@@ -112,7 +112,7 @@ deswizzle).
 
 ## Files
 
-- `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`, extended
+- `src/game/engine/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData`, extended
   deswizzle for bpp=32.
 - `docs/investigations/smash_title_32bpp_sprite.md` — superseded by this writeup.
 - `docs/investigations/sprite_broken_textures_handoff_2026-04-19.md` — superseded by this

@@ -47,7 +47,7 @@ particle bank pointers (cf. `docs/bugs/segment_0e_gdl_*`,
 ## Issue B — JP attract/intro music silent — FIXED 2026-05-18 (audible confirm pending)
 
 **Root cause:** PORT audio settings-update race in
-`decomp/src/sc/scmanager.c` `scManagerRunLoop`. The `#ifdef PORT` branch
+`components/decomp/src/sc/scmanager.c` `scManagerRunLoop`. The `#ifdef PORT` branch
 skipped the N64 `#else` spin-waits (old comment: "audio is stubbed on
 PC" — long obsolete). The audio thread's settings-update restart
 (`audio.c`: `n_alClose` → `portAudioLoadAssets` →
@@ -175,10 +175,10 @@ paths.
 ### (dead reasoning) RULED OUT — JP reloc-name wart is cosmetic, NOT this bug
 
 There is a real JP-only naming wart (recorded here so it is not
-re-chased as the cause): `tools/codegen/generate_yamls.py` names non-header
+re-chased as the cause): `tools/code-generation/generate_yamls.py` names non-header
 files via **hardcoded US ordinals** (`SUBMOTION_NAMES` 357–498,
 `MAIN_MOTION_RANGES` 499–2131, `SUPPLEMENTAL_NAMES`). JP file IDs shift
-(US 2132 vs JP 2107). So in `assets/configuration/extraction/jp` + `RelocFileTable.jp.cpp`, JP id
+(US 2132 vs JP 2107). So in `assets/game/jp` + `RelocFileTable.jp.cpp`, JP id
 332 → `reloc_misc/file_0332` (placeholder) and the name
 `reloc_submotions/FTMarioSubMotionAppearR` is parked at id 357 (a
 different JP file). 25 such misplaced/duplicated entries (== 2132−2107).

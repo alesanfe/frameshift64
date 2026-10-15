@@ -35,7 +35,7 @@ Two compounding bugs in our port:
 
 ### Bug 1 — `chain_fixup_settimg` only fixes `count*2` rounded down to a u32 word
 
-`src/integration/decomp/lbreloc_byteswap.cpp:chain_fixup_settimg` walks the reloc chain at
+`src/game/engine/decomp/lbreloc_byteswap.cpp:chain_fixup_settimg` walks the reloc chain at
 file-load time and BSWAPs the bytes a CI palette LOADTLUT will sample. For
 `count=3` it computed `tex_bytes = (3*2 + 3) & ~3 = 8`, fixing 2 words. That's
 correct on its own. But the **runtime** fixup used by `GfxDpLoadTlut` had its
@@ -52,7 +52,7 @@ fixed at runtime even with the round-up applied.
 
 ### Bug 2 — `GfxDpLoadTlut` did exact `memcpy(byteCount)` without DMA alignment
 
-`libultraship/src/fast/interpreter.cpp:GfxDpLoadTlut` copied exactly
+`components/libultraship/src/fast/interpreter.cpp:GfxDpLoadTlut` copied exactly
 `byteCount = entryCount * 2` bytes into `palette_staging`. For Mario's
 count=3 (6 bytes), that left `palette_staging[0][6..7]` (= pal[3]) holding
 whatever the *previous* LOADTLUT call had put there — typically Mario's
@@ -66,18 +66,18 @@ palette before the arrow's count=3 fired.
 
 Three coordinated changes:
 
-1. **`src/integration/decomp/lbreloc_byteswap.cpp:chain_fixup_settimg`** — also record
+1. **`src/game/engine/decomp/lbreloc_byteswap.cpp:chain_fixup_settimg`** — also record
    per-word entries in `sTexFixupWords` and the texture extent in
    `sTexFixupExtent[target]`. This lets the runtime fixup's early-skip
    correctly recognize chain-fixed targets, fall through to the per-word loop,
    and BSWAP only the words chain didn't cover.
 
-2. **`src/integration/decomp/lbreloc_byteswap.cpp:portRelocFixupTextureAtRuntime`** —
+2. **`src/game/engine/decomp/lbreloc_byteswap.cpp:portRelocFixupTextureAtRuntime`** —
    round `num_bytes` UP to a 4-byte boundary instead of down. A count=3
    LOADTLUT's 6-byte `num_bytes` becomes 8, so word 1 (containing pal[2..3])
    gets fixed and the outline reads as black.
 
-3. **`libultraship/src/fast/interpreter.cpp:GfxDpLoadTlut`** — round
+3. **`components/libultraship/src/fast/interpreter.cpp:GfxDpLoadTlut`** — round
    `byteCount` UP to an 8-byte boundary before the memcpy. This matches N64
    RDP DMA alignment: count=3's 6-byte transfer expands to 8 bytes, loading
    pal[3] from the source data instead of inheriting it from a prior load.
@@ -116,7 +116,7 @@ Post-fix:
 ## Investigation method
 
 The decisive step was a `SSB64_TLUT_DEBUG=1`-gated dumper (in
-`libultraship/src/fast/interpreter.cpp`) that wrote each `ImportTextureCi4`'s
+`components/libultraship/src/fast/interpreter.cpp`) that wrote each `ImportTextureCi4`'s
 post-decode RGBA buffer as a TGA AND logged the actual 32-byte palette block
 the GPU was sampling at draw time. The TGA showed the arrow visually (pink
 outline + magenta interior); the palette dump showed it didn't match any

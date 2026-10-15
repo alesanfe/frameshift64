@@ -25,7 +25,7 @@ clip), one corrupted (natural full boot) — show the **same file at the same of
 
 So the file loaded and relocated correctly, and was then re-byte-swapped in place
 afterwards. The only code that BSWAP32s reloc-file memory post-load is
-**`portRelocFixupTextureAtRuntime`** (`src/integration/decomp/lbreloc_byteswap.cpp`) — the lazy
+**`portRelocFixupTextureAtRuntime`** (`src/game/engine/decomp/lbreloc_byteswap.cpp`) — the lazy
 texel-order fixup invoked from the interpreter's `GfxDpLoadBlock`/`LoadTile`/`LoadTLUT`
 on the current SETTIMG address. Its only gate was "is the address inside a reloc file".
 A single garbage/stale SETTIMG operand pointing into file data (seeded by whatever stale
@@ -51,7 +51,7 @@ corruption, not temporal UAF.
 
 ## Fixes
 
-1. **Chain-slot clamp on the runtime texture fixup** (`src/integration/decomp/lbreloc_byteswap.{h,cpp}`,
+1. **Chain-slot clamp on the runtime texture fixup** (`src/game/engine/decomp/lbreloc_byteswap.{h,cpp}`,
    `lbreloc_bridge.cpp`): both reloc chain walks now record every tokenized slot address
    (`portRelocNoteChainSlot`, evicted with the existing range/reset evictors). The
    corrupting requests turned out to be *legitimate* texture draws whose N64 fixed-size
@@ -80,7 +80,7 @@ corruption, not temporal UAF.
    up front. (b) also closes the pre-existing sibling hole where corpse *fixup memos*
    made the runtime swap skip words of freshly-loaded texel data.
 
-2. **Guards un-disabled on Linux** (`libultraship/src/fast/interpreter.cpp`,
+2. **Guards un-disabled on Linux** (`components/libultraship/src/fast/interpreter.cpp`,
    `gfxPointerInLoadedModule`): the SETTIMG/G_VTX low-address guards had an exception for
    "pointer inside a loaded module" (TCC mod DLLs). The port links non-PIE on Linux, so the
    main executable itself occupies the low VA range and `dladdr` resolved every stale
@@ -96,7 +96,7 @@ corruption, not temporal UAF.
    logs `TextureCache stale-content hit healed`. Default ON; `SSB64_TEXCACHE_VERIFY=0`
    disables. Verified live: healed real aliased hits (48x48 IA8) during attract runs.
 
-4. **Particle bank lockstep eviction** (`src/integration/decomp/particle_bank_bridge.cpp`): the
+4. **Particle bank lockstep eviction** (`src/game/engine/decomp/particle_bank_bridge.cpp`): the
    per-bank working buffers were freed and re-allocated with no cache eviction — not in
    the scene arena, not routed through `lbRelocLoadAndRelocFile`, so none of the three
    range evictors ever ran on them. glibc hands the freed chunk back to the same-size
@@ -104,8 +104,8 @@ corruption, not temporal UAF.
    texture/packed-DL/struct-fixup caches over both buffers before the free — the same
    contract the reloc loader honors.
 
-5. **OOB fighter-scale seed + stale effect-file scrub** (`decomp/src/ft/ftport.c`,
-   `decomp/src/ef/efmanager.c`, `decomp/src/sys/taskman.c`):
+5. **OOB fighter-scale seed + stale effect-file scrub** (`components/decomp/src/ft/ftport.c`,
+   `components/decomp/src/ef/efmanager.c`, `components/decomp/src/sys/taskman.c`):
    `port_fighter_seed_vanilla` read the 12-row `dSCSubsysFighterScales` for all 27 vanilla
    fkinds (caught by ASan at first boot; polygon/boss/metal rows got adjacent-global
    garbage — clamped to `nFTKindPlayableEnd`, 1.0 fallback). `gEFManagerFiles[0..2]` now
@@ -115,7 +115,7 @@ corruption, not temporal UAF.
 
 ## New diagnostic: `SSB64_SCENE_HEAP_FREE=1`
 
-`decomp/src/sys/taskman.c` (`syTaskmanStartTask`): env-gated sanitizer mode that
+`components/decomp/src/sys/taskman.c` (`syTaskmanStartTask`): env-gated sanitizer mode that
 free()s + malloc()s the 16 MiB scene arena per transition instead of recycling it. Under
 ASan, any stale cross-scene physical read becomes a heap-use-after-free report with full
 stacks. Zero cost when unset. Multiple clean full-cycle ASan runs with this mode prove

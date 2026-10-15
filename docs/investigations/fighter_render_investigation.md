@@ -10,7 +10,7 @@ Investigation into fighter rendering bugs in all intro scenes (Mario, Kirby, Sam
 
 ## 1. Pipeline summary
 
-### 1.1 Torch extraction (`torch/src/factories/ssb64/RelocFactory.cpp`)
+### 1.1 Torch extraction (`components/game-runtime/src/factories/ssb64/RelocFactory.cpp`)
 
 Fighters live in the reloc-file table; Torch treats every reloc entry as an opaque blob. `RelocFactory::parse` (lines 119-208):
 
@@ -21,7 +21,7 @@ Fighters live in the reloc-file table; Torch treats every reloc entry as an opaq
 
 **No fighter-specific handling.** Torch has zero knowledge of FTCommonPart, MObjSub, FTMotionDesc, figatree format — it's all a byte blob. Any interpretation is the port's job.
 
-There is **no** `assets/configuration/extraction/us/*fighter*.yml` — the fighter-common and fighter-main files are covered by the blanket reloc-table extraction driven by `config.yml → RELOC_FILE_COUNT` + `RelocFactory`. Torch's `.hash.yml` for fighters doesn't exist either.
+There is **no** `assets/game/us/*fighter*.yml` — the fighter-common and fighter-main files are covered by the blanket reloc-table extraction driven by `config.yml → RELOC_FILE_COUNT` + `RelocFactory`. Torch's `.hash.yml` for fighters doesn't exist either.
 
 Relevant reloc-table entries from `generated/src/us/RelocFileTable.us.cpp`:
 - `reloc_fighters_main/MarioMain` (file_id 203), `MarioMainMotion` (202), `MarioSpecial1` (204), …
@@ -31,7 +31,7 @@ Relevant reloc-table entries from `generated/src/us/RelocFileTable.us.cpp`:
 
 All share the same factory + binary layout.
 
-### 1.2 Archive → runtime load (`src/integration/decomp/lbreloc_bridge.cpp::lbRelocLoadAndRelocFile`)
+### 1.2 Archive → runtime load (`src/game/engine/decomp/lbreloc_bridge.cpp::lbRelocLoadAndRelocFile`)
 
 Lines 301-497, per-file pipeline:
 1. Resolve the `RelocFile` via LUS `ResourceManager::LoadResource(gRelocFileTable[file_id])`.
@@ -42,7 +42,7 @@ Lines 301-497, per-file pipeline:
 6. Walk the external reloc chain the same way but resolve against the cached `status_buffer` for the extern dependency file (load-on-demand if missing).
 7. **Figatree-only** postpass: `portRelocIsFighterFigatreeFile(file_id)` pattern-matches `reloc_animations/FT*` and `reloc_submotions/FT*` paths. If this is a figatree file, a bitmap of "which words got relocated" is recorded during chain walks, and then `portRelocFixupFighterFigatree` runs rotate16 on every non-reloc word in the whole file. Rationale: figatrees are streams of `AObjEvent16` (two 16-bit commands per u32 word), and pass1's blanket `BSWAP32` leaves the two u16s in swapped positions; rotate16 restores them. Reloc-chain slots are skipped because they already hold native-endian token u32s after the chain walk.
 
-### 1.3 Byte-swap passes (`src/integration/decomp/lbreloc_byteswap.cpp`)
+### 1.3 Byte-swap passes (`src/game/engine/decomp/lbreloc_byteswap.cpp`)
 
 Central function `portRelocByteSwapBlob` (lines 699-718):
 
@@ -55,14 +55,14 @@ Central function `portRelocByteSwapBlob` (lines 699-718):
 
 ### 1.4 Fighter resource layout
 
-The key structs (`decomp/src/ft/fttypes.h` / `decomp/src/sys/objtypes.h`):
+The key structs (`components/decomp/src/ft/fttypes.h` / `components/decomp/src/sys/objtypes.h`):
 
 - `FTCommonPart` — 16 bytes on both N64 and port. Layout: `{u32 dobjdesc, u32 p_mobjsubs, u32 p_costume_matanim_joints, u8 flags, 3 bytes padding}`. On the port, pointer fields are u32 reloc tokens and the `u8 pad[3]; u8 flags;` trailer is carefully placed so that after pass1 BSWAP32 of the last u32 word the flags byte ends up at struct offset 0x0F — matching where a LE struct reads it. `_Static_assert(sizeof(FTCommonPart) == 16)`.
 - `FTCommonPartContainer::commonparts[2]` — 32 bytes total, stride = 16 = matches N64.
 - `FTModelPart` — similar, 20 bytes, same pad-before-flags trick.
 - `FTAccessPart` — 16 bytes, no flags byte.
 - `FTModelPartContainer::modelparts_desc[]` — u32 token array on PORT.
-- `FTMotionDesc` — `{u32 anim_file_id, intptr_t offset, u32 anim_desc.word}`. **On PC this struct is 24 bytes** (u32 + 4 padding + intptr_t + u32 + 4 padding for 8-byte alignment), versus 12 on N64. This is safe **only** because every `FTMotionDesc` array is a compile-time C initializer inside `decomp/src/sc/scsubsys/scsubsys*.c` or `decomp/src/ft/ftdata.c` (not a reloc-file blob), so stride, layout, and indexing are all self-consistent per ABI. No code does byte-offset arithmetic into these arrays.
+- `FTMotionDesc` — `{u32 anim_file_id, intptr_t offset, u32 anim_desc.word}`. **On PC this struct is 24 bytes** (u32 + 4 padding + intptr_t + u32 + 4 padding for 8-byte alignment), versus 12 on N64. This is safe **only** because every `FTMotionDesc` array is a compile-time C initializer inside `components/decomp/src/sc/scsubsys/scsubsys*.c` or `components/decomp/src/ft/ftdata.c` (not a reloc-file blob), so stride, layout, and indexing are all self-consistent per ABI. No code does byte-offset arithmetic into these arrays.
 - `MObjSub` (objtypes.h:320, 0x78 bytes): contains `{u16 pad00, u8 fmt, u8 siz, u32 sprites-token, u16×4, s32, f32×6, u32 palettes-token, u16 flags, u8 block_fmt, u8 block_siz, u16 block_dxt, u16×3, f32×4, u32, SYColorPack primcolor, u8 prim_l, u8 prim_m, u8[2] pad, SYColorPack envcolor, blendcolor, light1color, light2color, s32×4}`. This struct is **heavily** u16/u8-packed and absolutely requires `portFixupMObjSub` to be readable post-pass1.
 - `SYColorPack` (ssb_types.h:97): union `{ struct { u8 r, g, b, a; }; u32 pack; }`. Post-pass1, `pack` read as u32 is numerically correct (BSWAP32 restores the same numeric value on LE); but `.s.r/g/b/a` reads bytes `[A, B, G, R]` from the wrong in-memory positions.
 
@@ -70,23 +70,23 @@ The key structs (`decomp/src/ft/fttypes.h` / `decomp/src/sys/objtypes.h`):
 
 Two distinct code paths create MObjs for a fighter:
 
-**Path A — `gcSetupCustomDObjsWithMObj` / `gcAddMObjAll`** (`decomp/src/sys/objanim.c` lines 2683-2770, 2772-2825):
+**Path A — `gcSetupCustomDObjsWithMObj` / `gcAddMObjAll`** (`components/decomp/src/sys/objanim.c` lines 2683-2770, 2772-2825):
 - Used by scene geometry (OpeningRoom background, boss pieces, items, weapons).
-- On PORT, loops `p_mobjsubs` as a u32 token array, resolves each token, calls **`portFixupMObjSub(mobjsub)`** then `gcAddMObjForDObj(dobj, mobjsub)`. The copy `mobj->sub = *mobjsub` at `decomp/src/sys/objman.c:1327` therefore captures a properly-fixed MObjSub.
+- On PORT, loops `p_mobjsubs` as a u32 token array, resolves each token, calls **`portFixupMObjSub(mobjsub)`** then `gcAddMObjForDObj(dobj, mobjsub)`. The copy `mobj->sub = *mobjsub` at `components/decomp/src/sys/objman.c:1327` therefore captures a properly-fixed MObjSub.
 
-**Path B — `lbCommonAddMObjForFighterPartsDObj`** (`decomp/src/lb/lbcommon.c` lines 1012-1095) — the **fighter** path:
-- Called from `lbCommonSetupFighterPartsDObjs` (same file, lines 1098-1207) and from `ftParamInitAllParts` / `ftParamSetModelPartID` / `ftParamResetModelPartAll` (`decomp/src/ft/ftparam.c` lines 787, 821, 893, 927, 1042, 1072, 1092).
+**Path B — `lbCommonAddMObjForFighterPartsDObj`** (`components/decomp/src/lb/lbcommon.c` lines 1012-1095) — the **fighter** path:
+- Called from `lbCommonSetupFighterPartsDObjs` (same file, lines 1098-1207) and from `ftParamInitAllParts` / `ftParamSetModelPartID` / `ftParamResetModelPartAll` (`components/decomp/src/ft/ftparam.c` lines 787, 821, 893, 927, 1042, 1072, 1092).
 - Calls `gcAddMObjForDObj(dobj, mobjsub)` **directly, without any `portFixupMObjSub` call**.
 
-Drawing: `ftDisplayMainDrawDefault` (decomp/src/ft/ftdisplaymain.c:756) → `gcDrawMObjForDObj(dobj, gSYTaskmanDLHeads)` (decomp/src/sys/objdisplay.c:1322) → reads `mobj->sub.flags`, `.fmt`, `.siz`, `.block_fmt`, `.block_siz`, `.block_dxt`, `.primcolor.s.r/g/b/a`, `.envcolor.s.r/g/b/a`, `.blendcolor.s.r/g/b/a`, `.light1color.pack`, `.light2color.pack`, `.prim_l`, `.prim_m` and emits `gDPSet*Color`, `gSPLightColor`, `gDPSetTextureImage`, `gDPLoadBlock`, etc. based on `flags & MOBJ_FLAG_*` bits.
+Drawing: `ftDisplayMainDrawDefault` (components/decomp/src/ft/ftdisplaymain.c:756) → `gcDrawMObjForDObj(dobj, gSYTaskmanDLHeads)` (components/decomp/src/sys/objdisplay.c:1322) → reads `mobj->sub.flags`, `.fmt`, `.siz`, `.block_fmt`, `.block_siz`, `.block_dxt`, `.primcolor.s.r/g/b/a`, `.envcolor.s.r/g/b/a`, `.blendcolor.s.r/g/b/a`, `.light1color.pack`, `.light2color.pack`, `.prim_l`, `.prim_m` and emits `gDPSet*Color`, `gSPLightColor`, `gDPSetTextureImage`, `gDPLoadBlock`, etc. based on `flags & MOBJ_FLAG_*` bits.
 
 ### 1.6 Color-combiner / matanim color updates
 
-`gcPlayMObjMatAnim` (decomp/src/sys/objanim.c:1382): runs per-frame for each mobj that has an attached matanim track. For color tracks (PrimColor, EnvColor, BlendColor, Light1Color, Light2Color) it overwrites the matching `mobj->sub.<field>` with a `SYColorPack color` local that it builds with BSWAP-independent per-channel bit shifts (commit `25edeb0`, with a fall-through initializer from `a7024aa`). So any material with a costume matanim gets its color field correctly rewritten every frame.
+`gcPlayMObjMatAnim` (components/decomp/src/sys/objanim.c:1382): runs per-frame for each mobj that has an attached matanim track. For color tracks (PrimColor, EnvColor, BlendColor, Light1Color, Light2Color) it overwrites the matching `mobj->sub.<field>` with a `SYColorPack color` local that it builds with BSWAP-independent per-channel bit shifts (commit `25edeb0`, with a fall-through initializer from `a7024aa`). So any material with a costume matanim gets its color field correctly rewritten every frame.
 
 **Note:** matanim only touches the color union fields (primcolor, envcolor, blendcolor, light1color, light2color) and the texture-animation fields (trau/scau/scrollu/etc.). It does **not** touch `flags`, `fmt`, `siz`, `block_fmt`, `block_siz`, `block_dxt`, `unk0C/0E/36/38/3A`, `prim_l`, or `prim_m`.
 
-`ftDisplayLightsDrawReflect` (decomp/src/ft/ftdisplaylights.c) emits a pre-fighter `gSPNumLights(1)` + `gSPLight(LIGHT_1, directional white)` + (port-only hack) `gSPLight(LIGHT_2, ambient 0x40)`. Per-material `gSPLightColor(LIGHT_1, mobj->sub.light1color.pack)` in `objdisplay.c:1444` is supposed to override this **only if** `flags & MOBJ_FLAG_LIGHT1` is set.
+`ftDisplayLightsDrawReflect` (components/decomp/src/ft/ftdisplaylights.c) emits a pre-fighter `gSPNumLights(1)` + `gSPLight(LIGHT_1, directional white)` + (port-only hack) `gSPLight(LIGHT_2, ambient 0x40)`. Per-material `gSPLightColor(LIGHT_1, mobj->sub.light1color.pack)` in `objdisplay.c:1444` is supposed to override this **only if** `flags & MOBJ_FLAG_LIGHT1` is set.
 
 ---
 
@@ -95,10 +95,10 @@ Drawing: `ftDisplayMainDrawDefault` (decomp/src/ft/ftdisplaymain.c:756) → `gcD
 ### 2.1 H1 (dominant): fighter MObjSubs are never run through `portFixupMObjSub`, so every byte-granular field in every fighter material is read from the wrong in-memory position
 
 **Evidence:**
-1. `portFixupMObjSub` is defined in `src/integration/decomp/lbreloc_byteswap.cpp:1404` and declared in `src/integration/decomp/lbreloc_byteswap.h:109`.
-2. Searching the entire codebase (`Grep portFixupMObjSub`) turns up exactly two call sites, both inside `decomp/src/sys/objanim.c` at lines 2734 and 2798 — the `gcSetupCustomDObjsWithMObj` and `gcAddMObjAll` PORT branches. These are the **scene-geometry** loaders (OpeningRoom background, items, stages).
-3. `decomp/src/lb/lbcommon.c` contains no reference to `portFixupMObjSub` at all. `lbCommonAddMObjForFighterPartsDObj` (line 1030), `lbCommonSetupCustomTreeDObjsWithMObj` (line 1263), and `lbCommonAddMObjForTreeDObjs` (line 1313, 1327) all call `gcAddMObjForDObj` on a resolved MObjSub pointer without fixing it first.
-4. `gcAddMObjForDObj` (decomp/src/sys/objman.c:1307) executes `mobj->sub = *mobjsub` at line 1327 — a plain struct copy that captures whatever byte ordering is in the source MObjSub at that moment.
+1. `portFixupMObjSub` is defined in `src/game/engine/decomp/lbreloc_byteswap.cpp:1404` and declared in `src/game/engine/decomp/lbreloc_byteswap.h:109`.
+2. Searching the entire codebase (`Grep portFixupMObjSub`) turns up exactly two call sites, both inside `components/decomp/src/sys/objanim.c` at lines 2734 and 2798 — the `gcSetupCustomDObjsWithMObj` and `gcAddMObjAll` PORT branches. These are the **scene-geometry** loaders (OpeningRoom background, items, stages).
+3. `components/decomp/src/lb/lbcommon.c` contains no reference to `portFixupMObjSub` at all. `lbCommonAddMObjForFighterPartsDObj` (line 1030), `lbCommonSetupCustomTreeDObjsWithMObj` (line 1263), and `lbCommonAddMObjForTreeDObjs` (line 1313, 1327) all call `gcAddMObjForDObj` on a resolved MObjSub pointer without fixing it first.
+4. `gcAddMObjForDObj` (components/decomp/src/sys/objman.c:1307) executes `mobj->sub = *mobjsub` at line 1327 — a plain struct copy that captures whatever byte ordering is in the source MObjSub at that moment.
 5. Therefore every fighter MObj ends up with `mobj->sub.*` populated from pass1-only data. Every subsequent byte-granular read of `mobj->sub.*` in `gcDrawMObjForDObj` (objdisplay.c:1322-1720) is against the wrong in-memory byte positions.
 
 **Concrete consequences of reading a pass1-only MObjSub on LE PC:**
@@ -145,7 +145,7 @@ This is a local fix, but it can produce weird per-status-change colour changes o
 **Evidence:**
 - `portRelocFixupFighterFigatree` (lbreloc_bridge.cpp:133-157) rotates every non-reloc word in any file whose resource path starts with `reloc_animations/FT` or `reloc_submotions/FT`.
 - This assumes figatree files only contain `AObjEvent16` streams and intra-chain pointer slots. If any word inside a figatree is a u32/f32/s32 (float joint rotations, s32 payload), rotate16 corrupts it.
-- `decomp/src/ft/ftanim.c` reads `event16->.u` (u16), `event16->s/2` (s16), and for `nGCAnimEvent16SetTranslateInterp` it reads `*(u32*)event16` as a reloc token (line 437). The reloc-token slot would be correctly skipped by the fixup since `reloc_words[i] == 1`. For the u16/s16 event fields the rotate16 is correct.
+- `components/decomp/src/ft/ftanim.c` reads `event16->.u` (u16), `event16->s/2` (s16), and for `nGCAnimEvent16SetTranslateInterp` it reads `*(u32*)event16` as a reloc token (line 437). The reloc-token slot would be correctly skipped by the fixup since `reloc_words[i] == 1`. For the u16/s16 event fields the rotate16 is correct.
 - I did **not** find a figatree-interpretation path that reads f32 values out of the same stream, so this is probably benign — but it's speculative because I didn't audit every event16 opcode and some may carry f32 payloads (e.g. joint-angle values). Speculative.
 
 **Impact if wrong:** mangled animation values but not colours or textures. Would explain fighter pose weirdness only, not the colour symptoms. Listing for completeness.
@@ -154,7 +154,7 @@ This is a local fix, but it can produce weird per-status-change colour changes o
 
 `FTMotionDesc` is `{u32, intptr_t, u32}` = 12 bytes on N64, **24 bytes on PC** (4-byte alignment padding + 8-byte `intptr_t` + 4-byte field + 4-byte tail alignment padding).
 
-Every `FTMotionDesc[]` array I found is a compile-time C initializer in `decomp/src/ft/ftdata.c` or `decomp/src/sc/scsubsys/scsubsys*.c` (e.g. line 138 of ftdata.c: `FTMotionDesc dFTMarioMotionDescs[] = { llFTMarioAnimWaitFileID, 0x80000000, 0x00000000, ... };`). C's brace-elision fills this consistently at `sizeof(FTMotionDesc)`-sized strides, and every reader uses the same C struct type — so the stride is self-consistent per ABI. `motion_desc->offset` compares against `0x80000000` (ftmain.c:4855) which zero-extends cleanly from u32 to 64-bit intptr_t on PC.
+Every `FTMotionDesc[]` array I found is a compile-time C initializer in `components/decomp/src/ft/ftdata.c` or `components/decomp/src/sc/scsubsys/scsubsys*.c` (e.g. line 138 of ftdata.c: `FTMotionDesc dFTMarioMotionDescs[] = { llFTMarioAnimWaitFileID, 0x80000000, 0x00000000, ... };`). C's brace-elision fills this consistently at `sizeof(FTMotionDesc)`-sized strides, and every reader uses the same C struct type — so the stride is self-consistent per ABI. `motion_desc->offset` compares against `0x80000000` (ftmain.c:4855) which zero-extends cleanly from u32 to 64-bit intptr_t on PC.
 
 **No fighter file contains a raw FTMotionDesc array** that I could find — they're all compile-time. So this isn't an active bug in the current port, but it's a known LP64 landmine that would bite if any motion-desc array got moved into a reloc blob. The CLAUDE.md "LP64 long audit" already flags this class of issue. Very low priority unless proved otherwise.
 
@@ -174,7 +174,7 @@ None of these change the pass1→MObjSub wire. They all operate on data that has
 
 ## 3. Recommended next experiment
 
-**Add instrumentation in `gcAddMObjForDObj` (decomp/src/sys/objman.c:1307) that emits one `port_log` line per call** recording:
+**Add instrumentation in `gcAddMObjForDObj` (components/decomp/src/sys/objman.c:1307) that emits one `port_log` line per call** recording:
 1. The **source** pointer (`mobjsub`), and whether it lives inside a reloc file (via `portRelocFindContainingFile`), plus the file_id and byte offset.
 2. First 4 u32 words raw from `*((u32*)mobjsub + 0..3)`.
 3. Derived values as the port currently reads them: `mobjsub->fmt`, `.siz`, `.flags` (u16), `.block_fmt`, `.block_siz`, `.primcolor.pack`, `.primcolor.s.r/g/b/a`, `.light1color.pack`.
@@ -204,36 +204,36 @@ One 30-second capture of the first few frames of `mvopeningroom` → `ftOpeningM
 ## 5. Open questions the main session needs to answer before implementing
 
 1. **Is there a reason the original author skipped fixup on the fighter path?** The commit that added `portFixupMObjSub` (`6ae0077`, 2026-04-07) wired it into `objanim.c` but not `lbcommon.c`. Was that an oversight or is there a known ordering issue (e.g. the fighter code touches the MObjSub before `lbCommonSetupFighterPartsDObjs` runs, so a fixup-at-load-time would be more appropriate)? Git blame / commit message doesn't say.
-2. **Are there any fighter-code sites that *expect* the u8/u16 fields to be in pass1-only state** and compensate locally? Fast global grep (`grep -rn 'mobj->sub\.\(flags\|fmt\|siz\|primcolor\)' decomp/src/ft/`) returns nothing, so probably not, but worth a closer look before landing a change.
+2. **Are there any fighter-code sites that *expect* the u8/u16 fields to be in pass1-only state** and compensate locally? Fast global grep (`grep -rn 'mobj->sub\.\(flags\|fmt\|siz\|primcolor\)' components/decomp/src/ft/`) returns nothing, so probably not, but worth a closer look before landing a change.
 3. **Where is the *right place* to apply the fixup — at load time (once per file, across every embedded MObjSub the file references) or at use time (in `gcAddMObjForDObj` itself, idempotent)?** The existing scene-geometry path puts it at use time. The simplest fix for fighters would mirror that: a `portFixupMObjSub(mobjsub)` call immediately before each `gcAddMObjForDObj` in `lbcommon.c`. The fixup function is already idempotent via `sStructU16Fixups`, so a use-time call is safe even if the same MObjSub shows up on two code paths. But load-time fixup (walking the MObjSub array inside the fighter-main reloc file) would make the data correct for any future reader without per-site manual plumbing.
 4. **Does `MObj *new_mobj = gcAddMObjForDObj(...)` expose the post-copy `new_mobj->sub` to any code path that writes back to the *original* MObjSub struct** (as opposed to only reading)? If anything writes via the copy's pointer back to the pool, a duplicate fixup could double-rotate it. I did not find such a write path but didn't audit exhaustively.
 5. **What, if anything, does Fast3D do with per-vertex RGBA on fighters?** Lighting mode uses vertex normals → RDP computes a per-vertex colour from light1+ambient+normal. Non-lighting materials use the vertex colour directly. If any fighter material uses non-lighting (e.g. eye textures, skin textures with baked shading), the vertex-colour fixup is the relevant path, and the lazy runtime vertex fixup would handle it. This is a secondary path and probably fine, but worth confirming while instrumenting.
-6. **Is there a way to detect this automatically?** The existing `gcLogMObjResolveWarning` (decomp/src/sys/objdisplay.c:77) already logs `fmt/siz/block_fmt/block_siz/flags` per warning — we could add a PORT-only sanity check in `gcAddMObjForDObj` that flags "impossible" field combinations (e.g. `fmt > 4`, `siz > 3`, `flags & ~KNOWN_FLAGS_MASK`) so this class of bug would surface as a startup warning in future struct changes.
+6. **Is there a way to detect this automatically?** The existing `gcLogMObjResolveWarning` (components/decomp/src/sys/objdisplay.c:77) already logs `fmt/siz/block_fmt/block_siz/flags` per warning — we could add a PORT-only sanity check in `gcAddMObjForDObj` that flags "impossible" field combinations (e.g. `fmt > 4`, `siz > 3`, `flags & ~KNOWN_FLAGS_MASK`) so this class of bug would surface as a startup warning in future struct changes.
 
 ---
 
 ## Appendix A — Key file & line references
 
 - Fighter MObjSub path (missing fixup):
-  - `decomp/src/lb/lbcommon.c:1030` — `lbCommonAddMObjForFighterPartsDObj`, PORT branch.
-  - `decomp/src/lb/lbcommon.c:1263` — `lbCommonSetupCustomTreeDObjsWithMObj`, PORT branch.
-  - `decomp/src/lb/lbcommon.c:1313` — `lbCommonAddMObjForTreeDObjs`, PORT branch.
+  - `components/decomp/src/lb/lbcommon.c:1030` — `lbCommonAddMObjForFighterPartsDObj`, PORT branch.
+  - `components/decomp/src/lb/lbcommon.c:1263` — `lbCommonSetupCustomTreeDObjsWithMObj`, PORT branch.
+  - `components/decomp/src/lb/lbcommon.c:1313` — `lbCommonAddMObjForTreeDObjs`, PORT branch.
 - Scene-geometry MObjSub path (has fixup):
-  - `decomp/src/sys/objanim.c:2734` — `gcSetupCustomDObjsWithMObj`, PORT branch.
-  - `decomp/src/sys/objanim.c:2798` — `gcAddMObjAll`, PORT branch.
-- Fixup function: `src/integration/decomp/lbreloc_byteswap.cpp:1404 portFixupMObjSub`.
-- MObjSub struct definition: `decomp/src/sys/objtypes.h:320-370`.
-- SYColorPack definition: decomp/include/ssb_types.h:97-102`.
-- Draw-time reads of MObjSub fields: `decomp/src/sys/objdisplay.c:1322-1720 gcDrawMObjForDObj`.
-- Fighter render entry: `decomp/src/ft/ftdisplaymain.c:756 ftDisplayMainDrawDefault`.
+  - `components/decomp/src/sys/objanim.c:2734` — `gcSetupCustomDObjsWithMObj`, PORT branch.
+  - `components/decomp/src/sys/objanim.c:2798` — `gcAddMObjAll`, PORT branch.
+- Fixup function: `src/game/engine/decomp/lbreloc_byteswap.cpp:1404 portFixupMObjSub`.
+- MObjSub struct definition: `components/decomp/src/sys/objtypes.h:320-370`.
+- SYColorPack definition: components/decomp/include/ssb_types.h:97-102`.
+- Draw-time reads of MObjSub fields: `components/decomp/src/sys/objdisplay.c:1322-1720 gcDrawMObjForDObj`.
+- Fighter render entry: `components/decomp/src/ft/ftdisplaymain.c:756 ftDisplayMainDrawDefault`.
 - Fighter init flow:
-  - `decomp/src/ft/ftmanager.c:787` → `lbCommonSetupFighterPartsDObjs` → `lbCommonAddMObjForFighterPartsDObj`.
-  - `decomp/src/ft/ftparam.c:1042` (`ftParamInitAllParts`) → same.
-  - `decomp/src/ft/ftparam.c:893, 787, 1042, 1072, 1092` → ft model-part variants.
-- ftparam raw-indexing bug sites: `decomp/src/ft/ftparam.c:811, 817, 917, 923, 1062, 1068`.
-- Matanim color-path LE fix: `decomp/src/sys/objanim.c:1382-1628 gcPlayMObjMatAnim` (commits `25edeb0`, `a7024aa`).
-- Fighter lights port-hack: `decomp/src/ft/ftdisplaylights.c:10-70 ftDisplayLightsDrawReflect`.
-- Byte-swap pipeline: `src/integration/decomp/lbreloc_byteswap.cpp:699-1497`.
-- Reloc file loader: `src/integration/decomp/lbreloc_bridge.cpp:301-497 lbRelocLoadAndRelocFile`.
-- Figatree fixup: `src/integration/decomp/lbreloc_bridge.cpp:133-157 portRelocFixupFighterFigatree`.
-- Torch reloc factory (opaque blob): `torch/src/factories/ssb64/RelocFactory.cpp:119-208`.
+  - `components/decomp/src/ft/ftmanager.c:787` → `lbCommonSetupFighterPartsDObjs` → `lbCommonAddMObjForFighterPartsDObj`.
+  - `components/decomp/src/ft/ftparam.c:1042` (`ftParamInitAllParts`) → same.
+  - `components/decomp/src/ft/ftparam.c:893, 787, 1042, 1072, 1092` → ft model-part variants.
+- ftparam raw-indexing bug sites: `components/decomp/src/ft/ftparam.c:811, 817, 917, 923, 1062, 1068`.
+- Matanim color-path LE fix: `components/decomp/src/sys/objanim.c:1382-1628 gcPlayMObjMatAnim` (commits `25edeb0`, `a7024aa`).
+- Fighter lights port-hack: `components/decomp/src/ft/ftdisplaylights.c:10-70 ftDisplayLightsDrawReflect`.
+- Byte-swap pipeline: `src/game/engine/decomp/lbreloc_byteswap.cpp:699-1497`.
+- Reloc file loader: `src/game/engine/decomp/lbreloc_bridge.cpp:301-497 lbRelocLoadAndRelocFile`.
+- Figatree fixup: `src/game/engine/decomp/lbreloc_bridge.cpp:133-157 portRelocFixupFighterFigatree`.
+- Torch reloc factory (opaque blob): `components/game-runtime/src/factories/ssb64/RelocFactory.cpp:119-208`.

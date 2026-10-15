@@ -6,12 +6,12 @@ steps 1–5 of the ROM-layout audit method against these two structs.
 
 ## Summary
 
-- **`ITAttackColl` (`decomp/src/it/ittypes.h`)** — **Not a ROM-loaded struct.** It is
+- **`ITAttackColl` (`components/decomp/src/it/ittypes.h`)** — **Not a ROM-loaded struct.** It is
   allocated and populated field-by-field in C (`itmain.c`, `wpmanager.c`, event
   readers). There is no reader that interprets raw ROM bytes through this
   struct, so the IDO-bit-layout audit does not apply. Layout is correct by
   construction. No rewrite needed.
-- **`WPAttributes` (`decomp/src/wp/wptypes.h`)** — **Layout OK, fully verified.** Every
+- **`WPAttributes` (`components/decomp/src/wp/wptypes.h`)** — **Layout OK, fully verified.** Every
   field's declared LE bit position matches the IDO-emitted extraction in
   `wpManagerMakeWeapon` at VRAM `0x801655C8`. Sanity-checked against the
   Mario Fireball record (file 204, offset 0) — all fields produce

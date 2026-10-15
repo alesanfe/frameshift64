@@ -2,7 +2,7 @@
 
 **Status:** RESOLVED 2026-05-03
 
-**Where:** `libultraship` — `libultraship/src/ship/Context.cpp`, `libultraship/src/libultraship/libultra/os.cpp`. Commit `d388467d` on `JRickey/libultraship#ssb64`. Submodule pointer bumped in this repo.
+**Where:** `libultraship` — `components/libultraship/src/ship/Context.cpp`, `components/libultraship/src/components/libultraship/libultra/os.cpp`. Commit `d388467d` on `JRickey/libultraship#ssb64`. Submodule pointer bumped in this repo.
 
 ## Symptom
 
@@ -12,7 +12,7 @@ Windows v0.7.2 release crashed during boot on user machines, shortly after audio
 *** C++ THROW (first-chance) ***
     type="class std::filesystem::filesystem_error"
     what=exists: The device is not ready.:
-         "D:/a/BattleShip/BattleShip/BattleShip/assets/configuration/controllers/gamecontrollerdb.txt"
+         "D:/a/BattleShip/BattleShip/BattleShip/config/controllers/gamecontrollerdb.txt"
 
 *** C++ THROW (first-chance) ***
     type="class spdlog::spdlog_ex"
@@ -29,7 +29,7 @@ Two compounding bugs.
 
 ### 1. CI bakes the runner workspace path into `install_config.h`
 
-`platforms/windows/packaging/package-windows.ps1` invokes:
+`packaging/windows/package-windows.ps1` invokes:
 
 ```powershell
 cmake -DNON_PORTABLE=ON -DCMAKE_INSTALL_PREFIX=BattleShip -B build-bundle-win
@@ -37,7 +37,7 @@ cmake -DNON_PORTABLE=ON -DCMAKE_INSTALL_PREFIX=BattleShip -B build-bundle-win
 
 CMake resolves a relative `CMAKE_INSTALL_PREFIX` against the configure-time cwd, so on the GitHub runner the prefix becomes `D:/a/BattleShip/BattleShip/BattleShip`. libultraship's `NON_PORTABLE` build path bakes that absolute prefix into `install_config.h` as the app-bundle path. `Ship::Context::GetAppBundlePath()` returns the runner path verbatim at runtime — every subsequent file probe under that prefix targets a `D:` drive the user's machine has no media in.
 
-The port already routes around this for `f3d.o2r` and `BattleShip.o2r` via the noexcept `ssb64::PortLocateFile` (issue #58, see `port/`). `assets/configuration/controllers/gamecontrollerdb.txt` was the one remaining caller, loaded by libultraship's own `osContInit` through the upstream throwing helper.
+The port already routes around this for `f3d.o2r` and `BattleShip.o2r` via the noexcept `ssb64::PortLocateFile` (issue #58, see `port/`). `config/controllers/gamecontrollerdb.txt` was the one remaining caller, loaded by libultraship's own `osContInit` through the upstream throwing helper.
 
 ### 2. Throwing `std::filesystem::exists(p)` overload in `LocateFileAcrossAppDirs`
 
@@ -61,7 +61,7 @@ On Windows, `std::filesystem::exists` calls `GetFileAttributesExW`. A missing fi
 
 Both hunks live in `JRickey/libultraship` on branch `ssb64`.
 
-### `libultraship/src/ship/Context.cpp`
+### `components/libultraship/src/ship/Context.cpp`
 
 Add `<filesystem>` and `<system_error>` to the includes and switch `LocateFileAcrossAppDirs` to the noexcept `exists(p, ec)` overload:
 
@@ -78,13 +78,13 @@ return "./" + std::string(path);
 
 For path probing, "false" is the right answer for any failure — the caller falls through to the next candidate or the cwd-relative fallback. `ec` is intentionally ignored.
 
-### `libultraship/src/libultraship/libultra/os.cpp`
+### `components/libultraship/src/components/libultraship/libultra/os.cpp`
 
-Defense-in-depth: wrap the `assets/configuration/controllers/gamecontrollerdb.txt` load in `osContInit` with try/catch so a future regression in any path helper can never kill the controller thread. `assets/configuration/controllers/gamecontrollerdb.txt` is a quality-of-life mappings file — failure to find or parse it should be non-fatal, and SDL has builtin mappings for everything the project supports anyway.
+Defense-in-depth: wrap the `config/controllers/gamecontrollerdb.txt` load in `osContInit` with try/catch so a future regression in any path helper can never kill the controller thread. `config/controllers/gamecontrollerdb.txt` is a quality-of-life mappings file — failure to find or parse it should be non-fatal, and SDL has builtin mappings for everything the project supports anyway.
 
 ```cpp
 try {
-    std::string controllerDb = Ship::Context::LocateFileAcrossAppDirs("assets/configuration/controllers/gamecontrollerdb.txt");
+    std::string controllerDb = Ship::Context::LocateFileAcrossAppDirs("config/controllers/gamecontrollerdb.txt");
     int mappingsAdded = SDL_GameControllerAddMappingsFromFile(controllerDb.c_str());
     if (mappingsAdded >= 0) {
         SPDLOG_INFO("Added SDL game controllers from \"{}\" ({})", controllerDb, mappingsAdded);
@@ -92,9 +92,9 @@ try {
         SPDLOG_ERROR("Failed add SDL game controller mappings from \"{}\" ({})", controllerDb, SDL_GetError());
     }
 } catch (const std::exception& e) {
-    SPDLOG_ERROR("osContInit: skipping assets/configuration/controllers/gamecontrollerdb.txt — {}", e.what());
+    SPDLOG_ERROR("osContInit: skipping config/controllers/gamecontrollerdb.txt — {}", e.what());
 } catch (...) {
-    SPDLOG_ERROR("osContInit: skipping assets/configuration/controllers/gamecontrollerdb.txt — unknown exception");
+    SPDLOG_ERROR("osContInit: skipping config/controllers/gamecontrollerdb.txt — unknown exception");
 }
 ```
 
@@ -113,8 +113,8 @@ cmake --build build-test-bogus --config Release -j 4
 After applying the fix the launch reaches the title screen with no crash. The log shows one of:
 
 - `Added SDL game controllers from "<…>" (NNN)` — happy path, mappings file was found in `%APPDATA%\BattleShip\` or in the app-bundle dir.
-- `Failed add SDL game controller mappings from "./assets/configuration/controllers/gamecontrollerdb.txt" (Couldn't open …)` — cwd-relative fallback hit because no candidate path resolved. SDL falls back to its builtin mappings; controllers still bind through the menu.
-- `osContInit: skipping assets/configuration/controllers/gamecontrollerdb.txt — exists: The device is not ready.: "…"` — the new try/catch caught a throw that the noexcept switch missed (e.g. inside `GetPathRelativeToAppBundle` itself). Also non-fatal.
+- `Failed add SDL game controller mappings from "./config/controllers/gamecontrollerdb.txt" (Couldn't open …)` — cwd-relative fallback hit because no candidate path resolved. SDL falls back to its builtin mappings; controllers still bind through the menu.
+- `osContInit: skipping config/controllers/gamecontrollerdb.txt — exists: The device is not ready.: "…"` — the new try/catch caught a throw that the noexcept switch missed (e.g. inside `GetPathRelativeToAppBundle` itself). Also non-fatal.
 
 The crash signatures must not appear:
 - `class std::filesystem::filesystem_error` — gone after the `Context.cpp` fix.
@@ -128,7 +128,7 @@ Third-party path helper throws on non-`ENOENT` failure → unhandled exception o
 ## Audit hooks
 
 - Any `libultraship` API probing the filesystem with the throwing `std::filesystem::exists(p)` (no `error_code`) is a latent Windows crash on non-ENOENT failures. Worth a sweep across `Ship::Context`, `ResourceManager`, `ArchiveManager`, factory loaders. Same applies to `is_directory`, `is_regular_file`, `file_size` — every one of those has a noexcept overload that should be preferred for probes.
-- Any `osContInit`-class entry point that runs on a non-main thread and performs file I/O needs a catch-all so a throw doesn't kill the process before the GUI is up. Scan thread entry points in `port/` and `libultraship/src/` that don't terminate cleanly on exception.
+- Any `osContInit`-class entry point that runs on a non-main thread and performs file I/O needs a catch-all so a throw doesn't kill the process before the GUI is up. Scan thread entry points in `port/` and `components/libultraship/src/` that don't terminate cleanly on exception.
 - The "CI bakes the runner workspace path into a release artifact" failure mode applies to any `NON_PORTABLE` Windows packaging script. Consider passing `-DCMAKE_INSTALL_PREFIX=.` (or omitting `NON_PORTABLE` on Windows since the port already overrides the app-bundle resolution via `RealAppBundlePath()` in `port/`).
 
 ## Diagnostic fingerprint

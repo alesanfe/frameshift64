@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/BattleShip.svg" alt="BattleShip" width="640">
+  <img src="assets/branding/icons/BattleShip.svg" alt="BattleShip" width="640">
 </p>
 
 # Smash Classic
@@ -49,17 +49,17 @@ If your dump does not match the hashes for its version, it will not work.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme-stats/star-growth-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/readme-stats/star-growth-light.svg">
-    <img src="assets/readme-stats/star-growth-light.svg" alt="GitHub star growth chart" width="840">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/readme/star-growth-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/branding/readme/star-growth-light.svg">
+    <img src="assets/branding/readme/star-growth-light.svg" alt="GitHub star growth chart" width="840">
   </picture>
 </p>
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme-stats/release-downloads-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/readme-stats/release-downloads-light.svg">
-    <img src="assets/readme-stats/release-downloads-light.svg" alt="Downloads by Platform chart" width="840">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/readme/release-downloads-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/branding/readme/release-downloads-light.svg">
+    <img src="assets/branding/readme/release-downloads-light.svg" alt="Downloads by Platform chart" width="840">
   </picture>
 </p>
 
@@ -111,7 +111,7 @@ Everything below is toggleable in-game from the ESC menu.
 - Controller and rumble support powered by **SDL2**, with plug-and-play routing for up to 4 pads
 - Native **Raphnet** adapter support up to 4 channels through **hidapi**
 - Native **GameCube adapter** support (WUP-028 and compatible clones) over **libusb**, driven directly rather than through SDL — all 4 adapter ports, hotplug, and fully remappable like any other device. Each adapter port feeds the matching player by default and can be reassigned to any player. *(Desktop only. On Windows the adapter must be bound to the WinUSB driver.)*
-- Per-controller configuration UI and a bundled `assets/configuration/controllers/gamecontrollerdb.txt` mapping database
+- Per-controller configuration UI and a bundled `config/controllers/gamecontrollerdb.txt` mapping database
 
 ### Platform & quality-of-life
 
@@ -129,13 +129,16 @@ Work in progress.
 
 | | |
 |---|---|
-| ![Settings → General](docs/screenshots/menu/settings-general.png) | ![Settings → Display](docs/screenshots/menu/settings-display.png) |
-| ![Settings → Image Quality](docs/screenshots/menu/settings-image-quality.png) | ![Settings → Shaders](docs/screenshots/menu/settings-shaders.png) |
+| ![Play → Quick Match](docs/screenshots/menu/play-quick-match.png) | ![Settings → General](docs/screenshots/menu/settings-general.png) |
+| ![Settings → Image Quality](docs/screenshots/menu/settings-image-quality.png) | ![Customization → Shaders](docs/screenshots/menu/customization-shaders.png) |
 | ![Settings → Match Rules](docs/screenshots/menu/settings-match-rules.png) | ![Settings → Accessibility](docs/screenshots/menu/settings-accessibility.png) |
-| ![Online → Netplay](docs/screenshots/menu/online-netplay.png) | ![Game Files → Script Mods](docs/screenshots/menu/gamefiles-script-mods.png) |
+| ![Online → Netplay](docs/screenshots/menu/online-netplay.png) | ![Game Files → Extraction](docs/screenshots/menu/gamefiles-extraction.png) |
 | ![Support → Actions](docs/screenshots/menu/support-actions.png) | ![About → Build](docs/screenshots/menu/about-build.png) |
 
-All 22 sections: [docs/screenshots/menu/](docs/screenshots/menu/README.md)
+All 26 sections: [docs/screenshots/menu/](docs/screenshots/menu/README.md) —
+visual baseline in `docs/screenshots/baseline/`, resolution/UI-scale matrix in
+`docs/screenshots/matrix/` (regenerate/diff via `shoot_menu_sections.py
+--baseline|--diff|--matrix`).
 
 </details>
 
@@ -215,7 +218,7 @@ The port has three layers and they are kept deliberately separate:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  decompiled game code  (decomp/src/)                         │
+│  decompiled game code  (components/decomp/src/)                         │
 │  Unmodified C produced by the decomp project. Talks to the   │
 │  N64 the same way the original ROM did: GBI display lists,   │
 │  ALSeqPlayer audio, OS threads, OSContPad input.             │
@@ -226,7 +229,7 @@ The port has three layers and they are kept deliberately separate:
 │  and the resource factories, and quarantines every change    │
 │  the decomp doesn't need to know about.                      │
 ├──────────────────────────────────────────────────────────────┤
-│  libultraship         (libultraship/)                        │
+│  libultraship         (components/libultraship/)                        │
 │  PC-native runtime: Fast3D renderer (OpenGL / Metal / D3D),  │
 │  SDL2 input, miniaudio output, OTR/O2R resource manager,     │
 │  ImGui overlay.                                              │
@@ -235,16 +238,16 @@ The port has three layers and they are kept deliberately separate:
 
 ### Asset pipeline
 
-`baserom.us.z64` is never read at runtime. At build time, **Torch** walks the ROM with the YAMLs under `assets/configuration/extraction/us/` and emits `BattleShip.o2r` — a zip-format archive of typed resources (textures, sequences, sample banks, animations, reloc files). At launch, libultraship's resource manager mounts `BattleShip.o2r` + `f3d.o2r` and the port code requests resources by path. This is the same pipeline used by Ship of Harkinian, Starship, SpaghettiKart, etc.
+`baserom.us.z64` is never read at runtime. At build time, **Torch** walks the ROM with the YAMLs under `assets/game/us/` and emits `BattleShip.o2r` — a zip-format archive of typed resources (textures, sequences, sample banks, animations, reloc files). At launch, libultraship's resource manager mounts `BattleShip.o2r` + `f3d.o2r` and the port code requests resources by path. This is the same pipeline used by Ship of Harkinian, Starship, SpaghettiKart, etc.
 
 The relocatable-data files (fighter tables, item tables, effects, sprites) are SSB64-specific and required custom factories on the Torch side and a custom loader (`src/resources/relocation/RelocFileFactory.cpp`) on the runtime side.
 
 ### Build-time codegen
 
-A small amount of generated code lives outside the source tree (gitignored) and is regenerated on every build from `tools/codegen/reloc_data_symbols.us.txt`:
+A small amount of generated code lives outside the source tree (gitignored) and is regenerated on every build from `tools/code-generation/reloc_data_symbols.us.txt`:
 
 - `generated/include/us/reloc_data.us.h` — extern declarations for every relocatable symbol
-- `assets/configuration/extraction/us/reloc_*.yml` — Torch extraction configs
+- `assets/game/us/reloc_*.yml` — Torch extraction configs
 - `generated/src/us/RelocFileTable.us.cpp` — the runtime symbol table
 
 If you ever see "undefined reference to `dFooBarReloc`" you regenerated the table without rebuilding, or vice versa.
@@ -263,7 +266,7 @@ Every meaningful change to a decomp source file is wrapped in `#ifdef PORT` / `#
 
 ### Decomp preservation: behavior, not bytes
 
-The repo follows a single principle for changes to `decomp/src/`:
+The repo follows a single principle for changes to `components/decomp/src/`:
 
 > **Accuracy to game behavior > accuracy to ROM bytes.**
 
@@ -299,7 +302,7 @@ The N64 is big-endian; PC targets are little-endian. The port handles this in th
 
 1. **Gross byteswap at load** — `lbRelocLoadAndRelocFile` byteswaps relocatable files word-by-word during load.
 2. **Per-struct fixups** — small `portFixupStructU16` / `portFixupStructU8` helpers fix sub-word fields that the gross swap got wrong (e.g., `{u16, u8, u8}` patterns where the two `u8`s end up swapped).
-3. **Per-stream walkers** — animation events, spline interpolators, and other variable-length streams are halfswapped at file-bake time and need a per-stream un-halfswap on first access. These live in `src/compatibility/port_aobj_fixup.{h,cpp}` and friends.
+3. **Per-stream walkers** — animation events, spline interpolators, and other variable-length streams are halfswapped at file-bake time and need a per-stream un-halfswap on first access. These live in `src/platform/compatibility/port_aobj_fixup.{h,cpp}` and friends.
 
 If you find a new struct that reads garbage, the playbook in `docs/development/n64_reference.md` will tell you which layer it belongs in.
 
@@ -315,7 +318,7 @@ Patching the *reads* in game code instead of the *layout* is forbidden by team p
 
 Both `libultraship` and `torch` are pinned to **personal forks** rather than the upstream Harbour Masters repos, because each needs SSB64-specific changes that don't exist upstream.
 
-### [`libultraship`](https://github.com/JRickey/libultraship/tree/ssb64) — fork of [Kenix3/libultraship](https://github.com/Kenix3/libultraship)
+### [`libultraship`](https://github.com/JRickey/components/libultraship/tree/ssb64) — fork of [Kenix3/libultraship](https://github.com/Kenix3/libultraship)
 
 SSB64 drives the RDP differently than the Zelda / Mario 64 / Star Fox 64 titles libultraship was originally built for — in particular around tile masks, `SetTileSize` extents, IA/I4 texture uploads, `gDPSetPrimDepth` for 2D layering, and Metal sampler binding for matanim CCs. Upstreaming the fixes is on the list, but until then the fork carries:
 
@@ -351,18 +354,18 @@ src/          modern C++ port layer, split by responsibility:
                               shaders, css_icons, hires texture packs
                 platform/     coroutines + android/windows specifics
                 compatibility/ N64/libc/audio stubs, aobj fixups
-decomp/       submodule — decompiled SSB64 C source (largely unchanged
+components/decomp/       submodule — decompiled SSB64 C source (largely unchanged
               game logic). Major subdirs inside the submodule:
-                decomp/src/sys/        main loop, DMA, scheduling, audio,
+                components/decomp/src/sys/        main loop, DMA, scheduling, audio,
                                 controllers, threading
-                decomp/src/ft/         fighters (ftmario/, ftkirby/, ftfox/, ...)
-                decomp/src/sc/ gm/ gr/ scene / game modes / stage rendering
-                decomp/src/mn/ it/ ef/ menus / items / effects
-                decomp/src/relocData/  reloc data sources
-libultraship/ submodule — PC-native render / audio / input / resource mgr
-torch/        submodule — asset extractor (ROM -> BattleShip.o2r)
+                components/decomp/src/ft/         fighters (ftmario/, ftkirby/, ftfox/, ...)
+                components/decomp/src/sc/ gm/ gr/ scene / game modes / stage rendering
+                components/decomp/src/mn/ it/ ef/ menus / items / effects
+                components/decomp/src/relocData/  reloc data sources
+components/libultraship/ submodule — PC-native render / audio / input / resource mgr
+components/game-runtime/        submodule — asset extractor (ROM -> BattleShip.o2r)
 include/      generated headers (reloc_data.<ver>.h)
-assets/       source assets + configuration/extraction/ (Torch YAMLs)
+assets/       source assets + recipes/ (Torch YAMLs)
 mods/         mod SDK + examples (hooktest, playertint) + templates
 services/     netplay-lobby — Cloudflare worker + local node lobby
 tests/        unit/netplay/regression checks
@@ -400,11 +403,11 @@ PRs are welcome from anyone. If you're opening a bug report, the most useful thi
 ## Credits & licensing
 
 - Game code, data, sound, textures, models, and trademarks: **© Nintendo / HAL Laboratory.** Not included in this repository, not redistributed, and not endorsed by them.
-- Decompilation: [VetriTheRetri/ssb-decomp-re](https://github.com/VetriTheRetri/ssb-decomp-re) and its contributors. Vendored as the `decomp/` submodule. At the time of writing the upstream project does not publish an explicit license; this repository makes no copyright claim over the decompiled source and refers to the upstream project for any rights, terms, or restrictions on reuse.
-- Runtime framework: [libultraship](https://github.com/Kenix3/libultraship) — Copyright (c) 2022 kenix3, MIT-licensed. Originated by the Harbour Masters team (Ship of Harkinian) and now maintained at Kenix3/libultraship. Vendored as the `libultraship/` submodule.
-- Asset pipeline: [Torch](https://github.com/HarbourMasters/Torch) — Copyright (c) 2023 Lywx (Harbour Masters), MIT-licensed. Vendored as the `torch/` submodule.
-- Menu fonts: [Montserrat](https://github.com/JulietaUla/Montserrat) and [Inconsolata](https://github.com/cyrealtype/Inconsolata), both bundled under the [SIL Open Font License 1.1](https://openfontlicense.org). License texts ship alongside the font files in [`assets/custom/fonts/`](assets/custom/fonts/).
-- Controller mappings: [`assets/configuration/controllers/gamecontrollerdb.txt`](assets/configuration/controllers/gamecontrollerdb.txt) from the [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) project — bundled with every build and loaded at startup so more controllers work out of the box. Distributed under the zlib license; full text in [`LICENSE`](LICENSE).
+- Decompilation: [VetriTheRetri/ssb-decomp-re](https://github.com/VetriTheRetri/ssb-decomp-re) and its contributors. Vendored as the `components/decomp/` submodule. At the time of writing the upstream project does not publish an explicit license; this repository makes no copyright claim over the decompiled source and refers to the upstream project for any rights, terms, or restrictions on reuse.
+- Runtime framework: [libultraship](https://github.com/Kenix3/libultraship) — Copyright (c) 2022 kenix3, MIT-licensed. Originated by the Harbour Masters team (Ship of Harkinian) and now maintained at Kenix3/libultraship. Vendored as the `components/libultraship/` submodule.
+- Asset pipeline: [Torch](https://github.com/HarbourMasters/Torch) — Copyright (c) 2023 Lywx (Harbour Masters), MIT-licensed. Vendored as the `components/game-runtime/` submodule.
+- Menu fonts: [Montserrat](https://github.com/JulietaUla/Montserrat) and [Inconsolata](https://github.com/cyrealtype/Inconsolata), both bundled under the [SIL Open Font License 1.1](https://openfontlicense.org). License texts ship alongside the font files in [`assets/fonts/`](assets/fonts/).
+- Controller mappings: [`config/controllers/gamecontrollerdb.txt`](config/controllers/gamecontrollerdb.txt) from the [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) project — bundled with every build and loaded at startup so more controllers work out of the box. Distributed under the zlib license; full text in [`LICENSE`](LICENSE).
 - High-resolution texture pack: *SSB Reloaded* by [GhostlyDark](https://github.com/GhostlyDark), distributed separately at [evilgames.eu](https://evilgames.eu/texture-packs/ssb-reloaded.htm#pc). Not bundled with this repository or its builds — the port loads it only if you download it yourself.
 - Reference ports I learned from and adapted code from: [Starship](https://github.com/HarbourMasters/Starship) (SF64) and [Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) (OoT) — both MIT-licensed by The Harbour Masters; see [`LICENSE`](LICENSE) for the per-file attribution.
 - Reference ports I learned from but did not borrow code from: [SM64 PC Port](https://github.com/sm64-port/sm64-port) (SM64), [SpaghettiKart](https://github.com/HarbourMasters/SpaghettiKart) (MK64).
@@ -416,13 +419,13 @@ This project is **not affiliated with, endorsed by, or authorized by Harbour Mas
 
 ## License
 
-Source code in this repository (everything outside the `decomp/`, `libultraship/`, and `torch/` submodules — each of which carries its own attribution) is released under the [MIT License](LICENSE) — free to use, modify, and redistribute, with no warranty and no liability. See [`LICENSE`](LICENSE) for the full text.
+Source code in this repository (everything outside the `components/decomp/`, `components/libultraship/`, and `components/game-runtime/` submodules — each of which carries its own attribution) is released under the [MIT License](LICENSE) — free to use, modify, and redistribute, with no warranty and no liability. See [`LICENSE`](LICENSE) for the full text.
 
 The MIT grant covers only the port-specific code (the `src/` port layer, build scripts, tools, docs). It does **not** extend to:
 - Game assets, code, audio, textures, models, or any other content owned by Nintendo / HAL Laboratory — none of which is in this repository.
-- The decompilation vendored as the `decomp/` submodule, sourced from [VetriTheRetri/ssb-decomp-re](https://github.com/VetriTheRetri/ssb-decomp-re). The upstream project does not currently publish an explicit license; this repository makes no copyright claim over the decompiled source and incorporates it by reference. Defer to the upstream project and its contributors for any rights or restrictions on reuse.
-- Decomp-derived content elsewhere in the tree (vendored or auto-generated from the decomp's symbol/file-name tables): `tools/codegen/reloc_data_symbols.us.txt`, `tools/codegen/relocFileDescriptions.us.txt`, `generated/include/us/reloc_data.us.h`, `generated/src/us/RelocFileTable.us.cpp`, and `assets/configuration/extraction/us/reloc_*.yml`. These follow the same upstream-deference as the `decomp/` submodule. The generator scripts that produce them (`tools/codegen/generate_*.py`) are port-authored and remain MIT.
+- The decompilation vendored as the `components/decomp/` submodule, sourced from [VetriTheRetri/ssb-decomp-re](https://github.com/VetriTheRetri/ssb-decomp-re). The upstream project does not currently publish an explicit license; this repository makes no copyright claim over the decompiled source and incorporates it by reference. Defer to the upstream project and its contributors for any rights or restrictions on reuse.
+- Decomp-derived content elsewhere in the tree (vendored or auto-generated from the decomp's symbol/file-name tables): `tools/code-generation/reloc_data_symbols.us.txt`, `tools/code-generation/relocFileDescriptions.us.txt`, `generated/include/us/reloc_data.us.h`, `generated/src/us/RelocFileTable.us.cpp`, and `assets/game/us/reloc_*.yml`. These follow the same upstream-deference as the `components/decomp/` submodule. The generator scripts that produce them (`tools/code-generation/generate_*.py`) are port-authored and remain MIT.
 - The `libultraship` submodule — Copyright (c) 2022 kenix3, MIT-licensed (originated by the Harbour Masters team).
 - The `torch` submodule — Copyright (c) 2023 Lywx (Harbour Masters), MIT-licensed.
-- The bundled menu fonts under `assets/custom/fonts/`, which are licensed under the SIL Open Font License 1.1 (per-font license files in that directory).
-- The bundled controller-mapping database `assets/configuration/controllers/gamecontrollerdb.txt`, from the [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) project — distributed under the zlib license. Full text and attribution in [`LICENSE`](LICENSE).
+- The bundled menu fonts under `assets/fonts/`, which are licensed under the SIL Open Font License 1.1 (per-font license files in that directory).
+- The bundled controller-mapping database `config/controllers/gamecontrollerdb.txt`, from the [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) project — distributed under the zlib license. Full text and attribution in [`LICENSE`](LICENSE).

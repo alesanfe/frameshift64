@@ -6,9 +6,9 @@
 
 ## Root cause
 
-Character eye-blink / mouth animation on the demo poses (CSS idle & lock-in, victory/lose results, opening movie) is driven by motion scripts in `decomp/src/sc/scsubsys/scsubsysdata*.c` — compiled-C `s32` arrays of the same opcode stream format as the relocData mainmotion binaries. The blink itself is a shared 4-step `nFTMotionEventSetTexturePartID` subroutine (eye texture 4 → 5 → 4 → 0), entered via `nFTMotionEventSubroutine` and looped via `nFTMotionEventGoto`.
+Character eye-blink / mouth animation on the demo poses (CSS idle & lock-in, victory/lose results, opening movie) is driven by motion scripts in `components/decomp/src/sc/scsubsys/scsubsysdata*.c` — compiled-C `s32` arrays of the same opcode stream format as the relocData mainmotion binaries. The blink itself is a shared 4-step `nFTMotionEventSetTexturePartID` subroutine (eye texture 4 → 5 → 4 → 0), entered via `nFTMotionEventSubroutine` and looped via `nFTMotionEventGoto`.
 
-On N64 the Subroutine/Goto operand word held a raw overlay address. On LP64 a pointer can't live in an `s32` slot (an `ADDR64` reloc would spill into adjacent data), so `ftMotionCommandSubroutineS2`/`GotoS2` in `decomp/src/ft/ftdef.h` compile to a `0` placeholder under `PORT`. `PORT_RESOLVE(0)` returns NULL **silently** (token 0 is the NULL token, no stale-token log), and `ftMainParseMotionEvent`'s event loop kills the script at its `p_script == NULL` guard.
+On N64 the Subroutine/Goto operand word held a raw overlay address. On LP64 a pointer can't live in an `s32` slot (an `ADDR64` reloc would spill into adjacent data), so `ftMotionCommandSubroutineS2`/`GotoS2` in `components/decomp/src/ft/ftdef.h` compile to a `0` placeholder under `PORT`. `PORT_RESOLVE(0)` returns NULL **silently** (token 0 is the NULL token, no stale-token log), and `ftMainParseMotionEvent`'s event loop kills the script at its `p_script == NULL` guard.
 
 Net effect: every demo script died at its first `Subroutine`/`Goto`. 62 call sites across 8 fighters (mario 13, purin 16, pikachu 9, kirby 8, link/luigi/ness/yoshi 4 each). Jigglypuff was just the most visible — largest eye textures, blinks in all six demo poses. Fox/Samus/DK/Falcon have no demo-script subroutines (they don't blink on CSS in vanilla either), which is why the class went unnoticed.
 
@@ -18,9 +18,9 @@ Net effect: every demo script died at its first `Subroutine`/`Goto`. 62 call sit
 
 Same pattern as `gmColScriptsLinkRelocTargets()` (`gmcolscripts.c`, the collision-script equivalent):
 
-- `decomp/src/sc/scsubsys/scsubsysportfix.c` (new, PORT-only): a generated table of 62 `{ script, operand_index, target }` links; `scSubsysMotionLinkRelocTargets()` writes `portRelocRegisterPointer(target)` into each operand slot. Each entry validates that the preceding word's opcode is `Subroutine`/`Goto` before patching, so future `scsubsysdata*.c` edits that shift word indices produce a log line instead of a mispatched script. The table was generated mechanically from the `ftMotionCommandSubroutine`/`Goto` call sites (each macro spans two `s32` words: opcode, operand).
-- `src/integration/decomp/lbreloc_bridge.cpp`: `lbRelocInitSetup` calls it right after `gmColScriptsLinkRelocTargets()` (every scene init; overwrite-idempotent).
-- `decomp/src/ft/ftmain.c`: the Subroutine/Goto parse cases now log (once per run each) when a token resolves to NULL — the silence of `PORT_RESOLVE(0)` is what let this survive multiple animation investigations.
+- `components/decomp/src/sc/scsubsys/scsubsysportfix.c` (new, PORT-only): a generated table of 62 `{ script, operand_index, target }` links; `scSubsysMotionLinkRelocTargets()` writes `portRelocRegisterPointer(target)` into each operand slot. Each entry validates that the preceding word's opcode is `Subroutine`/`Goto` before patching, so future `scsubsysdata*.c` edits that shift word indices produce a log line instead of a mispatched script. The table was generated mechanically from the `ftMotionCommandSubroutine`/`Goto` call sites (each macro spans two `s32` words: opcode, operand).
+- `src/game/engine/decomp/lbreloc_bridge.cpp`: `lbRelocInitSetup` calls it right after `gmColScriptsLinkRelocTargets()` (every scene init; overwrite-idempotent).
+- `components/decomp/src/ft/ftmain.c`: the Subroutine/Goto parse cases now log (once per run each) when a token resolves to NULL — the silence of `PORT_RESOLVE(0)` is what let this survive multiple animation investigations.
 
 ## Verification
 

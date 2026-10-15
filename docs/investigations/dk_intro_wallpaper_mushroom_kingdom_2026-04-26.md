@@ -50,7 +50,7 @@ backdrop sprite is wrong.
 
 The data path is **fully innocent**. The bug is renderer-side in libultraship.
 
-Probe: extended `port_log` in `grWallpaperMakeCommon` (`decomp/src/gr/grwallpaper.c`)
+Probe: extended `port_log` in `grWallpaperMakeCommon` (`components/decomp/src/gr/grwallpaper.c`)
 to dump the resolved Sprite struct, its first Bitmap, the bitmap buffer
 token + resolved address, and the **first 16 bytes** of pixel data.
 
@@ -96,7 +96,7 @@ is sensitive to inter-scene timing.
 - The Fast3D `TextureCacheKey` is keyed by raw `texture_addr` (plus
   fmt/siz/dims/etc.), so two stages' wallpapers cannot share a cache
   slot — different `texture_addr` → distinct entries
-  (`libultraship/include/fast/interpreter.h:177-194`).
+  (`components/libultraship/include/fast/interpreter.h:177-194`).
 - Fighter intro scenes (30..37) are independent taskman tasks; gobj
   cross-scene leaks are unlikely. Heap addresses confirm the file-load
   buffer is reset between scenes (each scene allocates fresh, gd
@@ -111,7 +111,7 @@ is sensitive to inter-scene timing.
    (e.g. "OPENING/wallpaper" registered with Inishie's bytes earlier
    in the chain), Fast3D would render those bytes regardless of what
    `gDPSetTextureImage(rawAddr)` says. Look for `mImportedTextures`
-   handling in `libultraship/src/fast/interpreter.cpp` and the Torch
+   handling in `components/libultraship/src/fast/interpreter.cpp` and the Torch
    yaml that emits the wallpaper sprite.
 
 2. **TMEM/tile state survives across the scene transition.**
@@ -150,7 +150,7 @@ Two new pieces are in place to drive the next capture:
    scene — we can then filter Fast3D diag by that file_id.
 
 2. **Armed ImportTexture capture.** Added `portDiagArmImportCapture(int n)`
-   in `libultraship/src/fast/interpreter.cpp`. Each call sets an atomic
+   in `components/libultraship/src/fast/interpreter.cpp`. Each call sets an atomic
    "log next N ImportTexture calls unconditionally" counter, bypassing
    the `SSB64_RENDER_DIAG_FILTER` / `_FILE_ID` gates and the slot
    limiter. `grWallpaperMakeCommon` arms it from the env list
@@ -176,12 +176,12 @@ prior section.
 
 ## Files / state
 
-- `decomp/src/gr/grwallpaper.c` — extended `grWallpaperMakeCommon` port_log
+- `components/decomp/src/gr/grwallpaper.c` — extended `grWallpaperMakeCommon` port_log
   with sprite + bitmap[0] + first-16-bytes dump. Useful baseline; safe
   to leave in place.
-- `decomp/src/sc/scmanager.c` — `SSB64_START_SCENE=N` env override (already
+- `components/decomp/src/sc/scmanager.c` — `SSB64_START_SCENE=N` env override (already
   shipped 2026-04-25 in `ee3820e`).
-- `decomp/src/mp/mpcollision.c` — `mpCollisionInitGroundData` already logs
+- `components/decomp/src/mp/mpcollision.c` — `mpCollisionInitGroundData` already logs
   scene/gkind/file_id/gd.
 - `ssb64.log` (natural-attract repro of 2026-04-26) — captured baseline
   for both correct (scene 31) and broken (scene 45) renders. Contains

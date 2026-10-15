@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "support" / "harness" / "netplay"))
-import session_runner as sr  # noqa: E402
+import session_runner as sr
 
 
 def main() -> int:
@@ -29,6 +29,8 @@ def main() -> int:
     ap.add_argument("--seconds", type=int, default=30)
     ap.add_argument("--latency-ms", type=int, default=0)
     ap.add_argument("--jitter-ms", type=int, default=0)
+    ap.add_argument("--profile", default=None,
+                    help="named impairment profile (tests/support/config/network-profiles.yml)")
     ap.add_argument("--spec-delay", type=float, default=0.0,
                     help="start the spectator N seconds after the players "
                          "(mid-match catch-up instead of pre-match join)")
@@ -58,14 +60,18 @@ def main() -> int:
             "SSB64_LOBBY_FKIND": fighter,
             "SSB64_NETPLAY_FUZZ": fuzz, "SSB64_MUTE": "1",
             "SSB64_NO_UPDATE_CHECK": "1",
-            "SSB64_NETPLAY_SIM_LATENCY_MS": a.latency_ms,
-            "SSB64_NETPLAY_SIM_JITTER_MS": a.jitter_ms,
+            "SSB64_NETPLAY_SIM_SEED": fuzz,
             "SSB64_NETPLAY_CONFIRMED_TRACE": str(out / f"{name}.trace"),
             "SSB64_LOG_PATH": str(out / f"{name}.log"),
             "SSB64_SAVE_PATH": str(out / f"{name}.sav"),
         }
         if a.debug_stages:
             env["SSB64_NETPLAY_DEBUG_STAGES"] = "1"
+        if a.profile:
+            env.update(sr.load_profile(a.profile))   # overrides individual flags
+        else:
+            env["SSB64_NETPLAY_SIM_LATENCY_MS"] = a.latency_ms
+            env["SSB64_NETPLAY_SIM_JITTER_MS"] = a.jitter_ms
         if is_spec:
             env["SSB64_LOBBY_JOIN"] = server
             env["SSB64_LOBBY_SPECTATE"] = "1"

@@ -10,25 +10,25 @@ package: ## Package for the host platform -> dist/
 	  *) $(call failure,Unsupported packaging host: $(HOST_PLATFORM)); exit 1 ;; \
 	esac
 
-package-windows: guard-region ## platforms/windows/packaging/package-windows.ps1 -> dist/
+package-windows: guard-region ## packaging/windows/package-windows.ps1 -> dist/
 	@$(call heading,Packaging windows ($(REGION)))
 	@mkdir -p "$(DIST_DIR)"
 	@SSB64_VERSION="$(REGION)" $(POWERSHELL) -NoProfile \
-	  -ExecutionPolicy Bypass -File platforms/windows/packaging/package-windows.ps1 \
+	  -ExecutionPolicy Bypass -File packaging/windows/package-windows.ps1 \
 	  $(PACKAGE_ARGS)
 	@$(call success,Windows package in $(DIST_DIR)/)
 
-package-linux: guard-region ## platforms/linux/packaging/package-linux.sh -> dist/
+package-linux: guard-region ## packaging/linux/package-linux.sh -> dist/
 	@$(call heading,Packaging linux ($(REGION)))
 	@mkdir -p "$(DIST_DIR)"
-	@SSB64_VERSION="$(REGION)" bash platforms/linux/packaging/package-linux.sh \
+	@SSB64_VERSION="$(REGION)" bash packaging/linux/package-linux.sh \
 	  $(PACKAGE_ARGS)
 	@$(call success,Linux package in $(DIST_DIR)/)
 
-package-macos: guard-region ## platforms/macos/packaging/package-macos.sh -> dist/
+package-macos: guard-region ## packaging/macos/package-macos.sh -> dist/
 	@$(call heading,Packaging macos ($(REGION)))
 	@mkdir -p "$(DIST_DIR)"
-	@SSB64_VERSION="$(REGION)" bash platforms/macos/packaging/package-macos.sh \
+	@SSB64_VERSION="$(REGION)" bash packaging/macos/package-macos.sh \
 	  $(PACKAGE_ARGS)
 	@$(call success,macOS package in $(DIST_DIR)/)
 

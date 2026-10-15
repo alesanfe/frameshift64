@@ -16,7 +16,7 @@ install → generate-sources → configure → codegen → build → test → pa
 | `install` | `submodules` + `install-python` + `install-node` | layout-check |
 | `install-python` | `.venv` + `pip install -e ".[test]"` | python |
 | `install-node` | `npm ci` in `services/netplay-lobby` | node |
-| `generate-sources` | regenerate committed inputs (`assets/recipes`, reloc yamls) | python+PyYAML |
+| `generate-sources` | regenerate committed inputs (`assets/game`, reloc yamls) | python+PyYAML |
 | `configure` | `cmake --preset <PRESET>` only | generate-sources |
 | `codegen` | `PrepareBuildInputs` + `ExtractAssetHeaders` | configure |
 | `build` | compile `ssb64` only (no reconfigure) | configure |

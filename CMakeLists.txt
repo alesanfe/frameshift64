@@ -22,8 +22,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
 endif()
 
 # Mod system master switch (TinyCC source scripting + funchook hook backend +
-# src/integration/modding). DISABLE_SCRIPTING gates it everywhere — funchook FetchContent,
-# src/integration/modding sources, the no-inline linkage tweaks, the post-build .tcc/ staging,
+# src/game/modding). DISABLE_SCRIPTING gates it everywhere — funchook FetchContent,
+# src/game/modding sources, the no-inline linkage tweaks, the post-build .tcc/ staging,
 # and the in-engine call sites (#ifndef DISABLE_SCRIPTING). Forced ON for
 # Android: funchook/TinyCC have no Android target and the loader is desktop-only.
 # Set BEFORE add_subdirectory(libultraship) so the engine half sees it too.
@@ -140,7 +140,7 @@ option(SSB64_ENABLE_CLANG_TIDY "clang-tidy on first-party targets" OFF)
 # -fcoverage-mapping equivalent; use a clang-cl or Unix toolchain build
 # for coverage numbers). Run the suite with
 # LLVM_PROFILE_FILE=<dir>/%p-%m.profraw, then merge with
-# tools/testing/coverage.py.
+# tools/developer/testing/coverage.py.
 if(SSB64_ENABLE_COVERAGE)
     if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang|GNU" OR
        NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -228,7 +228,7 @@ endif()
 # Subdirectories: libultraship
 ################################################################################
 
-add_subdirectory(libultraship ${CMAKE_BINARY_DIR}/libultraship)
+add_subdirectory(components/libultraship ${CMAKE_BINARY_DIR}/libultraship)
 
 # Vendored engine: upstream ships without warning hygiene for MSVC's level-3
 # diagnostics (int/size_t conversions, precedence parens, narrowing). These
@@ -237,10 +237,24 @@ add_subdirectory(libultraship ${CMAKE_BINARY_DIR}/libultraship)
 if (MSVC AND TARGET libultraship)
     target_compile_options(libultraship PRIVATE
         /wd4005 /wd4018 /wd4068 /wd4099 /wd4101 /wd4244 /wd4267
-        /wd4305 /wd4309 /wd4312 /wd4554 /wd4805 /wd4834 /wd4838)
+        /wd4305 /wd4309 /wd4312 /wd4554 /wd4805 /wd4834 /wd4838
+        /wd4201 /wd4310)
     # LUS objects reference libultraship.pdb but Release never emits one
     # (LNK4099); /Zi produces it so /DEBUG linking finds real LUS symbols.
     target_compile_options(libultraship PRIVATE /Zi)
+endif()
+
+# LUS public headers (f3dex.h, color.h, types.h) emit MSVC-extension
+# diagnostics (C4201 nameless unions, C4310 constant truncation) in every
+# port TU that includes them. Consume them as SYSTEM headers so upstream
+# noise stays out of our targets without patching the submodule.
+if (TARGET libultraship)
+    get_target_property(_lus_iface_includes libultraship INTERFACE_INCLUDE_DIRECTORIES)
+    if (_lus_iface_includes)
+        set_target_properties(libultraship PROPERTIES
+            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_lus_iface_includes}")
+    endif()
+    unset(_lus_iface_includes)
 endif()
 
 ################################################################################
@@ -320,7 +334,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # Android: build Torch in-tree as a STATIC lib (USE_STANDALONE=OFF
     # was forced above). The libtorch_runner.so SHARED library at the
     # bottom of this file wraps it for JNI.
-    add_subdirectory(torch ${CMAKE_BINARY_DIR}/torch)
+    add_subdirectory(components/game-runtime ${CMAKE_BINARY_DIR}/torch)
 elseif (NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     # Desktop: build Torch as a host executable via ExternalProject so it
     # can run at our build time to extract ROM assets. Switch has no host
@@ -339,7 +353,7 @@ elseif (NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     endif()
     ExternalProject_Add(TorchExternal
         PREFIX TorchExternal
-        SOURCE_DIR ${CMAKE_SOURCE_DIR}/torch
+        SOURCE_DIR ${CMAKE_SOURCE_DIR}/components/game-runtime
         BINARY_DIR ${SSB64_TORCH_BUILD_DIR}
         # Run the nested dependency check every time. Its own build system
         # recompiles only changed files; a completed ExternalProject stamp
@@ -373,31 +387,31 @@ add_custom_target(PrepareBuildInputs
 # ── Window icon embed (US/JP) ─────────────────────────────────────────────
 # Linux SDL only renders an app icon on the WM if SDL_SetWindowIcon() is
 # called at runtime — there's no .rc-equivalent that the WM reads at
-# launch. The PNG bytes are baked into the binary via tools/asset-pipeline/embed_icon.py
+# launch. The PNG bytes are baked into the binary via tools/assets/pipeline/embed_icon.py
 # so src/platform/window/port_window_icon.cpp doesn't have to chase the icon across
-# build/dev-tree/AppImage layouts. Region-aware: US uses assets/icon.png,
-# JP uses assets/icon-jp.png.
-set(SSB64_ICON_PNG ${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png)
+# build/dev-tree/AppImage layouts. Region-aware: US uses assets/branding/icons/icon.png,
+# JP uses assets/branding/icons/icon-jp.png.
+set(SSB64_ICON_PNG ${CMAKE_CURRENT_SOURCE_DIR}/assets/branding/icons/icon.png)
 if(SSB64_VERSION STREQUAL "jp")
-    set(SSB64_ICON_PNG ${CMAKE_CURRENT_SOURCE_DIR}/assets/icon-jp.png)
+    set(SSB64_ICON_PNG ${CMAKE_CURRENT_SOURCE_DIR}/assets/branding/icons/icon-jp.png)
 endif()
 set(SSB64_ICON_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(SSB64_ICON_GEN ${SSB64_ICON_GEN_DIR}/port_icon_data.h)
 add_custom_command(
     OUTPUT ${SSB64_ICON_GEN}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/embed_icon.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/embed_icon.py
             ${SSB64_ICON_PNG} ${SSB64_ICON_GEN} kSSB64IconPng
     DEPENDS
         ${SSB64_ICON_PNG}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/embed_icon.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/embed_icon.py
     COMMENT "Embedding window icon (${SSB64_VERSION}) -> ${SSB64_ICON_GEN}"
     VERBATIM
 )
 
 # ── CSS icon pipeline ─────────────────────────────────────────────────────
 # Stage-specific assets (background wallpapers + CSS thumbnails) are now
-# extracted from baserom.us.z64 at build time by tools/asset-pipeline/derive_stage_assets.py
+# extracted from baserom.us.z64 at build time by tools/assets/pipeline/derive_stage_assets.py
 # and loaded at runtime as PNG files. No Nintendo-derived bytes are baked
 # into the binary.
 #
@@ -435,11 +449,11 @@ set(SSB64_CSS_ARROW_H         ${SSB64_CSS_GEN_DIR}/arrow_data.h)
 set(SSB64_CSS_ARROW_LEFT_H    ${SSB64_CSS_GEN_DIR}/arrow_left_data.h)
 
 # Baked nameplate headers for the port-introduced stages. Rendered from text
-# strings only (tools/asset-pipeline/render_nameplates.py — NO ROM data), so unlike the
+# strings only (tools/assets/pipeline/render_nameplates.py — NO ROM data), so unlike the
 # stage icons these are legal to compile into shipped binaries. They are the
 # release fallback for portCSSGetStageNameSprite when no
 # assets/css_icons/<name>_name.png override exists; keep the strings in sync
-# with STAGES in tools/asset-pipeline/derive_stage_assets.py.
+# with STAGES in tools/assets/pipeline/derive_stage_assets.py.
 set(SSB64_CSS_NAMEPLATES
     "final_destination|FINAL DESTINATION|nameFinalDestination"
     "metal_cavern|METAL CAVERN|nameMetalCavern"
@@ -455,22 +469,22 @@ foreach(entry IN LISTS SSB64_CSS_NAMEPLATES)
     add_custom_command(
         OUTPUT ${np_png}
         COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/render_nameplates.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/render_nameplates.py
                 ${np_text}
                 ${np_png}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/render_nameplates.py
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/render_nameplates.py
         COMMENT "Rendering nameplate PNG (${np_text})"
         VERBATIM
     )
     add_custom_command(
         OUTPUT ${np_h}
         COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/png_to_c_array.py
                 ${np_png}
                 ${np_h}
                 ${np_symbol}
         DEPENDS ${np_png}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/png_to_c_array.py
         COMMENT "Baking nameplate -> ${np_h}"
         VERBATIM
     )
@@ -479,48 +493,48 @@ endforeach()
 add_custom_command(
     OUTPUT ${SSB64_CSS_ARROW_PNG}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/generate_arrow_svg.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/generate_arrow_svg.py
             ${SSB64_CSS_ARROW_PNG}
             6 44
     DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/generate_arrow_svg.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/generate_arrow_svg.py
     COMMENT "Generating CSS scroll-arrow PNG (visual 6x44, canvas 8x44 padded)"
     VERBATIM
 )
 add_custom_command(
     OUTPUT ${SSB64_CSS_ARROW_LEFT_PNG}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/generate_arrow_svg.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/generate_arrow_svg.py
             ${SSB64_CSS_ARROW_LEFT_PNG}
             6 44 --mirror
     DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/generate_arrow_svg.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/generate_arrow_svg.py
     COMMENT "Generating CSS scroll-arrow PNG (left-mirrored)"
     VERBATIM
 )
 add_custom_command(
     OUTPUT ${SSB64_CSS_ARROW_H}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/png_to_c_array.py
             ${SSB64_CSS_ARROW_PNG}
             ${SSB64_CSS_ARROW_H}
             arrow
     DEPENDS
         ${SSB64_CSS_ARROW_PNG}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/png_to_c_array.py
     COMMENT "Baking scroll-arrow -> ${SSB64_CSS_ARROW_H}"
     VERBATIM
 )
 add_custom_command(
     OUTPUT ${SSB64_CSS_ARROW_LEFT_H}
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/png_to_c_array.py
             ${SSB64_CSS_ARROW_LEFT_PNG}
             ${SSB64_CSS_ARROW_LEFT_H}
             arrowLeft
     DEPENDS
         ${SSB64_CSS_ARROW_LEFT_PNG}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/png_to_c_array.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/png_to_c_array.py
     COMMENT "Baking scroll-arrow (left) -> ${SSB64_CSS_ARROW_LEFT_H}"
     VERBATIM
 )
@@ -535,28 +549,28 @@ add_custom_target(ExtractAssetHeaders
 ################################################################################
 
 # Decomp game code (exclude debug overlay and debug battle/menu)
-file(GLOB_RECURSE SSB64_SRC_CREDITS "decomp/src/credits/*.c" "decomp/src/credits/*.h")
-file(GLOB_RECURSE SSB64_SRC_EF      "decomp/src/ef/*.c"      "decomp/src/ef/*.h")
-file(GLOB_RECURSE SSB64_SRC_FT      "decomp/src/ft/*.c"      "decomp/src/ft/*.h")
-file(GLOB_RECURSE SSB64_SRC_GM      "decomp/src/gm/*.c"      "decomp/src/gm/*.h")
-file(GLOB_RECURSE SSB64_SRC_GR      "decomp/src/gr/*.c"      "decomp/src/gr/*.h")
-file(GLOB_RECURSE SSB64_SRC_IF      "decomp/src/if/*.c"      "decomp/src/if/*.h")
-file(GLOB_RECURSE SSB64_SRC_IT      "decomp/src/it/*.c"      "decomp/src/it/*.h")
-file(GLOB_RECURSE SSB64_SRC_LB      "decomp/src/lb/*.c"      "decomp/src/lb/*.h")
-file(GLOB_RECURSE SSB64_SRC_MN      "decomp/src/mn/*.c"      "decomp/src/mn/*.h")
-file(GLOB_RECURSE SSB64_SRC_MP      "decomp/src/mp/*.c"      "decomp/src/mp/*.h")
-file(GLOB_RECURSE SSB64_SRC_MV      "decomp/src/mv/*.c"      "decomp/src/mv/*.h")
-file(GLOB_RECURSE SSB64_SRC_SC      "decomp/src/sc/*.c"      "decomp/src/sc/*.h")
-file(GLOB_RECURSE SSB64_SRC_SYS     "decomp/src/sys/*.c"     "decomp/src/sys/*.h")
-file(GLOB_RECURSE SSB64_SRC_WP      "decomp/src/wp/*.c"      "decomp/src/wp/*.h")
+file(GLOB_RECURSE SSB64_SRC_CREDITS "components/decomp/src/credits/*.c" "components/decomp/src/credits/*.h")
+file(GLOB_RECURSE SSB64_SRC_EF      "components/decomp/src/ef/*.c"      "components/decomp/src/ef/*.h")
+file(GLOB_RECURSE SSB64_SRC_FT      "components/decomp/src/ft/*.c"      "components/decomp/src/ft/*.h")
+file(GLOB_RECURSE SSB64_SRC_GM      "components/decomp/src/gm/*.c"      "components/decomp/src/gm/*.h")
+file(GLOB_RECURSE SSB64_SRC_GR      "components/decomp/src/gr/*.c"      "components/decomp/src/gr/*.h")
+file(GLOB_RECURSE SSB64_SRC_IF      "components/decomp/src/if/*.c"      "components/decomp/src/if/*.h")
+file(GLOB_RECURSE SSB64_SRC_IT      "components/decomp/src/it/*.c"      "components/decomp/src/it/*.h")
+file(GLOB_RECURSE SSB64_SRC_LB      "components/decomp/src/lb/*.c"      "components/decomp/src/lb/*.h")
+file(GLOB_RECURSE SSB64_SRC_MN      "components/decomp/src/mn/*.c"      "components/decomp/src/mn/*.h")
+file(GLOB_RECURSE SSB64_SRC_MP      "components/decomp/src/mp/*.c"      "components/decomp/src/mp/*.h")
+file(GLOB_RECURSE SSB64_SRC_MV      "components/decomp/src/mv/*.c"      "components/decomp/src/mv/*.h")
+file(GLOB_RECURSE SSB64_SRC_SC      "components/decomp/src/sc/*.c"      "components/decomp/src/sc/*.h")
+file(GLOB_RECURSE SSB64_SRC_SYS     "components/decomp/src/sys/*.c"     "components/decomp/src/sys/*.h")
+file(GLOB_RECURSE SSB64_SRC_WP      "components/decomp/src/wp/*.c"      "components/decomp/src/wp/*.h")
 
-# Port layer (C++ glue) — excludes src/compatibility/ which is compiled as part of ssb64_game
-# CONFIGURE_DEPENDS: new port TUs (e.g. a new src/gameplay/**/*.cpp whose
+# Port layer (C++ glue) — excludes src/platform/compatibility/ which is compiled as part of ssb64_game
+# CONFIGURE_DEPENDS: new port TUs (e.g. a new src/game/gameplay/**/*.cpp whose
 # symbol a decomp TU references) must be picked up by already-configured build
 # dirs, or a plain `cmake --build` after pulling hits an undefined-reference
 # link error against a stale glob.
 file(GLOB_RECURSE SSB64_SRC_PORT CONFIGURE_DEPENDS "src/*.cpp" "src/*.c" "src/*.h" "src/*.S")
-list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/compatibility/.*\.c$")
+list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/compatibility/.*\.c$")
 # RelocFileTable.{us,jp}.cpp both define gRelocFileTable — compile only the
 # selected version's table (the rest are siblings for the other version).
 # The generated sources live outside src/ (generated/src/<region>/), so the
@@ -583,12 +597,12 @@ list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/coroutine/coroutine_.*\\.
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/switch/context_switch\\.s$")
 endif()
-# src/integration/modding/ (HookManager + SymbolResolver) wraps funchook, which isn't
+# src/game/modding/ (HookManager + SymbolResolver) wraps funchook, which isn't
 # fetched when the mod system is disabled. Drop it so nothing references the
-# missing backend. src/integration/hooks/ (the event dispatch system) is funchook-free
+# missing backend. src/game/engine/hooks/ (the event dispatch system) is funchook-free
 # and uses core libultraship events, so it stays compiled on every target.
 if (DISABLE_SCRIPTING)
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/integration/modding/")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/game/modding/")
 endif()
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # libtorch_runner.so wraps android_torch_bridge.cpp separately; keep
@@ -602,18 +616,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # download service (HttpURLConnection via JNI on Android) and
     # in-process libzip/SHA-256, so they run on Android too.
     # The corresponding menu entries are gated with #if !defined(__ANDROID__)
-    # in src/presentation/PortMenu.cpp so nothing references the removed symbols.
+    # in src/interfaces/presentation/PortMenu.cpp so nothing references the removed symbols.
     # (src/resources/loading/textures/hires/ is NOT dropped here — it compiles on Android but runs
     # opt-in with a reduced LRU budget; see the PORT_HIRES_ENABLED block.)
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
-        "src/(distribution/updater/Updater|social/DiscordRichPresence)\\.cpp$")
+        "src/(application/update/updater/Updater|networking/social/DiscordRichPresence)\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/window/port_window_icon\\.cpp$")
 endif()
 if(BATTLESHIP_UWP)
     # Xbox packages are updated as MSIX and cannot use these Win32
     # shell-out/IPC integrations.
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
-        "src/(distribution/(updater/Updater|downloads/(ShaderDownloader|ModPackDownloader))|social/DiscordRichPresence)\\.cpp$")
+        "src/(application/update/(updater/Updater|downloads/(ShaderDownloader|ModPackDownloader))|networking/social/DiscordRichPresence)\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/window/port_window_icon\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/application/first_run\\.cpp$")
 endif()
@@ -676,7 +690,7 @@ set_target_properties(ssb64_port_options PROPERTIES
 
 # First-party quality flags — attached ONCE to the options interface so
 # every smash_* object lib and the executable inherit them. External code
-# (decomp/, libultraship/, torch/, FetchContent) never consumes it.
+# (components/decomp/, components/libultraship/, components/game-runtime/, FetchContent) never consumes it.
 include(cmake/CompilerWarnings.cmake)
 include(cmake/Hardening.cmake)
 include(cmake/Sanitizers.cmake)
@@ -685,10 +699,17 @@ ssb64_apply_warnings(ssb64_port_options)
 ssb64_apply_hardening(ssb64_port_options)
 ssb64_apply_sanitizers(ssb64_port_options)
 
+# Leaf module names. Order matters: a module nested under another module's
+# directory must be listed FIRST so the /src/<mod>/ filter carves it out
+# before the parent claims it (update<application, components/decomp/hooks<engine,
+# compatibility<platform).
 set(SSB64_MODULE_DIRS
-    application audio compatibility config diagnostics distribution game
-    gameplay input integration netplay observability persistence platform
-    presentation rendering resources social)
+    update application
+    config observability persistence
+    decomp hooks engine gameplay modding
+    audio input presentation rendering
+    netplay social
+    compatibility platform resources)
 set(SSB64_MODULE_OBJECTS "")
 set(SSB64_SRC_PORT_TOPLEVEL ${SSB64_SRC_PORT})
 foreach(mod IN LISTS SSB64_MODULE_DIRS)
@@ -735,7 +756,7 @@ list(FILTER SSB64_DECOMP_SOURCES EXCLUDE REGEX "\\.inc\\.c$")
 # (matches the upstream decomp Makefile's VERSION=jp C_FILES filter-out).
 if(SSB64_VERSION STREQUAL "jp")
     list(FILTER SSB64_DECOMP_SOURCES EXCLUDE REGEX
-        "decomp/src/mn/mncommon/(mncongra|mnstartup)\\.c$")
+        "components/decomp/src/mn/mncommon/(mncongra|mnstartup)\\.c$")
 endif()
 
 ################################################################################
@@ -766,23 +787,23 @@ message(STATUS "SSB64 app identity: ${SSB64_APP_NAME}")
 # stale archives from older builds caused reloc-token storms and menu
 # crashes (issues #217/#221) until users manually re-extracted.
 file(GLOB_RECURSE SSB64_TORCH_RECIPE_INPUTS CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/src/*.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/src/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/src/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/src/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/lib/*.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/lib/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/lib/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/lib/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/torch/cmake/*.cmake)
-list(APPEND SSB64_TORCH_RECIPE_INPUTS ${CMAKE_CURRENT_SOURCE_DIR}/torch/CMakeLists.txt)
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/src/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/src/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/src/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/src/*.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/lib/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/lib/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/lib/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/lib/*.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/cmake/*.cmake)
+list(APPEND SSB64_TORCH_RECIPE_INPUTS ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/CMakeLists.txt)
 # GLOB_RECURSE: the deblob child yamls live in per-category subdirectories
-# (assets/recipes/<v>/reloc_fighters_main/*.yml,
+# (assets/game/<v>/reloc_fighters_main/*.yml,
 # docs/deblob.md) and must invalidate the recipe hash — a stale archive
 # missing slices would fail synthesis.
 file(GLOB_RECURSE SSB64_RECIPE_YAMLS CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/recipes/${SSB64_VERSION}/*.yml
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/recipes/${SSB64_VERSION}/*.yaml)
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/game/${SSB64_VERSION}/*.yml
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/game/${SSB64_VERSION}/*.yaml)
 set(SSB64_RECIPE_INPUTS ${SSB64_TORCH_RECIPE_INPUTS} ${SSB64_RECIPE_YAMLS}
     ${CMAKE_CURRENT_SOURCE_DIR}/config/project/config.yml)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SSB64_RECIPE_INPUTS})
@@ -845,6 +866,11 @@ set(SSB64_COMPILE_DEFS
 
     # Platform compat
     _USE_MATH_DEFINES
+    # Port code uses portable getenv/fopen/strdup and POSIX names (fileno
+    # etc.); MSVC's *_s / _-prefixed replacements are Windows-only. Silence
+    # both deprecation classes once, globally.
+    _CRT_SECURE_NO_WARNINGS
+    _CRT_NONSTDC_NO_WARNINGS
 
     # ImGui
     CIMGUI_DEFINE_ENUMS_AND_STRUCTS
@@ -852,7 +878,7 @@ set(SSB64_COMPILE_DEFS
     # Updater
     BATTLESHIP_CURRENT_VERSION=\"${BATTLESHIP_VERSION}\"
 
-    # Netplay handshake (see src/netplay/session/netlobby.cpp)
+    # Netplay handshake (see src/networking/netplay/session/netlobby.cpp)
     BATTLESHIP_BUILD_SHA=\"${BATTLESHIP_BUILD_SHA}\"
 )
 
@@ -914,20 +940,20 @@ endif()
 ssb64_apply_static_analysis(ssb64_game)
 
 # Port stub definitions (C code that satisfies N64 linker symbols)
-file(GLOB SSB64_STUBS "src/compatibility/*.c")
+file(GLOB SSB64_STUBS "src/platform/compatibility/*.c")
 target_sources(ssb64_game PRIVATE ${SSB64_STUBS})
 
 # Selectively include decomp libultra files that provide needed functionality.
 # These are pure C implementations that work on any platform.
 set(SSB64_LIBULTRA_PORT
-    decomp/src/libultra/gu/mtxcatf.c       # guMtxCatF
-    decomp/src/libultra/gu/mtxutil.c        # guMtxF2L, guMtxL2F, guMtxIdentF
-    decomp/src/libultra/gu/mtxxfmf.c        # guMtxXFMF
-    decomp/src/libultra/gu/normalize.c      # guNormalize
-    decomp/src/libultra/gu/sinf.c           # __sinf — SGI polynomial + Cody-Waite reduction
-    decomp/src/libultra/gu/cosf.c           # __cosf — same (all game trig routes here, not host libm)
+    components/decomp/src/libultra/gu/mtxcatf.c       # guMtxCatF
+    components/decomp/src/libultra/gu/mtxutil.c        # guMtxF2L, guMtxL2F, guMtxIdentF
+    components/decomp/src/libultra/gu/mtxxfmf.c        # guMtxXFMF
+    components/decomp/src/libultra/gu/normalize.c      # guNormalize
+    components/decomp/src/libultra/gu/sinf.c           # __sinf — SGI polynomial + Cody-Waite reduction
+    components/decomp/src/libultra/gu/cosf.c           # __cosf — same (all game trig routes here, not host libm)
     # NOTE: sprite.c is NOT included — drawbitmap is assembly-only (MIPS).
-    # Sprite functions are stubbed in src/compatibility/n64_stubs.c instead.
+    # Sprite functions are stubbed in src/platform/compatibility/n64_stubs.c instead.
 )
 target_sources(ssb64_game PRIVATE ${SSB64_LIBULTRA_PORT})
 
@@ -941,8 +967,8 @@ target_sources(ssb64_game PRIVATE ${SSB64_LIBULTRA_PORT})
 # calls past the aliases.
 if (NOT MSVC)
     set_source_files_properties(
-        decomp/src/libultra/gu/sinf.c
-        decomp/src/libultra/gu/cosf.c
+        components/decomp/src/libultra/gu/sinf.c
+        components/decomp/src/libultra/gu/cosf.c
         PROPERTIES COMPILE_OPTIONS "-ffp-contract=off;-fno-strict-aliasing")
     # Contraction folds a*b+c into fmadd on AArch64, perturbing last-ulp
     # results vs. x86-64 SSE2 and the N64's separate mul.s/add.s — a silent
@@ -961,48 +987,48 @@ if (MSVC)
         ${SSB64_SRC_EF} ${SSB64_SRC_FT} ${SSB64_SRC_GM} ${SSB64_SRC_GR}
         ${SSB64_SRC_IF} ${SSB64_SRC_IT} ${SSB64_SRC_MP} ${SSB64_SRC_SC}
         ${SSB64_SRC_WP}
-        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/lb/lbcommon.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/lb/lbparticle.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/objanim.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/objhelper.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/objman.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/objscript.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src/sys/utils.c)
+        ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src/lb/lbcommon.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src/lb/lbparticle.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src/sys/objanim.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src/sys/objhelper.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src/sys/objman.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src/sys/objscript.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src/sys/utils.c)
     list(FILTER SSB64_ROLLBACK_SEG_SOURCES INCLUDE REGEX "\\.c$")
     list(FILTER SSB64_ROLLBACK_SEG_SOURCES EXCLUDE REGEX "\\.inc\\.c$")
     set_source_files_properties(${SSB64_ROLLBACK_SEG_SOURCES}
-        PROPERTIES COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/rollback/netrollback_seg.h")
+        PROPERTIES COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/rollback/netrollback_seg.h")
 endif()
 
 # N64 audio library — synthesis driver, sequence player, voice management.
 # These decomp files are compiled with PORT defines; the CPU Acmd interpreter
 # (src/resources/loading/audio/mixer.h) replaces RSP microcode via macro substitution.
 set(SSB64_NAUDIO_PORT
-    decomp/src/libultra/n_audio/n_env.c             # Core: synth driver, audio frame, pull chain, CSP, FX, event queue
-    decomp/src/libultra/n_audio/n_synaddplayer.c     # Add player to synth driver
-    decomp/src/libultra/n_audio/n_synallocfx.c       # FX bus allocation
-    decomp/src/libultra/n_audio/n_synallocvoice.c    # Voice allocation + stealing
-    decomp/src/libultra/n_audio/n_synfreevoice.c     # Voice free
-    decomp/src/libultra/n_audio/n_syndelete.c        # Synth delete
-    decomp/src/libultra/n_audio/n_synsetfxmix.c      # Voice FX mix
-    decomp/src/libultra/n_audio/n_synsetpan.c        # Voice pan
-    decomp/src/libultra/n_audio/n_synsetpitch.c      # Voice pitch
-    decomp/src/libultra/n_audio/n_synsetpriority.c   # Voice priority
-    decomp/src/libultra/n_audio/n_synsetvol.c        # Voice volume
-    decomp/src/libultra/n_audio/n_synstartvoiceparam.c # Voice start with params
-    decomp/src/libultra/n_audio/n_synstopvoice.c     # Voice stop
-    decomp/src/libultra/n_audio/n_cspplay.c          # CSP play
-    decomp/src/libultra/n_audio/n_cspsetbank.c       # CSP set bank
-    decomp/src/libultra/n_audio/n_cspsetfxmix.c      # CSP set FX mix
-    decomp/src/libultra/n_audio/n_cspsetpriority.c   # CSP set priority
-    decomp/src/libultra/n_audio/n_cspsetseq.c        # CSP set sequence
-    decomp/src/libultra/n_audio/n_cspsetvol.c        # CSP set volume
-    decomp/src/libultra/n_audio/n_cspstop.c          # CSP stop
-    decomp/src/libultra/n_audio/n_seq.c              # Sequence data reader
-    decomp/src/libultra/n_audio/n_seqplayer.c        # Sequence player voice handler
-    decomp/src/libultra/n_audio/n_seqpgetchlvol.c    # Get channel volume
-    decomp/src/libultra/n_audio/n_seqpgetvol.c       # Get master volume
-    decomp/src/libultra/audio/cents2ratio.c          # alCents2Ratio — pitch conversion
+    components/decomp/src/libultra/n_audio/n_env.c             # Core: synth driver, audio frame, pull chain, CSP, FX, event queue
+    components/decomp/src/libultra/n_audio/n_synaddplayer.c     # Add player to synth driver
+    components/decomp/src/libultra/n_audio/n_synallocfx.c       # FX bus allocation
+    components/decomp/src/libultra/n_audio/n_synallocvoice.c    # Voice allocation + stealing
+    components/decomp/src/libultra/n_audio/n_synfreevoice.c     # Voice free
+    components/decomp/src/libultra/n_audio/n_syndelete.c        # Synth delete
+    components/decomp/src/libultra/n_audio/n_synsetfxmix.c      # Voice FX mix
+    components/decomp/src/libultra/n_audio/n_synsetpan.c        # Voice pan
+    components/decomp/src/libultra/n_audio/n_synsetpitch.c      # Voice pitch
+    components/decomp/src/libultra/n_audio/n_synsetpriority.c   # Voice priority
+    components/decomp/src/libultra/n_audio/n_synsetvol.c        # Voice volume
+    components/decomp/src/libultra/n_audio/n_synstartvoiceparam.c # Voice start with params
+    components/decomp/src/libultra/n_audio/n_synstopvoice.c     # Voice stop
+    components/decomp/src/libultra/n_audio/n_cspplay.c          # CSP play
+    components/decomp/src/libultra/n_audio/n_cspsetbank.c       # CSP set bank
+    components/decomp/src/libultra/n_audio/n_cspsetfxmix.c      # CSP set FX mix
+    components/decomp/src/libultra/n_audio/n_cspsetpriority.c   # CSP set priority
+    components/decomp/src/libultra/n_audio/n_cspsetseq.c        # CSP set sequence
+    components/decomp/src/libultra/n_audio/n_cspsetvol.c        # CSP set volume
+    components/decomp/src/libultra/n_audio/n_cspstop.c          # CSP stop
+    components/decomp/src/libultra/n_audio/n_seq.c              # Sequence data reader
+    components/decomp/src/libultra/n_audio/n_seqplayer.c        # Sequence player voice handler
+    components/decomp/src/libultra/n_audio/n_seqpgetchlvol.c    # Get channel volume
+    components/decomp/src/libultra/n_audio/n_seqpgetvol.c       # Get master volume
+    components/decomp/src/libultra/audio/cents2ratio.c          # alCents2Ratio — pitch conversion
 )
 target_sources(ssb64_game PRIVATE ${SSB64_NAUDIO_PORT})
 
@@ -1010,35 +1036,39 @@ target_compile_definitions(ssb64_game PRIVATE ${SSB64_COMPILE_DEFS})
 
 target_include_directories(ssb64_game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include          # Port-tree generated headers (reloc_data.h)
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/include   # Decomp C headers (shadows system headers)
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src       # Decomp game module headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/include   # Decomp C headers (shadows system headers)
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src       # Decomp game module headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src            # src/<module>/x.h prefixed includes
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/observability
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/persistence
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/updater
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/downloads
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/integrity
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/manifests
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/config
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/observability
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/persistence
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/updater
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/downloads
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/integrity
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/config
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/decomp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/hooks
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/modding
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/domain
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/session
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/transport
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/rollback
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/gameplay
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/input
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/social
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/widescreen
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/cosmetics
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/decomp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/modding
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/gameplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/input
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/presentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/cosmetics
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/domain
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/session
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/transport
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/rollback
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/social
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/relocation
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/interpolation
@@ -1056,12 +1086,12 @@ target_include_directories(ssb64_game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/filesystem
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/window
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/android
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/compatibility
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/compatibility
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/debugging      # Acmd trace (mixer.h calls acmd_trace_log_cmd)
     # Event system headers: decomp PORT hooks fire engine events directly
     # (hooks/Events.h -> ship/events/EventTypes.h + bridge/eventsbridge.h).
-    ${CMAKE_CURRENT_SOURCE_DIR}/libultraship/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/libultraship/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/libultraship/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/libultraship/include
 )
 
 # Clang 16+ promoted several historically-warning diagnostics to errors by
@@ -1294,38 +1324,42 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ssb64_port_options)
 ################################################################################
 
 target_include_directories(ssb64_port_options INTERFACE
-    # NOTE: Do NOT add decomp/include here. The C decomp shim headers (stdlib.h,
+    # NOTE: Do NOT add components/decomp/include here. The C decomp shim headers (stdlib.h,
     # stddef.h, ...) shadow the C++ standard library when picked up by src/*.cpp,
     # producing libc++ <cstdlib> errors. Only ssb64_game (C decomp) consumes them.
-    ${CMAKE_CURRENT_SOURCE_DIR}/decomp/src       # Decomp game module headers (sys/, ft/, sc/, ...)
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/decomp/src       # Decomp game module headers (sys/, ft/, sc/, ...)
     ${CMAKE_CURRENT_SOURCE_DIR}/include          # Public port headers (smash_classic/)
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/observability
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/persistence
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/updater
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/downloads
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/integrity
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/manifests
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/config
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/observability
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/persistence
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/updater
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/downloads
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/distribution/integrity
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/config
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/decomp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/hooks
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/integration/modding
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/domain
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/session
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/transport
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/netplay/rollback
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/gameplay
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/input
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/social
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/widescreen
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/cosmetics
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/decomp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/modding
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/gameplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/input
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/presentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/cosmetics
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/domain
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/session
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/transport
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/rollback
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/social
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/relocation
     ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/interpolation
@@ -1343,7 +1377,7 @@ target_include_directories(ssb64_port_options INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/filesystem
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/window
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/android
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/compatibility
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/compatibility
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/debugging
     ${SSB64_CSS_GEN_DIR}                         # CSS icon baked headers (arrow_data.h)
 )
@@ -1390,7 +1424,7 @@ foreach(mod IN LISTS SSB64_MODULE_DIRS)
     endif()
 endforeach()
 if (WIN32)
-    # src/diagnostics/port_symbolize.cpp (SyncTest diagnostics), src/netplay/transport/udp_transport.cpp, src/netplay/transport/websocket_transport.cpp
+    # src/core/observability/port_symbolize.cpp (SyncTest diagnostics), src/networking/netplay/transport/udp_transport.cpp, src/networking/netplay/transport/websocket_transport.cpp
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt)
 endif()
 
@@ -1709,7 +1743,7 @@ if(EXISTS "${SSB64_BASEROM}")
     # Deblob validation gate (docs/deblob.md): builds every deblobbed
     # bundle through the real archive/factory/synthesis path and fails on
     # any I5/I7/I9 violation. Mandatory local pre-merge for changes to
-    # torch/, the extraction recipes, or the synthesis code (CI has no
+    # components/game-runtime/, the extraction recipes, or the synthesis code (CI has no
     # staged archive). Runs headless-ish (exits before the game boots; a
     # window may flash).
     add_custom_target(synth_verify
@@ -1802,12 +1836,12 @@ if(EXISTS "${SSB64_CSS_ASSET_ROM}")
             ${SSB64_CSS_BF_SMALL_PNG}
             ${SSB64_CSS_BF_NAME_PNG}
         COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/derive_stage_assets.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/derive_stage_assets.py
                 ${SSB64_CSS_ASSET_ROM}
                 ${SSB64_CSS_STAGE_ASSET_DIR}
         DEPENDS
             ${SSB64_CSS_ASSET_ROM}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset-pipeline/derive_stage_assets.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/assets/pipeline/derive_stage_assets.py
         COMMENT "Extracting CSS stage assets from ${SSB64_CSS_ASSET_ROM}"
         VERBATIM
     )
@@ -1888,7 +1922,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # the SDL game loop starts.
     add_library(torch_runner SHARED src/platform/android/android_torch_bridge.cpp)
     target_include_directories(torch_runner PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/torch/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/src
     )
     # The extractor + its FetchContent'd deps (yaml-cpp, tinyxml2, libgfxd,
     # BinaryTools, N64Graphics, spdlog, GSL, ...). All are static libs from
@@ -1937,7 +1971,7 @@ if (NOT DISABLE_SCRIPTING)
     # exe directory.
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/modding/package_mod.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/developer/modding/package_mod.py
             --mod-dir ${CMAKE_CURRENT_SOURCE_DIR}/mods/examples/playertint
             --out-dir "$<TARGET_FILE_DIR:${PROJECT_NAME}>/bundled-mods/playertint"
             --repo-root ${CMAKE_CURRENT_SOURCE_DIR}
@@ -1946,8 +1980,8 @@ if (NOT DISABLE_SCRIPTING)
 endif()
 
 # GLideN64->BattleShip texture-name mapping (vendored from GhostlyDark's
-# SSB-Reloaded, MIT — see tools/modding/vendor/README.md). The in-game
-# converter (src/distribution/downloads/ModPackDownloader.cpp) renames
+# SSB-Reloaded, MIT — see tools/developer/modding/vendor/README.md). The in-game
+# converter (src/application/update/downloads/ModPackDownloader.cpp) renames
 # GLideN64/Rice-format PNG packs to the native "#hash#fmt#siz.png"
 # grammar using this table. Staged as bundled-data/gliden64-map.json;
 # independent of DISABLE_SCRIPTING since texture packs aren't script mods.
@@ -1955,7 +1989,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/bundled-data"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/modding/vendor/battleship.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/developer/modding/vendor/battleship.json
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/bundled-data/gliden64-map.json"
     COMMENT "Staging GLideN64 conversion map"
     VERBATIM)

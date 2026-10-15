@@ -8,11 +8,11 @@ assets and settings stay in a fresh output directory; never uses installed mods.
 import argparse
 import json
 import os
-from pathlib import Path
 import shutil
 import struct
 import subprocess
 import zipfile
+from pathlib import Path
 
 DL_PATH = "reloc_fighters_main/LinkModel/dLinkModel_Gfx_0x1D88"
 PARENT = "reloc_fighters_main/LinkModel"
@@ -106,7 +106,7 @@ def main():
                    SSB64_SYNTH_INSPECT="324", SSB64_DUMP_SYNTH_RELOC_FILE_ID="324")
         with (run / "output.log").open("w") as log:
             proc = subprocess.run([str(app / "BattleShip")], cwd=app, env=env,
-                                  stdout=log, stderr=subprocess.STDOUT, timeout=120)
+                                  stdout=log, stderr=subprocess.STDOUT, timeout=120, check=False)
         report = traces / "synth_verify_results.json"
         verdict = json.loads(report.read_text()) if report.exists() else {}
         files = {f["path"]: f["ok"] for f in verdict.get("files", [])}

@@ -10,7 +10,7 @@
 
 ### 1. OSThread sizeof Shadowing (n64_stubs.c:127)
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/compatibility/n64_stubs.c:127`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/platform/compatibility/n64_stubs.c:127`
 
 **Code:**
 ```c
@@ -23,12 +23,12 @@ void osCreateThread(OSThread *t, OSId id, void (*entry)(void *), void *arg,
 }
 ```
 
-**Root Cause:** Typename shadowing — `OSThread` refers to LUS's redefined version from `libultraship/include/libultraship/libultra/thread.h`, NOT the decomp's original from decomp/include/PR/os.h.
+**Root Cause:** Typename shadowing — `OSThread` refers to LUS's redefined version from `components/libultraship/include/components/libultraship/libultra/thread.h`, NOT the decomp's original from components/decomp/include/PR/os.h.
 
 **Size Mismatch:**
-- **Decomp version** (decomp/include/PR/os.h:80`): ~192 bytes (N64 word-sized pointers)
+- **Decomp version** (components/decomp/include/PR/os.h:80`): ~192 bytes (N64 word-sized pointers)
   - next (4), priority (4), queue (4), tlnext (4), state (2), flags (2), id (4), fp (4), context (160)
-- **LUS version** (`libultraship/.../thread.h:50`): 0x1B0 = **432 bytes** (LP64 pointers + extra fields)
+- **LUS version** (`components/libultraship/.../thread.h:50`): 0x1B0 = **432 bytes** (LP64 pointers + extra fields)
   - Same layout as decomp but with 8-byte pointers, plus `thprof` field at offset 0x1C, and extended `__OSThreadContext` with NEON/FP state
 
 **Symptom:** 
@@ -49,7 +49,7 @@ Use `sizeof(__OSThreadContext)` + fixed offsets, or better: define a local funct
 
 **Recommended Solution:**
 ```c
-// In src/compatibility/n64_stubs.c, near osCreateThread:
+// In src/platform/compatibility/n64_stubs.c, near osCreateThread:
 
 // Decomp OSThread struct is smaller than LUS's redefined version.
 // We must not use sizeof(OSThread) directly as it would use LUS's size.
@@ -78,7 +78,7 @@ Or: Move the `memset` call into a stub that doesn't include the LUS headers, usi
 
 ### 2. Particle Bank Bridge — Rapid Scene Transition Dedup Map Eviction
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/integration/decomp/particle_bank_bridge.cpp:378-406`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/game/engine/decomp/particle_bank_bridge.cpp:378-406`
 
 **Context:**
 The `portParticleLoadBank()` function evicts old working entries for a given `scripts_lo` address when a new scene requests them:
@@ -112,7 +112,7 @@ sWorkingEntries.erase(
 
 ### 3. Port Log ARM64 Variadic-Arguments Declaration
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/observability/port_log.c:28-36` and callers in decomp
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/core/observability/port_log.c:28-36` and callers in decomp
 
 **Code:**
 ```c
@@ -133,7 +133,7 @@ void port_log(const char *fmt, ...)
   - `/src/gr/grwallpaper.c` has `extern void port_log(const char *fmt, ...);`
   - `/src/lb/lbcommon.c` has the same extern
 
-- ✅ Port header `/src/observability/port_log.h` declares it correctly
+- ✅ Port header `/src/core/observability/port_log.h` declares it correctly
 
 **Verdict:** **NO BUG** — variadic args are safe on ARM64 because:
 1. All callsites have the proper extern declaration.
@@ -146,7 +146,7 @@ void port_log(const char *fmt, ...)
 
 **Files:** 
 - `/Users/jackrickey/Dev/ssb64-port/src/platform/coroutine/coroutine_posix.cpp:45-46` — 256 KB service threads, 64 KB GObj threads
-- `/Users/jackrickey/Dev/ssb64-port/src/compatibility/n64_stubs.c:45-46` — defines PORT_STACK_SERVICE and PORT_STACK_GOBJ
+- `/Users/jackrickey/Dev/ssb64-port/src/platform/compatibility/n64_stubs.c:45-46` — defines PORT_STACK_SERVICE and PORT_STACK_GOBJ
 
 **Concern:**
 The game's decomp code can recurse deeply in some paths:
@@ -173,7 +173,7 @@ The game's decomp code can recurse deeply in some paths:
 
 ### 5. Audio Bridge — Field-by-Field Parsing (WELL-DEFENDED)
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/integration/decomp/audio_bridge.cpp:308-491`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/game/engine/decomp/audio_bridge.cpp:308-491`
 
 **Strengths:**
 - ✅ Avoids the sizeof trap entirely by parsing ROM binary field-by-field.
@@ -187,7 +187,7 @@ The game's decomp code can recurse deeply in some paths:
 
 ### 6. Particle Bank Bridge — Byte-Swap Helpers (WELL-DEFENDED)
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/integration/decomp/particle_bank_bridge.cpp:163-308`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/game/engine/decomp/particle_bank_bridge.cpp:163-308`
 
 **Strengths:**
 - ✅ Byte-swap functions work on raw uint8_t* data with explicit offsets.
@@ -265,7 +265,7 @@ Audit of `src/resources/loading/audio/mixer.h` include order:
 
 **Files:**
 - `/Users/jackrickey/Dev/ssb64-port/src/application/first_run.cpp:126-160`
-- `/Users/jackrickey/Dev/ssb64-port/src/presentation/native_dialog.cpp:69-110`
+- `/Users/jackrickey/Dev/ssb64-port/src/interfaces/presentation/native_dialog.cpp:69-110`
 
 **Observations:**
 - ✅ ROM discovery uses `fs::exists()` for race-condition-safe checks.
@@ -294,7 +294,7 @@ Audit of `src/resources/loading/audio/mixer.h` include order:
 
 ## LIBC COMPAT: bzero
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/src/compatibility/libc_compat.c:66-70`
+**File:** `/Users/jackrickey/Dev/ssb64-port/src/platform/compatibility/libc_compat.c:66-70`
 
 **Code:**
 ```c

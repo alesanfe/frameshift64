@@ -16,7 +16,7 @@ context from the initial plan.
 ## 1. Problem
 
 The Windows modding package trips antivirus (Microsoft Defender false
-positives, per `platforms/windows/packaging/package-windows.ps1` header). Two distinct detection
+positives, per `packaging/windows/package-windows.ps1` header). Two distinct detection
 layers are in play:
 
 1. **Static signatures on the TCC binaries.** Malware families bundle TinyCC
@@ -87,7 +87,7 @@ All changes in the ScriptLoader (the temp-DLL compile+load path):
      `ENABLE_EXPORTS` keeps the exe's export table; `dlsym(RTLD_DEFAULT,…)`
      on Unix — we already link `-Wl,-export-dynamic`), and register it with
      `tcc_add_symbol(s, name, addr)`. The existing `SymbolResolver` machinery
-     in `src/integration/modding/` does the same lookup and can likely be reused.
+     in `src/game/modding/` does the same lookup and can likely be reused.
 3. `tcc_relocate(s)` then `tcc_get_symbol(s, "ModInit")` /
    `"ModExit"` instead of `LoadLibrary` + `GetProcAddress`.
 4. **Hot reload / unload:** replace `FreeLibrary` with `tcc_delete(s)` (frees
@@ -123,12 +123,12 @@ tinycc FetchContent setup:
      remove them from the `tcc -ar` bundling too).
 3. Linux/macOS staging blocks are already header+libtcc1-only; no change
    beyond the static-link switch.
-4. `platforms/windows/packaging/package-windows.ps1`: the "Staging TCC scripting runtime" step
+4. `packaging/windows/package-windows.ps1`: the "Staging TCC scripting runtime" step
    still copies `.tcc/` — confirm the staged tree contains **no PE
    executables** afterward (`Get-ChildItem -Recurse .tcc | Where Extension
    -in '.dll','.exe'` must be empty). Update the header comment describing
    the Defender rationale.
-5. `platforms/macos/packaging/package-macos.sh` + `.github/workflows/release.yml`: no
+5. `packaging/macos/package-macos.sh` + `.github/workflows/release.yml`: no
    structural change expected; keep the standard/modding split **until the
    test protocol below passes**, then folding modding back into the standard
    package becomes a follow-up decision.

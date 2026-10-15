@@ -58,7 +58,7 @@ make test
 make test-suite TEST_SUITE=<name>   :: tests/config/test-suites.yml
 
 :: parser fuzz vs the built binary (needs staged DLLs)
-python tools/fuzz/fuzz_parsers.py --binary out\build\ninja-verify\BattleShip.exe
+python tools/analysis/fuzz/fuzz_parsers.py --binary out\build\ninja-verify\BattleShip.exe
 
 :: netplay e2e (needs node lobby + .o2r next to the exe)
 python tests\e2e\netplay\spectate_test.py --build-dir out\build\ninja-verify
@@ -69,7 +69,7 @@ python tests\e2e\netplay\spectate_test.py --build-dir out\build\ninja-verify --s
 
 ```
 make module-deps env-check docs-check retired-paths-check cvar-check gen-headers-check
-python tools/lint/check_*.py            :: individual scripts also runnable directly
+python tools/analysis/lint/check_*.py            :: individual scripts also runnable directly
 make lobby-test                          :: 21 security checks + 400-iter lobby fuzz
 python tests/integration/assets/extraction_recipes_test.py   :: TD-006 golden
 ```
@@ -77,7 +77,7 @@ python tests/integration/assets/extraction_recipes_test.py   :: TD-006 golden
 ## Codegen
 
 ```
-make generate-yamls      :: regenerate assets/recipes/<v>/ + reloc yaml tables
+make generate-yamls      :: regenerate assets/game/<v>/ + reloc yaml tables
 make codegen             :: CMake-managed generators (reloc tables, headers)
 make codegen-check       :: fails if regenerating changes the tree (CI gate)
 ```

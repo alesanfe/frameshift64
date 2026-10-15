@@ -63,7 +63,7 @@ None of this exists in either repo today. Estimated ~2 days of plumbing.
 ### 3.5. Save data (mostly handled by upstream)
 
 Main landed an SRAM-backed save persistence in
-`src/persistence/port_save.{cpp,h}` (commit 87cc570). The path resolution chain is:
+`src/core/persistence/port_save.{cpp,h}` (commit 87cc570). The path resolution chain is:
 
 ```
 $SSB64_SAVE_PATH  >  Ship::Context::GetPathRelativeToAppDirectory  >  SDL_GetPrefPath  >  cwd
@@ -86,11 +86,11 @@ What still needs wiring:
   regenerated from APK assets on first launch of a restored install).
   Domain is `external` because LUS routes saves through external app
   files, not internal `getFilesDir()`.
-- **User editing.** The Python `tools/save-editor/save_editor.py` doesn't run on
+- **User editing.** The Python `tools/developer/save-editor/save_editor.py` doesn't run on
   Android (no Python). Workflow on Android:
   ```bash
   adb pull /storage/emulated/0/Android/data/com.jrickey.battleship/files/ssb64_save.bin
-  python3 tools/save-editor/save_editor.py --unlock-all ssb64_save.bin
+  python3 tools/developer/save-editor/save_editor.py --unlock-all ssb64_save.bin
   adb push ssb64_save.bin /storage/emulated/0/Android/data/com.jrickey.battleship/files/
   ```
   (Long-term, Phase 8 polish could ship in-game unlock toggles in the

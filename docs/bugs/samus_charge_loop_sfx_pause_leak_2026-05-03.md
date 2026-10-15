@@ -15,7 +15,7 @@ Worked correctly on IDO/N64.
 ## Root cause — the IDO/LP64 divergence
 
 The pause-entry path `ifCommonBattlePauseInitInterface`
-(`decomp/src/if/ifcommon.c:3029`) does not contain an explicit "silence active
+(`components/decomp/src/if/ifcommon.c:3029`) does not contain an explicit "silence active
 loops" call on either platform. Reading the function:
 
 ```c
@@ -29,7 +29,7 @@ void ifCommonBattlePauseInitInterface(s32 player)
 ```
 
 The naïve read of (1) is "stop all active SFX" — but
-`func_80026594_27194` (`decomp/src/libultra/n_audio/n_env.c:5414`) is a
+`func_80026594_27194` (`components/decomp/src/libultra/n_audio/n_env.c:5414`) is a
 **garbage collector**, not a stop-all. It walks `unk_alsound_0x3C` /
 `unk_alsound_0x40` and only relocates entries already tagged with the
 deletion bit (`unk2B & 0x80` / `_0x1F & 0x80`). The fighter-loop tag is
@@ -39,7 +39,7 @@ the charge-loop FGM, so on IDO too `func_80026594_27194` walks past the
 whoosh's siz34 slot. (2) and (3) likewise do not stop existing voices.
 
 So how does IDO silence the whoosh? **By the audio thread descheduling
-on its own.** Look at the N64-side audio thread (`decomp/src/sys/audio.c:1350`+):
+on its own.** Look at the N64-side audio thread (`components/decomp/src/sys/audio.c:1350`+):
 
 ```c
 while (TRUE) {
@@ -60,7 +60,7 @@ stops ticking, the looping voice's bytecode stops re-arming the next
 note, and the voice winds down within an audio frame or two.
 
 The port doesn't have an SP. Its audio thread (PORT branch in
-`decomp/src/sys/audio.c:1139`) is a plain OS thread driven by the VI tick
+`components/decomp/src/sys/audio.c:1139`) is a plain OS thread driven by the VI tick
 queue alone:
 
 ```c
@@ -77,7 +77,7 @@ resumed game until Samus's status next changes.
 
 Compounding the issue (not the primary cause but the same family), the
 resume-side queue-maintenance routine `func_800264A4_270A4`
-(`decomp/src/libultra/n_audio/n_env.c:5479`) is short-circuited under
+(`components/decomp/src/libultra/n_audio/n_env.c:5479`) is short-circuited under
 `#ifdef PORT` to dodge a macOS/arm64 NULL deref, leaving the
 deletion-queue dance the original game uses for FGM bookkeeping
 half-broken on the port too.
@@ -139,7 +139,7 @@ force-stop every voice on it via `n_alSynStopVoice` +
 envelope-mixer fade-to-zero path). That hits whichever EE0C is
 currently holding the audible voice, by definition.
 
-`decomp/src/libultra/n_audio/n_env.c` — new PORT-only routine after
+`components/decomp/src/libultra/n_audio/n_env.c` — new PORT-only routine after
 the existing `portAudioSaveAndBlockFGMs` / `portAudioRestoreFGMs`
 accessors:
 
@@ -171,7 +171,7 @@ void portAudioPurgeFGMs(void)
 }
 ```
 
-`decomp/src/ft/ftparam.c` — the per-fighter walker now just clears
+`components/decomp/src/ft/ftparam.c` — the per-fighter walker now just clears
 each fighter's cached loop-SFX state and delegates the actual voice
 termination to the n_env.c routine:
 
@@ -194,7 +194,7 @@ void ftParamStopAllFightersLoopSFX(void)
 #endif
 ```
 
-`decomp/src/if/ifcommon.c` — call from
+`components/decomp/src/if/ifcommon.c` — call from
 `ifCommonBattlePauseInitInterface` before the existing
 `func_80026594_27194`:
 
@@ -246,17 +246,17 @@ is the working hotfix.
 
 ## File references
 
-- `decomp/src/ft/ftparam.c:339` — `ftParamPlayLoopSFX`
-- `decomp/src/ft/ftparam.c:350` — `ftParamStopLoopSFX`
-- `decomp/src/ft/ftparam.c:363` — new `ftParamStopAllFightersLoopSFX` (PORT)
-- `decomp/src/if/ifcommon.c:3029` — `ifCommonBattlePauseInitInterface`
-- `decomp/src/libultra/n_audio/n_env.c` — new `portAudioPurgeFGMs` (PORT)
-- `decomp/src/wp/wpsamus/wpsamuschargeshot.c:296` — charge whoosh start site
-- `decomp/src/sys/audio.c:1350` — IDO audio thread loop (SP-handshake gated)
-- `decomp/src/sys/audio.c:1139` — PORT audio thread loop (VI-only, no gate)
-- `decomp/src/libultra/n_audio/n_env.c:5414` — `func_80026594_27194` (GC, not stop-all)
-- `decomp/src/libultra/n_audio/n_env.c:5479` — `func_800264A4_270A4` (PORT stub)
-- `decomp/src/libultra/n_audio/n_env.c:5324` — `func_80026738_27338` (single-EE0C polite stop, unreliable here)
+- `components/decomp/src/ft/ftparam.c:339` — `ftParamPlayLoopSFX`
+- `components/decomp/src/ft/ftparam.c:350` — `ftParamStopLoopSFX`
+- `components/decomp/src/ft/ftparam.c:363` — new `ftParamStopAllFightersLoopSFX` (PORT)
+- `components/decomp/src/if/ifcommon.c:3029` — `ifCommonBattlePauseInitInterface`
+- `components/decomp/src/libultra/n_audio/n_env.c` — new `portAudioPurgeFGMs` (PORT)
+- `components/decomp/src/wp/wpsamus/wpsamuschargeshot.c:296` — charge whoosh start site
+- `components/decomp/src/sys/audio.c:1350` — IDO audio thread loop (SP-handshake gated)
+- `components/decomp/src/sys/audio.c:1139` — PORT audio thread loop (VI-only, no gate)
+- `components/decomp/src/libultra/n_audio/n_env.c:5414` — `func_80026594_27194` (GC, not stop-all)
+- `components/decomp/src/libultra/n_audio/n_env.c:5479` — `func_800264A4_270A4` (PORT stub)
+- `components/decomp/src/libultra/n_audio/n_env.c:5324` — `func_80026738_27338` (single-EE0C polite stop, unreliable here)
 
 ## Audit hook
 

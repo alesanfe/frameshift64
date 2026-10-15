@@ -24,7 +24,6 @@ relayout decisions; a clean run logs prefix-preservation warnings only.
 import argparse
 import sys
 import zipfile
-from pathlib import Path
 
 
 def load_entry(archive, symbol, slice_name):

@@ -19,7 +19,7 @@
  * value — every wire surface below has its own field. */
 #define SMASH_CLASSIC_APP_VERSION_STR "1.4.1"
 
-/* Peer-to-peer input/rollback packet format — decomp/src/sys/netpeer.c
+/* Peer-to-peer input/rollback packet format — components/decomp/src/sys/netpeer.c
  * `SYNETPEER_VERSION`. Wire field: u16 after the magic. Both peers must
  * match exactly or packets are dropped at the parser. */
 #define SMASH_NETPLAY_PROTOCOL_VERSION 3u

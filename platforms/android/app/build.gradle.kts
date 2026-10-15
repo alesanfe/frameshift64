@@ -80,7 +80,7 @@ val stageGameAssets = tasks.register<Copy>("stageGameAssets") {
     // merge — avoids a half-built APK with missing assets.
     from(findGameArtifact("f3d.o2r"))
     from(repoRoot.resolve("config/project/config.yml"))
-    from(repoRoot.resolve("assets/configuration/extraction")) {
+    from(repoRoot.resolve("assets/game")) {
         into("yamls")
     }
 

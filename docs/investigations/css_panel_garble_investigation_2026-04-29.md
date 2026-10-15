@@ -27,7 +27,7 @@ mismatch.
 
 ## What the game does
 
-`mnPlayersVSMakeGate(player)` in `decomp/src/mn/mnplayers/mnplayersvs.c`:
+`mnPlayersVSMakeGate(player)` in `components/decomp/src/mn/mnplayers/mnplayersvs.c`:
 
 1. Loads `llMNPlayersCommonRedCardSprite` as the panel SObj source —
    the *same* Sprite for all four players.
@@ -85,7 +85,7 @@ corruption is the issue.
 ### Theory C — Heap reuse stale fixup idempotency
 
 `lbRelocLoadAndRelocFile` evicts `sStructU16Fixups` for the heap range
-before memcpy (see `src/integration/decomp/lbreloc_bridge.cpp:378`). Should
+before memcpy (see `src/game/engine/decomp/lbreloc_bridge.cpp:378`). Should
 prevent stale fixups, but the panel sprites are loaded into a heap
 that's reused across CSS visits, so a missed eviction would leave
 `portFixupSprite` skipping the new load → fields read wrong.

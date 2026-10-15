@@ -1,7 +1,7 @@
 # ITAttributes ROM-Layout Rewrite — Handoff (2026-04-20)
 
 Open investigation. The decomp's `ITAttributes` declaration is structurally
-wrong relative to the actual ROM data layout. `decomp/src/it/itmanager.c:280-299`
+wrong relative to the actual ROM data layout. `components/decomp/src/it/itmanager.c:280-299`
 is a point-fix for `type` only. Every other Region B field may be reading
 garbage; the game has been papering over this.
 
@@ -88,7 +88,7 @@ lifetime value. Needs correlation with observed gameplay.
 
 Pattern across items: `0x0000_XXXX`. Values:
 `0x104A, 0x184A, 0x1836, 0x1802, 0x1840, 0x1850, 0x1866, 0x1A0A`.
-The decomp/port declare this as Word B1 (`angle:10 | kb_scale:10 |
+The components/decomp/port declare this as Word B1 (`angle:10 | kb_scale:10 |
 damage:8 | element:4`). IDO compiles the decomp to pack angle into a
 preceding u16 pad gap; the remaining `kb_scale + damage + element`
 would occupy the full u32. But ROM has the top half always zero, so

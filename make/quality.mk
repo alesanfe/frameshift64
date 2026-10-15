@@ -18,7 +18,7 @@ ci: submodules-check check security lobby-test codegen-check ## Local CI replay
 verify: layout-check doctor check security generated-check build
 	@$(call success,Full verification passed)
 
-lint: ## tools/lint/run_project_lint.py (configures its own build dir)
+lint: ## tools/analysis/lint/run_project_lint.py (configures its own build dir)
 	@mkdir -p "$(REPORT_DIR)/lint"
 	@$(PYTHON) "$(LINT_SCRIPT)" $(LINT_ARGS)
 	@$(call success,Lint passed)
@@ -30,7 +30,7 @@ format: ## clang-format src/ (excludes submodules)
 	@$(call heading,Formatting)
 	@if command -v clang-format >/dev/null 2>&1; then \
 	  git ls-files 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' \
-	    ':(exclude)src/integration/decomp/*' -z \
+	    ':(exclude)src/game/engine/decomp/*' -z \
 	    | xargs -0 -r clang-format -i; \
 	else \
 	  $(call warning,clang-format not found); \
@@ -40,7 +40,7 @@ format: ## clang-format src/ (excludes submodules)
 format-check: ## Verify formatting (clang-format --dry-run)
 	@if command -v clang-format >/dev/null 2>&1; then \
 	  git ls-files 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' \
-	    ':(exclude)src/integration/decomp/*' -z \
+	    ':(exclude)src/game/engine/decomp/*' -z \
 	    | xargs -0 -r clang-format --dry-run --Werror; \
 	else \
 	  $(call warning,clang-format not found — skipped); \

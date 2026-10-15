@@ -23,7 +23,7 @@ there was no single source of truth for "what is on the wire".
 - `compatibility.md` — change rules + test mapping
 - `examples/` — worked packet decode
 
-`decomp/src/sys/netpeer.c` + `services/netplay-lobby/` are the reference
+`components/decomp/src/sys/netpeer.c` + `services/netplay-lobby/` are the reference
 implementations; on disagreement the code wins and the doc is fixed in the
 same PR.
 

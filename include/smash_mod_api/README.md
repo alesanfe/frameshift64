@@ -3,7 +3,7 @@
 The set of headers a mod may `#include`. Everything else in `src/`
 is internal and may change without notice.
 
-Stable surface (implemented in `src/integration/`):
+Stable surface (implemented in `src/game/engine/`):
 
 - `integration/modding/HookManager.h` — detour + trampoline API
 - `integration/modding/ModRegistry.h` — mod enumeration + manifest

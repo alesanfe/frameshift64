@@ -12,13 +12,11 @@ Each driver needs a built BattleShip binary (autodetected or
 
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 
 import pytest
-
-from smash_test.processes import run_script  # noqa: E402
+from smash_test.processes import run_script
 
 HERE = Path(__file__).resolve().parent
 FIXTURE_REPLAYS = Path(__file__).resolve().parents[2] / "support" / "fixtures" / "replays"

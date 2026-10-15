@@ -22,7 +22,7 @@ FetchContent deps SHA-pinned), F-010 (env-var catalog
 103 `SSB64_*` reads), F-011 partial (save `.meta` sidecar + size check;
 atomic write still open), F-012 (hygiene deletions), F-021 (governance
 files + CODEOWNERS + PR template), F-022 partial (CycloneDX SBOM in release
-via `tools/lint/gen_sbom.py`), F-025 (`.editorconfig`).
+via `tools/analysis/lint/gen_sbom.py`), F-025 (`.editorconfig`).
 
 Still open: F-001 updater attestation verify, F-003 netplay extraction,
 F-006 lobby conformance suite, F-009 component targets, F-016 unit-test
@@ -63,7 +63,7 @@ under `tests/` (4 files) — verification is nearly all script-driven.
 
 1. **F-001** Close the update-path trust gap (attestation/sig verification, not just same-origin sha256).
 2. **F-002** Strip or compile-gate test/mutant/fuzz env hooks from release builds.
-3. **F-003** Move `netpeer.c`/rollback protocol code out of `decomp/` (or isolate it) — it's port code wearing a submodule costume; every protocol change is a cross-repo dance.
+3. **F-003** Move `netpeer.c`/rollback protocol code out of `components/decomp/` (or isolate it) — it's port code wearing a submodule costume; every protocol change is a cross-repo dance.
 4. **F-004** Wire `check_docs.py` + lobby security/fuzz tests + `test-lobby-*` into CI; today nothing runs them.
 5. **F-005** Split `CMakeLists.txt` into component targets (`smash_netplay`, `smash_bridge`, …) — enables per-target warnings and incremental checks.
 6. **F-006** Add `smash-classic-sim` headless runner as a first-class CMake target (pieces exist: AUTOVS, MAX_FRAMES, traces — just not packaged as one).
@@ -79,7 +79,7 @@ under `tests/` (4 files) — verification is nearly all script-driven.
 3. Add `.editorconfig` (siblings all have one; free).
 4. Add CODEOWNERS (netplay → you, docs → you, etc.).
 5. Pin the two remaining tag-pinned FetchContent deps to SHAs (v1.1.3, v3.4.0) with tag comments.
-6. One-line workflow job: `python tools/lint/check_docs.py`.
+6. One-line workflow job: `python tools/analysis/lint/check_docs.py`.
 7. Add `AGENTS.md` or symlink-free pointer to CLAUDE.md (house standard across AniNexus/dnd-companion).
 8. Add CHANGELOG.md (referenced by PR rules, currently absent).
 9. `.git-blame-ignore-revs` for the big move commit once it lands (OpenMW pattern).
@@ -101,9 +101,9 @@ smash-classic/
 ├── ci/windows/             # 3 files: UWP Dockerfile + build-uwp.ps1 — legacy
 ├── cmake/                  # Codegen.cmake, RuntimeAssets.cmake, funchook patch
 ├── config/                 # semgrep + static-analysis config
-├── decomp/                 # submodule — game code AND netpeer.c/netrollback.c
+├── components/decomp/                 # submodule — game code AND netpeer.c/netrollback.c
 ├── include/smash_classic/  # version.h (independent compat constants)
-├── libultraship/, torch/   # engine + asset-tool submodules
+├── components/libultraship/, components/game-runtime/   # engine + asset-tool submodules
 ├── services/netplay-lobby/ # cloudflare/ (485-line worker) + node-lobby.js (428) + tests
 ├── src/                    # ~38k LOC port layer
 │   ├── application/  bridge/  core/  netplay/  features/
@@ -153,7 +153,7 @@ flowchart TB
 - **Boot**: `main` → port init → LUS window/graphics → locate `BattleShip.o2r`
   (+ recipe-hash sidecar check) → boot decomp scene manager → ImGui shell.
 - **Assets**: user ROM → Torch (`-s` staged `torch-src/` with `config.yml` +
-  `assets/recipes/<region>` recipes) → `BattleShip.o2r`
+  `assets/game/<region>` recipes) → `BattleShip.o2r`
   beside binary. `f3d.o2r` shaders built separately.
 - **Local match**: decomp scene → `gamemanager` → sim ticks, port hooks for
   save/mods/reloc.
@@ -183,7 +183,7 @@ Remaining drift: it still describes `port/` module names in a few spots
 No new layers. Three targeted extractions only:
 
 ```
-src/netplay/
+src/networking/netplay/
 ├── protocol/     # wire layout, serialize/parse/validate — pure functions, no I/O
 ├── transport/    # udp_transport, websocket_transport — socket code only
 ├── rollback/     # snapshot/resim glue calling into decomp
@@ -222,7 +222,7 @@ compiled out in Release). See F-002/F-010.
 | **Dolphin** | `Core::WantsDeterminism()` + `SyncIdentifier` game-identity check before netplay | `NetPlayClient.cpp` | Our `compat_token()` is the equivalent — manifest (TD-008) is the planned upgrade | Medium |
 | **Dolphin** | FifoCI: recorded GPU command streams replayed in CI for regression | github.com/dolphin-emu/fifoci | Expensive to replicate; our confirmed-trace diffs already give an equivalent for *simulation*, not rendering | High, optional |
 | **Dolphin** | Pinned clang-format + `Tools/lint.sh` + CMakePresets workflow presets | Contributing.md | Presets partially; pin format version | Low |
-| **Slippi** | Rollback split game-side/emulator-side; **isolate fork deltas in one dir** (`Source/Core/Core/Slippi/`) to stay mergeable with upstream | Ishiiruka | **Directly applicable** — our netplay lives inside `decomp/` which is the "upstream" equivalent. F-003 is exactly the Slippi lesson | Medium; high payoff |
+| **Slippi** | Rollback split game-side/emulator-side; **isolate fork deltas in one dir** (`Source/Core/Core/Slippi/`) to stay mergeable with upstream | Ishiiruka | **Directly applicable** — our netplay lives inside `components/decomp/` which is the "upstream" equivalent. F-003 is exactly the Slippi lesson | Medium; high payoff |
 | **Slippi** | Matchmaking state machine + published file spec (`SPEC.md`, `COMM_SPEC.md`) | slippi-wiki | Done — we now have `docs/netplay/protocol/specification.md` | — |
 | **GGPO** | Hard requirements doc: deterministic sim, serializable state, step-one-frame-without-render | doc/DeveloperGuide.md | We satisfy all three (snapshot = memcpy regions; AUTOVS = headless step). Codify as a checklist in protocol docs | Trivial; done partially |
 | **mupen64plus / ares** | Plugin-per-repo vs monorepo-with-`ruby`-style platform abstraction | repos | We're closer to ares (monorepo, single build); keep that | — |
@@ -247,10 +247,10 @@ Severity: **C**ritical **H**igh **M**edium **L**ow **I**nfo. Effort: S/M/L.
 
 | ID | Sev | Area | Evidence | Finding | Fix | Status |
 |----|-----|------|----------|---------|-----|--------|
-| F-001 | H | updater | `src/distribution/updater/Updater.cpp:463,551` | sha256 digest + zip both come from the same GitHub release; a forged/compromised release supplies both → integrity-against-corruption only, not tamper-resistance. Windows zip unsigned (macOS codesign exists, release.yml:91-146). | Verify GitHub artifact attestation (`gh attestation verify` semantics embedded via Sigstore bundle) or sign a release manifest with an offline key; document residual risk in `docs/security/update-security.md` | V |
+| F-001 | H | updater | `src/application/update/updater/Updater.cpp:463,551` | sha256 digest + zip both come from the same GitHub release; a forged/compromised release supplies both → integrity-against-corruption only, not tamper-resistance. Windows zip unsigned (macOS codesign exists, release.yml:91-146). | Verify GitHub artifact attestation (`gh attestation verify` semantics embedded via Sigstore bundle) or sign a release manifest with an offline key; document residual risk in `docs/security/update-security.md` | V |
 | F-002 | H | test hooks | `netpeer.c` (MUTANT/PACKETFUZZ), `netlobby.cpp` (`SSB64_COMPAT_TOKEN` env override) | Mutant hooks that accept bad sessions/checksums + a compat-token override are reachable via env vars in any build that ships them | `#ifdef` them out in Release (`NDEBUG`-gated or explicit `SSB64_TEST_HOOKS` compile flag) | V |
-| F-003 | H | boundary | `decomp/src/sys/netpeer.c` 2516 LOC | Protocol/security-critical port code lives in the decomp submodule: every protocol bump = fork branch + pointer bump; contributes nothing to decomp fidelity | Move to `src/netplay/` (or src/netplay/protocol/); the decomp include path can export the small header | V |
-| F-004 | M | CI | `tools/lint/check_docs.py`, `services/netplay-lobby/tests/*/test-lobby-*.js` | Doc checker + lobby security/fuzz tests exist but **no workflow runs them** — regression risk invisible | Add a `lint-docs` job + a `lobby-tests` job (node, no ROM needed) | V |
+| F-003 | H | boundary | `components/decomp/src/sys/netpeer.c` 2516 LOC | Protocol/security-critical port code lives in the decomp submodule: every protocol bump = fork branch + pointer bump; contributes nothing to decomp fidelity | Move to `src/networking/netplay/` (or src/networking/netplay/protocol/); the decomp include path can export the small header | V |
+| F-004 | M | CI | `tools/analysis/lint/check_docs.py`, `services/netplay-lobby/tests/*/test-lobby-*.js` | Doc checker + lobby security/fuzz tests exist but **no workflow runs them** — regression risk invisible | Add a `lint-docs` job + a `lobby-tests` job (node, no ROM needed) | V |
 | F-005 | M | deps | `CMakeLists.txt:233,891` | Two FetchContent deps pinned by **tag** (`v1.1.3`, `v3.4.0`) — mutable; third already SHA-pinned | Pin to commit SHA, keep tag comment | V |
 | F-006 | M | lobby | worker `index.js` + `node-lobby.js` | Two hand-maintained implementations of the same lobby protocol; one was already patched twice in parallel (spec routing). Drift = security bugs | Shared conformance test suite run against both (they share wire format), or generate shared validator module | V |
 | F-007 | M | netplay | `docs/security/network-threat-model.md` | Lobby compromise not defended (no E2E, session id server-issued); documented residual | Optional: session MAC keyed by lobby-issued upkey; defer, documented | V(documented) |
@@ -262,7 +262,7 @@ Severity: **C**ritical **H**igh **M**edium **L**ow **I**nfo. Effort: S/M/L.
 |----|-----|------|----------|---------|-----|--------|
 | F-009 | H | build | `CMakeLists.txt` 1496 LOC | One file still carries all targets/globs/options; only Codegen+RuntimeAssets extracted | Component targets: `ssb64_decomp` (existing), `smash_bridge`, `smash_netplay`, `smash_app` — per-target warning levels | V |
 | F-010 | M | config | 157 distinct `SSB64_*` env vars | Huge undocumented configuration surface; mixing user config and test hooks | Catalog in docs/development/env_vars.md (planned); rename test-only to `SSB64_TEST_*`; fold stable ones into typed config | V |
-| F-011 | M | saves | `src/persistence/port_save.cpp` | No format version field — `SAVE_FORMAT_VERSION` constant exists but the file format doesn't write it | Add header {magic, version, size, crc}; migration path per `docs/compatibility/saves.md` | V |
+| F-011 | M | saves | `src/core/persistence/port_save.cpp` | No format version field — `SAVE_FORMAT_VERSION` constant exists but the file format doesn't write it | Add header {magic, version, size, crc}; migration path per `docs/compatibility/saves.md` | V |
 | F-012 | M | hygiene | `ci/` (3 files), `prs.json`, `build/`, empty `src/` placeholders | Root residue post-migration | Delete/migrate `ci/windows`→`platforms/uwp` or `scripts/development`; remove `prs.json` + empty dirs — done | V |
 | F-013 | M | size | `netlobby.cpp` 1798, `netpeer.c` 2516, `PortMenu.cpp` 2103, `lbreloc_byteswap.cpp` 2300 | Largest files all sit on the netplay/UI hot paths; CLAUDE.md step-0 rule applies | Split during the netplay protocol extraction (F-003) rather than standalone churn | V |
 | F-014 | L | include discipline | include dirs = every leaf | Bare `"foo.h"` includes resolve anywhere → dependency direction unenforced | Component targets fix this naturally (F-009) | V |
@@ -287,7 +287,7 @@ Severity: **C**ritical **H**igh **M**edium **L**ow **I**nfo. Effort: S/M/L.
 | F-023 | L | CI | workflow perms | `contents: read` defaults good; release needs write (justified + commented) | Optional `step-security/harden-runner` on release job | V |
 | F-024 | L | docs | none | `docs/README.md` index exists; add audit + register links | Link this audit from index | V |
 | F-025 | L | format | `.clang-tidy` yes, `.clang-format`/`​.editorconfig` no | No formatting contract | Add `.editorconfig` now; `.clang-format` only for `src/` (never decomp) — 2ship pattern | V |
-| F-026 | I | legal | extraction pipeline | ROM-derived data never in repo; recipe-hash gating documented; add automated "prohibited file" CI check (block *.z64/*.n64/ROM-ish blobs) | tools/lint/check_no_rom_assets.py (planned) | R |
+| F-026 | I | legal | extraction pipeline | ROM-derived data never in repo; recipe-hash gating documented; add automated "prohibited file" CI check (block *.z64/*.n64/ROM-ish blobs) | tools/analysis/lint/check_no_rom_assets.py (planned) | R |
 | F-027 | I | submodules | worktree script | Physical move deferred per ADR-0002 — correct call; revisit only when `new-worktree.sh` can re-point clones | Keep as is | V |
 
 **Cross-cutting probable items (P):** thread-safety of `sLobby` vs worker threads (netlobby + udp thread share state — not audited deeply); unbounded growth of some port_log outputs (rotation policy undocumented).
@@ -306,7 +306,7 @@ Severity: **C**ritical **H**igh **M**edium **L**ow **I**nfo. Effort: S/M/L.
 
 ### P1 — Architectural bases
 **Goal:** netplay becomes a normal component; build becomes modular.
-- F-003 extract `netpeer.c`/`netrollback.c`/`netinput.c` → src/netplay/{protocol,rollback} (5-file phases per CLAUDE.md; keep ABI)
+- F-003 extract `netpeer.c`/`netrollback.c`/`netinput.c` → src/networking/netplay/{protocol,rollback} (5-file phases per CLAUDE.md; keep ABI)
 - F-009 component CMake targets + per-target warnings
 - F-011 save format header + version field
 - F-010 env-var catalog
@@ -381,7 +381,7 @@ Compact issue specs (labels: see issue-template convention `area:*`, `type:*`, `
 | 3 | Compile-gate test hooks (F-002) | functional isolation — touches netplay source but no wire change |
 | 4 | Updater attestation verify (F-001) | security fix, own PR, needs test |
 | 5 | Save format header + migration (F-011) | format change with docs |
-| 6 | `netpeer*` → src/netplay/protocol extraction (F-003) | pure move, no behavior — biggest single PR, do when no netplay debugging is in flight |
+| 6 | `netpeer*` → src/networking/netplay/protocol extraction (F-003) | pure move, no behavior — biggest single PR, do when no netplay debugging is in flight |
 | 7 | CMake component targets (F-009) | build-only |
 | 8 | docs/lobby CI jobs + unit-test skeleton | CI only |
 | 9 | SBOM + sha256 + attestation extension | release-only |
@@ -408,7 +408,7 @@ Compact issue specs (labels: see issue-template convention `area:*`, `type:*`, `
 
 ## J. End state
 
-- **Structure**: as now, minus `ci/`/`prs.json`/empty dirs; `src/netplay/` internally split; protocol code out of `decomp`.
+- **Structure**: as now, minus `ci/`/`prs.json`/empty dirs; `src/networking/netplay/` internally split; protocol code out of `decomp`.
 - **Build**: presets-first; component targets; all deps SHA-pinned; `out/` only.
 - **Testing**: gtest codec/save unit suite + existing behavioral suite + fuzz corpus + golden assets; `ctest` real.
 - **Security**: updater verifies attestation; test hooks stripped in release; Scorecard + secret scanning + push protection on.

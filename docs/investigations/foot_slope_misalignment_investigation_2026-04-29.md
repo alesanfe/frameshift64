@@ -34,13 +34,13 @@ different ECB / hurtbox shape that masks the rendering offset.
 This is a **physics / fighter-positioning** bug, not a rendering one.
 Likely candidates:
 
-1. `decomp/src/ft/ftmain.c` — fighter ground attachment / hurtbox / ground
+1. `components/decomp/src/ft/ftmain.c` — fighter ground attachment / hurtbox / ground
    contact math. Anywhere a Vec3f normal feeds a rotation matrix
    that tilts the model.
-2. `decomp/src/mp/mpcommon.c` — map-collision side. `MPObjectColl` and
+2. `components/decomp/src/mp/mpcommon.c` — map-collision side. `MPObjectColl` and
    slope-line intersection math (computes the `ground_angle` /
    `surface_normal` consumed by the fighter side).
-3. `decomp/src/ft/ftparam.c` — fighter parameter init for slopes. Some
+3. `components/decomp/src/ft/ftparam.c` — fighter parameter init for slopes. Some
    fighters disable slope tilt via attribute flags.
 
 ## Why I'm not patching blindly

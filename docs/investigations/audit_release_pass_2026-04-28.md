@@ -37,23 +37,23 @@ Per-audit detail reports written to disk (5 of 10 agents wrote files; the rest a
 ### Audit 5 — PORT u32 token vs raw pointer
 
 Agent flagged `Sprite::rsp_dl_next` writes/reads in:
-- decomp/src/libultra/sp/sprite.c:160,162,453
+- components/decomp/src/libultra/sp/sprite.c:160,162,453
 - src/ovl8/ovl8_3.c, src/ovl8/ovl8_6.c
-- `decomp/src/sys/objdisplay.c:3041,3045`
+- `components/decomp/src/sys/objdisplay.c:3041,3045`
 
-**Why it's a false positive:** `CMakeLists.txt:97` excludes src/ovl8/ and `decomp/src/libultra/` from the build, and `decomp/src/sys/objdisplay.c:3030` wraps the offending block in `#ifndef PORT`. The `src/compatibility/n64_stubs.c` `spDraw` is a stub returning NULL.
+**Why it's a false positive:** `CMakeLists.txt:97` excludes src/ovl8/ and `components/decomp/src/libultra/` from the build, and `components/decomp/src/sys/objdisplay.c:3030` wraps the offending block in `#ifndef PORT`. The `src/platform/compatibility/n64_stubs.c` `spDraw` is a stub returning NULL.
 
 ### Audit 9 — Fast3D YUV claim
 
-Agent flagged `SPDLOG_ERROR("YUV Textures not supported")` at `libultraship/src/fast/interpreter.cpp:1925` as an active bug.
+Agent flagged `SPDLOG_ERROR("YUV Textures not supported")` at `components/libultraship/src/fast/interpreter.cpp:1925` as an active bug.
 
-**Why it's a false positive:** Grep for `G_IM_FMT_YUV` in compiled-in code returns nothing. The only references are in the non-compiled decomp/src/libultra/sp/sprite.c. SSB64 does not use YUV format; the error path never fires.
+**Why it's a false positive:** Grep for `G_IM_FMT_YUV` in compiled-in code returns nothing. The only references are in the non-compiled components/decomp/src/libultra/sp/sprite.c. SSB64 does not use YUV format; the error path never fires.
 
 ### Audit 10 — `sizeof(OSThread)` claim in n64_stubs.c
 
-Agent flagged `src/compatibility/n64_stubs.c:127` `memset(t, 0, sizeof(OSThread))` as a 432-byte LUS-shadowed memset into a decomp-sized buffer.
+Agent flagged `src/platform/compatibility/n64_stubs.c:127` `memset(t, 0, sizeof(OSThread))` as a 432-byte LUS-shadowed memset into a decomp-sized buffer.
 
-**Why it's a false positive:** `n64_stubs.c` is C-compiled and includes `<PR/os.h>` (decomp's `OSThread`). The libultraship `OSThread` lives in `libultraship/include/libultraship/libultra/thread.h` which is C++ and never included by this TU. `sizeof(OSThread)` resolves to the decomp size matching the caller's buffer.
+**Why it's a false positive:** `n64_stubs.c` is C-compiled and includes `<PR/os.h>` (decomp's `OSThread`). The libultraship `OSThread` lives in `components/libultraship/include/components/libultraship/libultra/thread.h` which is C++ and never included by this TU. `sizeof(OSThread)` resolves to the decomp size matching the caller's buffer.
 
 ---
 
@@ -61,7 +61,7 @@ Agent flagged `src/compatibility/n64_stubs.c:127` `memset(t, 0, sizeof(OSThread)
 
 ### Finding A — `sc1pgameboss.c` boss wallpaper MObjSub fixup (Audit 7)
 
-**Site:** `decomp/src/sc/sc1pmode/sc1pgameboss.c:825`, function `sc1PGameBossSetupBackgroundDObjs`
+**Site:** `components/decomp/src/sc/sc1pmode/sc1pgameboss.c:825`, function `sc1PGameBossSetupBackgroundDObjs`
 
 ```c
 while (mobjsub != NULL) {
@@ -111,16 +111,16 @@ For most flagged sites, the unconditional re-assignment in the scene init functi
 
 **Sites that DO match the canonical pattern (slot conditionally ejected on re-alloc) and warrant a closer look:**
 
-- `decomp/src/mn/mnplayers/mnplayers1pbonus.c` — `sMNPlayers1PBonusHiScoreGObj` self-clears at lines 1050/1123 but is not in `mnPlayers1PBonusInitVars()`. If the scene exits without going through the eject path, the next entry still sees the stale slot, and the `if (slot != NULL) gcEjectGObj(slot);` at line 1049 would deref freed memory.
-- `decomp/src/mn/mn1pmode/mn1pcontinue.c` — 12 GObj slots; needs detailed trace to determine which are conditionally vs unconditionally re-assigned.
+- `components/decomp/src/mn/mnplayers/mnplayers1pbonus.c` — `sMNPlayers1PBonusHiScoreGObj` self-clears at lines 1050/1123 but is not in `mnPlayers1PBonusInitVars()`. If the scene exits without going through the eject path, the next entry still sees the stale slot, and the `if (slot != NULL) gcEjectGObj(slot);` at line 1049 would deref freed memory.
+- `components/decomp/src/mn/mn1pmode/mn1pcontinue.c` — 12 GObj slots; needs detailed trace to determine which are conditionally vs unconditionally re-assigned.
 
 **Suggested fix (only if confirmed):** Add `slot = NULL;` lines to the scene's `*InitVars` for any slot whose first post-init read is a `if (slot != NULL) gcEjectGObj(slot)` style guard.
 
 ### Finding C — `ITAttributes` / `WPAttributes` u8/u16 loader path (Audit 3) — CONFIRMED CLEAN
 
 Verified 2026-04-28:
-- `decomp/src/it/itmanager.c:264` — `portFixupStructU16(attr, 0x14, 8)` covers the s16/Vec3h block 0x14..0x33 (8 u32 words). Single load site (`lbRelocGetFileData`); all consumers go through `ip->attr`.
-- `decomp/src/wp/wpmanager.c:119` — `portFixupStructU16(attr, 0x10, 6)` covers Vec3h[2] + map_coll s16s + size + _angle_raw at 0x10..0x27 (6 u32 words). Single load site.
+- `components/decomp/src/it/itmanager.c:264` — `portFixupStructU16(attr, 0x14, 8)` covers the s16/Vec3h block 0x14..0x33 (8 u32 words). Single load site (`lbRelocGetFileData`); all consumers go through `ip->attr`.
+- `components/decomp/src/wp/wpmanager.c:119` — `portFixupStructU16(attr, 0x10, 6)` covers Vec3h[2] + map_coll s16s + size + _angle_raw at 0x10..0x27 (6 u32 words). Single load site.
 
 Both fixups are correctly bounded; no missing or stray writers.
 

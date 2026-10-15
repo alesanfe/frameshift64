@@ -20,7 +20,7 @@
 #include "SyntheticReloc.h"
 #include "RelocFile.h"
 #include "RelocFileTable.h"
-#include "../integration/decomp/ssb64_reloc_rebuild.h"
+#include "../game/engine/decomp/ssb64_reloc_rebuild.h"
 
 #include <cstring>
 #include <algorithm>
@@ -943,20 +943,20 @@ std::shared_ptr<RelocFile> portBuildSyntheticRelocResource(uint32_t file_id)
 		case SSB64SyntheticSliceKind::Vertex:
 		{
 			auto vertex = std::static_pointer_cast<Fast::Vertex>(resources[i]);
-			size_t cursor = off;
+			size_t writeCursor = off;
 			for (const auto &v : vertex->VertexList)
 			{
-				portWriteBE16(relocFile->Data, cursor + 0x0, (uint16_t)v.v.ob[0]);
-				portWriteBE16(relocFile->Data, cursor + 0x2, (uint16_t)v.v.ob[1]);
-				portWriteBE16(relocFile->Data, cursor + 0x4, (uint16_t)v.v.ob[2]);
-				portWriteBE16(relocFile->Data, cursor + 0x6, v.v.flag);
-				portWriteBE16(relocFile->Data, cursor + 0x8, (uint16_t)v.v.tc[0]);
-				portWriteBE16(relocFile->Data, cursor + 0xA, (uint16_t)v.v.tc[1]);
-				relocFile->Data[cursor + 0xC] = v.v.cn[0];
-				relocFile->Data[cursor + 0xD] = v.v.cn[1];
-				relocFile->Data[cursor + 0xE] = v.v.cn[2];
-				relocFile->Data[cursor + 0xF] = v.v.cn[3];
-				cursor += sizeof(Vtx);
+				portWriteBE16(relocFile->Data, writeCursor + 0x0, (uint16_t)v.v.ob[0]);
+				portWriteBE16(relocFile->Data, writeCursor + 0x2, (uint16_t)v.v.ob[1]);
+				portWriteBE16(relocFile->Data, writeCursor + 0x4, (uint16_t)v.v.ob[2]);
+				portWriteBE16(relocFile->Data, writeCursor + 0x6, v.v.flag);
+				portWriteBE16(relocFile->Data, writeCursor + 0x8, (uint16_t)v.v.tc[0]);
+				portWriteBE16(relocFile->Data, writeCursor + 0xA, (uint16_t)v.v.tc[1]);
+				relocFile->Data[writeCursor + 0xC] = v.v.cn[0];
+				relocFile->Data[writeCursor + 0xD] = v.v.cn[1];
+				relocFile->Data[writeCursor + 0xE] = v.v.cn[2];
+				relocFile->Data[writeCursor + 0xF] = v.v.cn[3];
+				writeCursor += sizeof(Vtx);
 			}
 			break;
 		}

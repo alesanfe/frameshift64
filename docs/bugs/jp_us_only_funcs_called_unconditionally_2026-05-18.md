@@ -1,7 +1,7 @@
 # JP build: US-only functions referenced unconditionally → link failure
 
 **Date:** 2026-05-18
-**Area:** `decomp/src/ft/ftparam.c`, `decomp/src/lb/lbcommon.c`, JP
+**Area:** `components/decomp/src/ft/ftparam.c`, `components/decomp/src/lb/lbcommon.c`, JP
 (`REGION_JP`) port link
 **Symptom:** After all TUs compiled clean under `REGION_JP`, the final
 `ssb64` link failed:

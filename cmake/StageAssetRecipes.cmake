@@ -10,11 +10,11 @@ function(ssb64_stage_asset_recipes source destination version)
     if(source STREQUAL destination)
         message(FATAL_ERROR "Asset recipes must be staged outside the source directory")
     endif()
-    file(GLOB_RECURSE recipes RELATIVE "${source}/assets/recipes"
-        "${source}/assets/recipes/${version}/*.yml"
-        "${source}/assets/recipes/${version}/*.yaml")
+    file(GLOB_RECURSE recipes RELATIVE "${source}/assets/game"
+        "${source}/assets/game/${version}/*.yml"
+        "${source}/assets/game/${version}/*.yaml")
     if(NOT recipes)
-        message(FATAL_ERROR "No ${version} asset recipes found in ${source}/assets/recipes")
+        message(FATAL_ERROR "No ${version} asset recipes found in ${source}/assets/game")
     endif()
     file(GLOB_RECURSE staged RELATIVE "${destination}"
         "${destination}/yamls/${version}/*.yml" "${destination}/yamls/${version}/*.yaml")
@@ -26,8 +26,8 @@ function(ssb64_stage_asset_recipes source destination version)
     foreach(path IN LISTS recipes)
         # Staged layout keeps torch's expected "yamls/<v>/..." shape under
         # DESTINATION_DIR; the source tree stores them under
-        # assets/recipes/.
-        configure_file("${source}/assets/recipes/${path}"
+        # assets/game/.
+        configure_file("${source}/assets/game/${path}"
                        "${destination}/yamls/${path}" COPYONLY)
     endforeach()
     # Torch reads "config.yml" from its CWD at runtime — the staged name is

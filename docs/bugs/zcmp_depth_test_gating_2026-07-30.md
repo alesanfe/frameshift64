@@ -49,7 +49,7 @@ then Z-rejected every ring pixel against it (GL_LESS vs. depth≈0). Before
 the #10 work, the old build's visible red was itself an artifact of its
 buggy full-depth-clear-to-far.
 
-## Fix (`libultraship/src/fast/interpreter.cpp`, `GfxSpTri1`)
+## Fix (`components/libultraship/src/fast/interpreter.cpp`, `GfxSpTri1`)
 
 ```cpp
 bool has_vertex_z = (mRsp->geometry_mode & G_ZBUFFER) == G_ZBUFFER;

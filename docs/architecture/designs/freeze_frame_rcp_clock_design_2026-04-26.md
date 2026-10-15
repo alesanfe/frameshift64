@@ -4,11 +4,11 @@
 **Status:** **MECHANISM CONFIRMED. Foundation shipped, cost-model phase next.**
 The original RSP-overrun-emergent hypothesis was *partially* right and partially wrong. It's right that wall-clock gfx duration is what produces the freeze; it's wrong about the emulator survey concluding "no emulator models this." Mupen64+parallel-rdp and RetroArch with parallel-n64 use LLE rasterizers that DO have natural per-DL wall-clock variance — those are presumably what the user observed reproducing the freeze. HLE plugins (GLideN64) don't. So the freeze is RSP/RDP-overrun-emergent on real hw and on LLE emulators, and the fix is to model that in our HLE port.
 
-**The actual mechanism:** `syTaskmanSwitchContext` (`decomp/src/sys/taskman.c:905`) blocks the game thread when all `gSYTaskmanTaskCount` (= `tscene->contexts_num` = 2 for fighter intros) slots are in flight. Slots release via `nSYTaskTypeGfxEnd` tasks the scheduler processes after each gfx task completes (`sySchedulerDpFullSync`). Real hw / LLE emulator: gfx takes ~1 VI period, slot releases ~1 VI period after acquisition. Heavy climax DLs take >1 VI, slot release lags, the game's next-frame `SwitchContext` finds 0 free slots → blocks → game tic doesn't advance → "whole-screen freeze with all systems."
+**The actual mechanism:** `syTaskmanSwitchContext` (`components/decomp/src/sys/taskman.c:905`) blocks the game thread when all `gSYTaskmanTaskCount` (= `tscene->contexts_num` = 2 for fighter intros) slots are in flight. Slots release via `nSYTaskTypeGfxEnd` tasks the scheduler processes after each gfx task completes (`sySchedulerDpFullSync`). Real hw / LLE emulator: gfx takes ~1 VI period, slot releases ~1 VI period after acquisition. Heavy climax DLs take >1 VI, slot release lags, the game's next-frame `SwitchContext` finds 0 free slots → blocks → game tic doesn't advance → "whole-screen freeze with all systems."
 
 **Port-side foundation (shipped 2026-04-26):**
-- `src/compatibility/n64_stubs.c` — defers `PORT_INTR_SP_TASK_DONE` and `PORT_INTR_DP_FULL_SYNC` posts by N VI periods via a per-frame delay queue. Env var `SSB64_GFX_DEFER_VI` picks N. Default `1` produces zero `SwitchContext` blocks (behavior identical to pre-fix port). `2` produces blocks every other frame (proof of mechanism, too aggressive).
-- `decomp/src/sys/taskman.c` — `syTaskmanSwitchContext` logs all-slots-full events under `SSB64_TRACE_SWITCH_CTX=1`.
+- `src/platform/compatibility/n64_stubs.c` — defers `PORT_INTR_SP_TASK_DONE` and `PORT_INTR_DP_FULL_SYNC` posts by N VI periods via a per-frame delay queue. Env var `SSB64_GFX_DEFER_VI` picks N. Default `1` produces zero `SwitchContext` blocks (behavior identical to pre-fix port). `2` produces blocks every other frame (proof of mechanism, too aggressive).
+- `components/decomp/src/sys/taskman.c` — `syTaskmanSwitchContext` logs all-slots-full events under `SSB64_TRACE_SWITCH_CTX=1`.
 
 **Verification (3000-frame run, attract chain reaching DK/Samus/Yoshi intros):**
 
@@ -25,7 +25,7 @@ loop works, and means the deferral alone does NOT reproduce the visual
 freeze. Why:
 
 1. When SwitchContext blocks (arg0=0 path), the game coroutine yields.
-   `port_resume_service_threads` in `src/compatibility/n64_stubs.c:72` runs up
+   `port_resume_service_threads` in `src/platform/compatibility/n64_stubs.c:72` runs up
    to 8 rounds per host frame. The scheduler runs in an early round,
    releases the slot, the game thread is resumed in a later round of
    the SAME host frame and completes its tic. No held frame.
@@ -152,7 +152,7 @@ Stretch — **Phase 4 — submodule integration:** if the analyzer pass duplicat
 - `port/port_rcp_clock.cpp` (new) — analyzer + accumulator. Public API: `port_rcp_charge_dl(Gfx *dl); port_rcp_tick_vblank(); int port_rcp_should_stall(void);`.
 - `port/port_rcp_clock.h` (new) — declarations + cost coefficient table (visible for tuning).
 - `src/application/gameloop.cpp` — call `port_rcp_charge_dl(dl)` at the top of `port_submit_display_list`.
-- `src/compatibility/n64_stubs.c` — in `port_vi_simulate_vblank`, call `port_rcp_tick_vblank()` and gate the rotation on `port_rcp_should_stall()`.
+- `src/platform/compatibility/n64_stubs.c` — in `port_vi_simulate_vblank`, call `port_rcp_tick_vblank()` and gate the rotation on `port_rcp_should_stall()`.
 - `CMakeLists.txt` — add `port/port_rcp_clock.cpp` to port sources.
 - `docs/bugs/freeze_frame_rcp_clock_<DATE>.md` — finalize when Phase 3 ships.
 
@@ -201,7 +201,7 @@ In rough order of probability:
    a 4-8-frame hold, our anim plays through what should be the freeze.
 
 2. **Motion-script wait event.** `ftMain` motion scripts have
-   `script_wait` decremented per frame (`decomp/src/ft/ftmain.c:753, 820, 917`).
+   `script_wait` decremented per frame (`components/decomp/src/ft/ftmain.c:753, 820, 917`).
    A `nFTMotionEventWait` opcode at the climax tic could pause the
    anim_frame advance. We may have a parsing bug there — six partial-bit
    `FTMotionEvent*` structs are flagged as broken in
@@ -216,11 +216,11 @@ In rough order of probability:
 ### False alarm: `-FLT_MAX` is `AOBJ_ANIM_NULL`, not corruption (2026-04-26)
 
 A first pass at port-side per-tic instrumentation (env-var `SSB64_TRACE_INTRO_ANIM=1` in
-`decomp/src/mv/mvopening/mvopening{yoshi,samus,donkey}.c` `*FuncRun`) showed
+`components/decomp/src/mv/mvopening/mvopening{yoshi,samus,donkey}.c` `*FuncRun`) showed
 `topn_child_wait = -3.4028e38` at the climax-pose-status (`0x98`/motion `134`) for
 both Yoshi (tic 36) and Samus (tic 16). I initially flagged this as a halfswap-family
 data corruption ("sign-bit flip on +FLT_MAX hold sentinel"). **It is not.**
-`decomp/src/sys/objtypes.h:41` defines `AOBJ_ANIM_NULL = F32_MIN = -FLT_MAX` — i.e. the
+`components/decomp/src/sys/objtypes.h:41` defines `AOBJ_ANIM_NULL = F32_MIN = -FLT_MAX` — i.e. the
 exact value we observed is the *legitimate sentinel for "this joint has no active
 animation right now."* It appears during the brief transition tic between
 statuses on both port and (almost certainly) hardware. No bug.
@@ -257,7 +257,7 @@ After several rounds of port-side instrumentation under
 | RSP wall-clock overrun (emergent stall) | Emulators (Mupen64+RetroArch) reproduce the freeze; they don't model RSP duration. |
 | Body-skeleton `anim_speed=0` | `anim_speed=1.0` constant across all three intros. |
 | Body-skeleton figatree hold | `anim_frame` advances cleanly `+1.0/tic` with no flat segment. |
-| `-FLT_MAX` wait corruption hypothesis | False alarm — `AOBJ_ANIM_NULL == F32_MIN == -FLT_MAX` per `decomp/src/sys/objtypes.h:41` is a normal sentinel during status transitions, not data corruption. |
+| `-FLT_MAX` wait corruption hypothesis | False alarm — `AOBJ_ANIM_NULL == F32_MIN == -FLT_MAX` per `components/decomp/src/sys/objtypes.h:41` is a normal sentinel during status transitions, not data corruption. |
 | Multi-pass gfx-task throughput | Histogram of submits-per-VI across 3000 frames: 2595× `1`, 405× `0`, 0× `2+`. Game never submits multiple gfx tasks per VI. |
 | `sySchedulerCheckReadyFramebuffer` false returns | Zero FALSE returns across a 1500-frame run (per prior session in `intro_residuals_2026-04-25.md`). |
 | Fighter hitlag (`fp->hitlag_tics`) | Always `0` across all three intros. Only set in `ftmain.c:4060` damage handler, which requires a hit landing on a fighter — and intros have no opponent fighter. |
@@ -305,7 +305,7 @@ given the disproof above, but worth ruling out).
 
 ## Phase 2 — game-thread resume cap (shipped 2026-04-26)
 
-Implemented: `src/compatibility/n64_stubs.c:port_resume_service_threads` now caps the game thread (id=5) to N resumes per host frame (default `N=1`). When the game thread blocks on `SwitchContext` and another thread frees the slot in a later round, the cap prevents the game thread from being resumed again *this* host frame — the blocked tic stays blocked, no new gfx submits, host backbuffer holds previous content, screen visibly freezes for one frame.
+Implemented: `src/platform/compatibility/n64_stubs.c:port_resume_service_threads` now caps the game thread (id=5) to N resumes per host frame (default `N=1`). When the game thread blocks on `SwitchContext` and another thread frees the slot in a later round, the cap prevents the game thread from being resumed again *this* host frame — the blocked tic stays blocked, no new gfx submits, host backbuffer holds previous content, screen visibly freezes for one frame.
 
 Env knob: `SSB64_GAME_THREAD_CAP_RESUMES=0` disables the cap (matches pre-fix port behavior). Default `1` matches authored intro pacing.
 
@@ -369,7 +369,7 @@ User testing 2026-04-26 showed the deferral by itself produces game-thread catch
 
 ### Option A: cap game-thread advances per host frame (recommended)
 
-In `src/compatibility/n64_stubs.c:port_resume_service_threads`, track per-thread "tics advanced this host frame." For the game thread, refuse to resume it if it has already completed one full tic this frame, even if its mq state is now ready. The thread stays in WAITING until next host frame, and its blocked work continues then.
+In `src/platform/compatibility/n64_stubs.c:port_resume_service_threads`, track per-thread "tics advanced this host frame." For the game thread, refuse to resume it if it has already completed one full tic this frame, even if its mq state is now ready. The thread stays in WAITING until next host frame, and its blocked work continues then.
 
 This forces a strict 1 game-tick = 1 host-frame relationship even under contention. When SwitchContext blocks or returns 0, the held tic doesn't catch up — host swaps backbuffer in same state, screen visibly holds for one frame.
 
@@ -423,7 +423,7 @@ Calibration target: typical SSB64 gameplay/menu frames N=1 (no freeze); fighter-
 
 **Files to touch (Phase 2):**
 - `src/application/gameloop.cpp` — add cost-walking pass at top of `port_submit_display_list`; expose result via global `int sPortLastDLDeferN`.
-- `src/compatibility/n64_stubs.c` — `osSpTaskStartGo` reads `sPortLastDLDeferN` instead of `getenv`.
+- `src/platform/compatibility/n64_stubs.c` — `osSpTaskStartGo` reads `sPortLastDLDeferN` instead of `getenv`.
 - `port/port_rcp_clock.{h,cpp}` (new) — cost coefficients + walker. Designed to live in libultraship via the existing trace-callback hook in Phase 3 (optional).
 
 ## Phase 4 — Retune (shipped 2026-05-02)

@@ -72,7 +72,7 @@ MOD_EXIT() {
 }
 ```
 
-Available events live in `src/integration/hooks/list/EngineEvent.h` (and any other `list/*.h` headers added later).
+Available events live in `src/game/engine/hooks/list/EngineEvent.h` (and any other `list/*.h` headers added later).
 
 ## Calling engine functions
 
@@ -101,7 +101,7 @@ Any function in BattleShip's export table is callable from your mod. The post-bu
   data will desync mid-match instead of being rejected in the lobby.
 - `checksum` (`"fnv1a64:<16-hex>"`) + `signature` / `public-key` —
   optional minisign raw/legacy (`-l`) Ed25519 signature over the
-  archive. Use `tools/modding/package_mod.py --checksum --sign-key
+  archive. Use `tools/developer/modding/package_mod.py --checksum --sign-key
   <key>` to generate them; the Mods menu shows a `[signed]` badge when
   verification succeeds.
 

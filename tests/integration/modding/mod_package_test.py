@@ -1,5 +1,5 @@
 """
-Unit test for tools/modding/package_mod.py — the driver that turns a mod
+Unit test for tools/developer/modding/package_mod.py — the driver that turns a mod
 source folder (manifest.json + src/*.c + include/) into the packaged
 layout the runtime loader mounts (manifest + build.gen + dist/*.c).
 

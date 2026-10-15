@@ -1,5 +1,5 @@
 # Lightweight checks on every commit; heavyweight analysis (clang-tidy,
-# cppcheck, semgrep) stays manual / PR / nightly via tools/lint/run_project_lint.py.
+# cppcheck, semgrep) stays manual / PR / nightly via tools/analysis/lint/run_project_lint.py.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -11,7 +11,7 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
-        exclude: ^assets/configuration/extraction/
+        exclude: ^assets/game/
       - id: end-of-file-fixer
         exclude: ^(decomp|libultraship|torch|mods/examples|services/netplay-lobby/cloudflare/node_modules)/
       - id: trailing-whitespace
@@ -48,7 +48,7 @@ repos:
     hooks:
       - id: project-static-analysis
         name: Project static analysis (clang-tidy + cppcheck + semgrep)
-        entry: python tools/lint/run_project_lint.py --skip-configure
+        entry: python tools/analysis/lint/run_project_lint.py --skip-configure
         language: system
         pass_filenames: false
         stages: [manual]

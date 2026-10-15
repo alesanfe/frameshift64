@@ -18,9 +18,9 @@ This covers toolchain/layout drift. It does not yet cover intentional
 
 ## Region builds
 
-US and JP are separate recipe sets (`assets/recipes/us`,
+US and JP are separate recipe sets (`assets/game/us`,
 `.../jp`) producing separate per-build-dir extraction sinks; runtime
-stages `assets/recipes/<region>` + `config.yml` next to the binary for first-run
+stages `assets/game/<region>` + `config.yml` next to the binary for first-run
 extraction and sidecar-Torch re-extraction.
 
 ## Golden tests (target)

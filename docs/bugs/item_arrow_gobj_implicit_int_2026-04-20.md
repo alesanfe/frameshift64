@@ -15,7 +15,7 @@ Low 32 bits were a real pointer (`0xcc9608`), high 32 bits were a clean `00 00 0
 
 ## Root cause
 
-Every item source file (`decomp/src/it/itcommon/*.c`) writes `ip->arrow_gobj = ifCommonItemArrowMakeInterface(ip);` but **none of them included `if/ifcommon.h`**, and neither did the umbrella `decomp/src/it/item.h` that they all include.
+Every item source file (`components/decomp/src/it/itcommon/*.c`) writes `ip->arrow_gobj = ifCommonItemArrowMakeInterface(ip);` but **none of them included `if/ifcommon.h`**, and neither did the umbrella `components/decomp/src/it/item.h` that they all include.
 
 With no prototype in scope, C falls back to the **implicit-function-declaration** rule: the function is assumed to return `int`. On LP64, clang compiles the call as:
 
@@ -36,10 +36,10 @@ Those suppressions exist for decomp compatibility — IDO-style decomp code cont
 
 ## Fix
 
-Add `#include <if/ifcommon.h>` to `decomp/src/it/item.h` (the umbrella header every item file includes). That brings the correct prototype into scope for every caller at once, so the `GObj*` return isn't truncated.
+Add `#include <if/ifcommon.h>` to `components/decomp/src/it/item.h` (the umbrella header every item file includes). That brings the correct prototype into scope for every caller at once, so the `GObj*` return isn't truncated.
 
 ```c
-/* decomp/src/it/item.h */
+/* components/decomp/src/it/item.h */
 #include "ittypes.h"
 #include "itfunctions.h"
 #include <if/ifcommon.h>   // ← adds correct prototype for
@@ -61,6 +61,6 @@ Related landmines noted in memory:
 ## Diagnostic scaffolding left in place (can be removed in a cleanup commit)
 
 - `src/application/port_watchdog.cpp` — SIGSEGV/SIGBUS/SIGILL/SIGFPE/SIGABRT handler dumps `fault_addr` and a backtrace to `ssb64.log`. Generally useful; keep.
-- `decomp/src/sys/objman.c` `gcEjectGObj` — double-eject sentinel via `obj_kind = 0xFE`. Cheap, catches a different class of GObj-lifecycle bug. Keep.
-- `decomp/src/sys/objhelper.c` `gcEndProcessAll` — "SUSPECT proc=..." warning for low/unaligned pointers. Keep.
-- `decomp/src/it/itmain.c` `itMainDestroyItem` — entry log + `TRUNC` defensive skip. Can be removed now that the root cause is fixed (should never fire again).
+- `components/decomp/src/sys/objman.c` `gcEjectGObj` — double-eject sentinel via `obj_kind = 0xFE`. Cheap, catches a different class of GObj-lifecycle bug. Keep.
+- `components/decomp/src/sys/objhelper.c` `gcEndProcessAll` — "SUSPECT proc=..." warning for low/unaligned pointers. Keep.
+- `components/decomp/src/it/itmain.c` `itMainDestroyItem` — entry log + `TRUNC` defensive skip. Can be removed now that the root cause is fixed (should never fire again).

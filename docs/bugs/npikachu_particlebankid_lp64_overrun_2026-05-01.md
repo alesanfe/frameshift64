@@ -58,9 +58,9 @@ are the BSS declaration and the cast in `dFTNPikachuData`). Widen it to
 
 Files changed:
 
-- `decomp/src/ft/ftchar/ftnpikachu/ftnpikachu.c` — `s32 → void *`
-- `decomp/src/ft/ftchar/ftnpikachu/ftnpikachu.h` — `s32 → void *`
-- `decomp/src/ft/ftdata.c` — drop `(void**)` cast
+- `components/decomp/src/ft/ftchar/ftnpikachu/ftnpikachu.c` — `s32 → void *`
+- `components/decomp/src/ft/ftchar/ftnpikachu/ftnpikachu.h` — `s32 → void *`
+- `components/decomp/src/ft/ftdata.c` — drop `(void**)` cast
 
 ## Repro
 

@@ -1,7 +1,7 @@
 /*
  * app_mods.h — presentation-facing facade over the modding subsystem.
  *
- * src/presentation must not include src/integration directly (module-dep
+ * src/interfaces/presentation must not include src/game/engine directly (module-dep
  * rule), so the Mods menu talks to this thin API instead. Everything here
  * is a plain value type or a synchronous call; the ImGui layer keeps no
  * knowledge of ModRegistry/HookManager internals.

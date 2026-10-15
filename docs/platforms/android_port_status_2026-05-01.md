@@ -10,7 +10,7 @@ on-screen controls, and stable rendering.
 End-to-end first-run flow on the emulator:
 
 1. Launch from system launcher → `BootActivity` extracts bundled assets
-   (`f3d.o2r`, `ssb64.o2r`, `config.yml`, `assets/configuration/extraction/us/*.yml`) into
+   (`f3d.o2r`, `ssb64.o2r`, `config.yml`, `assets/game/us/*.yml`) into
    `getExternalFilesDir()`.
 2. SAF picker (`ACTION_OPEN_DOCUMENT`) accepts the user's `baserom.us.z64`.
 3. `libtorch_runner.so`'s `torch_extract_o2r` runs on-device, producing

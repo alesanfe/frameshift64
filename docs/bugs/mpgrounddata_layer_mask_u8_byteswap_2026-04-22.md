@@ -44,7 +44,7 @@ memory. A native `u8` read at struct offset 68 returns `0x00` — the padding
 byte, not `M`.
 
 The consequence: `grDisplayMakeGeometryLayer` (in
-`decomp/src/gr/grdisplay.c`) uses
+`components/decomp/src/gr/grdisplay.c`) uses
 
 ```c
 if (gMPCollisionGroundData->layer_mask & (1 << gr_desc_id))
@@ -90,11 +90,11 @@ is what the real mask is after the byteswap.
 ## Fix
 
 New helper `portFixupStructU32(base, byte_offset, num_words)` in
-`src/integration/decomp/lbreloc_byteswap.cpp` that re-`BSWAP32`s a specified u32 word
+`src/game/engine/decomp/lbreloc_byteswap.cpp` that re-`BSWAP32`s a specified u32 word
 (undoing pass 1 for that word). Idempotent via the existing
 `sStructU16Fixups` tracker.
 
-In `mpCollisionInitAll` (`decomp/src/mp/mpcollision.c`) where the existing s16-pair
+In `mpCollisionInitAll` (`components/decomp/src/mp/mpcollision.c`) where the existing s16-pair
 fixups live, unswap the `layer_mask` u32 word so the `u8` field lands at its
 declared offset:
 

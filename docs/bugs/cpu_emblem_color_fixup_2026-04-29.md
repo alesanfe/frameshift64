@@ -13,7 +13,7 @@ Two pieces fit together:
 
 ### 1. Original game's "5th emblem color" trick
 
-`MPGroundData` (`decomp/src/mp/mptypes.h:193`) declares emblem colors as a
+`MPGroundData` (`components/decomp/src/mp/mptypes.h:193`) declares emblem colors as a
 4-entry array:
 
 ```c
@@ -24,7 +24,7 @@ Vec3f light_angle;
 
 But `ifCommonPlayerDamageInitInterface` reads
 `gMPCollisionGroundData->emblem_colors[player.color]`, and
-`mnPlayersVSStartGame` (`decomp/src/mn/mnplayers/mnplayersvs.c:4424`) sets
+`mnPlayersVSStartGame` (`components/decomp/src/mn/mnplayers/mnplayersvs.c:4424`) sets
 `players[i].color = GMCOMMON_PLAYERS_MAX` (= 4) for non-team-battle
 **CPU** players. That's a 5th index into a 4-entry array.
 
@@ -61,7 +61,7 @@ Most stages set the CPU emblem color to a near-gray like
 
 ## Fix
 
-`decomp/src/mp/mpcollision.c` — extend the fixup range to include the
+`components/decomp/src/mp/mpcollision.c` — extend the fixup range to include the
 `unused` word:
 
 ```c
@@ -100,4 +100,4 @@ boundary.
 
 ## Files
 
-- `decomp/src/mp/mpcollision.c` — `mpCollisionFixGroundDataLayout` extended.
+- `components/decomp/src/mp/mpcollision.c` — `mpCollisionFixGroundDataLayout` extended.

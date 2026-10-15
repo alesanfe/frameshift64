@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "support" / "harness" / "netplay"))
-import session_runner as sr  # noqa: E402
+import session_runner as sr
 
 LOCALTEST = Path(__file__).resolve().parent / "localtest_test.py"
 SYNCTEST_PS1 = sr.ROOT / "scripts" / "development" / "rollback_synctest.ps1"

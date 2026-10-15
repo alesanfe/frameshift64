@@ -57,23 +57,23 @@ switches off the default frame — which matches the "mouth stays closed"
 symptom exactly.
 
 **Where the data lives.** Matanim `AObjEvent32` streams are attached to
-`MObj`s via `gcAddMObjMatAnimJoint` (`decomp/src/sys/objanim.c:155-167`), which stores
+`MObj`s via `gcAddMObjMatAnimJoint` (`components/decomp/src/sys/objanim.c:155-167`), which stores
 a pointer at `mobj->matanim_joint.event32`. The source pointers come from
 `costume_matanim_joints[]` arrays reached through the fighter's
 `FTCommonPart::p_costume_matanim_joints` / `FTModelPart::costume_matanim_joints`
-(`decomp/src/ft/fttypes.h:152-170, 186, 217`). These arrays live inside
+(`components/decomp/src/ft/fttypes.h:152-170, 186, 217`). These arrays live inside
 `reloc_fighters_main/XxxMain` and `reloc_fighters_main/XxxModel` — **not
 figatree files** — so they receive pass1 `bswap32` only, **not** the
 figatree `ROT16` fixup. The u32 bitfield view of each event32 should be
 correct post-`bswap32`.
 
 **Where to look first.**
-1. `decomp/src/sys/objanim.c:968 gcParseMObjMatAnimJoint` — the event32 opcode
-   parser. Opcodes 0-15 are defined in `decomp/src/sys/objdef.h:187-213` as
+1. `components/decomp/src/sys/objanim.c:968 gcParseMObjMatAnimJoint` — the event32 opcode
+   parser. Opcodes 0-15 are defined in `components/decomp/src/sys/objdef.h:187-213` as
    `AObjEvent32Kind`. Opcode `nGCAnimEvent32SetVal*` (1..11) write into
    `mat_aobjs[track-MaterialStart]` which are later played by
    `gcPlayMObjMatAnim`.
-2. `decomp/src/sys/objanim.c:1382 gcPlayMObjMatAnim` — the player. Already has two
+2. `components/decomp/src/sys/objanim.c:1382 gcPlayMObjMatAnim` — the player. Already has two
    PORT fixes:
    - Color interp byte-order (`25edeb0`) at lines 1513-1569
    - `color = white` init fix (`a7024aa`) at line 1401
@@ -120,7 +120,7 @@ sequencing and payload decoding.
 Samus missile) are NOT joint animations. They're spawned by per-fighter
 status functions that check `fp->motion_vars.flags.flagN` and call
 `wpXxxMakeWeapon`. For example
-`decomp/src/ft/ftchar/ftfox/ftfoxspecialn.c:11-31`:
+`components/decomp/src/ft/ftchar/ftfox/ftfoxspecialn.c:11-31`:
 
 ```c
 void ftFoxSpecialNProcUpdate(GObj *fighter_gobj) {
@@ -138,7 +138,7 @@ void ftFoxSpecialNProcUpdate(GObj *fighter_gobj) {
 ```
 
 `flag0` is set by the motion script event `nFTMotionEventSetFlag0`
-(`decomp/src/ft/ftmain.c:659`):
+(`components/decomp/src/ft/ftmain.c:659`):
 
 ```c
 case nFTMotionEventSetFlag0:
@@ -159,10 +159,10 @@ no visual" better than any joint-animation theory.**
 These files get pass1 `bswap32` only. Each `u32` word is one `FTMotionEvent*`
 struct. Opcode is in the top 6 bits of the word (bit 26-31 on BE, or
 `command.opcode` on either layout via the `IS_BIG_ENDIAN` switch in
-`decomp/src/ft/fttypes.h:271-500`).
+`components/decomp/src/ft/fttypes.h:271-500`).
 
 **Where to look first.**
-1. **Verify the FTMotionEvent* bitfield LE-reversals in `decomp/src/ft/fttypes.h`.**
+1. **Verify the FTMotionEvent* bitfield LE-reversals in `components/decomp/src/ft/fttypes.h`.**
    There are ~40 such structs starting at line 271. Each one has a
    `#if IS_BIG_ENDIAN ... #else ... #endif` switch with fields in reversed
    order. Every struct must have the reversed-order LE case such that bit
@@ -172,7 +172,7 @@ struct. Opcode is in the top 6 bits of the word (bit 26-31 on BE, or
      in word 1. Audit word 2-5 which have no opcode. ✓
    - Any struct where the total bit count per u32 is not exactly 32 — the
      compiler may pack differently on LE than BE if padding is implicit.
-2. **`ftMotionEventCastAdvance` is 4-byte-only.** From `decomp/src/ft/ftdef.h:131`:
+2. **`ftMotionEventCastAdvance` is 4-byte-only.** From `components/decomp/src/ft/ftdef.h:131`:
    ```c
    // WARNING: Only advances 4 bytes at a time
    #define ftMotionEventCastAdvance(event, type) ((type*)(event)->p_script++)
@@ -207,7 +207,7 @@ extend the dump gate to include main/mainmotion files, or add a second
 
 ### Lead 3: FTMotionDesc layout / submotion array (LP64 landmine)
 
-**The hypothesis.** `decomp/src/ft/fttypes.h:92-102` defines:
+**The hypothesis.** `components/decomp/src/ft/fttypes.h:92-102` defines:
 
 ```c
 struct FTMotionDesc {
@@ -224,7 +224,7 @@ Windows), `intptr_t` is still 4 bytes so the struct remains 12 bytes.
 **Why it might matter.** The `FTMotionDescArray::motion_desc[j]` indexed
 in `ftmain.c:4724` uses the C struct stride. If the array source is a
 compile-time initializer (like `dFTMarioMotionDescs[]` in
-`decomp/src/ft/ftdata.c`), the compiler builds the array at the current-ABI stride
+`components/decomp/src/ft/ftdata.c`), the compiler builds the array at the current-ABI stride
 and indexing works fine — every write and every read uses 24-byte stride
 on LP64. **BUT** if any array was loaded from a reloc file blob — where the
 original N64 bytes are packed at 12-byte stride — then indexing via
@@ -237,7 +237,7 @@ original N64 bytes are packed at 12-byte stride — then indexing via
    `*data->p_file_mainmotion`), the port is silently reading wrong
    `anim_file_id` and `offset` values for every motion that isn't index 0.
 2. **Verify the `fp->data->mainmotion` pointer.** `FTData::mainmotion` is
-   `FTMotionDescArray *`. In `decomp/src/ft/ftdata.c` / `decomp/src/sc/scsubsys/scsubsys*.c`
+   `FTMotionDescArray *`. In `components/decomp/src/ft/ftdata.c` / `components/decomp/src/sc/scsubsys/scsubsys*.c`
    these are initialized to addresses of static arrays in per-fighter C
    source files (e.g. `dFTMarioMotionDescs`). Confirm that every `FTData`
    entry uses a compile-time pointer, not a file-backed one.
@@ -275,7 +275,7 @@ During opening/intro scenes, fighters perform wrong animations despite triggerin
 
 ## Fixes Applied (This Session)
 
-### Fix 1: FTKEY_EVENT_STICK Endianness (`decomp/src/ft/ftdef.h`)
+### Fix 1: FTKEY_EVENT_STICK Endianness (`components/decomp/src/ft/ftdef.h`)
 
 The `FTKEY_EVENT_STICK(x, y, t)` macro packs stick coordinates into a u16 as `(x << 8) | y`, assuming big-endian byte layout. The `FTKeyEvent` union's `Vec2b stick_range` member reads this via byte-level access. On little-endian PC, the byte order within the u16 is reversed, swapping x and y.
 
@@ -285,7 +285,7 @@ The `FTKEY_EVENT_STICK(x, y, t)` macro packs stick coordinates into a u16 as `(x
 
 **Verified by logs:** All stick values now decode correctly (Fox: x=-50 y=0, DK: x=0 y=-80, etc.)
 
-### Fix 2: FTAttributes `is_have_*` Bitfield Endianness (`decomp/src/ft/fttypes.h`)
+### Fix 2: FTAttributes `is_have_*` Bitfield Endianness (`components/decomp/src/ft/fttypes.h`)
 
 22 one-bit `ub32` bitfields control which moves each fighter can perform. These are loaded from file data (bswap32'd). After bswap32, the u32 value is numerically identical, but BE allocates bitfields MSB-first while LE allocates LSB-first — different bits map to different field names.
 
@@ -321,7 +321,7 @@ The correct actions trigger and animations load, but **joint transforms are visu
 
 ### Suspected Root Cause: Figatree Byte-Swap Pipeline
 
-`portRelocFixupFighterFigatree` in `src/integration/decomp/lbreloc_bridge.cpp:133-157` applies ROT16 `((word<<16)|(word>>16))` to all non-relocated u32 words in figatree files. This correctly fixes u16 event pair ordering after bswap32.
+`portRelocFixupFighterFigatree` in `src/game/engine/decomp/lbreloc_bridge.cpp:133-157` applies ROT16 `((word<<16)|(word>>16))` to all non-relocated u32 words in figatree files. This correctly fixes u16 event pair ordering after bswap32.
 
 **Potential corruption vectors:**
 1. **f32 interpolation data** — `nGCAnimEvent16SetTranslateInterp` commands reference `SYInterpDesc` structures with f32 fields. ROT16 corrupts f32 values (they need plain bswap32, not ROT16).

@@ -23,8 +23,6 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
-from typing import Optional
-
 
 # ============================================================================
 #  Data structures
@@ -73,7 +71,7 @@ TASK_END_RE = re.compile(r'^=== END AUDIO TASK (\d+)\s*(?:—|-)\s*(\d+) command
 def parse_trace(filepath: str) -> dict[int, AudioTask]:
     """Parse an .acmd trace file into a dict of task_number -> AudioTask."""
     tasks: dict[int, AudioTask] = {}
-    current_task: Optional[int] = None
+    current_task: int | None = None
     current_cmds: list[AcmdCommand] = []
 
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -136,13 +134,13 @@ ADDRESS_OPCODES = {
 class Divergence:
     """A single command divergence between port and emu."""
     cmd_index: int
-    port_cmd: Optional[AcmdCommand]
-    emu_cmd: Optional[AcmdCommand]
+    port_cmd: AcmdCommand | None
+    emu_cmd: AcmdCommand | None
     reason: str  # What diverged: opcode, w0, w1, missing
 
 
 def compare_commands(port_cmd: AcmdCommand, emu_cmd: AcmdCommand,
-                     ignore_addresses: bool) -> Optional[Divergence]:
+                     ignore_addresses: bool) -> Divergence | None:
     """Compare two commands. Returns a Divergence if they differ, else None."""
 
     # Different opcode = definite divergence
@@ -164,8 +162,8 @@ def compare_commands(port_cmd: AcmdCommand, emu_cmd: AcmdCommand,
         )
 
     # Compare w1 — skip for address opcodes if requested
-    if not (ignore_addresses and port_cmd.opcode in ADDRESS_OPCODES):
-        if port_cmd.w1 != emu_cmd.w1:
+    if (not (ignore_addresses and port_cmd.opcode in ADDRESS_OPCODES)
+            and port_cmd.w1 != emu_cmd.w1):
             return Divergence(
                 cmd_index=port_cmd.index,
                 port_cmd=port_cmd,
@@ -216,7 +214,7 @@ def diff_task(port_task: AudioTask, emu_task: AudioTask,
 #  Output formatting
 # ============================================================================
 
-def format_cmd(label: str, cmd: Optional[AcmdCommand]) -> str:
+def format_cmd(label: str, cmd: AcmdCommand | None) -> str:
     """Format a command for diff output."""
     if cmd is None:
         return f"  {label}: (absent)"

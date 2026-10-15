@@ -25,5 +25,5 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # decomp/libultraship/torch pin to forks — manual bumps via worktree flow.
+    # components/{decomp,libultraship,game-runtime} pin to forks — manual bumps via worktree flow.
     open-pull-requests-limit: 0

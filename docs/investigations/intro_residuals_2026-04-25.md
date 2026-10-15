@@ -18,7 +18,7 @@ Apple GL one-shot complaint about a TEXEL1 sampler bound while no texture is upl
 
 ## Issue 1 — Samus/DK reloc token (FIXED)
 
-`decomp/src/ft/ftanim.c:445` `nGCAnimEvent16SetTranslateInterp` was reading the
+`components/decomp/src/ft/ftanim.c:445` `nGCAnimEvent16SetTranslateInterp` was reading the
 post-cmd halfword as if it were a 32-bit `PORT_RESOLVE` reloc token,
 then advancing 4 bytes — i.e. two `AObjEvent16` slots — corrupting the
 opcode stream from that point onward. The opcode is followed by a single
@@ -62,7 +62,7 @@ Both gobjs are scaled from ~0.052 → ~1.0 over 40 frames — the
 
 ### What we fixed
 
-- **`libultraship/src/fast/interpreter.cpp:GfxSpTri1`** (commit
+- **`components/libultraship/src/fast/interpreter.cpp:GfxSpTri1`** (commit
   `5fe2efe` on `JRickey/libultraship` `ssb64`): when the colour image
   is currently redirected to the Z buffer, gate `depth_test` on
   `Z_CMP` from `other_mode_l` rather than on `G_ZBUFFER` from
@@ -72,7 +72,7 @@ Both gobjs are scaled from ~0.052 → ~1.0 over 40 frames — the
   rejection and culling. Without this, they were Z-rejected against
   stale wallpaper depth.
 
-- **`libultraship/src/fast/interpreter.cpp:GfxDpFillRectangle`**
+- **`components/libultraship/src/fast/interpreter.cpp:GfxDpFillRectangle`**
   (commit `0148b85`): when the colour image is redirected to the Z
   buffer, issue `mRapi->ClearFramebuffer(false, true)` instead of
   silently returning. The previous `// already did it with glClear`
@@ -149,7 +149,7 @@ DK-smash isn't a figatree wait or a `gcSetAnimSpeed(0.0F)` call. It's
 the natural by-product of the gfx pipeline running long.
 
 Each gfx task carries an `fnCheck` callback. The default is
-`sySchedulerCheckReadyFramebuffer` (`decomp/src/sys/scheduler.c:182`); the
+`sySchedulerCheckReadyFramebuffer` (`components/decomp/src/sys/scheduler.c:182`); the
 opening room scene installs `mvOpeningRoomCheckSetFramebuffer`. The
 scheduler refuses to start a paused gfx task when the framebuffer slot
 the game wants to draw into is the one VI is currently displaying or
@@ -161,7 +161,7 @@ slot, the task stays paused, the game thread blocks on its retVal
 
 ### What landed
 
-- **`src/compatibility/n64_stubs.c`** — `osViGet*Framebuffer` and
+- **`src/platform/compatibility/n64_stubs.c`** — `osViGet*Framebuffer` and
   `osViSwapBuffer` were no-ops returning `NULL`. They now track a
   current/next framebuffer pair, with a new `port_vi_simulate_vblank()`
   propagating queued → current. (`66a7726`)
@@ -221,7 +221,7 @@ where a "stall this VBlank" decision needs to live.
   `gSYFramebufferSets` provides, the freeze is a function of how long
   gfx takes vs how fast VI propagates.
 
-- `syTaskmanSetFuncSwapBuffer` (`decomp/src/sys/taskman.c:241`) is how a
+- `syTaskmanSetFuncSwapBuffer` (`components/decomp/src/sys/taskman.c:241`) is how a
   scene installs a custom fnCheck. Only `mvOpeningRoom` uses this;
   every other scene rides the default
   `sySchedulerCheckReadyFramebuffer`.
@@ -237,11 +237,11 @@ where a "stall this VBlank" decision needs to live.
 
 | Path | Commit | Branch |
 |------|--------|--------|
-| `decomp/src/ft/ftanim.c` | `1c5cd49` | main |
-| `decomp/src/mv/mvopening/mvopeningroom.c` | `6f826c4` | main (one-shot transition display logging) |
-| `src/compatibility/n64_stubs.c`, `src/application/gameloop.cpp` | `66a7726` | main |
-| `libultraship/src/fast/interpreter.cpp` (depth-test override) | `5fe2efe` | `JRickey/libultraship` `ssb64` |
-| `libultraship/src/fast/interpreter.cpp` (FillRectangle depth-clear) | `0148b85` | `JRickey/libultraship` `ssb64` |
+| `components/decomp/src/ft/ftanim.c` | `1c5cd49` | main |
+| `components/decomp/src/mv/mvopening/mvopeningroom.c` | `6f826c4` | main (one-shot transition display logging) |
+| `src/platform/compatibility/n64_stubs.c`, `src/application/gameloop.cpp` | `66a7726` | main |
+| `components/libultraship/src/fast/interpreter.cpp` (depth-test override) | `5fe2efe` | `JRickey/libultraship` `ssb64` |
+| `components/libultraship/src/fast/interpreter.cpp` (FillRectangle depth-clear) | `0148b85` | `JRickey/libultraship` `ssb64` |
 | Outer submodule pointer bump | `6f826c4` (depth fix), pending for FillRect fix | main |
 
 Push order if landing on remotes: submodule first

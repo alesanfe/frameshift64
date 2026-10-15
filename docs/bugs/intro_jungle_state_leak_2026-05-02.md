@@ -14,7 +14,7 @@ No crash, no log error. The scene chain stalls silently mid-intro.
 
 ## Root cause
 
-`decomp/src/mv/mvopening/mvopeningjungle.c` declares
+`components/decomp/src/mv/mvopening/mvopeningjungle.c` declares
 `s32 sMVOpeningJungleTotalTimeTics;` (BSS) and:
 
 - increments it every tic in `mvOpeningJungleFuncRun` (line 361)
@@ -50,7 +50,7 @@ on overlay re-DMA that happened "for free" on N64 does not.
 
 ## Fix
 
-`decomp/src/mv/mvopening/mvopeningjungle.c`:
+`components/decomp/src/mv/mvopening/mvopeningjungle.c`:
 
 ```c
 void mvOpeningJungleInitTotalTimeTics(void)
@@ -80,7 +80,7 @@ entry, confirming the leak existed and the fix neutralises it.
 
 ## Audit context
 
-A subagent audit of all `decomp/src/mv/mvopening/mvopening*.c` files
+A subagent audit of all `components/decomp/src/mv/mvopening/mvopening*.c` files
 verified that Jungle is the only opening scene with this defect.
 Every other opening overlay either has a dedicated
 `*InitTotalTimeTics()` / `*InitVars()` call from its `FuncStart`, or

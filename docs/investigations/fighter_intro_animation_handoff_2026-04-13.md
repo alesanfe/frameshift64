@@ -31,7 +31,7 @@ Samus's intro scene that this doc hands off.
 
 ## The committed fix — `FTMotionFlags` positional initializer
 
-`decomp/src/ft/fttypes.h:271-290` (before `006128e`) declared:
+`components/decomp/src/ft/fttypes.h:271-290` (before `006128e`) declared:
 
 ```c
 struct FTMotionFlags {
@@ -112,7 +112,7 @@ EXC_BAD_ACCESS (SIGSEGV) at 0x0a03800000000000 → 0x0000000000000000
 Pre-fix: `motion_id = 0` for every action meant the "Wait stance" figatree
 was always loaded. `ftCommonGuardUpdateJoints` then either hit the
 `yrotn_joint == NULL` bailout (the `#ifdef PORT` guard at
-`decomp/src/ft/ftcommon/ftcommonguard1.c:224-245`) or ran with valid joints because
+`components/decomp/src/ft/ftcommon/ftcommonguard1.c:224-245`) or ran with valid joints because
 the Wait stance's hidden-parts mechanism produced them. Either way, the
 buggy code path was unreachable.
 
@@ -133,7 +133,7 @@ correctly requests the YRotN joint (via `is_use_yrotn_joint` bit),
    lldb build/ssb64 -o 'dis -n gcParseDObjAnimJoint' -o quit 2>&1 | head -120
    ```
    At offset +568, the crash is inside an inner loop — `gcParseDObjAnimJoint`
-   lives in `decomp/src/sys/objanim.c`. Cross-reference the disasm against that
+   lives in `components/decomp/src/sys/objanim.c`. Cross-reference the disasm against that
    source to identify the exact line.
 2. **The event16 parser** reads `AObjEvent16` streams from figatree files
    (bswap32 + ROT16 pipeline). Figatree byte-swap is verified byte-perfect
@@ -162,7 +162,7 @@ correctly requests the YRotN joint (via `is_use_yrotn_joint` bit),
    look at her status descs and verify whether the newly-reached motion
    numbers are legal indexes into `dFTSamus*MotionDescs[]`.
 5. **Revisit the bailout comments.** The `#ifdef PORT` guard at
-   `decomp/src/ft/ftcommon/ftcommonguard1.c:224-245` attributes the null-joint
+   `components/decomp/src/ft/ftcommon/ftcommonguard1.c:224-245` attributes the null-joint
    crash class to the FTMotionDesc LP64 stride. **Lead 3 agent's runtime
    evidence disproved that attribution** (see `runtime log Mario motion 0
    = llFTMarioAnimWaitFileID, motion=8 matches row 8, stride=24, etc.`).
@@ -170,8 +170,8 @@ correctly requests the YRotN joint (via `is_use_yrotn_joint` bit),
    FTMotionFlags bug we just fixed — but removing the bailout (now that
    Lead 2 is fixed) may be what makes Samus's scene reach the new crash.
    Similar comments exist in:
-   - `decomp/src/ft/ftcommon/ftcommonguard1.c:451-471` (`ftCommonGuardInitJoints`)
-   - `decomp/src/lb/lbcommon.c:1598-1617` (another bailout referenced by the Lead 3
+   - `components/decomp/src/ft/ftcommon/ftcommonguard1.c:451-471` (`ftCommonGuardInitJoints`)
+   - `components/decomp/src/lb/lbcommon.c:1598-1617` (another bailout referenced by the Lead 3
      agent's report — verify location before touching)
 
    Before attempting to remove any bailout, read the code that runs *after*
@@ -183,7 +183,7 @@ correctly requests the YRotN joint (via `is_use_yrotn_joint` bit),
 
 ### 1. Six partial-bit `FTMotionEvent*` structs (bit layout bug)
 
-Six structs in `decomp/src/ft/fttypes.h` total fewer than 32 bits per u32 word, so
+Six structs in `components/decomp/src/ft/fttypes.h` total fewer than 32 bits per u32 word, so
 the `IS_BIG_ENDIAN` / `!IS_BIG_ENDIAN` mirror places fields at different
 offsets from the bottom of the word rather than at 32-complement positions.
 The runtime reads wrong bit ranges on LE.
@@ -225,10 +225,10 @@ another fighter.
 ### 2. `FTData::p_file_submotion == NULL` (latent, non-critical)
 
 `FTData::p_file_submotion` is NULL for every fighter in the port
-(`decomp/src/ft/ftdata.c:1118,1128,...`). The N64 code path computed
+(`components/decomp/src/ft/ftdata.c:1118,1128,...`). The N64 code path computed
 `event_script_ptr = *NULL + motion_desc->offset` which is UB, but the
 `offset` field in submotion descs actually holds direct pointers to
-`D_ovl1_*` data (see `decomp/src/sc/scsubsys/scsubsysdatafox.c:42-68`), so the
+`D_ovl1_*` data (see `components/decomp/src/sc/scsubsys/scsubsysdatafox.c:42-68`), so the
 N64 path effectively did `0 + pointer = pointer` and silently worked.
 
 The port's safe NULL check in `ftMainSetStatus` (around line 4883-4885)
@@ -244,7 +244,7 @@ directly.
 
 ### 3. `GMStatFlags` — same class of bug as FTMotionFlags
 
-`decomp/src/gm/gmtypes.h:65-87` has an `IS_BIG_ENDIAN`-switched anonymous struct
+`components/decomp/src/gm/gmtypes.h:65-87` has an `IS_BIG_ENDIAN`-switched anonymous struct
 inside a union with a `u16 halfword` alternate view:
 
 ```c
@@ -288,24 +288,24 @@ touch every status desc.
 
 Ruled out by agent `lead1-matanim`. Key findings:
 
-- `gcParseMObjMatAnimJoint` (`decomp/src/sys/objanim.c:968`) and `gcPlayMObjMatAnim`
-  (`decomp/src/sys/objanim.c:1382`) decode every matanim event byte-exact vs the
+- `gcParseMObjMatAnimJoint` (`components/decomp/src/sys/objanim.c:968`) and `gcPlayMObjMatAnim`
+  (`components/decomp/src/sys/objanim.c:1382`) decode every matanim event byte-exact vs the
   raw ROM-extracted bytes. Verified for MVCommon (file 52), MarioModel
   (296), FoxModel (317), SamusModel (320), LinkModel (324), YoshiModel
   (338), PikachuModel (341).
 - **Structural insight worth keeping:** `gcParseMObjMatAnimJoint` is
   one-shot — it runs once per MObj at setup, then `lbCommonAddMObjForFighterPartsDObj`
-  (`decomp/src/lb/lbcommon.c:1036-1046`) calls `gcRemoveAObjFromMObj` which sets
+  (`components/decomp/src/lb/lbcommon.c:1036-1046`) calls `gcRemoveAObjFromMObj` which sets
   `mobj->anim_wait = AOBJ_ANIM_NULL`, so every subsequent call returns
   early at the entry guard. **Live fighter texture swaps go through
   motion-script `nFTMotionEventSetTexturePartID` → `ftParamSetTexturePartID`
-  at `decomp/src/ft/ftparam.c:1176`, not matanim**. This is why the fix for the
+  at `components/decomp/src/ft/ftparam.c:1176`, not matanim**. This is why the fix for the
   matanim parser wouldn't have moved the needle — the motion script path
   is what was broken (Lead 2).
 - Evidence: `debug_traces/port_file_338.bin` (YoshiModel raw) + Python
   decode confirmed every event byte-exact. Lead 1 also left 135 lines of
   `SSB64_TRACE_MATANIM=1`-gated diagnostic infrastructure in
-  `decomp/src/sys/objanim.c` — currently stashed.
+  `components/decomp/src/sys/objanim.c` — currently stashed.
 
 ### Lead 3 — `FTMotionDesc` LP64 stride landmine
 
@@ -313,15 +313,15 @@ Ruled out by agent `lead3-ftmotiondesc`. Evidence:
 
 - **Static:** No field-level writes to `FTData::mainmotion` or
   `FTData::submotion` anywhere. All 42 `dFT*MotionDescs[]` / `dFT*SubMotionDescs[]`
-  arrays are compile-time externs defined in `decomp/src/ft/ftdata.c` and
-  `decomp/src/sc/scsubsys/scsubsysdata*.c`, populated only via static `FTData`
+  arrays are compile-time externs defined in `components/decomp/src/ft/ftdata.c` and
+  `components/decomp/src/sc/scsubsys/scsubsysdata*.c`, populated only via static `FTData`
   struct initializers. The C compiler lays these out at the current ABI's
   `sizeof(FTMotionDesc)` stride, so producer and reader agree by
   construction on both N64 (stride 12) and LP64 (stride 24).
 - **No file-backed `FTMotionDesc` array anywhere.** The only
   `lbRelocGet*` call related to motion data is
   `lbRelocGetStatusBufferFile(data->file_mainmotion_id)` at
-  `decomp/src/ft/ftmanager.c:314`, which returns a `void*` raw event-script file
+  `components/decomp/src/ft/ftmanager.c:314`, which returns a `void*` raw event-script file
   blob stored in `*data->p_file_mainmotion`. **This is NOT an
   `FTMotionDescArray*`** — it's the raw event script bytes, indexed
   separately by `motion_desc->offset` (a byte offset inside the blob).
@@ -330,10 +330,10 @@ Ruled out by agent `lead3-ftmotiondesc`. Evidence:
   Field values match source row-for-row (`motion=8 file_id=0x16a
   offset=0x80000000 anim=0x80000000` matches
   `{ll_362_FileID, 0x80000000, 0x80000000}` in
-  `decomp/src/sc/scsubsys/scsubsysdatamario.c`).
+  `components/decomp/src/sc/scsubsys/scsubsysdatamario.c`).
 
 Lead 3 impossible by construction. The pre-existing comments in
-`decomp/src/ft/ftcommon/ftcommonguard1.c` and `decomp/src/lb/lbcommon.c` that blame the
+`components/decomp/src/ft/ftcommon/ftcommonguard1.c` and `components/decomp/src/lb/lbcommon.c` that blame the
 "FTMotionDesc LP64 stride" for null-joint crashes are **incorrect** — the
 real cause was the FTMotionFlags positional-initializer bug (Lead 2),
 which those comments predate.
@@ -350,18 +350,18 @@ git stash list
 
 Contents (218 lines across 4 files):
 
-- `decomp/src/sys/objanim.c` — 137 lines of `SSB64_TRACE_MATANIM=1`-gated
+- `components/decomp/src/sys/objanim.c` — 137 lines of `SSB64_TRACE_MATANIM=1`-gated
   instrumentation for the matanim event32 parser (Lead 1). Turnkey for
   future matanim investigations.
-- `decomp/src/ft/ftmain.c` — 57 lines of `SSB64_TRACE_MOTION=1`-gated
+- `components/decomp/src/ft/ftmain.c` — 57 lines of `SSB64_TRACE_MOTION=1`-gated
   instrumentation for the motion event parser, plus unconditional logs in
   each `SetFlag0..3` case (Lead 2).
-- `src/integration/decomp/lbreloc_bridge.cpp` — 11 lines adding
+- `src/game/engine/decomp/lbreloc_bridge.cpp` — 11 lines adding
   `SSB64_DUMP_MAIN_FILES=1` env var to dump every
   `reloc_fighters_main/*` file pre-byteswap to
   `debug_traces/port_file_<id>.bin` (Lead 2). Useful to pair with
   `SSB64_DUMP_ALL_FIGATREE=1`.
-- `decomp/src/ft/ftchar/ftfox/ftfoxspecialn.c` — 15 lines of
+- `components/decomp/src/ft/ftchar/ftfox/ftfoxspecialn.c` — 15 lines of
   `ftFoxSpecialNProcUpdate` diagnostic (Lead 2).
 
 The `SSB64_TRACE_MATANIM` and `SSB64_DUMP_MAIN_FILES` hooks are the most
@@ -373,7 +373,7 @@ discarded.
 
 ## Files touched during this session
 
-- **Committed (`006128e`):** `decomp/src/ft/fttypes.h` — FTMotionFlags plain fields
-- **Stashed:** `decomp/src/sys/objanim.c`, `decomp/src/ft/ftmain.c`, `src/integration/decomp/lbreloc_bridge.cpp`, `decomp/src/ft/ftchar/ftfox/ftfoxspecialn.c`
+- **Committed (`006128e`):** `components/decomp/src/ft/fttypes.h` — FTMotionFlags plain fields
+- **Stashed:** `components/decomp/src/sys/objanim.c`, `components/decomp/src/ft/ftmain.c`, `src/game/engine/decomp/lbreloc_bridge.cpp`, `components/decomp/src/ft/ftchar/ftfox/ftfoxspecialn.c`
 - **Untracked in `debug_traces/`:** `port_file_338.bin`, `port_file_208.bin`, `matanim_evidence/port_matanim_trace.txt`, plus pre-existing figatree dumps
 - **Crash reports:** `~/Library/Logs/DiagnosticReports/ssb64-2026-04-13-003406.ips` and `ssb64-2026-04-13-004119.ips`

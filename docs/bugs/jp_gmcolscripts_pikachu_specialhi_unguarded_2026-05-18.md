@@ -1,7 +1,7 @@
 # JP build: unguarded US-only col-script symbol in port link table
 
 **Date:** 2026-05-18
-**Area:** `decomp/src/gm/gmcolscripts.c` (PORT block), JP (`REGION_JP`) build enablement
+**Area:** `components/decomp/src/gm/gmcolscripts.c` (PORT block), JP (`REGION_JP`) build enablement
 **Symptom:** Compiling `ssb64_game` with `-DSSB64_VERSION=jp` (`REGION_JP`)
 failed with exactly one error:
 

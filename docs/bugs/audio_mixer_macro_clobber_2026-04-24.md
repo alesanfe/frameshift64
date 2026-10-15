@@ -10,7 +10,7 @@ After the bank-swap (`docs/bugs/audio_bridge_bank_swap_2026-04-24.md`) and `ALPa
 
 ## Root cause
 
-decomp/include/PR/abi.h finished its declarations and then auto-included `src/resources/loading/audio/mixer.h`:
+components/decomp/include/PR/abi.h finished its declarations and then auto-included `src/resources/loading/audio/mixer.h`:
 
 ```c
 #endif /* _LANGUAGE_C */
@@ -51,7 +51,7 @@ The smoking gun was disassembling `__decodeChunk` from the binary and finding on
 
 ## Fix
 
-decomp/include/PR/abi.h — drop the auto-include:
+components/decomp/include/PR/abi.h — drop the auto-include:
 
 ```c
 /* PORT: do NOT auto-include "audio/mixer.h" here.  TUs that use the
@@ -61,7 +61,7 @@ decomp/include/PR/abi.h — drop the auto-include:
 
 `src/resources/loading/audio/mixer.h` — comment block at the top of the N_MICRO section explaining the include-order requirement.
 
-`decomp/src/libultra/n_audio/n_env.c` already does `#include "audio/mixer.h"` after the n_audio headers, so its `n_aLoadBuffer` calls now resolve to the CPU impl (verified by re-disassembling `__decodeChunk` after rebuild).
+`components/decomp/src/libultra/n_audio/n_env.c` already does `#include "audio/mixer.h"` after the n_audio headers, so its `n_aLoadBuffer` calls now resolve to the CPU impl (verified by re-disassembling `__decodeChunk` after rebuild).
 
 ## Verified
 

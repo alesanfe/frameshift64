@@ -33,8 +33,8 @@ verification needed.
 
 The decomp game code is region-conditionally compiled. `port-patches` already
 carries `#if defined(REGION_JP) / #if defined(REGION_US)` divergence across
-~20+ source files (`decomp/src/mn/mncommon/mntitle.c` alone has ~10 region splits,
-plus `ftcomputer.c`, many `relocData/*.c`, etc.) and decomp/include/piint.h
+~20+ source files (`components/decomp/src/mn/mncommon/mntitle.c` alone has ~10 region splits,
+plus `ftcomputer.c`, many `relocData/*.c`, etc.) and components/decomp/include/piint.h
 remaps `__osEPiRawStartDma`→`osEPiRawStartDma` for the 2.0J SDK.
 
 Consequence: **a single binary cannot play both ROMs.** US and JP differ in
@@ -48,13 +48,13 @@ Makefile does `VERSION=us|jp`.
 - **decomp `port-patches`**: REGION_JP source divergence is already merged.
   `generated/include/us/reloc_data.us.h` is a selector shim that includes
   `reloc_data.us.h` or `reloc_data.jp.h` per `REGION_US`/`REGION_JP`.
-  JP-excluded startup files `decomp/src/mn/mncommon/{mncongra,mnstartup}.c` are
+  JP-excluded startup files `components/decomp/src/mn/mncommon/{mncongra,mnstartup}.c` are
   present (upstream Makefile filters them out of JP builds).
 - **decomp `origin/main`** has the JP source-of-truth tables we need to vendor:
-  `tools/codegen/relocFileDescriptions.jp.txt`, `symbols/jp_wip.txt`,
+  `tools/code-generation/relocFileDescriptions.jp.txt`, `symbols/jp_wip.txt`,
   `symbols/jp_wip_linker.txt`, `smashbrothers.jp.yaml`, and JP credits text
-  (`decomp/src/credits/{staff,titles,info,companies}.credits.jp.txt`).
-- **Torch** already detects the country code (`torch/src/n64/Cartridge.cpp`
+  (`components/decomp/src/credits/{staff,titles,info,companies}.credits.jp.txt`).
+- **Torch** already detects the country code (`components/game-runtime/src/n64/Cartridge.cpp`
   parses 'J'/'E'/'P' at ROM 0x3E and `GetCountryCode()` returns "jp"/"us"/"eu")
   and resolves the asset YAML dir from a per-SHA1 `config.yml` entry's `path:`
   key — so JP routing is config, not code.
@@ -63,15 +63,15 @@ Makefile does `VERSION=us|jp`.
 
 | Component | File(s) | US value |
 |---|---|---|
-| Torch ROM→assets map | `config.yml` | single SHA1 → `path: assets/configuration/extraction/us` |
-| Asset extraction configs | `assets/configuration/extraction/us/reloc_*.yml` | per-file US ROM offsets |
-| Reloc table ROM address | `tools/codegen/generate_yamls.py:24` | `RELOC_TABLE_ROM_ADDR = 0x001AC870`, `RELOC_FILE_COUNT = 2132`, `COMPRESSED_FILE_COUNT = 499` |
-| Symbol→fileID table | `tools/codegen/reloc_data_symbols.us.txt` | US file IDs/ordering |
-| File descriptions | `tools/codegen/relocFileDescriptions.us.txt` | US |
+| Torch ROM→assets map | `config.yml` | single SHA1 → `path: assets/game/us` |
+| Asset extraction configs | `assets/game/us/reloc_*.yml` | per-file US ROM offsets |
+| Reloc table ROM address | `tools/code-generation/generate_yamls.py:24` | `RELOC_TABLE_ROM_ADDR = 0x001AC870`, `RELOC_FILE_COUNT = 2132`, `COMPRESSED_FILE_COUNT = 499` |
+| Symbol→fileID table | `tools/code-generation/reloc_data_symbols.us.txt` | US file IDs/ordering |
+| File descriptions | `tools/code-generation/relocFileDescriptions.us.txt` | US |
 | Generated reloc stubs | `generated/include/us/reloc_data.us.h` (US, 323 KB) | from `reloc_data_symbols.us.txt` |
-| fileID→resource path table | `tools/codegen/generate_reloc_table.py:15` → `generated/src/us/RelocFileTable.us.cpp` | `YAML_DIR = assets/configuration/extraction/us` |
+| fileID→resource path table | `tools/code-generation/generate_reloc_table.py:15` → `generated/src/us/RelocFileTable.us.cpp` | `YAML_DIR = assets/game/us` |
 | Region defines | `CMakeLists.txt:247-248` | `REGION_US=1 VERSION_US=1` (unconditional) |
-| YAML list / copy / config copy | `CMakeLists.txt:122-136, 464, 478-482` | `assets/configuration/extraction/us` literals |
+| YAML list / copy / config copy | `CMakeLists.txt:122-136, 464, 478-482` | `assets/game/us` literals |
 | Baserom selection | `CMakeLists.txt:496-502` | `baserom.us.<ext>` |
 | Credits text | CMake credits encode step | `*.credits.us.txt` |
 
@@ -109,10 +109,10 @@ reused from US.
 
 ### Phase 1 — Vendor JP source-of-truth — ✅ DONE (2026-05-17)
 3. ✅ Vendored into the port `tools/`:
-   - `tools/codegen/relocFileDescriptions.jp.txt` — 11-line provenance/license
+   - `tools/code-generation/relocFileDescriptions.jp.txt` — 11-line provenance/license
      prefix + blank + upstream `origin/main` verbatim. `FILE_COUNT: 2107`.
      Body verified byte-for-byte against upstream.
-   - `tools/codegen/reloc_data_symbols.jp.txt` — provenance header + body produced
+   - `tools/code-generation/reloc_data_symbols.jp.txt` — provenance header + body produced
      by upstream `tools/relocData.py genHeader` (pure text→text, no ROM)
      from the vendored JP descriptions. `llRelocFileCount = 2107`, 2107
      FileID symbols. **Generator parity proven**: regenerating the US table
@@ -120,21 +120,21 @@ reused from US.
      `reloc_data_symbols.us.txt` with *zero* diff (4230 == 4230
      assignments), so the JP table is produced by the authoritative path.
    - JP credits text: **no action needed** — `*.credits.jp.txt` already
-     present in `decomp/src/credits/` on `port-patches`.
+     present in `components/decomp/src/credits/` on `port-patches`.
    - `symbols/jp_wip*.txt`: not needed by the port (those are MIPS-linker /
      splat inputs for the decomp's own ROM-matching build; the port uses
      the generated `reloc_data_symbols.jp.txt` instead).
 4. ✅ REGION_JP source-divergence audit (`port-patches` @ caae085e1 vs
    `origin/main`): **no divergence lost.** port-patches carries 135
    REGION-divergent files vs upstream main's 98. The 9 files marked
-   REGION_* only upstream are all `decomp/src/db/*` and decomp/src/libultra/{io,os} (removed) —
+   REGION_* only upstream are all `components/decomp/src/db/*` and components/decomp/src/libultra/{io,os} (removed) —
    intentionally-excluded non-port code (none exist in port-patches at
    all). Spot-checked compiled files have identical REGION-directive counts
    (mntitle 17/17, ftcomputer 6/6, itkamex 3/3). Compiled source set
    retains and exceeds upstream JP coverage.
 
-   **Note for Phase 2:** `tools/codegen/generate_reloc_stubs.py:49` hardcodes
-   `SYMBOLS_TXT = tools/codegen/reloc_data_symbols.us.txt` — must be parameterized
+   **Note for Phase 2:** `tools/code-generation/generate_reloc_stubs.py:49` hardcodes
+   `SYMBOLS_TXT = tools/code-generation/reloc_data_symbols.us.txt` — must be parameterized
    by version (Phase 2), not changed yet.
 
 ### Phase 2 — Parameterize the codegen pipeline — ✅ DONE (2026-05-17)
@@ -148,7 +148,7 @@ reused from US.
 6. ✅ Generated JP artifacts (US sibling files, US paths untouched):
    - `generated/include/jp/reloc_data.jp.h` — 6000 #defines (3900 FileID), provenance
      correctly cites `reloc_data_symbols.jp.txt`.
-   - `assets/configuration/extraction/jp/reloc_*.yml` — 16 files, **2107 entries** (== JP file
+   - `assets/game/jp/reloc_*.yml` — 16 files, **2107 entries** (== JP file
      count). JP names resolve 100% from the header so the US heuristic
      name tables never fire for JP (categorisation differs from US but is
      self-consistent with the JP RelocFileTable).
@@ -180,7 +180,7 @@ reused from US.
 ### Phase 3 — Build-system version switch — ✅ DONE (2026-05-18)
 
 **Architectural decision (Senior Dev Override):** the port had a flat
-`generated/include/us/reloc_data.us.h` on the include path *before* `decomp/include/`,
+`generated/include/us/reloc_data.us.h` on the include path *before* `components/decomp/include/`,
 shadowing the decomp's own US/JP selector shim
 (`generated/include/us/reloc_data.us.h` → `reloc_data.<region>.h`). Aligned the
 port to the decomp's existing design instead of inventing a parallel one:
@@ -197,7 +197,7 @@ port to the decomp's existing design instead of inventing a parallel one:
    us/jp). Drives, all verified in the generated `build.ninja` for both
    versions:
    - `REGION_${UC}=1 / VERSION_${UC}=1` defines
-   - YAML category list + `copy_directory` source → `assets/configuration/extraction/${ver}`
+   - YAML category list + `copy_directory` source → `assets/game/${ver}`
    - baserom selection → `baserom.${ver}.{z64,n64,v64}` (JP configure
      found `baserom.jp.z64` and took the real extract path; US correctly
      reported "baserom absent" stub)
@@ -213,9 +213,9 @@ port to the decomp's existing design instead of inventing a parallel one:
    (one ROM/version per build dir). Per-version coexistence is achieved at
    the source-tree/build-dir level, matching the decomp's `build/<ver>/`.
 8. ✅ `config.yml`: added the JP SHA1 entry
-   (`4b71f0e0…` → `path: assets/configuration/extraction/jp`, name "(J)", `BattleShip.o2r`). Torch
+   (`4b71f0e0…` → `path: assets/game/jp`, name "(J)", `BattleShip.o2r`). Torch
    routes by the user-supplied ROM's SHA1.
-   Also fixed `tools/auditing/upstream_reconcile.py` AUTO_GEN_FILES to the new
+   Also fixed `tools/analysis/auditing/upstream_reconcile.py` AUTO_GEN_FILES to the new
    per-version header names.
 
 **Verification:** `cmake -S . -B … -DSSB64_VERSION={us,jp}` both exit 0
@@ -244,7 +244,7 @@ Full *compile* of the JP target is Phase 4 (bring-up).
     byte (`docs/bugs/jp_torch_relocfactory_us_hardcoded_table_2026-05-18.md`,
     torch submodule `ssb64`). `BattleShip.o2r` regenerated from
     `baserom.jp.z64`: **2108 entries** (2107 reloc + version), 0 errors,
-    distribution matching `assets/configuration/extraction/jp`.
+    distribution matching `assets/game/jp`.
     - ✅ **Full binary links.** Two link-time blockers found + fixed:
       `ftParamGetGroundHazardKnockback` (ftparam.c) and
       `func_ovl0_800C9F70` (lbcommon.c) are `#if REGION_US`-only (no JP
@@ -292,7 +292,7 @@ above). LP64: zero `long` exposure in `REGION_JP` code.
   name fixed; packaged-release first-run extraction unaffected. Verified:
   JP extract lands in the build dir, source-root o2r untouched.
 - ✅ **JP audio/particles — RESOLVED.** Added hand-derived
-  `assets/configuration/extraction/jp/audio.yml` (8 segments) + `assets/configuration/extraction/jp/particles.yml` (18
+  `assets/game/jp/audio.yml` (8 segments) + `assets/game/jp/particles.yml` (18
   segments), transformed from the US files with JP ROM-segment addresses
   taken from `decomp origin/main:smashbrothers.jp.yaml`'s splat segment
   list (sizes computed from consecutive segment starts, same method as
@@ -306,7 +306,7 @@ above). LP64: zero `long` exposure in `REGION_JP` code.
   runnable JP build; the `syAudioMakeBGMPlayers` crash cause (missing
   audio banks) is gone. (Visual boot smoke-test still pending — headless
   env.)
-  Dev note: `ExtractAssets` doesn't list the `assets/configuration/extraction/<v>/` files as
+  Dev note: `ExtractAssets` doesn't list the `assets/game/<v>/` files as
   dependencies, so editing a yaml doesn't auto-retrigger extraction —
   `rm <build>/extracted/BattleShip.o2r` (or touch a dep) to force it.
 

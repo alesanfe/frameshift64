@@ -50,7 +50,7 @@ The exact byte pattern is diagnostic. With `arg7 = 0x05`, `arg8 = 0x7F` (typical
 
 ## Fix
 
-decomp/include/n_audio/synthInternals.h — pad `ALParam` to at least the size of the largest variant under `#ifdef PORT`, and add `_Static_assert`s so any future variant growth is caught at compile time:
+components/decomp/include/n_audio/synthInternals.h — pad `ALParam` to at least the size of the largest variant under `#ifdef PORT`, and add `_Static_assert`s so any future variant growth is caught at compile time:
 
 ```c
 typedef struct ALParam_s {

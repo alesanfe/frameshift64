@@ -10,4 +10,4 @@
 1. `grdisplay.c`: Wrapped all `MPGroundDesc` token field accesses with `PORT_RESOLVE()` + appropriate casts
 2. `mpcollision.c`: Added `portFixupStructU16` calls in `mpCollisionInitGroundData` for: `MPGeometryData` u16 fields, `MPMapObjData` array, `MPLineInfo` array, `MPVertexLinks` array, and `MPGroundData` camera/map/team bounds (using runtime offsetof via pointer arithmetic). `MPVertexData` fixup deferred (needs safe vertex count).
 
-**Files:** `decomp/src/gr/grdisplay.c`, `decomp/src/mp/mpcollision.c`
+**Files:** `components/decomp/src/gr/grdisplay.c`, `components/decomp/src/mp/mpcollision.c`

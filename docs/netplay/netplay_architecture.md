@@ -2,18 +2,18 @@
 
 ## Purpose
 
-`decomp/src/sys/netinput.c` and `decomp/src/sys/netinput.h` prepare the VS Mode controller path for rollback netcode. The module owns deterministic per-player input samples for each VS simulation tick, records those samples in bounded history buffers, and republishes the resolved input through the existing `SYController` globals that battle code already consumes.
+`components/decomp/src/sys/netinput.c` and `components/decomp/src/sys/netinput.h` prepare the VS Mode controller path for rollback netcode. The module owns deterministic per-player input samples for each VS simulation tick, records those samples in bounded history buffers, and republishes the resolved input through the existing `SYController` globals that battle code already consumes.
 
 Companion handoff notes for future agent sessions live in `docs/netplay/netcode_agent_rules.md`.
 
 This keeps the first netplay boundary at the controller layer:
 
-- local hardware input still comes from `decomp/src/sys/controller.c`
+- local hardware input still comes from `components/decomp/src/sys/controller.c`
 - battle simulation still reads `gSYControllerDevices`
-- netplay-only input policy lives in `decomp/src/sys/netinput.c`
-- debug replay file I/O lives in `decomp/src/sys/netreplay.c`
-- debug UDP P2P transport and match bootstrap live in `decomp/src/sys/netpeer.c`
-- narrow gameplay-state hashing for diagnostics lives in `decomp/src/sys/netsync.c`
+- netplay-only input policy lives in `components/decomp/src/sys/netinput.c`
+- debug replay file I/O lives in `components/decomp/src/sys/netreplay.c`
+- debug UDP P2P transport and match bootstrap live in `components/decomp/src/sys/netpeer.c`
+- narrow gameplay-state hashing for diagnostics lives in `components/decomp/src/sys/netsync.c`
 
 ## Current Integration
 
@@ -107,7 +107,7 @@ For full-match debug replay files, `netinput.c` also keeps a separate replay fra
 
 ## Public API
 
-`decomp/src/sys/netinput.h` exposes the current VS netplay input surface:
+`components/decomp/src/sys/netinput.h` exposes the current VS netplay input surface:
 
 | Function | Role |
 | -------- | ---- |
@@ -138,7 +138,7 @@ For full-match debug replay files, `netinput.c` also keeps a separate replay fra
 | `syNetInputGetReplayMetadata()` | Read staged VS replay metadata if available. |
 | `syNetInputFuncRead()` | VS controller callback that resolves and publishes current-tick inputs. |
 
-`decomp/src/sys/netreplay.h` exposes the debug runner surface:
+`components/decomp/src/sys/netreplay.h` exposes the debug runner surface:
 
 | Function | Role |
 | -------- | ---- |
@@ -148,7 +148,7 @@ For full-match debug replay files, `netinput.c` also keeps a separate replay fra
 | `syNetReplayWriteDebugFile()` | Write explicit replay metadata and input frames to disk. |
 | `syNetReplayLoadDebugFile()` | Load a debug replay file for playback. |
 
-`decomp/src/sys/netpeer.h` exposes the debug UDP P2P surface:
+`components/decomp/src/sys/netpeer.h` exposes the debug UDP P2P surface:
 
 | Function | Role |
 | -------- | ---- |
@@ -190,7 +190,7 @@ Gameplay-state trace (`sys/netsync.c`): `SSB64_SYNC_TRACE=<file>` writes, once p
 
 ## Debug P2P Netplay
 
-`decomp/src/sys/netpeer.c` adds a UDP-only debug transport for manual P2P testing. It is not a final lobby or NAT traversal layer; it exists to prove that two local game instances can share match setup and exchange per-tick input frames.
+`components/decomp/src/sys/netpeer.c` adds a UDP-only debug transport for manual P2P testing. It is not a final lobby or NAT traversal layer; it exists to prove that two local game instances can share match setup and exchange per-tick input frames.
 
 Current debug environment variables:
 
@@ -240,7 +240,7 @@ Debug workflow:
 3. If input windows match while **`figh`** diverges, widen or narrow deterministic gameplay hashes before blaming UDP pacing.
 4. If both stay aligned but observers still perceive drift, escalate to pacing / telemetry using the same instrumentation hooks.
 
-`cmake` discovers `decomp/src/sys/*.c` through `file(GLOB_RECURSE …)`; adding a netplay sys source requires re-running CMake configuration (for example `cmake -B build`) so the glob refreshes before the next build.
+`cmake` discovers `components/decomp/src/sys/*.c` through `file(GLOB_RECURSE …)`; adding a netplay sys source requires re-running CMake configuration (for example `cmake -B build`) so the glob refreshes before the next build.
 
 ## Validation Path
 

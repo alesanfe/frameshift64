@@ -138,7 +138,7 @@ All five previously-documented bugs have been fixed and verified. No new instanc
 
 ### False Positives (No LP64 Stride Risk)
 
-#### EFDesc / EFGroundDesc (decomp/src/ef/eftypes.h:15)
+#### EFDesc / EFGroundDesc (components/decomp/src/ef/eftypes.h:15)
 - `void **file_head` is **NOT** a stride bug
 - **Why:** EFDesc/EFGroundDesc are runtime-constructed (not file-loaded)
 - `file_head` is assigned at runtime to point to a single `void *` value (line efground.c:1458)
@@ -177,7 +177,7 @@ All five previously-documented bugs have been fixed and verified. No new instanc
    - Cross-referenced with `_Static_assert(sizeof(...))` for stride validation
 
 2. **Pattern #2 — Direct `*(void**)` dereferences:**
-   - Searched `decomp/src/ef/efmanager.c`, `decomp/src/sc/`, `decomp/src/lb/` for `*p_file` and `*(void**)` patterns
+   - Searched `components/decomp/src/ef/efmanager.c`, `components/decomp/src/sc/`, `components/decomp/src/lb/` for `*p_file` and `*(void**)` patterns
    - Verified port-conditional handling (u32 vs void**)
    - Confirmed PORT_RESOLVE wrapping
 
@@ -196,8 +196,8 @@ All five previously-documented bugs have been fixed and verified. No new instanc
 ## Recommendations for Future Audits
 
 ### High-Priority Watch List
-- New struct fields added to `decomp/src/sc/sctypes.h`, `decomp/src/ft/fttypes.h`, `decomp/src/mp/mptypes.h` — always check for double pointers
-- New effect types in `decomp/src/ef/` — watch for the `effect_desc->file_head` pattern
+- New struct fields added to `components/decomp/src/sc/sctypes.h`, `components/decomp/src/ft/fttypes.h`, `components/decomp/src/mp/mptypes.h` — always check for double pointers
+- New effect types in `components/decomp/src/ef/` — watch for the `effect_desc->file_head` pattern
 - New sequence player features in audio code — the altbank indexing pattern is subtle
 
 ### Automated Checks

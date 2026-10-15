@@ -10,9 +10,9 @@ classified. Three categories:
 - **Test hook (gated)** — test-harness knobs that alter gameplay, inject
   traffic, weaken validation, or hijack boot. Compiled only when
   `-DSSB64_TEST_HOOKS=ON` (default ON for dev builds, forced OFF by
-  `platforms/*/packaging/package-*`).
+  `packaging/*/package-*`).
 
-This file is enforced by `tools/lint/check_env_vars.py` (wired into
+This file is enforced by `tools/analysis/lint/check_env_vars.py` (wired into
 `repo-checks.yml`): any env read whose literal `SSB64_*` name is not listed
 here fails CI. Brace groups (`X_{A,B}`) expand; write full names otherwise.
 
@@ -75,6 +75,8 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_NETPLAY_TEST_DESYNC` | RNG corruption at tick N |
 | `SSB64_ROLLBACK_SNAPSHOT_STRIDE` | snapshot every Nth tick instead of every tick (test hook; default 1) |
 | `SSB64_NETPLAY_DROP_MS` | override remote-drop timeout (10s default) for same-machine rigs |
+| `SSB64_NETPLAY_PKTDIAG` | periodic packet-window diagnostic log (src/fwd/confirmed-range) |
+| `SSB64_DBG_INPUT_TICKS` | `lo:hi` tick window — log per-tick input resolution detail |
 | `SSB64_NETPLAY_FUZZ` | deterministic synthetic inputs on local slots |
 | `SSB64_NETPLAY_SIM_{LATENCY_MS,JITTER_MS,LOSS_PCT,DUP_PCT,REORDER_PCT,REORDER_WINDOW_MS,CORRUPT_PCT,SEED}` | seeded impairment sim in `udp_transport` |
 | `SSB64_COMPAT_TOKEN` | forge lobby compat token |
@@ -92,9 +94,18 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_TOAST_DEMO` | seed one toast of each level once (screenshot/demo aid) |
 | `SSB64_WIZARD_AUTOCANCEL` | auto-cancel the first-run wizard at frame N |
 | `SSB64_SYNTH_SELFTEST` | deblob synthesis validation harness; exits before game boot |
-| `SSB64_FUZZ_{PARSER,INPUT}` | parser fuzz entry (manifest/replay/json); parse file then exit — driven by `tools/fuzz/run_parser_fuzz.py` |
+| `SSB64_FUZZ_{PARSER,INPUT}` | parser fuzz entry (manifest/replay/json); parse file then exit — driven by `tools/analysis/fuzz/run_parser_fuzz.py` |
 
 *Policy:* gating rule = "does setting this mutate gameplay, let a
 packet/peer/session be accepted that correct validation would reject, inject
 bytes into the wire, or bypass normal boot?" → `SSB64_TEST_HOOKS`.
 Observation-only and user-facing config stay available in shipped builds.
+
+### Android env injection (test hooks only)
+
+Android apps can't receive process env vars, so `SSB64_TEST_HOOKS` builds
+read `ssb64_test_env.txt` (one `KEY=VALUE` per line, `#` comments) from the
+app's `externalFilesDir` at the top of `main()` and inject every entry via
+`setenv()` before any init reads the environment. The e2e harness
+`tools/developer/testing/android_replay_verify.py` writes this file over
+adb; a shipped APK ignores it entirely.

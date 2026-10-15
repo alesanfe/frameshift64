@@ -8,7 +8,7 @@ codegen: guard-configured ## Run the CMake-managed generators (reloc, asset head
 	@$(call success,Codegen completed)
 
 generate-yamls: ## Regenerate extraction recipes + reloc yaml tables
-	@$(PYTHON) tools/codegen/generate_yamls.py
+	@$(PYTHON) tools/code-generation/generate_yamls.py
 
 codegen-check: ## Fail if codegen changes the working tree
 	@before="$$($(GIT) status --porcelain)"; \

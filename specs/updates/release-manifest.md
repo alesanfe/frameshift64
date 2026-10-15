@@ -1,7 +1,7 @@
 # Release manifest contract
 
-Consumed by `src/distribution/integrity/ReleaseSig.cpp` +
-`src/distribution/updater/Updater.cpp`:
+Consumed by `src/application/update/integrity/ReleaseSig.cpp` +
+`src/application/update/updater/Updater.cpp`:
 
 - `version`, `artifacts[]` with `name`, `size`, `sha256`.
 - Whole manifest signed with raw Ed25519 (`minisign -l`); public key

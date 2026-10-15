@@ -18,7 +18,7 @@ packaging to `.o2r`, hot reload), the canonical how-to is
 > development) or `.o2r` archives (for distribution).
 >
 > **Bundled mods:** the build stages packaged example mods into
-> `<install>/bundled-mods/` (CMake `POST_BUILD` → `tools/modding/package_mod.py`).
+> `<install>/bundled-mods/` (CMake `POST_BUILD` → `tools/developer/modding/package_mod.py`).
 > The in-game *Assets → Script Mods* panel offers **Install & Enable** for each:
 > it copies the folder into `mods/` and hot-reloads so the mod is active
 > immediately. `playertint` ships this way; it declares `"simulation": false`
@@ -27,14 +27,14 @@ packaging to `.o2r`, hot reload), the canonical how-to is
 >
 > **Installing user-supplied content:** *Assets → Mods* also takes a pasted
 > URL, and any `.zip`/`.o2r`/`.png`/folder can be dropped onto the game
-> window. `src/distribution/downloads/ModPackDownloader.cpp` sniffs the payload — a
+> window. `src/application/update/downloads/ModPackDownloader.cpp` sniffs the payload — a
 > `manifest.json` zip/dir (or `.o2r`/`.otr`) installs as a script mod and
 > hot-reloads; native `#<hash>#<fmt>#<siz>.png` packs install as-is; and
 > GLideN64/Rice-grammar packs are renamed through
 > `bundled-data/gliden64-map.json` (vendored from GhostlyDark's MIT-licensed
 > `battleship.json`, staged by `POST_BUILD`) so most emulator-era SSB64
 > texture packs work unmodified. The offline equivalent is
-> `tools/modding/convert_gliden64_pack.py`.
+> `tools/developer/modding/convert_gliden64_pack.py`.
 
 ---
 
@@ -65,7 +65,7 @@ ImGui render). Subscribe from `ModInit`, unsubscribe from `ModExit`:
 
 ```c
 #include "mod.h"
-#include "src/integration/hooks/Events.h"
+#include "src/game/engine/hooks/Events.h"
 
 ListenerID gListener;
 
@@ -157,7 +157,7 @@ Listener priority is one of `EVENT_PRIORITY_LOW`, `EVENT_PRIORITY_NORMAL`,
 
 ### Engine & UI events
 
-Declared in [`src/integration/hooks/list/EngineEvent.h`](../../src/integration/hooks/list/EngineEvent.h).
+Declared in [`src/game/engine/hooks/list/EngineEvent.h`](../../src/game/engine/hooks/list/EngineEvent.h).
 These carry **no payload** — they're pure notifications.
 
 | Event | Fires |
@@ -171,7 +171,7 @@ These carry **no payload** — they're pure notifications.
 
 ### Fighter events
 
-Declared in [`src/integration/hooks/list/FighterEvent.h`](../../src/integration/hooks/list/FighterEvent.h).
+Declared in [`src/game/engine/hooks/list/FighterEvent.h`](../../src/game/engine/hooks/list/FighterEvent.h).
 These are **mutable** — fill in the out-field to override, leave it to take the
 vanilla path. Pointer fields are passed as `void*` to keep the header free of
 decomp types; cast them to the documented decomp type inside your listener.
@@ -201,7 +201,7 @@ from a working fighter-event mod instead of the heartbeat template.
 ```c
 /* tint.c — force player 1's fighter env color to red. */
 #include "mod.h"
-#include "src/integration/hooks/Events.h"
+#include "src/game/engine/hooks/Events.h"
 
 static ListenerID s_listener;
 
@@ -256,6 +256,6 @@ MOD_EXIT() {
 |-------|------|
 | Author API (`MOD_INIT`, `mod_install_hook`, `mod_log`, `CALL_FUNC`) | `mods/templates/basic-mod/include/mod.h` |
 | Event macros (`DEFINE_EVENT`, `REGISTER_LISTENER`, `IEvent`, priorities) | libultraship `ship/events/EventTypes.h`, `bridge/eventsbridge.h` |
-| Event catalog | `src/integration/hooks/list/EngineEvent.h`, `src/integration/hooks/list/FighterEvent.h` |
-| Runtime loader / mod mount | `src/application/port.cpp` (`MountModsDir`), `src/integration/modding/` |
-| Packaging helper | `cmake/ModO2R.cmake`, `tools/modding/merge_mod.py` |
+| Event catalog | `src/game/engine/hooks/list/EngineEvent.h`, `src/game/engine/hooks/list/FighterEvent.h` |
+| Runtime loader / mod mount | `src/application/port.cpp` (`MountModsDir`), `src/game/modding/` |
+| Packaging helper | `cmake/ModO2R.cmake`, `tools/developer/modding/merge_mod.py` |

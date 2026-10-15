@@ -104,7 +104,7 @@ All four layers are implemented. Env hooks are deterministic through
 
 ### Layer 1 — done
 
-- `src/netplay/transport/udp_transport.cpp` sim: `SSB64_NETPLAY_SIM_{DUP,REORDER,CORRUPT}_PCT`
+- `src/networking/netplay/transport/udp_transport.cpp` sim: `SSB64_NETPLAY_SIM_{DUP,REORDER,CORRUPT}_PCT`
   plus `SIM_REORDER_WINDOW_MS`. Order of application: loss drop → corrupt a
   copy (never the caller's buffer) → jitter/reorder delay → queue insert →
   optional duplicate twin. Only `send_routed` (game traffic) is affected;

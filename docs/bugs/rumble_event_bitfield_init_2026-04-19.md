@@ -2,11 +2,11 @@
 
 ## Symptom
 
-Hang with macOS beach ball when starting a battle (1P or VS). Watchdog reports `active_tid=5(game)` with frozen `yield_count`, and the SIGUSR1 backtrace shows the game coroutine spinning inside `gmRumbleActorProcUpdate` (decomp/src/gm/gmrumble.c:401). Timing: the last successful activity was a fighter entering the arena in its `AppearR`/`AppearL` status — the stage is loaded, battle UI is up, then the game stops yielding.
+Hang with macOS beach ball when starting a battle (1P or VS). Watchdog reports `active_tid=5(game)` with frozen `yield_count`, and the SIGUSR1 backtrace shows the game coroutine spinning inside `gmRumbleActorProcUpdate` (components/decomp/src/gm/gmrumble.c:401). Timing: the last successful activity was a fighter entering the arena in its `AppearR`/`AppearL` status — the stage is loaded, battle UI is up, then the game stops yielding.
 
 ## Root cause
 
-`GMRumbleEventDefault` (decomp/src/gm/gmtypes.h:348) declares its bitfields in endian-dependent order so the 3-bit opcode always sits in the low bits of the 16-bit word:
+`GMRumbleEventDefault` (components/decomp/src/gm/gmtypes.h:348) declares its bitfields in endian-dependent order so the 3-bit opcode always sits in the low bits of the 16-bit word:
 
 ```c
 struct GMRumbleEventDefault {
@@ -48,4 +48,4 @@ Designated initializers bind by field name, so they produce the same bit layout 
 
 ## Files touched
 
-- `decomp/src/gm/gmrumble.c` — macro + all `dGMRumbleEventN` initializers.
+- `components/decomp/src/gm/gmrumble.c` — macro + all `dGMRumbleEventN` initializers.

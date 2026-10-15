@@ -25,7 +25,7 @@ Write a C file that declares the struct **exactly** as the decomp source does (n
 - Use minimal typedefs (`u8`, `u16`, `u32`, `s8`, `s16`, `s32`, `ub32 = u32`).
 
 ```c
-/* /tmp/probe_wpattr.c — matches the IDO BE branch of decomp/src/wp/wptypes.h */
+/* /tmp/probe_wpattr.c — matches the IDO BE branch of components/decomp/src/wp/wptypes.h */
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
@@ -159,13 +159,13 @@ These files each declare one or more bitfield-heavy ROM-backed structs. Every st
 
 | File | Notes |
 |---|---|
-| `decomp/src/wp/wptypes.h` | `WPAttributes` — **audited & fixed** (2026-04-20). See `docs/bugs/wpattributes_bitfield_padding_2026-04-20.md`. |
-| `decomp/src/it/ittypes.h` | `ITAttributes`, `ITAttackColl` — analogous to `WPAttributes`; Word B1/B2/B3 layout almost certainly wrong in port. `type` field fixed separately in `docs/bugs/itattributes_type_field_offset_2026-04-20.md`. **Audit remaining fields.** |
-| `decomp/src/gm/gmscript.h` | Animation/script event structs (`GMScriptEvent`, etc.) — event decoding is load-bearing for every fighter/item animation. |
-| `decomp/src/gm/gmtypes.h` | `GMStatFlags`, attack records, status state. Combat logic touches these every frame. |
-| `decomp/src/sys/objtypes.h` | `AObjEvent32`, `AObjEvent16`, `MObjSub` — sprite/mesh animation events; halfswap fixup already has known interactions (see `project_aobjevent32_halfswap.md`). |
-| `decomp/src/ft/fttypes.h` | `FTAttributes`, fighter hitbox state. Fighter melee appears to work, so bit positions are probably correct by luck — but worth confirming. |
-| `decomp/src/ft/ftdef.h` | Motion/status descriptor bitfields. |
+| `components/decomp/src/wp/wptypes.h` | `WPAttributes` — **audited & fixed** (2026-04-20). See `docs/bugs/wpattributes_bitfield_padding_2026-04-20.md`. |
+| `components/decomp/src/it/ittypes.h` | `ITAttributes`, `ITAttackColl` — analogous to `WPAttributes`; Word B1/B2/B3 layout almost certainly wrong in port. `type` field fixed separately in `docs/bugs/itattributes_type_field_offset_2026-04-20.md`. **Audit remaining fields.** |
+| `components/decomp/src/gm/gmscript.h` | Animation/script event structs (`GMScriptEvent`, etc.) — event decoding is load-bearing for every fighter/item animation. |
+| `components/decomp/src/gm/gmtypes.h` | `GMStatFlags`, attack records, status state. Combat logic touches these every frame. |
+| `components/decomp/src/sys/objtypes.h` | `AObjEvent32`, `AObjEvent16`, `MObjSub` — sprite/mesh animation events; halfswap fixup already has known interactions (see `project_aobjevent32_halfswap.md`). |
+| `components/decomp/src/ft/fttypes.h` | `FTAttributes`, fighter hitbox state. Fighter melee appears to work, so bit positions are probably correct by luck — but worth confirming. |
+| `components/decomp/src/ft/ftdef.h` | Motion/status descriptor bitfields. |
 
 ## Audit workflow (per struct)
 

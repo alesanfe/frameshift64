@@ -33,7 +33,7 @@ after the deprecation release ships.
 ## Feature parity matrix
 
 Everything not listed here is identical across platforms — same decomp
-simulation, all `src/gameplay/` enhancements, netplay/rollback, hires
+simulation, all `src/game/gameplay/` enhancements, netplay/rollback, hires
 packs, UI. The gated entries below diverge for *dependency* reasons, not
 preference; each row names the real blocker and what unifying would cost.
 
@@ -49,14 +49,14 @@ preference; each row names the real blocker and what unifying would cost.
 | First-run ROM wizard | ✔ | ✔ | ✔ | ✔* | ✘ | ✘ | *Android extracts on-device via `libtorch_runner.so`; UWP/Switch ship pre-extracted assets |
 | RenderDoc integration | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | desktop dev tooling only |
 
-Gating mechanism: `src/distribution/updater/Updater.cpp` and `src/social/DiscordRichPresence.cpp` are
+Gating mechanism: `src/application/update/updater/Updater.cpp` and `src/networking/social/DiscordRichPresence.cpp` are
 filtered out of `SSB64_SRC_PORT` for Android in CMakeLists (and both
 downloaders plus `first_run.cpp` for UWP), and the corresponding menu
 entries use `#if` guards — never both (they'd drift). Both downloaders
 compile on Android: transport is `src/platform/http/http_download.cpp` +
 `src/platform/http/download_service.cpp` (JNI→HttpURLConnection), extraction is
 `src/platform/filesystem/zip_extract.cpp` (libzip, already a LUS dep everywhere), and
-integrity is the in-process SHA-256 in `src/distribution/integrity/FileHash.cpp`. Mods
+integrity is the in-process SHA-256 in `src/application/update/integrity/FileHash.cpp`. Mods
 gate on `DISABLE_SCRIPTING` everywhere.
 
 Note: `android.permission.INTERNET` + `ACCESS_NETWORK_STATE` are declared in

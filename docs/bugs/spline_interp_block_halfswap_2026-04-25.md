@@ -54,7 +54,7 @@ The Bezier / Catrom paths read `points[target_frame .. target_frame+3]` (sliding
 
 ## Fix
 
-`decomp/src/sys/interp.c` + `decomp/src/sys/interp.h` + `src/compatibility/port_aobj_fixup.{h,cpp}`:
+`components/decomp/src/sys/interp.c` + `components/decomp/src/sys/interp.h` + `src/platform/compatibility/port_aobj_fixup.{h,cpp}`:
 
 1. **Data blocks** — un-halfswap on first access in `syInterpGetPoints` / `syInterpGetKeyframes` / `syInterpGetQuartics`, gated on `port_aobj_is_in_halfswapped_range(p)` so non-figatree-derived interp blocks pass through untouched.
 
@@ -85,6 +85,6 @@ Look for this pattern any time figatree-loaded data is read as float/Vec3f/u32 a
 
 ## Files touched
 
-- `decomp/src/sys/interp.h` — `#if IS_BIG_ENDIAN` branch on `SYInterpDesc` swapping `kind`/pad order on LE.
-- `decomp/src/sys/interp.c` — un-halfswap helpers (`port_unhalfswap_interp_desc`, `port_unhalfswap_block`), `port_interp_points_u32_count` covering Bezier phantom control points, accessor wrappers.
-- `src/compatibility/port_aobj_fixup.h`, `src/compatibility/port_aobj_fixup.cpp` — `port_aobj_unhalfswap_visit` shared visited set with eviction-on-range-add.
+- `components/decomp/src/sys/interp.h` — `#if IS_BIG_ENDIAN` branch on `SYInterpDesc` swapping `kind`/pad order on LE.
+- `components/decomp/src/sys/interp.c` — un-halfswap helpers (`port_unhalfswap_interp_desc`, `port_unhalfswap_block`), `port_interp_points_u32_count` covering Bezier phantom control points, accessor wrappers.
+- `src/platform/compatibility/port_aobj_fixup.h`, `src/platform/compatibility/port_aobj_fixup.cpp` — `port_aobj_unhalfswap_visit` shared visited set with eviction-on-range-add.

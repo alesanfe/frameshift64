@@ -2,7 +2,7 @@
 
 // Deblob synthesis engine (docs/deblob.md, L5): rebuilds a reloc bundle's
 // big-endian byte image from its typed o2r slices, per the generated spec
-// (src/integration/decomp/ssb64_reloc_rebuild.h). Fast path reproduces the vanilla
+// (src/game/engine/decomp/ssb64_reloc_rebuild.h). Fast path reproduces the vanilla
 // relocated view byte-for-byte (invariant I5); when a mods-folder override
 // changes any slice's size, the relayout path reassigns offsets and remaps
 // every intra-bundle pointer (I9).

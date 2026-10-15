@@ -8,12 +8,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT BATTLESHIP_UWP)
     target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
     # Embed the application icon (Explorer / taskbar / window). The .rc
     # is generated per-region from platforms/windows/resources/ssb64.rc.in: US embeds
-    # assets/icon.ico, JP embeds assets/icon-jp.ico. The icon also
+    # assets/branding/icons/icon.ico, JP embeds assets/branding/icons/icon-jp.ico. The icon also
     # surfaces as the .exe's Explorer thumbnail because RC resources
     # carry over to the PE's icon group.
-    set(SSB64_RC_ICON_PATH "${CMAKE_SOURCE_DIR}/assets/icon.ico")
+    set(SSB64_RC_ICON_PATH "${CMAKE_SOURCE_DIR}/assets/branding/icons/icon.ico")
     if(SSB64_VERSION STREQUAL "jp")
-        set(SSB64_RC_ICON_PATH "${CMAKE_SOURCE_DIR}/assets/icon-jp.ico")
+        set(SSB64_RC_ICON_PATH "${CMAKE_SOURCE_DIR}/assets/branding/icons/icon-jp.ico")
     endif()
     configure_file(
         ${CMAKE_SOURCE_DIR}/platforms/windows/resources/ssb64.rc.in

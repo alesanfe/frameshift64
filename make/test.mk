@@ -102,7 +102,7 @@ test-determinism: guard-exe ## Replay determinism: N runs, first-divergent-tick 
 	@if [[ -z "$(REPLAY)" ]]; then \
 	  $(call failure,Set REPLAY=<path-to.ssr>); exit 1; fi
 	@bd="$$(dirname '$(EXE_DIR)')"; \
-	$(PYTHON) tools/testing/check_determinism.py \
+	$(PYTHON) tools/developer/testing/check_determinism.py \
 	  --binary "$$bd/$(EXECUTABLE_NAME)$(EXE_SUFFIX)" \
 	  --replay "$(REPLAY)" --runs "$(DETERMINISM_RUNS)" \
 	  --output "$(TEST_OUTPUT_DIR)/determinism" $(TEST_ARGS)

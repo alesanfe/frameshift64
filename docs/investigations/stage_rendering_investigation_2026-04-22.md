@@ -51,10 +51,10 @@ Implementation:
 
 - **`CMakeLists.txt`** — adds the option + propagates
   `-DPORT_STAGE_CYCLE_DEMO=1` when enabled.
-- **`decomp/src/sc/scmanager.c:~875`** — demo-mode scene override. When the
+- **`components/decomp/src/sc/scmanager.c:~875`** — demo-mode scene override. When the
   option is set, scManager skips title/menu and jumps straight into
   auto-demo with a hand-seeded roster.
-- **`decomp/src/sc/sccommon/scautodemo.c`** — under `#ifdef PORT_STAGE_CYCLE_DEMO`:
+- **`components/decomp/src/sc/sccommon/scautodemo.c`** — under `#ifdef PORT_STAGE_CYCLE_DEMO`:
   - `scAutoDemoExit` is patched to loop back into the next stage in
     sequence instead of returning to the attract screen.
   - `demo_fkind[]` is seeded with **Mario** (P1) and **Fox** (P2) so
@@ -69,7 +69,7 @@ capture.
 ### 2. `SSB64_STAGE_AUDIT=1` env var
 
 Runtime instrumentation gate. When the env var is set, per-file audit
-counters in `src/integration/decomp/lbreloc_byteswap.cpp` collect:
+counters in `src/game/engine/decomp/lbreloc_byteswap.cpp` collect:
 
 - **Pass 2 scan counters** — `vtx_scan_count`, `settimg_scan_count` per
   file (how many vertex / texture headers the pass 2 walker encountered).
@@ -85,7 +85,7 @@ counters in `src/integration/decomp/lbreloc_byteswap.cpp` collect:
   of arbitrary file regions.
 
 Summary emitted via **`portStageAuditEmitLoadSummary`** in
-`src/integration/decomp/lbreloc_bridge.cpp` after **each file load completes**.
+`src/game/engine/decomp/lbreloc_bridge.cpp` after **each file load completes**.
 
 **Counter-reset gotcha (important).** Because the per-file counters
 reset on every file-load entry and bank loads are recursive (main file
@@ -312,17 +312,17 @@ without a fresh re-read of the files:
 
 ### Scene manager / autodemo
 
-- **`decomp/src/sc/scmanager.c`** (around line 875) — demo-mode scene
+- **`components/decomp/src/sc/scmanager.c`** (around line 875) — demo-mode scene
   override under `PORT_STAGE_CYCLE_DEMO`.
-- **`decomp/src/sc/sccommon/scautodemo.c`** — `scAutoDemoExit` loop patch,
+- **`components/decomp/src/sc/sccommon/scautodemo.c`** — `scAutoDemoExit` loop patch,
   `demo_fkind[]` seed with Mario/Fox, `scAutoDemoDetectExit` no-op,
   all under `#ifdef PORT_STAGE_CYCLE_DEMO`.
 
 ### Runtime instrumentation
 
-- **`src/integration/decomp/lbreloc_byteswap.cpp`** — `SSB64_STAGE_AUDIT=1` env
+- **`src/game/engine/decomp/lbreloc_byteswap.cpp`** — `SSB64_STAGE_AUDIT=1` env
   var gates all counters. No-op when unset.
-- **`src/integration/decomp/lbreloc_bridge.cpp`** — calls
+- **`src/game/engine/decomp/lbreloc_bridge.cpp`** — calls
   `portStageAuditEmitLoadSummary` after each file load. No-op when
   `SSB64_STAGE_AUDIT` unset.
 
@@ -332,7 +332,7 @@ future stage bugs will use the same counters.
 
 ### Modified (unrelated to this investigation)
 
-- **`decomp/src/lb/lbcommon.c`** — working-tree modifications pre-existing
+- **`components/decomp/src/lb/lbcommon.c`** — working-tree modifications pre-existing
   this session's investigation; not part of the stage-rendering work.
 
 ---

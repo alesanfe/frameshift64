@@ -1,4 +1,4 @@
-# Repository tree — 11909b61 (2026-10-15)
+# Repository tree — 8094f2e1 (2026-10-15)
 # tracked top-level entries + 2-level view of key dirs
 
 src/
@@ -28,10 +28,7 @@ tests/
   conftest.py
   contract
   e2e
-  fixtures
   fuzz
-  golden
-  harness
   integration
   regression
   security
@@ -40,20 +37,9 @@ tests/
   unit
 
 assets/
-  BattleShip.svg
-  BattleShipIcon.icon
-  controllers
-  custom
-  icon-jp.icns
-  icon-jp.ico
-  icon-jp.png
-  icon.icns
-  icon.ico
-  icon.png
-  macos_dmg_banner.png
-  readme-stats
-  recipes
-  source
+  branding
+  fonts
+  game
 
 services/
   netplay-lobby
@@ -68,10 +54,10 @@ platforms/
   windows
 
 config/
+  analysis
+  controllers
   lint
   project
-  semgrep
-  static-analysis
 
 tools/
   asset-pipeline
@@ -84,6 +70,7 @@ tools/
   release
   save-editor
   testing
+  versions.env
 
 scripts/
   build
@@ -91,6 +78,7 @@ scripts/
   testing
 
 generated/
+  .gitattributes
   README.md
   include
   src
@@ -104,7 +92,8 @@ specs/
   updates
 
 roms/
-  baserom.us.z64
+  .gitkeep
+  README.md
 
 mods/
   README.md
@@ -116,7 +105,6 @@ docs/
   architecture
   bugs
   compatibility
-  contributing
   decisions
   development
   engineering
@@ -130,25 +118,34 @@ docs/
 
 cmake/
   Codegen.cmake
+  CompilerWarnings.cmake
   CopyDirIfExists.cmake
   Findtinyxml2.cmake
+  Hardening.cmake
   ModO2R.cmake
   RuntimeAssets.cmake
+  Sanitizers.cmake
   StageAssetRecipes.cmake
+  StaticAnalysis.cmake
   funchook_capstone_bump.cmake
   macho_text_rwx.py
   macos_entitlements.plist
 
 ## other top-level dirs:
-decomp
+.github
 include
-libultraship
-out
-torch
-x64
+make
 
 ## top-level files:
-AGENTS.md
+.clang-tidy
+.codespellrc
+.editorconfig
+.git-blame-ignore-revs
+.gitattributes
+.gitignore
+.gitmodules
+.pre-commit-config.yaml
+.yamllint.yml
 BUILDING.md
 CHANGELOG.md
 CLAUDE.md
@@ -164,4 +161,8 @@ README.md
 SECURITY.md
 SUPPORT.md
 VERSION
+decomp
+libultraship
 pyproject.toml
+requirements.lock
+torch

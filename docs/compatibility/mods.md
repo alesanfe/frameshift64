@@ -4,9 +4,9 @@
 
 A mod is a directory or archive under `mods/` carrying a `manifest.json`
 with `name`, `version`, `author`, `description` (see
-`src/integration/modding/ModRegistry.h`). Mods hook engine/game events through
-the symbol table + `HookManager` (`src/integration/modding/`,
-`src/integration/hooks/list/`).
+`src/game/modding/ModRegistry.h`). Mods hook engine/game events through
+the symbol table + `HookManager` (`src/game/modding/`,
+`src/game/engine/hooks/list/`).
 
 ## Manifest fields
 
@@ -53,7 +53,7 @@ Optional trust fields:
 
 ## Tooling
 
-- `tools/modding/package_mod.py` packages a source mod into the runtime
+- `tools/developer/modding/package_mod.py` packages a source mod into the runtime
   layout. Pass `--checksum` to inject an FNV-1a 64 checksum, and
   `--sign-key <minisign-secret.key>` to add a minisign `-l` signature
   plus the matching public key.

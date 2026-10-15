@@ -4,7 +4,7 @@
 **Class:** Issue #103 / #128 family — long-lived references to scene-arena memory
 **Platform:** Linux glibc + NVIDIA proprietary OpenGL driver (others untested for these variants)
 **Status:** PARTIAL — one defensive guard shipped (`efmanager.c`); three other variants observed but not fixed.
-**Files:** `decomp/src/ef/efmanager.c` (defensive guard); see related links for the broader family
+**Files:** `components/decomp/src/ef/efmanager.c` (defensive guard); see related links for the broader family
 
 ## Symptom
 
@@ -31,7 +31,7 @@ fetched via `addr + offset` reads garbage; the `dl` field reads as token `0xF40C
 token rejects to NULL, then downstream null-deref.
 
 **Defensive guard shipped this commit:** NULL-check on `*effect_desc->file_head` in
-`efManagerMakeEffect` (`decomp/src/ef/efmanager.c`). Bails safely so the caller's
+`efManagerMakeEffect` (`components/decomp/src/ef/efmanager.c`). Bails safely so the caller's
 `!= NULL` test skips the effect cleanly. **Does not fire** in the observed crash because the
 pointer was non-NULL-but-stale, not NULL. Ships anyway as cheap safety net for the cleaner
 "file unloaded → global NULLed" variant of this pattern.
@@ -42,7 +42,7 @@ permutation including a Kirby battle.
 ### 2. mnCharacters fighter init — stale `joints[i]`
 
 `mnCharactersFighterProcUpdate` → `ftMainSetStatus`. Faulting line is
-`decomp/src/ft/ftmain.c:4816` — `joint->translate.vec.f = dobjdesc->translate;` inside the
+`components/decomp/src/ft/ftmain.c:4816` — `joint->translate.vec.f = dobjdesc->translate;` inside the
 common-parts joint-init loop. Register dump shows `x0=0xe002b01` (token-pattern bits),
 `x2=0x80808000ffffff00` (N64 KSEG1 pattern in the loaded translate value).
 
@@ -74,7 +74,7 @@ lookup that's supposed to happen before this point). Backtrace runs through
 
 Root cause: a `gsSPDisplayList` somewhere pushed a stale N64-segmented pointer onto the DL
 stack without going through the segment-table resolution. Sibling of
-[`Issue #128: per-load DL cache eviction + per-frame SP segment clear`](https://github.com/JRickey/libultraship/commit/190a1f9c)
+[`Issue #128: per-load DL cache eviction + per-frame SP segment clear`](https://github.com/JRickey/components/libultraship/commit/190a1f9c)
 which addressed the same family at a different site.
 
 Trigger: ~9 min into the auto-demo, deep into the cycle.

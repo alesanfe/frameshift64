@@ -24,7 +24,7 @@ Also note the address `0x104dbaff8` happens to land at offset `0x60` inside the 
 
 ## Root cause
 
-`decomp/src/mn/mnplayers/mnplayers1pgame.c` keeps five static `GObj*` slots populated lazily:
+`components/decomp/src/mn/mnplayers/mnplayers1pgame.c` keeps five static `GObj*` slots populated lazily:
 
 ```c
 GObj *sMNPlayers1PGameTimeGObj;       // mnplayers1pgame.c:68

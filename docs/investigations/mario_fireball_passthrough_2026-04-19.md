@@ -10,10 +10,10 @@ In battle, Mario's neutral-B **Fireball** projectile flies through the opposing 
 
 ## Likely area
 
-- `decomp/src/wp/wpmario/wpmariofireball.c` — fireball spawn + proc_update.
-- `decomp/src/wp/wpprocess.c` — `wpProcessUpdateHitPositions`, `wpProcessProcWeaponMain`. This is the shared weapon update path where `attack_pos[0].pos_curr` / `pos_prev` get populated.
-- `decomp/src/ft/ftmain.c` — `ftMainSearchHitWeapon`, the per-fighter hit test against weapons. Gated on `attack_state != nGMAttackStateOff`.
-- decomp/src/gm/gmattack.c — `GMHitBox` interpolation + overlap test.
+- `components/decomp/src/wp/wpmario/wpmariofireball.c` — fireball spawn + proc_update.
+- `components/decomp/src/wp/wpprocess.c` — `wpProcessUpdateHitPositions`, `wpProcessProcWeaponMain`. This is the shared weapon update path where `attack_pos[0].pos_curr` / `pos_prev` get populated.
+- `components/decomp/src/ft/ftmain.c` — `ftMainSearchHitWeapon`, the per-fighter hit test against weapons. Gated on `attack_state != nGMAttackStateOff`.
+- components/decomp/src/gm/gmattack.c — `GMHitBox` interpolation + overlap test.
 
 ## Reproduce
 

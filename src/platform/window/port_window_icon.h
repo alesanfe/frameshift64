@@ -9,7 +9,7 @@
  * The PNG bytes are baked into the binary at build time
  * (CMake → tools/embed_icon.py → generated/port_icon_data.h) so this
  * code has no runtime filesystem-layout coupling. The PNG source is
- * region-aware: US picks assets/icon.png, JP picks assets/icon-jp.png.
+ * region-aware: US picks assets/branding/icons/icon.png, JP picks assets/branding/icons/icon-jp.png.
  *
  * No-op on non-Linux platforms — the OS-supplied icon is already
  * correct there. Safe to call early; if the SDL window isn't up yet

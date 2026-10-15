@@ -6,10 +6,10 @@ schedule and the *cheap* truth gates every PR.
 
 ## Tier: PR (fast, mandatory)
 
-- Format + lint (`tools/lint/run_project_lint.py`, pre-commit hooks)
+- Format + lint (`tools/analysis/lint/run_project_lint.py`, pre-commit hooks)
 - Windows + Linux build
 - Unit tests (`tests/unit/`)
-- Docs check (`tools/lint/check_docs.py` — links, file refs)
+- Docs check (`tools/analysis/lint/check_docs.py` — links, file refs)
 - Dependency review (TD-013)
 - Generated-files check: codegen outputs committed must match regen
 - Netplay protocol test (scripted, no ROM): `netplay_lobbytest*.ps1`,
@@ -34,7 +34,7 @@ schedule and the *cheap* truth gates every PR.
 
 | If a PR touches… | it must also… |
 |------------------|---------------|
-| `decomp/src/sys/netpeer*.c`, `src/netplay/` | update `docs/netplay/protocol/` or justify |
+| `components/decomp/src/sys/netpeer*.c`, `src/networking/netplay/` | update `docs/netplay/protocol/` or justify |
 | `include/smash_classic/` public headers | update `CHANGELOG.md` |
 | architecture decisions | add/update an ADR in `docs/decisions/` |
 | config keys | add migration + doc |

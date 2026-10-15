@@ -12,7 +12,7 @@ logic there.
 | `integration/` | Components wired together; may run the real binary headless or the extraction pipeline | `assets/extraction_recipes_test.py`, `modding/mod_package_test.py` |
 | `contract/` | Cross-component wire/format contracts (`specs/` is the normative source) | netplay protocol, lobby API, mod manifest, save format |
 | `e2e/` | Full game sessions via `harness/` | netplay room codes, first-run, packaging |
-| `fuzz/` | Mutational drivers + `corpora/` seeds | `tools/fuzz/run_parser_fuzz.py` consumes `fuzz/corpora/<parser>/` |
+| `fuzz/` | Mutational drivers + `corpora/` seeds | `tools/analysis/fuzz/run_parser_fuzz.py` consumes `fuzz/corpora/<parser>/` |
 | `security/` | Hostile-input and abuse-model tests | path traversal, zip bombs, lobby abuse |
 | `smoke/` | Cheap "does it boot/respond" probes | headless boot, lobby `/health` |
 | `regression/` | One test per fixed bug — `issue_<num>_<desc>_test` or the bug-doc slug |
@@ -50,10 +50,10 @@ It collects the `test_*.py` wrappers, which drive the standalone
 
 ```bash
 # declarative suites — the canonical entry point
-python tools/testing/run_tests.py --suite quick          # unit+smoke, no rom/net/gpu
-python tools/testing/run_tests.py --suite pull-request   # unit+integration+contract+security
-python tools/testing/run_tests.py --suite netplay        # everything marked netplay
-python tools/testing/run_tests.py --list                 # suite -> marker expression
+python tools/developer/testing/run_tests.py --suite quick          # unit+smoke, no rom/net/gpu
+python tools/developer/testing/run_tests.py --suite pull-request   # unit+integration+contract+security
+python tools/developer/testing/run_tests.py --suite netplay        # everything marked netplay
+python tools/developer/testing/run_tests.py --list                 # suite -> marker expression
 
 # or pytest directly
 pytest -m "unit or integration"
@@ -64,7 +64,7 @@ pytest --collect-only -q                                # discovery
 # the underlying drivers still run standalone (and via scripts/testing/*.ps1)
 python tests/e2e/netplay/lobbytest_multi_test.py --players 4 --seconds 60
 python tests/integration/assets/extraction_recipes_test.py
-python tools/fuzz/run_parser_fuzz.py --parser manifest --binary build/Release/BattleShip.exe --iters 300
+python tools/analysis/fuzz/run_parser_fuzz.py --parser manifest --binary build/Release/BattleShip.exe --iters 300
 ```
 
 Fixtures available to every test: `build_dir` / `game_executable`
@@ -87,12 +87,12 @@ pytest -m "unit or integration" --cov --cov-branch \
 # C/C++ lane — LLVM source-based coverage on a clang/gcc build
 cmake -B out/build/<preset> -DSSB64_ENABLE_COVERAGE=ON && cmake --build out/build/<preset>
 LLVM_PROFILE_FILE=$PWD/out/coverage/native/raw/%p-%m.profraw \
-    python tools/testing/run_tests.py --suite pull-request
-python tools/testing/coverage.py --binary out/build/<preset>/BattleShip \
+    python tools/developer/testing/run_tests.py --suite pull-request
+python tools/developer/testing/coverage.py --binary out/build/<preset>/BattleShip \
     --output-dir out/coverage/native        # profdata + html + lcov.info
 ```
 
-The C/C++ report excludes `decomp/`, `libultraship/`, `torch/`,
+The C/C++ report excludes `components/decomp/`, `components/libultraship/`, `components/game-runtime/`,
 `tests/` and generated files — it measures the modern `src/` layer only.
 
 CTest/label taxonomy (`smash_add_test`) is defined in

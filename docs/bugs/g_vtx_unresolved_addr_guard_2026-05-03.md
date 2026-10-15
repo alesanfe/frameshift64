@@ -25,7 +25,7 @@ pointer to.
 
 ## Root cause (proximate)
 
-`Interpreter::SegAddr` (libultraship `libultraship/src/fast/interpreter.cpp:4013`) tries
+`Interpreter::SegAddr` (libultraship `components/libultraship/src/fast/interpreter.cpp:4013`) tries
 three resolution paths for a GBI command word:
 1. `portRelocTryResolvePointer((uint32_t)w1)` — port-side reloc token table
 2. `mSegmentPointers[(uint32_t)(w1 >> 24)]` + low 24 bits — N64 segment table
@@ -69,7 +69,7 @@ upstream.
 ## Fix (defensive — proximate only)
 
 Bump `libultraship` to add the same `<= 0x0FFFFFFF` filter from PR #1042 to
-the three `gfx_vtx_handler_*` functions in `libultraship/src/fast/interpreter.cpp`. Each
+the three `gfx_vtx_handler_*` functions in `components/libultraship/src/fast/interpreter.cpp`. Each
 guard logs `n_vertices`, `dest`, and the raw `w1` via `SPDLOG_ERROR` so the
 next user repro yields a diagnostic instead of just a fault address.
 

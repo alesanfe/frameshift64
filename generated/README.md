@@ -4,13 +4,13 @@ Everything under this tree is **AUTO-GENERATED — DO NOT EDIT**.
 
 | Path | Producer | Regenerate |
 |------|----------|------------|
-| `include/<region>/reloc_data.h` | `tools/codegen/` reloc stub generator | `cmake --build <build> --target GenerateRelocArtifacts` |
-| `src/<region>/reloc_file_table.cpp` | `tools/codegen/` | same |
-| `src/<region>/reloc_rebuild.cpp` | `tools/codegen/` | same |
+| `include/<region>/reloc_data.h` | `tools/code-generation/` reloc stub generator | `cmake --build <build> --target GenerateRelocArtifacts` |
+| `src/<region>/reloc_file_table.cpp` | `tools/code-generation/` | same |
+| `src/<region>/reloc_rebuild.cpp` | `tools/code-generation/` | same |
 
 Generated sources currently still live inline next to hand-written
 code (`include/reloc_data.*.h`, `src/resources/RelocFileTable.*`,
-`src/integration/decomp/ssb64_reloc_rebuild.*`) and are marked
+`src/game/engine/decomp/ssb64_reloc_rebuild.*`) and are marked
 `linguist-generated` in `.gitattributes`. This directory is the target
 home; the physical migration is tracked as a pending restructure step.
 

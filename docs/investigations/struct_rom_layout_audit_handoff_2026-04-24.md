@@ -53,14 +53,14 @@ The audit is mechanical once tooling is up. Per struct:
 
 High — same class as ITAttributes / WPAttributes, loaded from ROM, bitfield-heavy, known or suspected readers we can disassemble:
 
-- **FTAttributes** (`decomp/src/ft/fttypes.h` / `ftattr.h`) — Fighter attribute data loaded per-character. Biggest struct of the group. Any bug here manifests as wrong damage / knockback / hurtbox / attack offsets for specific moves. Partial audit was done via `BITFIELD_SEXT*` and the `is_have_attacks4/attackhi4` swap commit (`3a05d31`) but not a systematic IDO-reader disassembly.
+- **FTAttributes** (`components/decomp/src/ft/fttypes.h` / `ftattr.h`) — Fighter attribute data loaded per-character. Biggest struct of the group. Any bug here manifests as wrong damage / knockback / hurtbox / attack offsets for specific moves. Partial audit was done via `BITFIELD_SEXT*` and the `is_have_attacks4/attackhi4` swap commit (`3a05d31`) but not a systematic IDO-reader disassembly.
 - **WPAttributes** — commit `0a9824c` + `ad6650a` landed one audit round (Mario fireball 64% damage fix). The method was used but not exhaustively; it's worth a full re-verify now that we know the decomp itself can be wrong (not just the port's LE mirror).
 - **FTAttackEvent / FTMotionState / FTStatusEvent** — animation-driven attack event streams read per-frame in `ftMain*` paths. The ITAttackEvent fix (`87c4fe8`) established the IDO `u8 timer` packing; FT-side equivalents may have the same pattern.
 
 Medium — loaded-from-ROM structs with fewer/no port overrides so far:
 
-- **GRAttackColl / GRSectorDesc** (`decomp/src/gr/`) — stage hazard / sector data.
-- **MPGroundData / MPSurface / MPVertex** (`decomp/src/mp/`) — collision geometry. Some targeted fixes already shipped (`mpgrounddata_layer_mask_u8_byteswap`, `mpvertex_byte_swap`) but not a full reader-disasm audit.
+- **GRAttackColl / GRSectorDesc** (`components/decomp/src/gr/`) — stage hazard / sector data.
+- **MPGroundData / MPSurface / MPVertex** (`components/decomp/src/mp/`) — collision geometry. Some targeted fixes already shipped (`mpgrounddata_layer_mask_u8_byteswap`, `mpvertex_byte_swap`) but not a full reader-disasm audit.
 - Any `_ItemAttributes` / `_WeaponAttributes` in per-fighter reloc files that aren't file 251 — e.g., `llYoshiMainEggThrowWeaponAttributes`, `llPikachuSpecial1ThunderJolt*WeaponAttributes`.
 
 Low — in-memory-only structs or ones already BSWAP32-clean:

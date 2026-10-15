@@ -37,4 +37,4 @@ The stale slot state is not Android-specific, but Android commonly shows all fou
 
 ## File
 
-- `decomp/src/mn/mnplayers/mnplayersvs.c` - `mnPlayersVSUpdateFighter`
+- `components/decomp/src/mn/mnplayers/mnplayersvs.c` - `mnPlayersVSUpdateFighter`

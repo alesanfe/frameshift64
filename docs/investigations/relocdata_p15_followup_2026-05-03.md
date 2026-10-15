@@ -1,6 +1,6 @@
 # M3.P15 — Source-compile bitfield-init relocData files
 
-**Status as of 2026-05-04:** 66 of 76 originally-skipped files now byte-identical and source-compiled (FTAttributes 27/27, MPGroundData 39/41). 10 deferred: WPAttributes (8) + 2 MPGroundData edge cases. See tools/struct_byteswap_tables.py for the per-struct field-byteswap tables that drive this; mirrors the runtime helpers in `src/integration/decomp/lbreloc_byteswap.cpp`.
+**Status as of 2026-05-04:** 66 of 76 originally-skipped files now byte-identical and source-compiled (FTAttributes 27/27, MPGroundData 39/41). 10 deferred: WPAttributes (8) + 2 MPGroundData edge cases. See tools/struct_byteswap_tables.py for the per-struct field-byteswap tables that drive this; mirrors the runtime helpers in `src/game/engine/decomp/lbreloc_byteswap.cpp`.
 
 ## What landed
 
@@ -35,10 +35,10 @@ The `sfx:10` truncation warning observed during early compilation was a red herr
 
 ### Wider question — should this go upstream?
 
-The decomp build runs IDO MIPS BE, where MSB-first bitfield packing matches the runtime. The port runs clang LE, which packs LSB-first. Our LE struct branches in `decomp/src/ft/fttypes.h` etc. already reverse field order to compensate for bit positions, but they require positional-init reversal at the source-compile step. A future cleanup: convert the .c initializers from positional to designated form (`{ .is_have_attack11 = 1, ... }`) — would be unconditionally correct on both BE and LE and remove the .c source preprocess step.
+The decomp build runs IDO MIPS BE, where MSB-first bitfield packing matches the runtime. The port runs clang LE, which packs LSB-first. Our LE struct branches in `components/decomp/src/ft/fttypes.h` etc. already reverse field order to compensate for bit positions, but they require positional-init reversal at the source-compile step. A future cleanup: convert the .c initializers from positional to designated form (`{ .is_have_attack11 = 1, ... }`) — would be unconditionally correct on both BE and LE and remove the .c source preprocess step.
 
 ## How to make further progress
 
 1. **WPAttributes byte-extension:** for each of the 8 files, extract the 8 or 12 trailing bytes from `BattleShip.o2r` and either inline-init them in the .c or add a `#include` of a generated `.inc.c`. Then drop `WPAttributes` from `_BITFIELD_TYPE_RE` in tools/gen_reloc_cmake.py.
 2. **u32[N] inc.c fix:** rework the `data` format emitter in tools/extract_inc_c.py to honour the declared element type. Then re-validate Yamabuki and Bonus3.
-3. **Designated init migration (optional, upstream-friendly):** for each FTAttributes / WPAttributes init in `decomp/src/relocData/`, replace positional-with-trailing-comment-form with designated-init form. Removes the LE preprocess step and is also easier for modders to read.
+3. **Designated init migration (optional, upstream-friendly):** for each FTAttributes / WPAttributes init in `components/decomp/src/relocData/`, replace positional-with-trailing-comment-form with designated-init form. Removes the LE preprocess step and is also easier for modders to read.

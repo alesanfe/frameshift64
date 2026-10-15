@@ -15,7 +15,7 @@ The 1P-game and Training-mode slot structs share an
 `*FighterProcUpdate`:
 
 ```c
-// decomp/src/mn/mnplayers/mnplayers1pgame.c:1717  (analogous block in 1ptraining.c)
+// components/decomp/src/mn/mnplayers/mnplayers1pgame.c:1717  (analogous block in 1ptraining.c)
 if (sMNPlayers1PGameSlot.is_fighter_selected == TRUE) {
     if (DObjGetStruct(fighter_gobj)->rotate.vec.f.y < F_CLC_DTOR32(0.1F)) {
         if (sMNPlayers1PGameSlot.is_status_selected == FALSE) {
@@ -53,7 +53,7 @@ the fighter's default idle status. Next ProcUpdate:
 
 Result: fighter renders forward-facing in idle indefinitely.
 
-`mnPlayersVSInitPlayer` (`decomp/src/mn/mnplayers/mnplayersvs.c:4630/4637`)
+`mnPlayersVSInitPlayer` (`components/decomp/src/mn/mnplayers/mnplayersvs.c:4630/4637`)
 explicitly sets `is_status_selected = FALSE` in **both** the
 `fkind == NULL` and `fkind != NULL` branches, which is why VS-mode
 re-entry replays the selected animation correctly. The 1P/training
@@ -67,7 +67,7 @@ gated by `#ifdef PORT` so the decomp's byte-matching layout for the
 N64 build path is left alone:
 
 ```c
-// decomp/src/mn/mnplayers/mnplayers1pgame.c (after the if/else that sets
+// components/decomp/src/mn/mnplayers/mnplayers1pgame.c (after the if/else that sets
 // is_fighter_selected and is_selected)
 #ifdef PORT
     sMNPlayers1PGameSlot.is_status_selected = FALSE;
@@ -75,7 +75,7 @@ N64 build path is left alone:
 ```
 
 ```c
-// decomp/src/mn/mnplayers/mnplayers1ptraining.c (same shape, indexed by player)
+// components/decomp/src/mn/mnplayers/mnplayers1ptraining.c (same shape, indexed by player)
 #ifdef PORT
     sMNPlayers1PTrainingSlots[player].is_status_selected = FALSE;
 #endif
@@ -108,5 +108,5 @@ minimum diff that makes 1P/training behave like VS.
 
 ## Files
 
-- `decomp/src/mn/mnplayers/mnplayers1pgame.c` — `mnPlayers1PGameInitPlayer`
-- `decomp/src/mn/mnplayers/mnplayers1ptraining.c` — `mnPlayers1PTrainingInitPlayer`
+- `components/decomp/src/mn/mnplayers/mnplayers1pgame.c` — `mnPlayers1PGameInitPlayer`
+- `components/decomp/src/mn/mnplayers/mnplayers1ptraining.c` — `mnPlayers1PTrainingInitPlayer`

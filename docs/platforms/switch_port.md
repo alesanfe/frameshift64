@@ -13,17 +13,17 @@ has already ported libultraship for Ship of Harkinian — this plan follows the 
 
 **Goal:** CMake cross-compiles for Nintendo Switch via devkitPro.
 
-- Add NintendoSwitch platform detection in `libultraship/CMakeLists.txt`
-- Create libultraship/cmake/dependencies/switch.cmake (planned) — find SDL2, glad, EGL
-- Add `-D__SWITCH__` + `USE_OPENGLES=ON` in `libultraship/src/CMakeLists.txt`
+- Add NintendoSwitch platform detection in `components/libultraship/CMakeLists.txt`
+- Create components/libultraship/cmake/dependencies/switch.cmake (planned) — find SDL2, glad, EGL
+- Add `-D__SWITCH__` + `USE_OPENGLES=ON` in `components/libultraship/src/CMakeLists.txt`
 - Add Switch link flags (specs file, NRO output) in root `CMakeLists.txt`
 - Source file filtering in `fast/CMakeLists.txt` — Switch falls into the default
   (include OpenGL, exclude D3D/Metal), no changes needed.
 
 **Files to touch:**
-- `libultraship/CMakeLists.txt` — +6 lines
-- libultraship/cmake/dependencies/switch.cmake (planned) — New, ~30 lines
-- `libultraship/src/CMakeLists.txt` — +10 lines
+- `components/libultraship/CMakeLists.txt` — +6 lines
+- components/libultraship/cmake/dependencies/switch.cmake (planned) — New, ~30 lines
+- `components/libultraship/src/CMakeLists.txt` — +10 lines
 - `CMakeLists.txt` (root) — +10 lines
 
 ---
@@ -43,9 +43,9 @@ has already ported libultraship for Ship of Harkinian — this plan follows the 
 - **Wire up in Fast3dWindow** — add `FAST3D_SDL_OPENGL` case for `#ifdef __SWITCH__`
 
 **Files to touch:**
-- `libultraship/src/fast/backends/gfx_opengl.cpp` — GLEW→glad, GL version
-- `libultraship/src/fast/Fast3dWindow.cpp` — Switch backend registration
-- `libultraship/src/fast/shaders/opengl/default.shader.glsl` — GLES precision
+- `components/libultraship/src/fast/backends/gfx_opengl.cpp` — GLEW→glad, GL version
+- `components/libultraship/src/fast/Fast3dWindow.cpp` — Switch backend registration
+- `components/libultraship/src/fast/shaders/opengl/default.shader.glsl` — GLES precision
 
 ---
 
@@ -62,7 +62,7 @@ has already ported libultraship for Ship of Harkinian — this plan follows the 
 - Keyboard callbacks → stubs (virtual keyboard handled in Phase 5)
 
 **Files to touch:**
-- `libultraship/src/fast/backends/gfx_sdl2.cpp` — ~30 #ifdef blocks
+- `components/libultraship/src/fast/backends/gfx_sdl2.cpp` — ~30 #ifdef blocks
 
 ---
 
@@ -80,11 +80,11 @@ has already ported libultraship for Ship of Harkinian — this plan follows the 
 - `first_run.cpp` — skip on-device ROM extraction (pre-extract on PC)
 
 **Files to touch:**
-- `libultraship/src/ship/Context.cpp` — +20 lines
-- `libultraship/src/ship/config/Config.cpp` — +6 lines
+- `components/libultraship/src/ship/Context.cpp` — +20 lines
+- `components/libultraship/src/ship/config/Config.cpp` — +6 lines
 - `src/application/port_watchdog.cpp` — +15 lines
 - `src/platform/coroutine/coroutine_posix.cpp` or `src/platform/coroutine/coroutine_switch.cpp` — verify or implement
-- `src/presentation/native_dialog.cpp` — ensure fallback works
+- `src/interfaces/presentation/native_dialog.cpp` — ensure fallback works
 - `src/application/first_run.cpp` — ROM extraction skip for Switch
 
 ---
@@ -93,21 +93,21 @@ has already ported libultraship for Ship of Harkinian — this plan follows the 
 
 **Goal:** Native-feeling quality-of-life features.
 
-- libultraship/src/port/switch/SwitchImpl.h (planned) — New: `Ship::Switch` class API
-- libultraship/src/port/switch/SwitchImpl.cpp (planned) — New: display mode detection,
+- components/libultraship/src/port/switch/SwitchImpl.h (planned) — New: `Ship::Switch` class API
+- components/libultraship/src/port/switch/SwitchImpl.cpp (planned) — New: display mode detection,
   system fonts via `plGetSharedFontByType()`, virtual keyboard, CPU overclock via
   `pcvSetClockRate`
-- libultraship/src/port/switch/SwitchPerformanceProfiles.h (planned) — New: CPU clock presets
+- components/libultraship/src/port/switch/SwitchPerformanceProfiles.h (planned) — New: CPU clock presets
 - `Gui.cpp` — add Switch block for ImGui init (GL 2.1, `#version 140`), 2x UI scale
   for handheld, disable viewports
 - `StatsWindow.cpp` — add Switch RAM reporting via libnx `svcGetInfo()`
 - Audio reinit on sleep resume — detect sleep/wake via `appletGetAppletType()`
 
 **Files to touch:**
-- libultraship/src/port/switch/SwitchImpl.h (planned) — New, ~40 lines
-- libultraship/src/port/switch/SwitchImpl.cpp (planned) — New, ~250 lines
-- libultraship/src/port/switch/SwitchPerformanceProfiles.h (planned) — New, ~30 lines
-- `libultraship/src/ship/window/gui/Gui.cpp` — +15 lines
+- components/libultraship/src/port/switch/SwitchImpl.h (planned) — New, ~40 lines
+- components/libultraship/src/port/switch/SwitchImpl.cpp (planned) — New, ~250 lines
+- components/libultraship/src/port/switch/SwitchPerformanceProfiles.h (planned) — New, ~30 lines
+- `components/libultraship/src/ship/window/gui/Gui.cpp` — +15 lines
 
 ---
 
@@ -121,8 +121,8 @@ has already ported libultraship for Ship of Harkinian — this plan follows the 
 - Add touch screen handling for menus
 
 **Files to touch:**
-- `libultraship/src/ship/controller/controldevice/controller/mapping/sdl/` — new mappings
-- `libultraship/src/fast/backends/gfx_sdl2.cpp` — touch events
+- `components/libultraship/src/ship/controller/controldevice/controller/mapping/sdl/` — new mappings
+- `components/libultraship/src/fast/backends/gfx_sdl2.cpp` — touch events
 
 ---
 

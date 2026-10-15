@@ -4,6 +4,8 @@ rules:
     max: 160
     level: warning
   document-start: disable
+  colons:
+    max-spaces-after: -1
   truthy:
     allowed-values:
       - "true"
@@ -16,9 +18,9 @@ ignore: |
   build-lint/
   .venv-lint/
   .claude/
-  decomp/
-  libultraship/
-  torch/
+  components/decomp/
+  components/libultraship/
+  components/game-runtime/
   mods/
-  assets/configuration/extraction/
+  assets/game/
   node_modules/

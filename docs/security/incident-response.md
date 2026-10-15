@@ -19,7 +19,7 @@ problems.
 
 1. Reproduce privately; assess blast radius (which versions, which
    platforms, does it need a malicious peer or a compromised lobby).
-2. Fix on a private branch or in the decomp/port-patches submodule flow
+2. Fix on a private branch or in the components/decomp/port-patches submodule flow
    when the fix must land in a submodule.
 3. Add a regression test (`tests/` or the netplay harnesses) — a security
    fix without a test is incomplete.

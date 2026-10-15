@@ -1,5 +1,5 @@
 # Known module-dependency violations (tracked debt — shrink, never grow).
-# Regenerate: python tools/lint/check_module_deps.py --rebaseline
+# Regenerate: python tools/analysis/lint/check_module_deps.py --rebaseline
 #
 # Baseline is empty: all historical violations were resolved by relocating
 # headers to their correct layer (port_watchdog.h -> src/platform,

@@ -67,8 +67,8 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence
 
 # --------------------------------------------------------------------------
 # Constants
@@ -116,7 +116,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def find_m64p_binary(user_supplied: Optional[str]) -> Optional[Path]:
+def find_m64p_binary(user_supplied: str | None) -> Path | None:
     """Locate the mupen64plus executable.
 
     Resolution order:
@@ -149,9 +149,9 @@ def find_m64p_binary(user_supplied: Optional[str]) -> Optional[Path]:
     return None
 
 
-def _searched_m64p_paths() -> List[str]:
+def _searched_m64p_paths() -> list[str]:
     """Return the list of paths we'd report on a "binary not found" error."""
-    paths: List[str] = ["PATH lookup (shutil.which)"]
+    paths: list[str] = ["PATH lookup (shutil.which)"]
     if os.name == "nt":
         for raw in WINDOWS_INSTALL_CANDIDATES:
             paths.append(os.path.expandvars(os.path.expanduser(raw)))
@@ -211,7 +211,7 @@ def run_m64p_testshots(
     m64p_bin: Path,
     rom_path: Path,
     frames: Sequence[int],
-    gfx_plugin: Optional[str],
+    gfx_plugin: str | None,
     timeout: float,
 ) -> subprocess.CompletedProcess:
     """Invoke mupen64plus with --testshots and return the CompletedProcess.
@@ -223,7 +223,7 @@ def run_m64p_testshots(
 
     # Build command. --testshots is the key: m64p captures each listed frame
     # and exits after the last one. --nosaveoptions prevents touching cfg.
-    cmd: List[str] = [
+    cmd: list[str] = [
         str(m64p_bin),
         "--testshots", frames_arg,
         "--nosaveoptions",
@@ -243,6 +243,7 @@ def run_m64p_testshots(
     # capture_output=True so stderr/stdout come back for diagnostics.
     return subprocess.run(
         cmd,
+        check=False,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -265,11 +266,11 @@ def _snapshot_pngs(directory: Path) -> set:
 def collect_new_screenshots(
     screenshot_dir: Path,
     before: set,
-) -> List[Path]:
+) -> list[Path]:
     """Return newly produced PNGs (those not present in ``before``), mtime-sorted."""
     if not screenshot_dir.is_dir():
         return []
-    new_files: List[Path] = []
+    new_files: list[Path] = []
     for p in screenshot_dir.iterdir():
         if p.suffix.lower() != ".png":
             continue
@@ -284,12 +285,12 @@ def collect_new_screenshots(
 # Argument parsing
 # --------------------------------------------------------------------------
 
-def _parse_frames(raw: str) -> List[int]:
+def _parse_frames(raw: str) -> list[int]:
     """Parse "10,30,55" into [10, 30, 55]. Rejects empty / non-numeric."""
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     if not parts:
         raise argparse.ArgumentTypeError("--frames must list at least one integer")
-    out: List[int] = []
+    out: list[int] = []
     for p in parts:
         try:
             n = int(p)
@@ -370,11 +371,11 @@ def _build_argparser() -> argparse.ArgumentParser:
 # Main
 # --------------------------------------------------------------------------
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = _build_argparser().parse_args(argv)
 
     repo = _repo_root()
-    frames: List[int] = sorted(set(args.frames))  # dedupe + ascending order
+    frames: list[int] = sorted(set(args.frames))  # dedupe + ascending order
     if not frames:
         print("[m64p_screenshot] ERROR: no frames to capture", file=sys.stderr)
         return 2
@@ -419,8 +420,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     screenshot_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Resolve user output destination ---
-    out_dir: Optional[Path] = None
-    out_file: Optional[Path] = None
+    out_dir: Path | None = None
+    out_file: Path | None = None
     if args.out is not None:
         out_file = Path(args.out).expanduser()
         out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -508,7 +509,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     pairs = list(zip(frames, new_files))
     captured_count = len(pairs)
 
-    copied: List[Path] = []
+    copied: list[Path] = []
     for frame_no, src in pairs:
         if out_file is not None:
             dest = out_file

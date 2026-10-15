@@ -41,7 +41,7 @@ token; low 0x140024 = a pos word or similar).
 
 ## Root cause
 
-`decomp/src/sc/sctypes.h`:
+`components/decomp/src/sc/sctypes.h`:
 
 ```c
 struct SC1PTrainingModeSprites
@@ -69,14 +69,14 @@ an `#ifdef PORT` branch forgot to downgrade the pointer field to a
 
 The sprite slots themselves are **already tokenized** correctly by the
 intra-file reloc chain in
-`src/integration/decomp/lbreloc_bridge.cpp:452`, so no separate token
+`src/game/engine/decomp/lbreloc_bridge.cpp:452`, so no separate token
 registration is needed — only the struct layout had to be fixed.
 
 ## Fix
 
 ### 1. Pin struct width to 8 bytes on port
 
-`decomp/src/sc/sctypes.h`:
+`components/decomp/src/sc/sctypes.h`:
 
 ```c
 struct SC1PTrainingModeSprites
@@ -92,7 +92,7 @@ struct SC1PTrainingModeSprites
 
 ### 2. Route every reader through a resolver helper
 
-`decomp/src/sc/sc1pmode/sc1ptrainingmode.c`:
+`components/decomp/src/sc/sc1pmode/sc1ptrainingmode.c`:
 
 ```c
 #ifdef PORT

@@ -38,10 +38,10 @@ at ~3 GB).
 
 | Subsystem | Why it works on ILP32 |
 |---|---|
-| **Fast3D renderer** | `Fast::F3DGfx` = `{ uintptr_t w0; uintptr_t w1; }` (`libultraship/include/fast/lus_gbi.h:1144`), **not** `uint64_t`. On ILP32 it is 8 bytes = the native N64 command. The display-list widening (`portNormalizeDisplayListPointer`, `libultraship/src/fast/interpreter.cpp:153`) uses `PORT_PACKED_GFX_SIZE` / `sizeof(F3DGfx)` for strides — never a literal 16 — so it becomes a near-identity segment-`0x0E` rewrite. The only 64-bit-specific code (the native-format probe, `interpreter.cpp:161-189`) is already **disabled**. |
+| **Fast3D renderer** | `Fast::F3DGfx` = `{ uintptr_t w0; uintptr_t w1; }` (`components/libultraship/include/fast/lus_gbi.h:1144`), **not** `uint64_t`. On ILP32 it is 8 bytes = the native N64 command. The display-list widening (`portNormalizeDisplayListPointer`, `components/libultraship/src/fast/interpreter.cpp:153`) uses `PORT_PACKED_GFX_SIZE` / `sizeof(F3DGfx)` for strides — never a literal 16 — so it becomes a near-identity segment-`0x0E` rewrite. The only 64-bit-specific code (the native-format probe, `interpreter.cpp:161-189`) is already **disabled**. |
 | **Token-pointer table** (`src/resources/relocation/RelocPointerTable.cpp`) | Exists only because desktop pointers are 8 bytes and don't fit the file-data structs' 4-byte slots. On ILP32 a real pointer fits the slot natively; the token round-trip is correct and unchanged (just redundant). |
-| **N64 segment translation** (`src/compatibility/segment_symbols.c`, `src/rendering/port_dl_ranges.cpp`) | All `uintptr_t` / `sizeof`-based; auto-scales. The `port_dl_range_classify_str` heuristic degrades gracefully (the `>= 4 GiB` branch is simply unreachable on ILP32). |
-| **Decomp struct layouts** | Fixed-width `u32`/`s32` typedefs (`src/integration/port_types.h`). ILP32 *reduces* layout risk vs. LP64 — closer to the ROM's native layout. The `_Static_assert(sizeof(X) == N)` size checks (DObjDesc==44, Sprite==68, FTAttributes==0x348, ...) hold because the PORT pointer fields are already `u32`. |
+| **N64 segment translation** (`src/platform/compatibility/segment_symbols.c`, `src/interfaces/rendering/port_dl_ranges.cpp`) | All `uintptr_t` / `sizeof`-based; auto-scales. The `port_dl_range_classify_str` heuristic degrades gracefully (the `>= 4 GiB` branch is simply unreachable on ILP32). |
+| **Decomp struct layouts** | Fixed-width `u32`/`s32` typedefs (`src/game/engine/decomp/port_types.h`). ILP32 *reduces* layout risk vs. LP64 — closer to the ROM's native layout. The `_Static_assert(sizeof(X) == N)` size checks (DObjDesc==44, Sprite==68, FTAttributes==0x348, ...) hold because the PORT pointer fields are already `u32`. |
 
 ### Empirical confirmation
 
@@ -64,14 +64,14 @@ token round-trip still passes — both widths are correct by construction.
    `src/platform/coroutine/coroutine_posix.cpp` split the `PortCoroutine*` across two `int`s for
    `makecontext` via `ptr >> 32` / `hi << 32`, which is UB when `uintptr_t` is
    4 bytes. This is the **core green-thread scheduler** (backs `gameloop.cpp`
-   and the `osThread` emulation in `src/compatibility/n64_stubs.c`), so it is
+   and the `osThread` emulation in `src/platform/compatibility/n64_stubs.c`), so it is
    mandatory. Now guarded with `#if UINTPTR_MAX > 0xFFFFFFFFu` — a no-op on
    64-bit, passes the pointer as a single `int` on ILP32. Compiles clean on
    both `-m32` and `-m64`.
    *(Windows uses Fibers via `coroutine_win32.cpp`, already 32-bit-safe.)*
 
 2. **Mod / scripting system — disabled on 32-bit.**
-   `src/integration/modding/HookManager.cpp` emits x86-64 `movabs` hook stubs; funchook +
+   `src/game/modding/HookManager.cpp` emits x86-64 `movabs` hook stubs; funchook +
    TinyCC have no x86-32 backend. Any future x86-32 build should force
    `DISABLE_SCRIPTING=ON` (already a first-class switch, forced on for Android
    for the same reason). 32-bit builds ship without in-engine modding.

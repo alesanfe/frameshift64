@@ -1,9 +1,9 @@
 # Auditoría de análisis estático — 2026-10-14
 
 Suite instalada en `.venv-lint` (Python 3.12) y ejecutada sobre el árbol
-completo. Configuración reproducible: `tools/lint/requirements.txt`,
-`.clang-tidy`, `config/static-analysis/cppcheck-suppressions.txt`, `.codespellrc`, `.yamllint.yml`,
-`config/semgrep/smash-classic.yml`, `.pre-commit-config.yaml`, `tools/lint/run_project_lint.py`,
+completo. Configuración reproducible: `tools/analysis/lint/requirements.txt`,
+`.clang-tidy`, `config/analysis/static/cppcheck-suppressions.txt`, `.codespellrc`, `.yamllint.yml`,
+`config/analysis/semgrep/smash-classic.yml`, `.pre-commit-config.yaml`, `tools/analysis/lint/run_project_lint.py`,
 scripts/development/configure-lint.bat (local, gitignored) (vcvars + VCPKG_ROOT → `build-lint/` con Ninja y
 `compile_commands.json`, 833 TUs / 830 ficheros únicos).
 
@@ -18,7 +18,7 @@ Informes crudos en `lint-reports/` (gitignored).
 | cpplint 2.0.2 | código propio | 12236 marcadores (≈9987 whitespace/tab — baseline Google-style no aplica; decomp usa tabs por .clang-format) |
 | cmake-lint | 5 ficheros CMake | 2378 marcadores (1823× C0327 whitespace) |
 | lizard | código propio | 75 funciones > umbrales (CCN>15, >120 líneas, >6 params) |
-| codespell | repo sin decomp/deps | ruido: `te`/`siz` en datos extraídos y campos RDP → añadidos a ignore-list |
+| codespell | repo sin components/decomp/deps | ruido: `te`/`siz` en datos extraídos y campos RDP → añadidos a ignore-list |
 | yamllint | workflows + configs | release.yml: 7 errores `too many spaces after colon`; newlines CRLF |
 | ruff | scripts Python propios | 221 avisos (UP031, I001, UP045 — modernización) |
 | bandit | scripts/tools/debug_tools | eval() en tools/creditsTextConverter.py:110,137; subprocess sin shell en tools (esperado) |
@@ -26,22 +26,22 @@ Informes crudos en `lint-reports/` (gitignored).
 
 ## Hallazgos confirmados (código propio)
 
-1. **`src/compatibility/port_aobj_fixup.cpp:439`** — `in_end = in + size` se calcula *antes*
+1. **`src/platform/compatibility/port_aobj_fixup.cpp:439`** — `in_end = in + size` se calcula *antes*
    de comprobar `src == nullptr`: aritmética de punteros sobre NULL = UB
    formal. Fix trivial: mover el check antes del cálculo.
-2. **`src/netplay/session/netlobby.cpp` ~30 sitios** — `atoi`/`strtoul` sobre campos de
+2. **`src/networking/netplay/session/netlobby.cpp` ~30 sitios** — `atoi`/`strtoul` sobre campos de
    mensajes `SSBL STARTM/START/GO` y JSON del Worker sin validación de rango
    ni de formato (cert-err34-c, regla `unbounded-atoi-on-packet`). Coherente
    con el análisis previo: el parser asume peers bienintencionados. Con
    SEC-1/SEC-2 sin cerrar, estos campos son superficie de ataque real.
-3. **`src/diagnostics/renderdoc_app.h:43`** — `#error "Unknown platform"`: cppcheck lo
+3. **`src/core/observability/renderdoc_app.h:43`** — `#error "Unknown platform"`: cppcheck lo
    evalúa sin macros de plataforma; verificar que solo se incluya bajo
    Windows/MSVC o dar fallback.
-4. **`src/presentation/UIWidgets.cpp:969`** — `uninitvar: longest` (cppcheck).
+4. **`src/interfaces/presentation/UIWidgets.cpp:969`** — `uninitvar: longest` (cppcheck).
 5. **`src/platform/coroutine/coroutine_posix.cpp:47-51`** — `PortCoroutine` sin inicializadores
-   de miembro; `src/netplay/transport/udp_transport.cpp:47` — `PendingPacket::release_ms` sin
+   de miembro; `src/networking/netplay/transport/udp_transport.cpp:47` — `PendingPacket::release_ms` sin
    default (hoy siempre se asigna en el único constructor; frágil).
-6. **`src/resources/loading/textures/hires/HiResHook.cpp:104`, `src/presentation/Menu.cpp:419`,
+6. **`src/resources/loading/textures/hires/HiResHook.cpp:104`, `src/interfaces/presentation/Menu.cpp:419`,
    `PortMenu.cpp:1689`, `port.cpp:632/1181/1436`, `ShaderDownloader.cpp:747`** —
    `try{}` con excepciones deshabilitadas según clang-tidy. El build MSVC real
    los compila (¿`/EHsc` por target, no global?), pero un build con
@@ -53,7 +53,7 @@ Informes crudos en `lint-reports/` (gitignored).
 - `ShaderDownloader.cpp:569/586/802` `accessMoved` sobre `s_tempDir` —
   probablemente FP (el `clear()` post-move es legal), pero el patrón
   move+clear bajo mutex merece `std::exchange`.
-- `decomp/src/sys/netpeer.c:1906` — `dbg` shadowed; `netrollback.c:88-93` —
+- `components/decomp/src/sys/netpeer.c:1906` — `dbg` shadowed; `netrollback.c:88-93` —
   6 miembros de `SYNetRollbackState` nunca usados (`arena_size`, `heap`,
   `spawn_serial`, `aobj_fixup*`) — ¿estado de snapshot que no se serializa?
   **Relevante para R3**: si `aobj_fixup` forma parte del estado rollback y no
@@ -108,6 +108,6 @@ Secret scanning nativo se activa en Settings > Security (no es workflow).
 - clang-tidy corre con driver clang sobre flags MSVC: los "cannot use try
   with exceptions disabled" son artefacto si el TU real lleva `/EHsc`;
   tratar como señal de flags divergentes, no de bug.
-- Resultados de `decomp/` (shifts by 31, OOB en scsubsysunused) son código
+- Resultados de `components/decomp/` (shifts by 31, OOB en scsubsysunused) son código
   heredado a propósito — no tocar salvo impacto en port.
 - `lint-reports/` y `.venv-lint/` quedan fuera de git por .gitignore.

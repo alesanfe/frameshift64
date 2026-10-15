@@ -73,7 +73,7 @@ The XOR-4 deswizzle fix in `portFixupSpriteBitmapData` is applied for `bpp < 32`
 ### Character portraits (file 168, RGBA32)
 
 - `portFixupSpriteBitmapData` **IS** called — file=168 appears in the `SSB64_TEX_FIXUP_LOG=1` output as `[sprite.bitmap]` entries.
-- Created via `lbCommonMakeSObjForGObj` in `mnPlayers*MakePortrait` functions (`decomp/src/mn/mnplayers/`).
+- Created via `lbCommonMakeSObjForGObj` in `mnPlayers*MakePortrait` functions (`components/decomp/src/mn/mnplayers/`).
 - Same broken diagonal stripe pattern as SMASH.
 
 ## What Was Tried (Both Ineffective)
@@ -96,7 +96,7 @@ The XOR-4 deswizzle fix in `portFixupSpriteBitmapData` is applied for `bpp < 32`
 
 ## Current Code State
 
-All code is at HEAD. No pending changes in `src/integration/decomp/lbreloc_byteswap.cpp` or `libultraship/`.
+All code is at HEAD. No pending changes in `src/game/engine/decomp/lbreloc_byteswap.cpp` or `components/libultraship/`.
 
 ## Debug Data Available
 
@@ -107,7 +107,7 @@ All code is at HEAD. No pending changes in `src/integration/decomp/lbreloc_bytes
 
 1. **Capture fresh `SSB64_TEX_FIXUP_LOG=1` log covering tutorial and fighter-select screens.** Navigate: title → character select → tutorial. Check file=198 entries — are `[sprite.bitmap]` entries present? What are the bpp, w, h, bswap_skipped, and first16 values?
 
-2. **Capture `SSB64_GBI_TRACE=1` for a SMASH render frame.** Compare the SetTile/LoadBlock/SetTileSize sequence against `decomp/src/lb/lbcommon.c:2629-2675` (the expected GBI sequence). Verify the tile's siz, line, lrs, dxt values match expectations at render time.
+2. **Capture `SSB64_GBI_TRACE=1` for a SMASH render frame.** Compare the SetTile/LoadBlock/SetTileSize sequence against `components/decomp/src/lb/lbcommon.c:2629-2675` (the expected GBI sequence). Verify the tile's siz, line, lrs, dxt values match expectations at render time.
 
 3. **Instrument `ImportTextureRgba32` in interpreter.cpp.** Log the effective line size, computed width/height, and first few texel bytes on every call for file=167 bitmaps. Confirm width=172, height=4 for all 21 strips.
 
@@ -117,11 +117,11 @@ All code is at HEAD. No pending changes in `src/integration/decomp/lbreloc_bytes
 
 ## Key Files
 
-- `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData` (BSWAP + deswizzle)
-- `decomp/src/lb/lbcommon.c:2629-2675` — `lbCommonDrawSObjBitmap` 32bpp GBI sequence
-- `decomp/src/lb/lbcommon.c:3033-3050` — `lbCommonMakeSObjForGObj` (calls fixup chain)
-- `decomp/src/mn/mnplayers/` — portrait creation (`mnPlayers*MakePortrait`)
-- `decomp/src/mn/mncommon/mntitle.c` — SMASH sprite creation
-- `libultraship/src/fast/interpreter.cpp:863-912` — `ImportTextureRgba32`
-- `libultraship/src/fast/interpreter.cpp:2143-2173` — tile dimension computation with `line_size *= 2`
-- decomp/include/PR/gbi.h:455,460` — `G_IM_SIZ_32b_LINE_BYTES=2`, `G_IM_SIZ_32b_LOAD_BLOCK=G_IM_SIZ_32b`
+- `src/game/engine/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData` (BSWAP + deswizzle)
+- `components/decomp/src/lb/lbcommon.c:2629-2675` — `lbCommonDrawSObjBitmap` 32bpp GBI sequence
+- `components/decomp/src/lb/lbcommon.c:3033-3050` — `lbCommonMakeSObjForGObj` (calls fixup chain)
+- `components/decomp/src/mn/mnplayers/` — portrait creation (`mnPlayers*MakePortrait`)
+- `components/decomp/src/mn/mncommon/mntitle.c` — SMASH sprite creation
+- `components/libultraship/src/fast/interpreter.cpp:863-912` — `ImportTextureRgba32`
+- `components/libultraship/src/fast/interpreter.cpp:2143-2173` — tile dimension computation with `line_size *= 2`
+- components/decomp/include/PR/gbi.h:455,460` — `G_IM_SIZ_32b_LINE_BYTES=2`, `G_IM_SIZ_32b_LOAD_BLOCK=G_IM_SIZ_32b`

@@ -8,7 +8,7 @@ need the offline signing key, not just GitHub API access.
 
 - **Signer:** `minisign -l` (raw/legacy mode — plain RFC 8032 Ed25519 over
   the file bytes, no Blake2b prehash, so the client needs no extra hash).
-- **Verifier:** `src/distribution/integrity/ReleaseSig.cpp` + vendored orlp/ed25519
+- **Verifier:** `src/application/update/integrity/ReleaseSig.cpp` + vendored orlp/ed25519
   (FetchContent, pinned to `b1f19fab…`, verify-only — 5 C files).
 - **Public key:** embedded at compile time via `BATTLESHIP_RELEASE_PUBKEY`,
   sourced from `config/release_pubkey.hex` (committed — it is a *public*

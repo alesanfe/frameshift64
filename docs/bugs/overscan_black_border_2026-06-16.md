@@ -17,7 +17,7 @@ SSB64 bakes a **10-pixel "title-safe" overscan margin** into its own GBI on
 every side. Two scissor sites, both insetting by 10 (in 320×240 space, scaled
 proportionally to the active internal resolution):
 
-- `decomp/src/sys/rdp.c` — `syRdpResetSettings` sets the default scissor to
+- `components/decomp/src/sys/rdp.c` — `syRdpResetSettings` sets the default scissor to
   `(10, 10) … (310, 230)`:
   ```c
   gDPSetScissor(dl++, G_SC_NON_INTERLACE,
@@ -26,7 +26,7 @@ proportionally to the active internal resolution):
       gSYVideoResWidth  - 10 * (gSYVideoResWidth  / GS_SCREEN_WIDTH_DEFAULT),
       gSYVideoResHeight - 10 * (gSYVideoResHeight / GS_SCREEN_HEIGHT_DEFAULT));
   ```
-- `decomp/src/sys/objdisplay.c` — the per-camera scissor clamps viewport-derived
+- `components/decomp/src/sys/objdisplay.c` — the per-camera scissor clamps viewport-derived
   bounds to the same margin via `dGCCameraScissor{Left,Top,Right,Bottom} = 10`
   (declared at `objdisplay.c:383-392`). The **per-frame framebuffer clear/fill**
   (`gDPFillRectangle` at `objdisplay.c:3306/3316/3371/3382`) uses those same
@@ -63,7 +63,7 @@ to the window, sample it minus its proportional margin and let the safe area
 stretch to fill the viewport — exactly what a CRT's overscan did. One place, no
 decomp changes, works in every aspect/resolution mode.
 
-`libultraship/src/ship/window/gui/Gui.cpp`, `Gui::DrawGame` — the single
+`components/libultraship/src/ship/window/gui/Gui.cpp`, `Gui::DrawGame` — the single
 `ImGui::Image(fb, size)` call now passes cropped UVs:
 
 ```cpp

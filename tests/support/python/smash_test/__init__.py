@@ -16,5 +16,5 @@ _HARNESS = ROOT / "tests" / "support" / "harness" / "netplay"
 if str(_HARNESS) not in sys.path:
     sys.path.insert(0, str(_HARNESS))
 
-from .network import NetworkProfile, PROFILES  # noqa: F401,E402
-from .processes import run_script, spawn  # noqa: F401,E402
+from .network import PROFILES, NetworkProfile  # noqa: F401
+from .processes import run_script, spawn  # noqa: F401

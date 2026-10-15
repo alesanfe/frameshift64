@@ -23,7 +23,7 @@ shear, and has its own fix.
 
 ## Root cause
 
-Fast3D's `ImportTexture*` decoders in `libultraship/src/fast/interpreter.cpp`
+Fast3D's `ImportTexture*` decoders in `components/libultraship/src/fast/interpreter.cpp`
 are structured as:
 
 1. Derive `widthBytes` from the current tile's `line_size_bytes` (i.e. the
@@ -84,7 +84,7 @@ other `ImportTexture*`).
 
 ## Fix
 
-`libultraship/src/fast/interpreter.cpp`:
+`components/libultraship/src/fast/interpreter.cpp`:
 
 - `ImportTextureRgba16` — introduce `naturalWidth = widthBytes / 2` before
   the clamps; reassign `fullImageLineSizeBytes = naturalWidth * 2`.
@@ -95,7 +95,7 @@ other `ImportTexture*`).
   `fullImageLineSizeBytes == sizeBytes → naturalWidth` reassignment that
   was previously absent from CI8.
 
-`src/integration/decomp/lbreloc_byteswap.cpp`:
+`src/game/engine/decomp/lbreloc_byteswap.cpp`:
 
 - `portFixupSpriteBitmapData` now reads `bitmap->width` (offset 0) in
   addition to `width_img` (offset 2) and includes both in the
@@ -112,8 +112,8 @@ no behavioural change for previously-working sprites.
 
 ## Files
 
-- `libultraship/src/fast/interpreter.cpp` — decoder fixes.
-- `src/integration/decomp/lbreloc_byteswap.cpp` — log extension.
+- `components/libultraship/src/fast/interpreter.cpp` — decoder fixes.
+- `src/game/engine/decomp/lbreloc_byteswap.cpp` — log extension.
 - `docs/investigations/sprite_broken_textures_handoff_2026-04-19.md` — fully resolved
   (paired with the 32bpp swizzle fix, every texture listed in that handoff
   is now accounted for).

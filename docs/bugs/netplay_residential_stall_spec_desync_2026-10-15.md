@@ -2,7 +2,7 @@
 
 **Status:** RESOLVED
 **Date:** 2026-10-15
-**Area:** `decomp/src/sys/netinput.c`, `decomp/src/sys/netpeer.c`, `src/netplay/protocol/netpacket.c`, `tests/unit/netplay/protocol/netpacket_test.c`
+**Area:** `components/decomp/src/sys/netinput.c`, `components/decomp/src/sys/netpeer.c`, `src/networking/netplay/protocol/netpacket.c`, `tests/unit/netplay/protocol/netpacket_test.c`
 
 ## Symptoms
 

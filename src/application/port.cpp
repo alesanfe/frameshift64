@@ -25,7 +25,7 @@
 #include <typeinfo>
 #include <unordered_set>
 
-#include "persistence/port_save.h"
+#include "core/persistence/port_save.h"
 #include "resources/relocation/ResourceType.h"
 #include "resources/relocation/RelocFileFactory.h"
 #include "resources/relocation/SyntheticReloc.h"
@@ -43,17 +43,17 @@
 #include <fast/resource/factory/VertexFactory.h>
 
 #include "app_paths.h"
-#include "config/schema.h"
-#include "diagnostics/crash_bundle.h"
-#include "distribution/integrity/ReleaseSig.h"
-#include "integration/decomp/audio_bridge.h"
-#include "integration/decomp/framebuffer_capture.h"
-#include "gameplay/enhancements.h"
+#include "core/config/schema.h"
+#include "core/observability/crash_bundle.h"
+#include "application/update/integrity/ReleaseSig.h"
+#include "game/engine/decomp/audio_bridge.h"
+#include "game/engine/decomp/framebuffer_capture.h"
+#include "game/gameplay/enhancements.h"
 #include "first_run.h"
-#include "presentation/UpdatePrompt.h"
-#include "presentation/OnlineStatus.h"
-#include "presentation/Toasts.h"
-#include "presentation/PortMenu.h"
+#include "interfaces/presentation/UpdatePrompt.h"
+#include "interfaces/presentation/OnlineStatus.h"
+#include "interfaces/presentation/Toasts.h"
+#include "interfaces/presentation/PortMenu.h"
 #ifdef PORT_HIRES_ENABLED
 #include "resources/loading/textures/hires/HiResHook.h"
 #include "resources/loading/textures/hires/HiResPack.h"
@@ -67,10 +67,11 @@
 #endif
 #if defined(__ANDROID__)
 #include <android/api-level.h>  // android_get_device_api_level (audio-driver gate)
+#include <SDL2/SDL_system.h>    // SDL_AndroidGetExternalStoragePath (test env shim)
 #endif
 #ifndef DISABLE_SCRIPTING
-#include "integration/modding/HookManager.h"
-#include "integration/modding/SymbolResolver.h"
+#include "game/modding/HookManager.h"
+#include "game/modding/SymbolResolver.h"
 #endif
 #include "renderdoc_trigger.h"
 #include "port_log.h"
@@ -593,8 +594,8 @@ void MountModsDir() {
 	 * bundles re-synthesize with the override on the next scene load.
 	 * At boot this runs before anything is cached, so it is free. */
 	if (mounted_new) {
-		if (auto rm = sContext ? sContext->GetResourceManager() : nullptr) {
-			rm->UnloadResources("*");
+		if (auto resMgr = sContext ? sContext->GetResourceManager() : nullptr) {
+			resMgr->UnloadResources("*");
 		}
 		portSyntheticRelocEvictAll();
 	}
@@ -668,7 +669,7 @@ static std::string PortLocateFile(const std::string& basename) {
 }
 
 /* ── Console "reset" command ─────────────────────────────────────────────
- * The ESC-menu Reset button (src/presentation/Menu.cpp) and the Ctrl/Cmd-R shortcut
+ * The ESC-menu Reset button (src/interfaces/presentation/Menu.cpp) and the Ctrl/Cmd-R shortcut
  * (libultraship Gui.cpp) both Dispatch("reset") at the LUS console, but the
  * command was never registered, so both fell through to "[LUS] Command not
  * found" and did nothing.
@@ -676,7 +677,7 @@ static std::string PortLocateFile(const std::string& basename) {
  * The handler performs an in-game reset back to the boot scene — the same
  * "return to title" semantics as a console reset — via the scene manager's
  * normal transition path. The mechanics live decomp-side in
- * portSCManagerRequestReset() (decomp/src/sc/scmanager.c) because the port
+ * portSCManagerRequestReset() (components/decomp/src/sc/scmanager.c) because the port
  * layer can't include decomp headers (the C shim stdlib shadows libc++ —
  * see the include-path note in CMakeLists.txt) and mirroring the scene
  * struct layout here would invite exactly the layout-drift bugs
@@ -684,7 +685,7 @@ static std::string PortLocateFile(const std::string& basename) {
 extern "C" void portSCManagerRequestReset(void);
 extern "C" int syNetReplayLoadDebugFile(const char* path);
 
-static int32_t ResetCommandHandler(std::shared_ptr<Ship::Console> console, std::vector<std::string> args,
+static int32_t ResetCommandHandler(std::shared_ptr<Ship::Console> /*console*/, std::vector<std::string> /*args*/,
                                    std::string* output) {
 	portSCManagerRequestReset();
 	if (output) {
@@ -718,11 +719,11 @@ int PortInit(int argc, char* argv[]) {
 	}
 }
 
-static int PortInitImpl(int argc, char* argv[]) {
+static int PortInitImpl(int /*argc*/, char* /*argv*/[]) {
 	port_log("SSB64: PortInit entered\n");
 
 #ifdef SSB64_TEST_HOOKS
-	/* TD-010 — parser fuzz entry point. `tools/fuzz/run_parser_fuzz.py`
+	/* TD-010 — parser fuzz entry point. `tools/analysis/fuzz/run_parser_fuzz.py`
 	 * drives this: SSB64_FUZZ_PARSER=<manifest|replay|json|save> +
 	 * SSB64_FUZZ_INPUT=<path> parses the file through the real parser and
 	 * exits. Placed before every other init so a fuzz iteration is a bare
@@ -1175,7 +1176,7 @@ static int PortInitImpl(int argc, char* argv[]) {
 		auto am = sContext->GetResourceManager()->GetArchiveManager();
 
 		// Optional: BattleShip.fromsource.o2r contains relocData resources
-		// produced by compiling decomp/src/relocData/*.c via the source-
+		// produced by compiling components/decomp/src/relocData/*.c via the source-
 		// compile pipeline (tools/build_reloc_resource.py). Adding it BEFORE
 		// the Torch-extracted BattleShip.o2r means the LUS ArchiveManager's
 		// FIFO-wins lookup serves source-compiled entries for matching
@@ -1251,7 +1252,7 @@ static int PortInitImpl(int argc, char* argv[]) {
 	if (!sContext->InitEventSystem()) { port_log("SSB64: InitEventSystem failed\n"); return 1; }
 	port_log("SSB64: EventSystem initialized\n");
 
-	// Allocate runtime EventIDs for every event declared in src/integration/hooks/list/*.
+	// Allocate runtime EventIDs for every event declared in src/game/engine/hooks/list/*.
 	// Must happen AFTER InitEventSystem (PortRegisterEvents calls
 	// EventSystemRegisterEvent, which dereferences Context::GetEventSystem()).
 	PortRegisterEvents();

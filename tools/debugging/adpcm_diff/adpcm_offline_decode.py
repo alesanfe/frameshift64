@@ -175,14 +175,14 @@ def main():
         if not diffs:
             print(f"\n[OK] First {n} samples match exactly. ADPCM decode is correct.")
         else:
-            print(f"\n[DIFF] First divergences (showing up to 8):")
+            print("\n[DIFF] First divergences (showing up to 8):")
             for i, r, p in diffs:
                 frame_idx = (i - 16) // 16   # which 16-sample frame after state
                 in_frame  = (i - 16) % 16
                 print(f"   sample {i:5d} (frame {frame_idx}, pos {in_frame}): "
                       f"ref={r:+6d}  port={p:+6d}  delta={p-r:+6d}")
             # Show first frame side by side
-            print(f"\n   First frame side-by-side (samples 16..31):")
+            print("\n   First frame side-by-side (samples 16..31):")
             for i in range(16, 32):
                 marker = "" if ref_out[i] == port_out[i] else "  ←"
                 print(f"     [{i:3d}] ref={ref_out[i]:+6d}  port={port_out[i]:+6d}{marker}")

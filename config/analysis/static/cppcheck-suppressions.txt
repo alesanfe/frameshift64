@@ -1,7 +1,7 @@
 missingIncludeSystem
-unusedFunction:decomp/*
-unusedFunction:libultraship/*
-unusedFunction:torch/*
+unusedFunction:components/decomp/*
+unusedFunction:components/libultraship/*
+unusedFunction:components/game-runtime/*
 unusedFunction:workspace/*
-*:decomp/asm/*
+*:components/decomp/asm/*
 *:*/node_modules/*

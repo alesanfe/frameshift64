@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# ROM layout constants — must match torch/src/factories/ssb64/RelocFactory.h
+# ROM layout constants — must match components/game-runtime/src/factories/ssb64/RelocFactory.h
 # ---------------------------------------------------------------------------
 RELOC_TABLE_ENTRY_SIZE  = 12
 ROM_COUNTRY_CODE_OFF    = 0x3E
@@ -43,10 +43,10 @@ def get_reloc_layout(rom: bytes):
 
 
 # ---------------------------------------------------------------------------
-# VPK0 decoder — ported from torch/lib/libvpk0/vpk0.c
+# VPK0 decoder — ported from components/game-runtime/lib/libvpk0/vpk0.c
 # ---------------------------------------------------------------------------
 class BitStream:
-    __slots__ = ("data", "size", "pos", "bits", "avail")
+    __slots__ = ("avail", "bits", "data", "pos", "size")
 
     def __init__(self, data: bytes):
         self.data = data

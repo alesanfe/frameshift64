@@ -4,7 +4,7 @@ Auditoría read-only del árbol reorganizado. HEAD de referencia: `d4f0298a`
 con 575 cambios locales sin commitear (reorganización de `port/`, `server/`,
 `scripts/`, `android/`, `uwp/`, `yamls/` a `src/`, `services/`,
 `scripts/{testing,development,packaging}`, `platforms/`,
-`assets/configuration/extraction/`).
+`assets/game/`).
 
 Método: inventario de git + 4 exploradores read-only por dominio (build/CI,
 servicio lobby, capa de port, core decomp) + revisión manual del engine de
@@ -17,7 +17,7 @@ Nada se ejecutó que modificara el árbol; no se compilaron ni corrieron tests.
 
 La reorganización está sana en el código fuente pero **dejó rotos los caminos
 de release, Android, UWP y packaging** — ningún build de publicación funciona
-hoy desde un checkout limpio. El hallazgo más grave: `assets/configuration/`
+hoy desde un checkout limpio. El hallazgo más grave: `assets/game/`
 existe localmente pero `.gitignore` (`assets/*` sin negación) lo mantiene
 invisible a git — **todo clone fresco falla en `cmake -B` al primer
 `configure_file`** de `gamecontrollerdb.txt`, y falla de nuevo en build con
@@ -62,18 +62,18 @@ Hallazgos totales: **11 confirmados de severidad alta/crítica**, ~20 medios,
 
 ```
 Cliente (ssb64.exe)
-├─ src/presentation/      PortMenu, OnlineStatus, Menu (sidebar)
-├─ src/netplay/session/   netlobby (SSBL, peers, LAN, spec)
-├─ src/netplay/transport/  udp_transport (link table 0..7, framing relay)
+├─ src/interfaces/presentation/      PortMenu, OnlineStatus, Menu (sidebar)
+├─ src/networking/netplay/session/   netlobby (SSBL, peers, LAN, spec)
+├─ src/networking/netplay/transport/  udp_transport (link table 0..7, framing relay)
 │                          websocket_transport (control socket + uplink)
-├─ src/persistence/       port_save (SRAM + replays dir)
-├─ src/observability/     port_log
-├─ src/integration/decomp/  audio_bridge, lbreloc_byteswap, particle_bank
-├─ src/integration/modding/ ModRegistry/ScriptLoader TCC
-├─ src/compatibility/     n64_stubs (tasks, coroutines, defer queues)
-├─ src/distribution/      Updater, ShaderDownloader, ModPackDownloader
+├─ src/core/persistence/       port_save (SRAM + replays dir)
+├─ src/core/observability/     port_log
+├─ src/game/engine/decomp/  audio_bridge, lbreloc_byteswap, particle_bank
+├─ src/game/modding/ ModRegistry/ScriptLoader TCC
+├─ src/platform/compatibility/     n64_stubs (tasks, coroutines, defer queues)
+├─ src/application/update/      Updater, ShaderDownloader, ModPackDownloader
 ├─ src/{gameplay,audio,input,social,rendering}/  widescreen, interp, packs
-└─ decomp/src/sys/        netpeer (star/FORWARD/spec links), netinput
+└─ components/decomp/src/sys/        netpeer (star/FORWARD/spec links), netinput
                           (sources: local/remote-confirmed/predicted/saved),
                           netrollback (8 snapshots + resim), netreplay
                           (record/play/desync pkg/takeover), scheduler
@@ -87,7 +87,7 @@ Servicios
 
 | ID | Sev. | Conf. | Clase | Subsistema | Resumen |
 |----|------|-------|-------|-----------|---------|
-| AUD-01 | CRÍTICA | RESUELTO | Bug + debt | build/.gitignore | `assets/configuration/` ignorado: clone fresco no configura |
+| AUD-01 | CRÍTICA | RESUELTO | Bug + debt | build/.gitignore | `assets/game/` ignorado: clone fresco no configura |
 | AUD-02 | ALTA | RESUELTO | Bug | CI release.yml | Job Android con rutas pre-reorg (2 fallos) |
 | AUD-03 | ALTA | RESUELTO | Bug | platforms/android | `repoRoot` resuelve a `platforms/` no al root |
 | AUD-04 | ALTA | RESUELTO | Bug | CI android.yml | `working-directory: android` obsoleto |
@@ -114,7 +114,7 @@ Servicios
 | AUD-25 | BAJA | RESUELTO | Seguridad | lobby | Oráculo de existencia de sala sin throttle entre códigos |
 | AUD-26 | MED-BAJA | RESUELTO | Bug | netplay LAN | HELLO no autenticado: endpoint arbitrario reclama slots 1-3 |
 | AUD-27 | MED-BAJA | RESUELTO | Bug | rollback | Coroutines huerfanas al rebobinar sobre spawn de GObjThread |
-| AUD-28 | MEDIA | RESUELTO | Deuda | semgrep | Reglas no cubren `src/netplay/` (paths.include `net/*` viejo) |
+| AUD-28 | MEDIA | RESUELTO | Deuda | semgrep | Reglas no cubren `src/networking/netplay/` (paths.include `net/*` viejo) |
 | AUD-29 | MED-BAJA | RESUELTO | Deuda | codegen | Targets phony reescriben salidas cada build → relink churn + ventana de borrado en generate_yamls |
 | AUD-30 | MED-BAJA | RESUELTO | Deuda | tests | Scripts: sleeps fijos, defaults de build dir obsoletos |
 | AUD-31 | MED-BAJA | RESUELTO | Bug | features | ShaderDownloader: worker sin cancelación → .glsl truncado, fase Done tras cancel |
@@ -164,24 +164,24 @@ Servicios
 
 ## 5. Hallazgos detallados (severidad alta y crítica)
 
-### AUD-01 — `assets/configuration/` entero es incommiteable → clone fresco roto — CRÍTICA / CONFIRMADO
+### AUD-01 — `assets/game/` entero es incommiteable → clone fresco roto — CRÍTICA / CONFIRMADO
 
 - **Síntoma:** `cmake -B build` en clone fresco → `configure_file` error en
   `gamecontrollerdb.txt`; si pasara, `copy_directory` de
   `extraction/${SSB64_VERSION}` y `generate_reloc_table.py` (FileNotFoundError)
   fallan.
 - **Evidencia:** `.gitignore:54` `assets/*` con negaciones solo de
-  iconos/fonts — ninguna `!assets/configuration/`. `git check-ignore -v
-  assets/configuration/extraction/us/config.yml` → `.gitignore:54`.
+  iconos/fonts — ninguna `!assets/game/`. `git check-ignore -v
+  assets/game/us/config.yml` → `.gitignore:54`.
   `git status --porcelain -- assets/` vacío con los archivos presentes en
   disco. `cmake/RuntimeAssets.cmake:7-11`, `CMakeLists.txt:631,1317-1318`,
-  `tools/codegen/generate_reloc_table.py:63`.
+  `tools/code-generation/generate_reloc_table.py:63`.
 - **Causa:** el reorg movió recetas/controller db a una ruta bajo la regla
   `assets/*`. Localmente existen (pre-reorg o copiados), en git no.
 - **Repro:** `git clone` limpio → `cmake -B build` → fallo inmediato.
 - **Impacto:** todo CI job que corre cmake (build, release, determinism,
   codeql, uwp, static-analysis lint) falla; release imposible.
-- **Fix:** `!assets/configuration/` (+negaciones anidadas necesarias) en
+- **Fix:** `!assets/game/` (+negaciones anidadas necesarias) en
   `.gitignore`, commitear `gamecontrollerdb.txt` + `extraction/{us,jp}/*.yml`
   (documentados como commiteados en `.gitignore:39-45` y BUILDING.md:89 —
   actualmente falso). Alternativa: wire `RegenerateRelocYamls` en
@@ -251,7 +251,7 @@ Servicios
 
 ### AUD-13 — Parsers de blobs de audio confían en counts/offsets — ALTA / CONFIRMADO
 
-- **Evidencia:** `src/integration/decomp/audio_bridge.cpp:505-547` — `seqCount`,
+- **Evidencia:** `src/game/engine/decomp/audio_bridge.cpp:505-547` — `seqCount`,
   `bankCount`, `instCount`, offsets y lens leídos del blob jamás se validan
   contra `sbkSize`/`size`/`ctlSize`; punteros salvajes entran a
   `seqArray`/`pkg->data`/`bankArray`; `sSYAudioSequenceBank2 =
@@ -299,7 +299,7 @@ Servicios
 
 - `port_save.cpp:179-227`: open/seek/write/close in-place, sin temp+rename;
   crash/power-loss deja imagen SRAM mezcla vieja/nueva sin checksum que la
-  detecte. Los wrappers de `decomp/src/sys/dma.c` descartan el retorno →
+  detecte. Los wrappers de `components/decomp/src/sys/dma.c` descartan el retorno →
   disco lleno/save path read-only = pérdida de progreso silente (solo log).
   `metaPath()` (:76-84) corta en el último `.` del path completo — un path
   sin extensión con `.` en directorios escribe el sidecar en el padre.
@@ -366,10 +366,10 @@ Resumen (evidencia completa en el análisis de build/CI):
   `config.yml`, `extraction/`. Comentario :43-45 describe el layout viejo.
 - **AUD-04** `android.yml:61` mismo `working-directory: android`.
 - **AUD-05** `build-uwp.yml:104-111` tools/Prepare-BattleShip-US.ps1
-  (real: `tools/asset-pipeline/Prepare-BattleShip-US.ps1`) + `yamls/us` (ya no existe).
+  (real: `tools/assets/pipeline/Prepare-BattleShip-US.ps1`) + `yamls/us` (ya no existe).
 - **AUD-06** `package-linux.sh:38`/`package-macos.sh:33` ROOT un nivel
   corto (`scripts/`) + tools/creditsTextConverter.py (real:
-  `tools/asset-pipeline/creditsTextConverter.py`) + `yamls/$VER` + `gamecontrollerdb.txt` (AUD-01).
+  `tools/assets/pipeline/creditsTextConverter.py`) + `yamls/$VER` + `gamecontrollerdb.txt` (AUD-01).
 - **AUD-07** `package-windows.ps1`: `:80,84` mismo tool movido; `:159`
   string literalmente corrupto `"assets nfiguration ntrollersgamecontrollerdb.txt"`;
   `:161` `yamls\` viejo.
@@ -409,8 +409,8 @@ Resumen (evidencia completa en el análisis de build/CI):
 - **AUD-27** resim que spawnea un GObjThread y luego se rebobina deja el
   `PortCoroutine` huerfano (fiber/ucontext + 64KB stack por ocurrencia;
   en Windows un Fiber handle). Bounded pero acumulable en sesiones largas.
-- **AUD-28** `config/semgrep/smash-classic.yml` include paths `net/*`,
-  `*netpeer*`… no cubren `src/netplay/**/*.cpp` → las reglas de net-safety no
+- **AUD-28** `config/analysis/semgrep/smash-classic.yml` include paths `net/*`,
+  `*netpeer*`… no cubren `src/networking/netplay/**/*.cpp` → las reglas de net-safety no
   aplican al netcode del port.
 - **AUD-29** `GenerateRelocArtifacts`/`GenerateCreditsAssets` reescriben
   outputs cada build (timestamp bump → recompile+relink); `generate_yamls`
@@ -449,11 +449,11 @@ Resumen (evidencia completa en el análisis de build/CI):
 - **AUD-40** canary `stack[7]=0xFEDCBA98` nunca puede trippear: los stacks
   coroutine son host-allocated 64KB, el array N64 no se ejecuta.
 - **AUD-41** `coroutine_test` include dir `port/` muerto; 3 CMakeLists de
-  mods llaman tools/merge_mod.py (real `tools/modding/merge_mod.py`); `test_vpk0.py`/
+  mods llaman tools/merge_mod.py (real `tools/developer/modding/merge_mod.py`); `test_vpk0.py`/
   `test_extern_ids.py` calculan repo-root un nivel corto y referencian
   tools/test_vpk0.c (real `tests/unit/resources/vpk0_test.c`).
   **RESUELTO (post-reorganización):** include dir → `src/platform`,
-  mod CMakeLists → `tools/modding/merge_mod.py`, probes corregidos
+  mod CMakeLists → `tools/developer/modding/merge_mod.py`, probes corregidos
   (`` `tests/unit/resources/*_test.py` `` resuelven root y ROM vía `roms/`/`SMASH_BASEROM`).
 - **AUD-42** `RelocFileTable.us.h:11` embebe `C:/Users/alex0/...` absoluto —
   diffs por máquina + leak de path del autor.
@@ -532,7 +532,7 @@ Resumen (evidencia completa en el análisis de build/CI):
 ## 10. Backlog priorizado
 
 **P0 (bloquean release / seguridad sin auth):**
-1. AUD-01 — gitignore + commit de assets/configuration (desbloquea todo CI).
+1. AUD-01 — gitignore + commit de assets/game (desbloquea todo CI).
 2. AUD-10 — room kill cross-version (1 línea de guardia).
 3. AUD-09 + AUD-11 — spec en prod; arreglar juntos o se abre el grief.
 4. AUD-02…AUD-08 — rutas de release/Android/UWP/packaging.
@@ -557,7 +557,7 @@ Resumen (evidencia completa en el análisis de build/CI):
 
 ## 11. División en PRs seguros
 
-- **PR-1 (gitignore+assets):** `!assets/configuration/` + commit de yamls +
+- **PR-1 (gitignore+assets):** `!assets/game/` + commit de yamls +
   gamecontrollerdb. Aislado, desbloquea CI.
 - **PR-2 (workflows/packaging):** AUD-02,04,05,06,07,08 — puro path fixing,
   verificable con dry-run de cada script.
@@ -574,7 +574,7 @@ Resumen (evidencia completa en el análisis de build/CI):
 ## 12. Plan de regresión
 
 - Tras PR-1: `cmake -B` en clone limpio (job CI nuevo o step que borre
-  `assets/configuration` y confirme que falla hoy → pasa tras fix).
+  `assets/game` y confirme que falla hoy → pasa tras fix).
 - Tras PR-3: `test-lobby-security.js` con spec+oversize+cross-version;
   correr `node-lobby.js` + `spectate_test.ps1` (debe seguir pasando).
 - Tras PR-5: fixtures `.sbk`/reloc corruptos → carga falla limpio.
@@ -589,17 +589,17 @@ Resumen (evidencia completa en el análisis de build/CI):
 Verificación real posterior en §12e (build Windows completo OK, tests
 ejecutados). Lo verificado originalmente en la sesión de fixes:
 
-- **AUD-01** — `.gitignore` añade `!assets/configuration/`; el árbol de
+- **AUD-01** — `.gitignore` añade `!assets/game/`; el árbol de
   extracción ya es addable (pendiente `git add` + commit con el reorg).
 - **AUD-02/04/05** — `release.yml`, `android.yml`, `build-uwp.yml` con rutas
-  post-reorg (`platforms/android`, `tools/asset-pipeline/`,
-  `assets/configuration/extraction/`).
+  post-reorg (`platforms/android`, `tools/assets/pipeline/`,
+  `assets/game/`).
 - **AUD-03** — `repoRoot` → `../..` + candidato `out/build/` en
   `findGameArtifact`.
 - **AUD-06/07/08** — los 3 packagers: ROOT corregido (los 3, incluido
   `package-windows.ps1` que el análisis marcó correcto por error),
-  `creditsTextConverter` → `tools/asset-pipeline/`, `yamls/` →
-  `assets/configuration/extraction/`, string corrupto 0x0F reparado,
+  `creditsTextConverter` → `tools/assets/pipeline/`, `yamls/` →
+  `assets/game/`, string corrupto 0x0F reparado,
   comentarios tras `\`/backtick movidos a línea propia.
 - **AUD-09/10/11/12** — `index.js` + `node-lobby.js`: `role=spec` admitido
   en edge; reset cross-version rechazado (`version-mismatch`) salvo sala
@@ -624,7 +624,7 @@ ejecutados). Lo verificado originalmente en la sesión de fixes:
 - **AUD-33** — `InsertSidebarSearch`: off-by-one real tras el insert
   (`.at(curIndex+1)`) + guard contra CVar obsoleto.
 - **AUD-41** — `coroutine_test` include `src/platform`; `merge_mod.py` →
-  `tools/modding/` en 3 CMakeLists de mods; `test_vpk0.py`/
+  `tools/developer/modding/` en 3 CMakeLists de mods; `test_vpk0.py`/
   `test_extern_ids.py` root math + rutas corregidas.
 - **AUD-42** — RelocFileTable regenerado con ruta repo-relativa
   (`*.us.h`/`*.jp.h` + `.cpp`).
@@ -692,7 +692,7 @@ Glass en `package-macos.sh`.
 | SW-05 | PROBABLE | Media | `sdmc:/switch/BattleShip/` podía no existir → `fopen` falla → log perdido. **FIX:** `mkdir` antes de `port_log_init`. |
 | SW-06 | CONFIRMADO | Baja | `SwitchContext caller;` muerta en `coroutine_switch.cpp`; comentario stale `port/switch/`; `port_log.h` sin uso; `--icon=/opt/devkitpro/...` hardcodeado. **FIX:** todos corregidos; icon ahora vía `$DEVKITPRO`. |
 | SW-07 | CONFIRMADO | Alta | `build-switch.sh`: `PROJECT_DIR=$SCRIPT_DIR/..` → `scripts/` (mismo bug que packagers); configure habría fallado siempre. Build dirs en raíz en vez de `out/`. **FIX:** `../..` + `out/build/switch{,-native}`. |
-| SW-08 | RESUELTO (gate) | Alta | Verificado: la rama `ssb64` del fork (`3694576a`) solo añade `libultraship/tests/port_stubs.cpp` — **cero** soporte `__SWITCH__` en los 378 fuentes de LUS escaneados. Un configure Switch habría producido un .nro sin linkar. **FIX:** `Switch.cmake` escanea los fuentes de LUS en configure-time y `FATAL_ERROR` con mensaje accionable si falta el backend (verificado con `cmake -P`: el check dispara sobre el checkout actual). El target Switch queda desbloqueado automáticamente cuando el fork reciba un backend libnx. |
+| SW-08 | RESUELTO (gate) | Alta | Verificado: la rama `ssb64` del fork (`3694576a`) solo añade `components/libultraship/tests/port_stubs.cpp` — **cero** soporte `__SWITCH__` en los 378 fuentes de LUS escaneados. Un configure Switch habría producido un .nro sin linkar. **FIX:** `Switch.cmake` escanea los fuentes de LUS en configure-time y `FATAL_ERROR` con mensaje accionable si falta el backend (verificado con `cmake -P`: el check dispara sobre el checkout actual). El target Switch queda desbloqueado automáticamente cuando el fork reciba un backend libnx. |
 
 ### Verificado correcto
 
@@ -736,7 +736,7 @@ SDL2/libnx wiring de `SDL_main` en Switch asumido correcto por la toolchain.
 | AUD-23/24/25/46 | **FIXED** (index.js + node-lobby.js en espejo) — idle reaper ~90s invocando el camino normal de `onClose` (preserva `peer_left` y limpieza de uplinks); join budget con headroom sobre una sala llena legítima para que un code-holder no la mantenga cerrada; throttle por IP en respuestas de existencia de sala (anti-oráculo); roster redactado para specs (sin endpoints `public`/`local` de players al rol menos confiable). Verificado: `test-lobby-security.js` 21/21 + `test-lobby-fuzz.js` PASS. |
 | AUD-26 | **FIXED** — LAN HELLO autenticado con `SSB64_LAN_KEY` (hash FNV compartido) + rate-limit de adopción anónima; endpoints arbitrarios ya no ocupan slots. |
 | AUD-37/38/39/40 | **FIXED** — warnings en mq ops fuera de coroutine; `osContInit`/query/read reportan conectividad real vía bridge LUS (la pantalla "no controller" ya puede mostrarse); canary real de stack host en `PortCoroutine` (el `0xFEDCBA98` N64 era inerte en port). |
-| AUD-45/47/48 | **FIXED** — deuda doc: `.gitignore` (paths `assets/configuration/extraction`, decomp tools anclados a `decomp/tools/`), `overview.md:45` (frase corrupta), BUILDING.md (`out/build/<ver>` + presets), READMEs de mods (`src/application/port.cpp`, `src/integration/hooks/list/EngineEvent.h`), comentario de `new-worktree.{sh,ps1}`. Limitaciones takeover/spec documentadas en `netplay_online.md`. |
+| AUD-45/47/48 | **FIXED** — deuda doc: `.gitignore` (paths `assets/game`, decomp tools anclados a `components/decomp/tools/`), `overview.md:45` (frase corrupta), BUILDING.md (`out/build/<ver>` + presets), READMEs de mods (`src/application/port.cpp`, `src/game/engine/hooks/list/EngineEvent.h`), comentario de `new-worktree.{sh,ps1}`. Limitaciones takeover/spec documentadas en `netplay_online.md`. |
 
 Notas:
 - `Mutex` libnx se asume zero-init==unlocked (estático); si libnx exige `mutexInit()` explícito hay que llamarlo en `port_log_init`.
@@ -747,7 +747,7 @@ Notas:
 Todo lo verificable sin hardware devkitPro/hardware de red se ejecutó:
 
 - **Build completo Windows (MSVC 14.44, VS2022, Debug):** `cmake` reconfigure + build de `out/build/verify` → **`BattleShip.exe` linkado OK**. `ssb64_game.lib` compila los ~500 TUs de decomp con todos los cambios (gu.h redirect, netreplay heap-paths, rollback serial/reap, etc.). Solo warnings preexistentes de N64 (truncaciones de puntero, `#pragma weak`/GLOBAL_ASM ignorados, `M_PI`/`RANGE`/`LENGTH` redefinidos).
-- **El build real cazó 2 bugs que `/Zs` no veía:** `std::max` sin paréntesis en `netlobby.cpp:1962` (macro `max` de windows.h — solo aparece con los defines completos del proyecto) → `(std::max)`; y `run_project_lint.py` con `ROOT` apuntando a `tools/lint/` tras el reorg → `parents[2]` + `mkdir(parents=True)`.
+- **El build real cazó 2 bugs que `/Zs` no veía:** `std::max` sin paréntesis en `netlobby.cpp:1962` (macro `max` de windows.h — solo aparece con los defines completos del proyecto) → `(std::max)`; y `run_project_lint.py` con `ROOT` apuntando a `tools/analysis/lint/` tras el reorg → `parents[2]` + `mkdir(parents=True)`.
 - **AUD-22 verificado por preprocesado:** `cl /E` sobre `ftphysics.c` muestra `__cosf(transn_joint->rotate...)` en los call sites — el redirect funciona bajo MSVC.
 - **AUD-27 verificado en runtime:** harness `out/coroutine_reap_test.cpp` linkeado contra `coroutine_win32.cpp` real — serial monotónico, `reap_after` destruye coroutines de la timeline descartada, las anteriores al snapshot sobreviven y completan.
 - **AUD-32 verificado en runtime:** `Sha256File` (CNG) + `DownloadedFileMatches` extraídos del fuente real y testeados con fixture — correcto/rechaza size mal/rechaza digest mal/acepta sin metadata/rechaza archivo ausente (5/5).

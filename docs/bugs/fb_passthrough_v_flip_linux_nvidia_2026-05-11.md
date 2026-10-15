@@ -4,7 +4,7 @@
 **Class:** Backend-quirk over-correction
 **Platform:** Linux + NVIDIA proprietary OpenGL driver (observed on 595.58.03)
 **Status:** RESOLVED on Linux/NVIDIA OGL; D3D11/Metal/macOS-OGL/Windows-OGL unaffected (default path matches their previous behavior).
-**Files:** `libultraship/src/fast/backends/gfx_opengl.cpp` (FbNeedsSampleVFlip)
+**Files:** `components/libultraship/src/fast/backends/gfx_opengl.cpp` (FbNeedsSampleVFlip)
 **Related:** issue #157 (the original V-flip introduction), `docs/bugs/vs_transition_photo_y_flip_2026-05-09.md`
 
 ## Symptom

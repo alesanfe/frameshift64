@@ -1,7 +1,7 @@
 # Reloc token generation ↔ GBI opcode misparse (chain-walk time bomb)
 
 **Date:** 2026-07-31
-**Status:** FIXED (port bridge only — no decomp/libultraship changes)
+**Status:** FIXED (port bridge only — no components/decomp/libultraship changes)
 **Symptoms:** garbled particle/effect textures appearing only after long play
 sessions; intermittent `abort()` in `portRelocRegisterPointer`
 ("token index capacity exhausted") during a scene transition, observed at the
@@ -87,7 +87,7 @@ Core of the abort (`coredumpctl`, gdb python over
 4. The in-core chain tokens are gen 16 (`0x0100401e`…) → the misparse source
    is the walk's own freshly written tokens.
 
-## Fix (three layers, all in `src/integration/decomp/` + `src/resources/`)
+## Fix (three layers, all in `src/game/engine/decomp/` + `src/resources/`)
 
 1. **`portRelocFixupTextureFromChain` refuses tokens as commands**
    (`lbreloc_byteswap.cpp`): if the w0 address is a registered chain slot

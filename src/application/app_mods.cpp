@@ -5,8 +5,8 @@
 
 #ifndef DISABLE_SCRIPTING
 
-#include "integration/modding/HookManager.h"
-#include "integration/modding/ModRegistry.h"
+#include "game/modding/HookManager.h"
+#include "game/modding/ModRegistry.h"
 
 #include <libultraship/libultraship.h>
 #include <ship/scripting/ScriptLoader.h>

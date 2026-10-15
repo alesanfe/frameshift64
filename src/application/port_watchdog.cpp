@@ -4,7 +4,7 @@
 
 #include "port_watchdog.h"
 #include "port_log.h"
-#include "diagnostics/crash_bundle.h"
+#include "core/observability/crash_bundle.h"
 
 #include <atomic>
 #include <cerrno>

@@ -38,7 +38,7 @@ jobs:
           path: |
             vcpkg
             build-windows
-          key: ${{ runner.os }}-vs2022-battleship-uwp-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'decomp/**', 'libultraship/**') }}
+          key: ${{ runner.os }}-vs2022-battleship-uwp-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'components/decomp/**', 'components/libultraship/**') }}
           restore-keys: |
             ${{ runner.os }}-vs2022-battleship-uwp-
 
@@ -106,9 +106,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist/asset-tool/yamls | Out-Null
           Copy-Item build-windows/TorchExternal/src/TorchExternal-build/Release/torch.exe dist/asset-tool/torch.exe
-          Copy-Item tools/asset-pipeline/Prepare-BattleShip-US.ps1 dist/asset-tool/
+          Copy-Item tools/assets/pipeline/Prepare-BattleShip-US.ps1 dist/asset-tool/
           Copy-Item config/project/config.yml dist/asset-tool/config.yml
-          Copy-Item -Recurse assets/configuration/extraction/us dist/asset-tool/yamls/us
+          Copy-Item -Recurse assets/game/us dist/asset-tool/yamls/us
 
       - name: Upload UWP package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4

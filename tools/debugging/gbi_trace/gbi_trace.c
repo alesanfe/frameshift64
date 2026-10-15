@@ -13,6 +13,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+extern void* portRelocTryResolvePointer(uint32_t token);
+
 #ifdef _WIN32
 #include <direct.h>
 #define MKDIR(path) _mkdir(path)
@@ -266,7 +268,6 @@ void gbi_trace_log_cmd(unsigned long long w0, unsigned long long w1, int depth)
 		 * per-frame CPU-built effect geometry is addressed, and content
 		 * corruption there is invisible to the command-stream diff. */
 		if (sDumpData && w1_hi == 0 && ((w0_lo >> 24) & 0xFF) == 0x01 && w1_lo != 0) {
-			extern void* portRelocTryResolvePointer(uint32_t token);
 			const uint32_t* vp = (const uint32_t*)portRelocTryResolvePointer(w1_lo);
 			if (vp == NULL) {
 				fprintf(sTraceFile, "       VTXTOK %08X -> UNRESOLVED\n", w1_lo);

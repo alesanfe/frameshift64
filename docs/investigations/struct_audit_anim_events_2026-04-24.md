@@ -1,7 +1,7 @@
 # Animation/Event Bytecode Struct Audit — 2026-04-24
 
-Audit of bitfield-bearing structs in `decomp/src/sys/objtypes.h`, `decomp/src/gm/gmscript.h`, and
-`decomp/src/gm/gmtypes.h` against IDO-emitted bit layouts. Methodology follows
+Audit of bitfield-bearing structs in `components/decomp/src/sys/objtypes.h`, `components/decomp/src/gm/gmscript.h`, and
+`components/decomp/src/gm/gmtypes.h` against IDO-emitted bit layouts. Methodology follows
 `docs/investigations/struct_rom_layout_audit_handoff_2026-04-24.md`: disassemble the reader
 function in `baserom.us.z64`, match MIPS `lw`/`sll`/`srl`/`andi` patterns to
 physical bit positions, compare to the port's `#else` (LE) declaration order.
@@ -20,7 +20,7 @@ handling in `portFixupStructU*`), not struct layout.
 
 ---
 
-## `decomp/src/sys/objtypes.h`
+## `components/decomp/src/sys/objtypes.h`
 
 Two `IS_BIG_ENDIAN` branches: `AObjEvent16`, `AObjEvent32`. `MObjSub` has no
 bitfields but is included because the prompt called it out.
@@ -32,7 +32,7 @@ is a 16-bit storage unit with three packed fields.
 
 Reader: `ftAnimParseDObjFigatree` at **VRAM 0x800EC238** (from
 `references/ssb-decomp-re/symbols/symbols_us.txt`). Confirmed by source at
-`decomp/src/ft/ftanim.c:107–125` dispatching on `event16->command.opcode`.
+`components/decomp/src/ft/ftanim.c:107–125` dispatching on `event16->command.opcode`.
 
 IDO extraction (disasm of 0x800EC3CC onward, after `lhu $a0, 0($s2)`):
 
@@ -51,7 +51,7 @@ Standard AObj event stream, 32-bit storage. Used by all objects (DObj, MObj,
 CObj) except fighter joint anims.
 
 Reader: `gcParseDObjAnimJoint` at **VRAM 0x8000BFE8**. Source at
-`decomp/src/sys/objanim.c:268–328` (first opcode dispatch `command_kind = dobj->anim_joint.event32->command.opcode`).
+`components/decomp/src/sys/objanim.c:268–328` (first opcode dispatch `command_kind = dobj->anim_joint.event32->command.opcode`).
 Additional readers with identical extraction pattern: `gcParseMObjMatAnimJoint`
 (0x8000CF6C), `gcParseCObjCamAnimJoint` (0x8000FA74), `gcGetAnimTotalLength`
 (`objanim.c:2923`).
@@ -67,7 +67,7 @@ IDO extraction (disasm of 0x8000C180 onward, after `lw $s0, 0($v1)`):
 Port LE declaration (LSB-first): `payload:15, flags:10, opcode:7` →
 payload[14:0], flags[24:15], opcode[31:25]. **MATCH.**
 
-**Halfswap interaction note.** `src/compatibility/port_aobj_fixup.cpp` un-halfswaps the
+**Halfswap interaction note.** `src/platform/compatibility/port_aobj_fixup.cpp` un-halfswaps the
 stream at load time (walks by command, advancing by opcode-specific payload
 width). The walker's advance logic depends on these exact bit widths; since
 the layout matches IDO, the walker's arithmetic is sound. If a new animation
@@ -79,16 +79,16 @@ not this struct.
 
 Plain 0x78-byte sprite material descriptor — `_Static_assert(sizeof(MObjSub)
 == 0x78)` holds. Field offsets hand-verified against consumers at
-`decomp/src/sys/objdisplay.c:1237–1340` (reads `mobj->sub.flags`, `scau/scav`,
+`components/decomp/src/sys/objdisplay.c:1237–1340` (reads `mobj->sub.flags`, `scau/scav`,
 `trau/trav`, `primcolor.s.r`, etc. — all at the expected byte offsets) and
-the copy-ctor `gcAddMObjForDObj` at `decomp/src/sys/objman.c:1302`. No bitfields, no
+the copy-ctor `gcAddMObjForDObj` at `components/decomp/src/sys/objman.c:1302`. No bitfields, no
 packing pitfalls. Pass1 BSWAP32 + appropriate `portFixupStructU16` over the
 u16 fields (pad00, unk08/0A/0C/0E, flags, block_dxt, unk36/38/3A) is
 sufficient — no audit concern.
 
 ---
 
-## `decomp/src/gm/gmscript.h`
+## `components/decomp/src/gm/gmscript.h`
 
 11 `IS_BIG_ENDIAN` branches across the `GMColEvent*` family. Note:
 **`gmscript.h` and `gmtypes.h` redeclare the same structs** (color-animation
@@ -98,7 +98,7 @@ audited the layouts once (via `gmtypes.h`'s reader) and the analysis applies
 to both headers.
 
 Reader for every `GMColEvent*` variant: `ftMainUpdateColAnim` at **VRAM
-0x800E0880** (source at `decomp/src/ft/ftmain.c:960–1200`). Dispatches on
+0x800E0880** (source at `components/decomp/src/ft/ftmain.c:960–1200`). Dispatches on
 `gmColEventCast(p_script, GMColEventDefault)->opcode`; jump-table branches
 to a case per opcode that extracts the command-specific fields from the same
 raw u32.
@@ -191,7 +191,7 @@ pak, which many PC-port users don't exercise.
 
 ---
 
-## `decomp/src/gm/gmtypes.h`
+## `components/decomp/src/gm/gmtypes.h`
 
 11 `IS_BIG_ENDIAN` branches. Ten of these are `GMColEvent*` duplicates of
 `gmscript.h` structs (same layouts, same reader `ftMainUpdateColAnim` —
@@ -204,7 +204,7 @@ Attack/status flag union, 16-bit storage embedded in `FTStruct.stat_flags`
 `WPAttackColl.stat_flags`, `ITStruct.reflect_stat_flags`, `WPStruct.reflect_stat_flags`).
 
 Reader: `ftParamUpdate1PGameAttackStats` at **VRAM 0x800EA7B0** (source at
-`decomp/src/ft/ftparam.c:1687`). Picked this because it reads all four relevant
+`components/decomp/src/ft/ftparam.c:1687`). Picked this because it reads all four relevant
 fields in sequence against the same `fp->stat_flags` (offset 0x28C in
 FTStruct on BE).
 
@@ -253,7 +253,7 @@ Same caveat as the gmscript.h copy. Reader not located. `u16 opcode:3, u16
 param:13`; port LE declares `param:13, opcode:3` which LSB-first gives
 param[12:0], opcode[15:13] — would match IDO MSB-first. **Needs
 follow-up** to disassemble an actual rumble script consumer (likely in
-`decomp/src/gm/` rumble manager or `gmrumble.c` — not obvious from the symbol
+`components/decomp/src/gm/` rumble manager or `gmrumble.c` — not obvious from the symbol
 map).
 
 ---
@@ -276,7 +276,7 @@ map).
 
 `AObjEvent32` is the only struct in this audit touched by
 `project_aobjevent32_halfswap.md`. The halfswap walker at
-`src/compatibility/port_aobj_fixup.cpp` advances opcode-by-opcode, relying on the
+`src/platform/compatibility/port_aobj_fixup.cpp` advances opcode-by-opcode, relying on the
 payload/flags widths verified above. Since those widths match IDO, the
 walker is correct **for the opcodes it knows about**. The `default:` case
 in `objanim.c` is a belt-and-suspenders fallback that assumes 32-bit

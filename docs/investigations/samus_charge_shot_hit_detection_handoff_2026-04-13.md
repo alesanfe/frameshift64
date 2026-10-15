@@ -19,7 +19,7 @@ Because melee works, we know the following are fine (do **not** re-investigate):
 - DK's `FTDamageColl damage_colls[11]` is correctly populated with non-zero sizes, offsets, joints.
 - DK's `FTAttributes.hit_detect_range` is correctly loaded (melee uses `gmCollisionCheckFighterAttackInFighterRange` against this same field).
 - `gmCollisionTestRectangle` and the AABB math work.
-- `ftMainProcSearchHitAll` fires every frame for both fighters (pkind=Key fighters still get the real process list at `decomp/src/ft/ftmanager.c:895`).
+- `ftMainProcSearchHitAll` fires every frame for both fighters (pkind=Key fighters still get the real process list at `components/decomp/src/ft/ftmanager.c:895`).
 - Fighter-vs-fighter hit flag gating (team/owner/attack_records) is correct.
 - The 6 partial-bit `FTMotionEvent*` structs fixed in commit `a43484d` — those drive the fighter attack colliders and clearly work now.
 
@@ -34,15 +34,15 @@ SSB64: HIT fighter=fkind2 wp=ChargeShot state=1 mask=0x7 cnt=0 owner_same=0 size
 SSB64: HIT range_check fkind=2 in_range=0/0 fpos=(-551.7,-240.8,0.0) range=(1200.0,600.0,1200.0) wp_size=120.0 state=1 special_ht=1 star_ht=1 ht=1 reflect=0 absorb=0 shield=0
 ```
 
-`cnt=0` → `in_range=0/0` → the entire `for (i = 0; i < wp_attack_coll->attack_count; i++)` loop at `decomp/src/ft/ftmain.c:3434` runs zero iterations → the damage-collider check never executes → the projectile sails through.
+`cnt=0` → `in_range=0/0` → the entire `for (i = 0; i < wp_attack_coll->attack_count; i++)` loop at `components/decomp/src/ft/ftmain.c:3434` runs zero iterations → the damage-collider check never executes → the projectile sails through.
 
-The only place `wp->attack_coll.attack_count` is ever written is `decomp/src/wp/wpmanager.c:250`:
+The only place `wp->attack_coll.attack_count` is ever written is `components/decomp/src/wp/wpmanager.c:250`:
 
 ```c
 wp->attack_coll.attack_count = attr->attack_count;
 ```
 
-Grep confirms no other writes to `wp->attack_coll.attack_count` anywhere in `decomp/src/wp/`, `decomp/src/ft/`, `decomp/src/it/`, or `decomp/src/gm/`. And no runtime weapon code (including `wpSamusChargeShotLaunch`) touches it. So the entire story is: **what does `attr->attack_count` read from the file-backed `WPAttributes` at `wpmanager.c:116`?**
+Grep confirms no other writes to `wp->attack_coll.attack_count` anywhere in `components/decomp/src/wp/`, `components/decomp/src/ft/`, `components/decomp/src/it/`, or `components/decomp/src/gm/`. And no runtime weapon code (including `wpSamusChargeShotLaunch`) touches it. So the entire story is: **what does `attr->attack_count` read from the file-backed `WPAttributes` at `wpmanager.c:116`?**
 
 ```c
 attr = lbRelocGetFileData(WPAttributes*, *wp_desc->p_weapon, wp_desc->o_attributes);
@@ -169,7 +169,7 @@ Fox Blaster's `cnt=1` is the evidence that the padding fix "worked" for at least
 
 ## The file-size clue
 
-From `assets/configuration/extraction/us/reloc_fighters_main.yml`:
+From `assets/game/us/reloc_fighters_main.yml`:
 ```yaml
 FoxSpecial1:    file_id: 210    size: 0x2E (compressed)   # decompressed_size: 0x40
 SamusSpecial1:  file_id: 218    size: 0x26 (compressed)   # decompressed_size: 0x40
@@ -181,7 +181,7 @@ Both files are **64 bytes** decompressed. `sizeof(WPAttributes)` is **52 bytes**
 
 1. **If SGI BE also packed `element` at offset 0x26 (no padding), my fix is wrong** — I'm forcing clang to 0x28 while the ROM data was laid out starting at 0x26. Decoded values would be shifted by 2 bytes.
 2. **If SGI BE padded to 0x28, my fix should work** — and it does for Fox Blaster, but Charge Shot still shows `attack_count = 0` with this layout.
-3. **The item-side code (`decomp/src/it/ittypes.h:243`) added an unconditional `u16 _pad_before_combat_bits;`** — the companion fix for `ITAttributes`. Presumably items on the port work (reel, MSBomb, etc.), which suggests BE-SGI did add the padding and my WPAttributes fix *should* be analogous.
+3. **The item-side code (`components/decomp/src/it/ittypes.h:243`) added an unconditional `u16 _pad_before_combat_bits;`** — the companion fix for `ITAttributes`. Presumably items on the port work (reel, MSBomb, etc.), which suggests BE-SGI did add the padding and my WPAttributes fix *should* be analogous.
 4. **Charge Shot `attack_count = 0` is unsolvable with bit-layout reasoning alone** — decoded with both BE MSB-first and LE LSB-first on both packed and padded offsets, I got `cnt=0` under every interpretation except one outlier (bits 30..31 of the raw u32 — which wouldn't make sense as the field position).
 5. **`wpSamusChargeShotLaunch` does NOT set `attack_count`** — it only overrides damage, size, fgm, priority, and map-coll dims. So the 0 is not getting rewritten at firing time.
 6. **DK's melee hits Samus, proving the rest of the collision pipeline works.** This narrows the bug to "something specific about how the weapon's `attack_count` is populated from the loaded `WPAttributes`", not a general collision-system problem.
@@ -190,9 +190,9 @@ Both files are **64 bytes** decompressed. `sizeof(WPAttributes)` is **52 bytes**
 
 These are the most promising angles I didn't get to:
 
-1. **Dump the raw Samus Special 1 file from the .o2r archive** *before* pass1 byte-swap and `portFixupStructU16`. Compare to what the port has in memory after both. This decides packed-vs-padded ROM layout unambiguously. The bridge code at `src/integration/decomp/lbreloc_bridge.cpp:302` (`lbRelocLoadAndRelocFile`) is where the raw bytes enter the port, pre-pass1.
+1. **Dump the raw Samus Special 1 file from the .o2r archive** *before* pass1 byte-swap and `portFixupStructU16`. Compare to what the port has in memory after both. This decides packed-vs-padded ROM layout unambiguously. The bridge code at `src/game/engine/decomp/lbreloc_bridge.cpp:302` (`lbRelocLoadAndRelocFile`) is where the raw bytes enter the port, pre-pass1.
 2. **Is there a MISSING u32 field at the start of the file?** The 64-byte file vs 52-byte struct leaves 12 bytes unaccounted for. If those 12 bytes are at the *start* (header), then `WPAttributes` is actually at file offset 12, not 0, and everything I read is shifted by 12 bytes. The `ll*WeaponAttributes` symbol resolving to `((intptr_t)0x0)` doesn't prove the offset is really 0 — the port's generated reloc stubs set every such symbol to 0 regardless. Check how the ORIGINAL decomp (pre-port) compiles these symbols.
-3. **Verify `gFTDataSamusSpecial1` is actually set to the decompressed Samus-Special-1 file content**, not some other file. The port's RelocFile factory is keyed by file_id; something in the load chain could be wiring the wrong file. Grep `gFTDataSamusSpecial1` — I found only declarations, never an assignment, which suggests a linker-generated symbol table sets it. Check `decomp/src/ft/ftmanager.c:ftManagerLoadFiles` or equivalent.
+3. **Verify `gFTDataSamusSpecial1` is actually set to the decompressed Samus-Special-1 file content**, not some other file. The port's RelocFile factory is keyed by file_id; something in the load chain could be wiring the wrong file. Grep `gFTDataSamusSpecial1` — I found only declarations, never an assignment, which suggests a linker-generated symbol table sets it. Check `components/decomp/src/ft/ftmanager.c:ftManagerLoadFiles` or equivalent.
 4. **Build a quick standalone C program** that just includes `wptypes.h`, declares a `WPAttributes` on the stack, writes Fox-Blaster-plausible values through the named fields (`damage=3, angle=0`, etc.), and dumps the bytes. Then compare to the ROM bytes — if they differ, the struct declaration doesn't match the ROM format.
 5. **Check the upstream `Killian-C/ssb-decomp-re` source** for `wptypes.h` / `WPAttributes`. If the pre-port decomp doesn't match the ROM on matching builds, that's a pre-existing decomp bug that the port inherited. If it *does* match, SGI IDO 7.1 lays out bitfields differently from clang-LE and the fix needs to be offset-based (not `#ifdef PORT` struct padding). The likely candidate is that SGI uses a **different storage-unit allocation rule** for bitfields than clang — specifically, that SGI might pack bitfields into the *current* allocation unit (including the `u16 size` unit) whereas clang starts a new u32 unit.
 6. **Why does Fox Blaster have `damage=0`?** If Fox Blaster's ROM damage field is really 0, it means either (a) the real N64 also reads 0 from this field and the laser damage comes from a completely different source we haven't identified, or (b) my layout is still wrong for Fox Blaster too and I'm reading the wrong bits but happened to get `attack_count=1` by accident. This is an independent consistency check: if (a) is true, we should find where Fox Blaster damage actually comes from; if (b) is true, the whole layout needs to be re-derived.
@@ -201,12 +201,12 @@ These are the most promising angles I didn't get to:
 
 ## Files touched this session (still present on disk)
 
-**Permanent changes:** None right now — my `u16 port_pad_word1;` fix in `decomp/src/wp/wptypes.h` was reverted before writing this doc to leave the tree in a clean state.
+**Permanent changes:** None right now — my `u16 port_pad_word1;` fix in `components/decomp/src/wp/wptypes.h` was reverted before writing this doc to leave the tree in a clean state.
 
 **Diagnostic scaffolding still in place (remove before committing any real fix):**
 
-- `decomp/src/ft/ftmain.c` — new `portTraceHitEnabled()` static gated on `SSB64_TRACE_HIT=1`, plus three `port_log` diagnostic lines inside `ftMainSearchHitWeapon` (around the weapon-loop entry, the range-check loop, and the damage-collider inner loop). Also added `extern char *getenv(...);` near the top of the file.
-- `decomp/src/wp/wpmanager.c` — a large `#ifdef PORT` diagnostic block right after `wp->attack_coll.interact_mask = GMHITCOLLISION_FLAG_ALL;` (around line 254) that:
+- `components/decomp/src/ft/ftmain.c` — new `portTraceHitEnabled()` static gated on `SSB64_TRACE_HIT=1`, plus three `port_log` diagnostic lines inside `ftMainSearchHitWeapon` (around the weapon-loop entry, the range-check loop, and the damage-collider inner loop). Also added `extern char *getenv(...);` near the top of the file.
+- `components/decomp/src/wp/wpmanager.c` — a large `#ifdef PORT` diagnostic block right after `wp->attack_coll.interact_mask = GMHITCOLLISION_FLAG_ALL;` (around line 254) that:
   - Constructs a stack-local `WPAttributes probe`, writes known values via named fields, then memcpy-reads the three bitfield words. Logs as `SSB64: PROBE`.
   - Dumps the full 52-byte raw blob of the real `attr` in three `SSB64: WP make raw` lines.
   - Dumps the compiler-extracted field values in one `SSB64: WP make extracted` line.
@@ -225,15 +225,15 @@ This session found and worked around a new variant of the existing "port_log ARM
 
 ## Key code references
 
-- `decomp/src/ft/ftmain.c:3296` — `ftMainSearchHitWeapon` (the weapon hit loop that never iterates)
-- `decomp/src/ft/ftmain.c:3434` — the `for (i = 0; i < wp_attack_coll->attack_count; i++)` at the heart of the bug
-- `decomp/src/wp/wpmanager.c:116` — `lbRelocGetFileData` load and `portFixupStructU16` call
-- `decomp/src/wp/wpmanager.c:250` — `wp->attack_coll.attack_count = attr->attack_count;` (only write)
-- `decomp/src/wp/wpsamus/wpsamuschargeshot.c:152` — `wpSamusChargeShotLaunch` (doesn't touch `attack_count`)
-- `decomp/src/wp/wptypes.h:36-120` — `WPAttributes` struct with the `#if IS_BIG_ENDIAN` bitfield mirror
-- `decomp/src/it/ittypes.h:242-243` — the working companion `u16 _pad_before_combat_bits;` for items
-- `src/integration/decomp/lbreloc_byteswap.cpp:757` — `portFixupStructU16` implementation (idempotent via `sStructU16Fixups`)
-- `src/integration/decomp/lbreloc_bridge.cpp:302` — `lbRelocLoadAndRelocFile` where raw file bytes enter the port
+- `components/decomp/src/ft/ftmain.c:3296` — `ftMainSearchHitWeapon` (the weapon hit loop that never iterates)
+- `components/decomp/src/ft/ftmain.c:3434` — the `for (i = 0; i < wp_attack_coll->attack_count; i++)` at the heart of the bug
+- `components/decomp/src/wp/wpmanager.c:116` — `lbRelocGetFileData` load and `portFixupStructU16` call
+- `components/decomp/src/wp/wpmanager.c:250` — `wp->attack_coll.attack_count = attr->attack_count;` (only write)
+- `components/decomp/src/wp/wpsamus/wpsamuschargeshot.c:152` — `wpSamusChargeShotLaunch` (doesn't touch `attack_count`)
+- `components/decomp/src/wp/wptypes.h:36-120` — `WPAttributes` struct with the `#if IS_BIG_ENDIAN` bitfield mirror
+- `components/decomp/src/it/ittypes.h:242-243` — the working companion `u16 _pad_before_combat_bits;` for items
+- `src/game/engine/decomp/lbreloc_byteswap.cpp:757` — `portFixupStructU16` implementation (idempotent via `sStructU16Fixups`)
+- `src/game/engine/decomp/lbreloc_bridge.cpp:302` — `lbRelocLoadAndRelocFile` where raw file bytes enter the port
 
 ## The single most useful next step
 

@@ -27,7 +27,7 @@ G_SETTILE  tile=0 (render)      tmem=0 line=17 cms=2 cmt=2
 G_SETTILESIZE tile=0 uls=0 ult=Y*4 lrs=256 lrt=(Y+14)*4
 ```
 
-The port's `GfxDpLoadTile` (`libultraship/src/fast/interpreter.cpp`)
+The port's `GfxDpLoadTile` (`components/libultraship/src/fast/interpreter.cpp`)
 populates `loaded_texture[idx].addr = source + start_offset_bytes`
 and records `full_image_line_size_bytes = full_w * pixel_size`
 (= 66 × 4 = 264) alongside `line_size_bytes = tile_w * pixel_size`

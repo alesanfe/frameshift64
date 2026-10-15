@@ -38,7 +38,7 @@ texture-set command.
 
 ## Fix
 
-New registry in `libultraship/src/fast/interpreter.cpp`:
+New registry in `components/libultraship/src/fast/interpreter.cpp`:
 
 - `gfxRegisterTrustedLowVARange(base, size)` — registers an exact static
   data range as legitimate texture/Vtx memory.

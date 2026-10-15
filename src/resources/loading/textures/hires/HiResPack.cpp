@@ -6,7 +6,7 @@
 #include <ship/utils/filesystemtools/Directory.h>
 
 // stb_image's implementation lives in libultraship's stb_impl.c (see
-// libultraship/cmake/dependencies/common.cmake) — only include the header
+// components/libultraship/cmake/dependencies/common.cmake) — only include the header
 // here to pick up the function declarations.
 #include <stb_image.h>
 
@@ -125,7 +125,7 @@ struct Crc32Table {
     constexpr Crc32Table() : v{} {
         for (uint32_t i = 0; i < 256; i++) {
             uint32_t c = i;
-            for (int j = 0; j < 8; j++) c = (c >> 1) ^ (0xEDB88320u & -(c & 1u));
+            for (int j = 0; j < 8; j++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
             v[i] = c;
         }
     }
@@ -466,12 +466,14 @@ std::shared_ptr<DecodedTexture> DecodeEntry(const PackEntry& entry, zip_t* zipHa
     // desktop). A single oversize PNG would blow the LRU budget and balloon
     // the uncompressed GPU upload, so reject it and fall back to the native
     // texture.
-    if (kMaxPackTexels != 0 && (size_t)w * (size_t)h > kMaxPackTexels) {
-        stbi_image_free(raw);
-        port_log("HiResPack: %s decodes to %dx%d (> mobile %u-texel cap) — using native texture\n",
-                 entry.container.c_str(), w, h, (unsigned)kMaxPackTexels);
-        *capExceeded = true;
-        return nullptr;
+    if constexpr (kMaxPackTexels != 0) {
+        if ((size_t)w * (size_t)h > kMaxPackTexels) {
+            stbi_image_free(raw);
+            port_log("HiResPack: %s decodes to %dx%d (> mobile %u-texel cap) — using native texture\n",
+                     entry.container.c_str(), w, h, (unsigned)kMaxPackTexels);
+            *capExceeded = true;
+            return nullptr;
+        }
     }
 
     auto tex = std::make_shared<DecodedTexture>();

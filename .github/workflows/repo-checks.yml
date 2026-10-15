@@ -23,15 +23,15 @@ jobs:
           python-version: '3.x'
       - name: Repository layout
         run: make layout-check
-      - run: python tools/lint/check_docs.py
+      - run: python tools/analysis/lint/check_docs.py
       - name: Env-var catalog is complete
-        run: python tools/lint/check_env_vars.py
+        run: python tools/analysis/lint/check_env_vars.py
       - name: Module dependency rules
-        run: python tools/lint/check_module_deps.py
+        run: python tools/analysis/lint/check_module_deps.py
       - name: Retired-path regression guard
-        run: python tools/lint/check_retired_paths.py
+        run: python tools/analysis/lint/check_retired_paths.py
       - name: CVar schema coverage (TD-005)
-        run: python tools/lint/check_cvar_schema.py
+        run: python tools/analysis/lint/check_cvar_schema.py
       - name: Extraction recipes (structure + golden hashes)
         run: |
           pip install pyyaml

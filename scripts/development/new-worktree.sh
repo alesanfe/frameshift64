@@ -24,9 +24,9 @@
 #   5. Runs `cmake -B build` (configure only; add --build to also compile).
 #
 # Resulting worktree is fully editable:
-#   - Edit any file in decomp/src/, decomp/include/, src/, libultraship/,
-#     torch/
-#   - Commit normally inside libultraship/ / torch/, then push to the fork
+#   - Edit any file in components/decomp/src/, components/decomp/include/, src/, components/libultraship/,
+#     components/game-runtime/
+#   - Commit normally inside components/libultraship/ / components/game-runtime/, then push to the fork
 #   - In the outer worktree: `git add libultraship && git commit` bumps the
 #     submodule pointer; push that commit up when merging back to main.
 #
@@ -114,56 +114,58 @@ for sm in libultraship torch decomp; do
     # Some submodules may not be registered on older base branches
     # (e.g. `decomp` was added on agent/decomp-submodule). Skip silently
     # if the main tree doesn't track it yet.
-    if [[ -z "$(git -C "$WT_DIR" config -f .gitmodules "submodule.$sm.path" 2>/dev/null)" ]]; then
+    sm_path="$(git -C "$WT_DIR" config -f .gitmodules "submodule.$sm.path" 2>/dev/null)"
+    if [[ -z "$sm_path" ]]; then
         printf '\033[33m  Skipping submodule %s (not configured in main tree .gitmodules)\033[0m\n' "$sm"
         continue
     fi
-    pinned_sha="$(git -C "$WT_DIR" rev-parse "HEAD:$sm")"
+    pinned_sha="$(git -C "$WT_DIR" rev-parse "HEAD:$sm_path")"
     # Prefer the main tree's configured origin (often SSH) over .gitmodules URL
     # (often HTTPS) so the worktree inherits whatever auth method the user has
     # set up for push.
-    origin_url="$(git -C "$ROOT/$sm" remote get-url origin 2>/dev/null \
+    origin_url="$(git -C "$ROOT/$sm_path" remote get-url origin 2>/dev/null \
                   || git -C "$ROOT" config -f .gitmodules "submodule.$sm.url")"
     sm_branch="$(git -C "$ROOT" config -f .gitmodules "submodule.$sm.branch" || echo "")"
 
-    step "Submodule $sm → $pinned_sha (origin: $origin_url)"
-    rm -rf "$WT_DIR/$sm"
-    git clone --no-local --quiet "$ROOT/$sm" "$WT_DIR/$sm"
-    git -C "$WT_DIR/$sm" remote set-url origin "$origin_url"
+    step "Submodule $sm_path → $pinned_sha (origin: $origin_url)"
+    rm -rf "$WT_DIR/$sm_path"
+    mkdir -p "$(dirname "$WT_DIR/$sm_path")"
+    git clone --no-local --quiet "$ROOT/$sm_path" "$WT_DIR/$sm_path"
+    git -C "$WT_DIR/$sm_path" remote set-url origin "$origin_url"
     # The local source clone only carries refs/heads/* of the main checkout, so
     # SHAs reachable only via remote-tracking branches (e.g. an older tag's pin
     # that lives on a feature branch) won't be in the new clone. If the
     # checkout misses, fetch from the real fork and retry.
-    if ! git -C "$WT_DIR/$sm" checkout --quiet "$pinned_sha" 2>/dev/null; then
+    if ! git -C "$WT_DIR/$sm_path" checkout --quiet "$pinned_sha" 2>/dev/null; then
         printf '  Pinned SHA not in local clone; fetching from %s\n' "$origin_url"
-        git -C "$WT_DIR/$sm" fetch --quiet origin
-        git -C "$WT_DIR/$sm" checkout --quiet "$pinned_sha"
+        git -C "$WT_DIR/$sm_path" fetch --quiet origin
+        git -C "$WT_DIR/$sm_path" checkout --quiet "$pinned_sha"
     fi
     if [[ -n "$sm_branch" ]]; then
         # Re-create the tracking branch so `git push` from detached HEAD is obvious.
-        git -C "$WT_DIR/$sm" checkout -B "$sm_branch" --quiet
+        git -C "$WT_DIR/$sm_path" checkout -B "$sm_branch" --quiet
     fi
 done
 
 # ── 4. Regenerate codegen ──
 # reloc_data.h and credits .encoded/.metadata are gitignored and must be
 # rebuilt on every fresh checkout before CMake runs. The extraction yamls
-# (assets/configuration/extraction/<ver>/reloc_*.yml) are committed but
+# (assets/game/<ver>/reloc_*.yml) are committed but
 # regenerated too, so worktrees stay consistent with the main tree.
 step "Regenerating reloc codegen"
 # Each tool resolves its root via __file__, so absolute-path invocation is safe.
-python3 "$WT_DIR/tools/codegen/generate_reloc_stubs.py"
-( cd "$WT_DIR" && python3 tools/codegen/generate_yamls.py )
-( cd "$WT_DIR" && python3 tools/codegen/generate_reloc_table.py )
+python3 "$WT_DIR/tools/code-generation/generate_reloc_stubs.py"
+( cd "$WT_DIR" && python3 tools/code-generation/generate_yamls.py )
+( cd "$WT_DIR" && python3 tools/code-generation/generate_reloc_table.py )
 
 step "Encoding credits text"
 (
-    cd "$WT_DIR/decomp/src/credits"
+    cd "$WT_DIR/components/decomp/src/credits"
     for f in staff.credits.us.txt titles.credits.us.txt; do
-        python3 "$WT_DIR/tools/asset-pipeline/creditsTextConverter.py" "$f" > /dev/null
+        python3 "$WT_DIR/tools/assets/pipeline/creditsTextConverter.py" "$f" > /dev/null
     done
     for f in info.credits.us.txt companies.credits.us.txt; do
-        python3 "$WT_DIR/tools/asset-pipeline/creditsTextConverter.py" -paragraphFont "$f" > /dev/null
+        python3 "$WT_DIR/tools/assets/pipeline/creditsTextConverter.py" -paragraphFont "$f" > /dev/null
     done
 )
 
@@ -183,19 +185,21 @@ step "Symlinking extracted assets (BattleShip.o2r / f3d.o2r)"
 linked_any=0
 for asset in BattleShip.o2r f3d.o2r; do
     src=""
-    for cand in "$ROOT/build/$asset" "$ROOT/$asset"; do
+    # out/build/<preset>/ is the main-tree convention; build/ + repo root
+    # cover legacy/manual layouts.
+    for cand in "$ROOT"/out/build/*/"$asset" "$ROOT/build/$asset" "$ROOT/$asset"; do
         if [[ -f "$cand" ]]; then src="$cand"; break; fi
     done
     if [[ -n "$src" ]]; then
         ln -sf "$src" "$WT_DIR/build/$asset"
         linked_any=1
     else
-        printf '  warn: %s not found in main tree (%s/build or %s) — extract it there first\n' \
+        printf '  warn: %s not found in main tree (%s/out/build/*/ or %s/build) — extract it there first\n' \
             "$asset" "$ROOT" "$ROOT" >&2
     fi
 done
 if [[ $linked_any -eq 0 ]]; then
-    printf '\033[33m  No assets symlinked. Build + extract in the main tree first (cmake --build %s/build --target ExtractAssets) before launching the worktree binary.\033[0m\n' "$ROOT" >&2
+    printf '\033[33m  No assets symlinked. Build + extract in the main tree first (cmake --build %s/out/build/<preset> --target ExtractAssets) before launching the worktree binary.\033[0m\n' "$ROOT" >&2
 fi
 
 # ── 6. Optional: compile ──

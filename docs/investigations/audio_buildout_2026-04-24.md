@@ -75,11 +75,11 @@ None of these are settled. Option 1 is the most promising starting point — loo
 Low-volume runtime logs that confirm the pipeline is alive (remove when the remaining bug is closed):
 
 - `src/resources/loading/audio/audio_playback.cpp` — first-submit and first-non-zero-sample one-shot logs
-- `decomp/src/sys/audio.c` — first `syAudioPlayBGM` / first `syAudioPlayFGM` / first `n_alAudioFrame` / audio thread-enter logs
+- `components/decomp/src/sys/audio.c` — first `syAudioPlayBGM` / first `syAudioPlayFGM` / first `n_alAudioFrame` / audio thread-enter logs
 
 All are one-shot `if (!logged) { logged = true; port_log(...); }` — no per-frame spam.
 
-The verbose bank/instrument dump in `src/integration/decomp/audio_bridge.cpp` was removed after characterizing the keymap shape; revive it (it was under `if (sParseLogged < 2)`) if you need to re-check the raw ROM bytes.
+The verbose bank/instrument dump in `src/game/engine/decomp/audio_bridge.cpp` was removed after characterizing the keymap shape; revive it (it was under `if (sParseLogged < 2)`) if you need to re-check the raw ROM bytes.
 
 ## Fixed along the way
 

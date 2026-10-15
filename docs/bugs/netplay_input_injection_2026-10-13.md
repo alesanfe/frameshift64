@@ -28,13 +28,13 @@ Three missing checks combined into a full spoofing chain:
   relayed binary only flows on links the owner marked `relay`;
   `from_slot` stamped from the authenticated socket; per-socket and
   per-room rate limits.
-- `decomp/src/sys/netpeer.c`: FORWARD packets rejected on the host, on
+- `components/decomp/src/sys/netpeer.c`: FORWARD packets rejected on the host, on
   links other than the host link, and when the inner `src_player` has a
   direct link; `session_id` is now a lobby-generated token independent
   of `rng_seed` (0 = legacy seed fallback for old peers).
-- `src/netplay/transport/udp_transport.cpp`: `link_of` validates the relayed frame's slot
+- `src/networking/netplay/transport/udp_transport.cpp`: `link_of` validates the relayed frame's slot
   byte against an active relay-backed link.
-- `src/netplay/session/netlobby.cpp`: `upkey` from `welcome` sent as `&key=` on the
+- `src/networking/netplay/session/netlobby.cpp`: `upkey` from `welcome` sent as `&key=` on the
   uplink; session id generated on match start and carried in
   `STARTM`/`START`.
 

@@ -29,7 +29,7 @@ Effect: any `AL_MIDI_FX_CTRL_4` with `byte2 ∈ {1, 2}` would read a bogus point
 
 ## Fix
 
-decomp/include/n_audio/n_libaudio.h — widen `unknown0` / `unknown1` to `ALBank *` on PORT in both `N_ALSeqPlayer` and `N_ALCSPlayer` so the `(&seqp->bank)[N]` idiom walks three adjacent `ALBank *` slots correctly:
+components/decomp/include/n_audio/n_libaudio.h — widen `unknown0` / `unknown1` to `ALBank *` on PORT in both `N_ALSeqPlayer` and `N_ALCSPlayer` so the `(&seqp->bank)[N]` idiom walks three adjacent `ALBank *` slots correctly:
 
 ```c
 ALBank *bank;
@@ -42,7 +42,7 @@ s32 unknown1;
 #endif
 ```
 
-`decomp/src/libultra/n_audio/n_env.c` — drop the `(s32)(intptr_t)` truncation cast in the two bank-set handlers; write the pointer directly under PORT.
+`components/decomp/src/libultra/n_audio/n_env.c` — drop the `(s32)(intptr_t)` truncation cast in the two bank-set handlers; write the pointer directly under PORT.
 
 ## Scope of this fix
 

@@ -5,13 +5,13 @@
 - VS Character Select: a fighter puck cannot be picked up after being placed — an `A_BUTTON` tap registers as grab-then-immediate-drop.
 - CPU skill level slider: one keypress advances the value by 2–3 steps instead of 1.
 
-Instrumentation in `decomp/src/sys/controller.c` showed each physical press producing a *fresh* `unk02` edge on 4+ consecutive frames (`edge+=0x1000`, `unk04=0x1000`, `hold=0x1000` published every frame), which should be impossible — `syControllerReadDeviceData` stamps `sSYControllerDescs[i].unk00 = button` at the end of every read, so the next frame's XOR edge `(button ^ unk00) & button` should be zero while the button is held.
+Instrumentation in `components/decomp/src/sys/controller.c` showed each physical press producing a *fresh* `unk02` edge on 4+ consecutive frames (`edge+=0x1000`, `unk04=0x1000`, `hold=0x1000` published every frame), which should be impossible — `syControllerReadDeviceData` stamps `sSYControllerDescs[i].unk00 = button` at the end of every read, so the next frame's XOR edge `(button ^ unk00) & button` should be zero while the button is held.
 
 **Root cause:** The typename `OSContPad` refers to **two different struct layouts in the same build**:
-- Decomp view (decomp/include/PR/os.h, seen by C in `decomp/src/sys/controller.c`): `{ u16 button; s8 stick_x; s8 stick_y; u8 errno; }` — ~6 bytes.
-- libultraship view (`libultraship/include/libultraship/libultra/controller.h`): adds `err_no`, `gyro_x`, `gyro_y`, `right_stick_x`, `right_stick_y` — `size = 0x24` (36 bytes).
+- Decomp view (components/decomp/include/PR/os.h, seen by C in `components/decomp/src/sys/controller.c`): `{ u16 button; s8 stick_x; s8 stick_y; u8 errno; }` — ~6 bytes.
+- libultraship view (`components/libultraship/include/components/libultraship/libultra/controller.h`): adds `err_no`, `gyro_x`, `gyro_y`, `right_stick_x`, `right_stick_y` — `size = 0x24` (36 bytes).
 
-`syControllerReadDeviceData` declares `OSContPad sSYControllerData[MAXCONTROLLERS]` using the decomp's 6-byte layout, so the array reserves ~24 bytes. The controller I/O stub `osContGetReadData` lives in `libultraship/src/libultraship/libultra/os.cpp` (C++, sees the 0x24-byte LUS layout) and did:
+`syControllerReadDeviceData` declares `OSContPad sSYControllerData[MAXCONTROLLERS]` using the decomp's 6-byte layout, so the array reserves ~24 bytes. The controller I/O stub `osContGetReadData` lives in `components/libultraship/src/components/libultraship/libultra/os.cpp` (C++, sees the 0x24-byte LUS layout) and did:
 
 ```cpp
 void osContGetReadData(OSContPad* pad) {
@@ -24,7 +24,7 @@ The memset walked 144 bytes starting at `sSYControllerData`. The linker placed `
 
 Gameplay used `syControllerScheduleRead` (AutoRead=FALSE) instead of `syControllerFuncRead` — but both paths go through the same Read, so the corruption happened there too. Gameplay got away with it because its consumers read `button_hold` (current state), not `button_tap` (edge): `button_hold` just reflects whatever's in `unk00`, which gets re-stamped with the true button state at the end of each Read a few lines later. Edge-driven menus were unique in relying on `unk00` surviving between Reads.
 
-**Fix:** In `libultraship/src/libultraship/libultra/os.cpp`, write into a local LUS-layout stack buffer, then copy only the four fields the decomp struct actually has into the caller's pointer:
+**Fix:** In `components/libultraship/src/components/libultraship/libultra/os.cpp`, write into a local LUS-layout stack buffer, then copy only the four fields the decomp struct actually has into the caller's pointer:
 
 ```cpp
 void osContGetReadData(OSContPad* pad) {
@@ -46,10 +46,10 @@ void osContGetReadData(OSContPad* pad) {
 No memset of the caller's buffer is needed: only the fields the game reads get written, and they're written unconditionally on every call.
 
 **Files:**
-- `libultraship/src/libultraship/libultra/os.cpp` — rewrite `osContGetReadData` to marshal through a local LUS-sized buffer.
+- `components/libultraship/src/components/libultraship/libultra/os.cpp` — rewrite `osContGetReadData` to marshal through a local LUS-sized buffer.
 
 Note: there is also a `/os.cpp` at the project root with an identical buggy `osContGetReadData`. It is **not** in the CMake build (the root `CMakeLists.txt` globs only `port/*` and `src/*`, and `libultraship` supplies the linked stub). It appears to be a leftover template from the LUS reference — harmless but misleading; treat as dead code.
 
-**Class-of-bug lesson:** When a header file from a third-party library (libultraship here, but OOT/MM ports have the same risk) re-uses a typename that also exists in the decomp's own `PR/os.h`, every compilation unit silently picks one layout or the other based on include order. Sizes diverge the moment either side adds a field. Any function that crosses the C↔C++ boundary with a pointer to one of these shared-name types is effectively calling across an ABI boundary with no type checking. Audit candidates: `OSContPad`, `OSContStatus`, `OSMesg`, `OSPifRam`, anything whose LUS definition has a size comment like `// size = 0xNN`.
+**Class-of-bug lesson:** When a header file from a third-party library (libultraship here, but OOT/MM ports have the same risk) reuses a typename that also exists in the decomp's own `PR/os.h`, every compilation unit silently picks one layout or the other based on include order. Sizes diverge the moment either side adds a field. Any function that crosses the C↔C++ boundary with a pointer to one of these shared-name types is effectively calling across an ABI boundary with no type checking. Audit candidates: `OSContPad`, `OSContStatus`, `OSMesg`, `OSPifRam`, anything whose LUS definition has a size comment like `// size = 0xNN`.
 
 The failure mode here — a stack-adjacent BSS array getting zeroed through an oversized memset — is very quiet: no crash, no visible glitch on the write, just a specific set of bytes in the next global becoming zero every frame. Easy to miss unless something downstream is sensitive to that specific location (here, the first field of the struct that happens to sit right after the array in link order).

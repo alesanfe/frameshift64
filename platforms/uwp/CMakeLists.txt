@@ -59,12 +59,12 @@ set_source_files_properties(${PKG_ASSETS} PROPERTIES
     VS_DEPLOYMENT_LOCATION "Assets"
 )
 
-file(GLOB FONT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/custom/fonts/*")
+file(GLOB FONT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/fonts/*")
 foreach(FONT_FILE ${FONT_FILES})
     set_source_files_properties("${FONT_FILE}" PROPERTIES
         VS_COPY_TO_OUT_DIR Always
         VS_DEPLOYMENT_CONTENT TRUE
-        VS_DEPLOYMENT_LOCATION "assets/custom/fonts"
+        VS_DEPLOYMENT_LOCATION "assets/fonts"
     )
 endforeach()
 

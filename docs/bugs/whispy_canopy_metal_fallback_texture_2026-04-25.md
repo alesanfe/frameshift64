@@ -9,7 +9,7 @@ canopy.  Fix lives in libultraship's Metal backend.
 
 In Pupupu, Whispy Woods' middle-tree canopy section renders with
 visible horizontal striping / smearing.  The earlier `SSB64_CURR_EQ_NEXT=1`
-runtime override at `decomp/src/sys/objdisplay.c` masked it by forcing
+runtime override at `components/decomp/src/sys/objdisplay.c` masked it by forcing
 `mobj->texture_id_curr` to equal `mobj->texture_id_next` so the cycle-2
 combine mixed two copies of the same texture instead of two genuinely
 different figatree frames.
@@ -51,7 +51,7 @@ matanim path leans on the original GL behavior of "unbound TEXEL1 = 0".
 
 ## Fix
 
-`libultraship/src/fast/backends/gfx_metal.cpp` (commit on the `ssb64`
+`components/libultraship/src/fast/backends/gfx_metal.cpp` (commit on the `ssb64`
 branch of the libultraship fork):
 
 1. After `Init()` finishes setting up the screen framebuffer, allocate a
@@ -91,7 +91,7 @@ The diagnostic was removed once the fallback fix was verified.
   GLD-zero-texture substitution and forced Metal as the macOS default
   to silence the GLD warning.  Still valid; the warning was a hint at
   the real divergence.
-- `decomp/src/sys/objdisplay.c` — `MOBJ_FLAG_FRAC` / `MOBJ_FLAG_SPLIT` /
+- `components/decomp/src/sys/objdisplay.c` — `MOBJ_FLAG_FRAC` / `MOBJ_FLAG_SPLIT` /
   `MOBJ_FLAG_ALPHA` matanim cycle-2 emission.  The
   `SSB64_CURR_EQ_NEXT=1` workaround there can stay as an emergency
   toggle but is no longer needed for default rendering.

@@ -37,6 +37,8 @@
 
 #include "mixer.h"
 
+extern void port_log(const char *fmt, ...);
+
 /* ------------------------------------------------------------------ */
 /*  Rounding helpers                                                  */
 /* ------------------------------------------------------------------ */
@@ -158,6 +160,7 @@ void aClearBufferImpl(uint16_t addr, int nbytes) {
 /* ================================================================== */
 
 void aSetBufferImpl(uint8_t flags, uint16_t in, uint16_t out, uint16_t nbytes) {
+	(void)flags;
 	rspa.in = in;
 	rspa.out = out;
 	rspa.nbytes = nbytes;
@@ -248,7 +251,6 @@ void aADPCMdecImpl(uint8_t flags, int16_t *state) {
 	 * decode in a Python reference.  Output samples are written after the
 	 * decode finishes.  Set SSB64_ADPCM_DUMP=1 to enable. */
 	{
-		extern void port_log(const char *fmt, ...);
 		static int dumped = -1;
 		if (dumped == -1) {
 			dumped = (getenv("SSB64_ADPCM_DUMP") && getenv("SSB64_ADPCM_DUMP")[0] == '1') ? 0 : -2;
@@ -379,7 +381,6 @@ void aResampleImpl(uint8_t flags, uint16_t pitch, int16_t *state) {
 	 * nbytes — enough for a Python reference to reproduce the math.
 	 * Set SSB64_RESAMPLE_DUMP=1 to enable. */
 	{
-		extern void port_log(const char *fmt, ...);
 		static int dumped = -1;
 		if (dumped == -1) {
 			dumped = (getenv("SSB64_RESAMPLE_DUMP") &&

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
 from pathlib import Path
 
 RE_INSTR = re.compile(
@@ -58,7 +57,7 @@ def decode(path: Path, base_reg: str) -> None:
         shr_signed = False
         store_dest = None
         for j in range(i + 1, min(i + 16, n)):
-            vj, opj, oj = instrs[j]
+            _vj, opj, oj = instrs[j]
             if opj == "sll" and len(oj) == 3 and oj[1] == after_reg:
                 try:
                     sll_k = int(oj[2].replace("0x", ""), 16) if "0x" in oj[2] else int(oj[2])
@@ -93,7 +92,7 @@ def decode(path: Path, base_reg: str) -> None:
         # look for a store in the next ~6 instructions that uses the shifted result
         if shr_k is not None:
             for j in range(i + 1, min(i + 20, n)):
-                vj, opj, oj = instrs[j]
+                _vj, opj, oj = instrs[j]
                 if opj in ("sw", "sh", "sb", "swc1", "sc", "mtc1") and len(oj) >= 2 and oj[0] == after_reg:
                     store_dest = oj[1]
                     break

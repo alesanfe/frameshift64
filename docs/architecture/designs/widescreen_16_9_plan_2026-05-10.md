@@ -14,7 +14,7 @@ Non-goal: arbitrary aspect ratios (21:9 etc.). 16:9 first; the architecture shou
 
 ## Constraints we must honor
 
-1. **Decomp preservation (CLAUDE.md rule 5):** changes to `decomp/src/` should be wrapped in `#ifdef PORT` *only when the change alters decomp call sites*. Prefer keeping decomp pristine and intercepting at the GBI / port boundary where possible.
+1. **Decomp preservation (CLAUDE.md rule 5):** changes to `components/decomp/src/` should be wrapped in `#ifdef PORT` *only when the change alters decomp call sites*. Prefer keeping decomp pristine and intercepting at the GBI / port boundary where possible.
 2. **Toggle-gated:** every behavior change reads `CVarGetInteger(kWidescreenCVar, 0)`; CVar=0 ⇒ exact current 4:3 behavior, byte-for-byte. This lets us ship incrementally and bisect regressions.
 3. **MIT attribution:** any file we lift from another port (Ship of Harkinian, Starship, 2 Ship 2 Harkinian, etc.) gets the SPDX/Portions-derived header that `src/resources/loading/audio/mixer.c:1-8` uses.
 
@@ -47,16 +47,16 @@ Goal: land all infrastructure with CVar default 0, so this is a no-op merge that
 
 Files to add (all auto-globbed by `CMakeLists.txt:182-183`):
 
-- `src/rendering/widescreen/widescreen.h`
+- `src/interfaces/rendering/widescreen/widescreen.h`
   - `bool port_widescreen_enabled();`
   - `float port_widescreen_aspect();` — returns `16.0f/9.0f` if enabled, else `4.0f/3.0f`
   - `void port_widescreen_get_viewport(s32* ulx, s32* uly, s32* lrx, s32* lry, s32 base_ulx, s32 base_uly, s32 base_lrx, s32 base_lry);` — given the decomp-baked 4:3 bounds, returns widened bounds (or pass-through when off)
   - `s32 port_widescreen_anchor_x(s32 base_x, port_widescreen_anchor_t anchor);` — for HUD anchor offsets
   - `bool port_widescreen_should_letterbox_2d();` — flag for full-screen authored effects
-- `src/rendering/widescreen/widescreen.cpp` — implements the helpers, reads `CVAR_WIDESCREEN_ENABLED`
-- `src/gameplay/enhancements.h` (existing) — add `const char* WidescreenCVarName();`
-- `src/rendering/widescreen/widescreen.cpp` — owns the CVar string `gEnhancements.Widescreen` (mirroring `kStageHazardsDisabledCVar` pattern from `src/gameplay/rules/DisableStageHazards.cpp:8`)
-- `src/presentation/PortMenu.cpp` — register checkbox under the existing **Enhancements** sidebar, mirroring the `StageHazardsDisabledCVarName()` registration at `PortMenu.cpp:314`. Tooltip: "Renders the game in native 16:9 widescreen. Some stage backgrounds may show visible edges. Restart not required."
+- `src/interfaces/rendering/widescreen/widescreen.cpp` — implements the helpers, reads `CVAR_WIDESCREEN_ENABLED`
+- `src/game/gameplay/enhancements.h` (existing) — add `const char* WidescreenCVarName();`
+- `src/interfaces/rendering/widescreen/widescreen.cpp` — owns the CVar string `gEnhancements.Widescreen` (mirroring `kStageHazardsDisabledCVar` pattern from `src/game/gameplay/rules/DisableStageHazards.cpp:8`)
+- `src/interfaces/presentation/PortMenu.cpp` — register checkbox under the existing **Enhancements** sidebar, mirroring the `StageHazardsDisabledCVarName()` registration at `PortMenu.cpp:314`. Tooltip: "Renders the game in native 16:9 widescreen. Some stage backgrounds may show visible edges. Restart not required."
 
 Verification: build clean; toggle the menu item; `CVarGet` reads correct values. No rendering change yet.
 
@@ -66,8 +66,8 @@ This phase makes the camera widescreen. HUD will misalign in this phase — that
 
 Two integration strategies, in decreasing order of preference:
 
-1. **Decomp-side: replace the hardcoded `15.0F / 11.0F` baseline.** `decomp/src/gm/gmcamera.c:18-19` is the only literal aspect; everywhere else computes from viewport bounds. Wrap the literal in `#ifdef PORT` and read from `port_widescreen_aspect()`.
-2. **Viewport-side: widen `syRdpSetViewport` calls.** The decomp computes aspect from `(lrx - ulx) / (lry - uly)` (sample at `sc1pgameboss.c`), so widening the viewport propagates to projection automatically. But there are *many* viewport call sites and each is per-overlay. We don't want to touch them all — instead intercept `syRdpSetViewport` itself in `decomp/src/sys/rdp.c:71-82` with a `#ifdef PORT` widen step that calls `port_widescreen_get_viewport()`.
+1. **Decomp-side: replace the hardcoded `15.0F / 11.0F` baseline.** `components/decomp/src/gm/gmcamera.c:18-19` is the only literal aspect; everywhere else computes from viewport bounds. Wrap the literal in `#ifdef PORT` and read from `port_widescreen_aspect()`.
+2. **Viewport-side: widen `syRdpSetViewport` calls.** The decomp computes aspect from `(lrx - ulx) / (lry - uly)` (sample at `sc1pgameboss.c`), so widening the viewport propagates to projection automatically. But there are *many* viewport call sites and each is per-overlay. We don't want to touch them all — instead intercept `syRdpSetViewport` itself in `components/decomp/src/sys/rdp.c:71-82` with a `#ifdef PORT` widen step that calls `port_widescreen_get_viewport()`.
 
 The combination of (1)+(2) gives correct projection across all overlays without touching individual stage code.
 
@@ -84,7 +84,7 @@ Once the camera is widescreen, the HUD that was centered on x=160 in a 320-wide 
 
 Approach: introduce `PORT_WIDESCREEN_ANCHOR_X(base, anchor)` macro that's a no-op when CVar is off. Audit and update call sites by category, not en masse:
 
-1. **Multiplayer match HUD** (`decomp/src/mp/`): damage%, stock icons, timer, ready-set-go, victory pose backdrops. Highest user value — do this first.
+1. **Multiplayer match HUD** (`components/decomp/src/mp/`): damage%, stock icons, timer, ready-set-go, victory pose backdrops. Highest user value — do this first.
 2. **Single-player intermission screens** (`sc1pintro`, `sc1pgameboss`, `sc1pbonusstage`): timer digits, score, character intros.
 3. **Menus** (CSS, stage select, options): mostly already centered; verify and patch outliers.
 4. **Opening / attract / credits** (`mvopening*`): low priority. Likely letterbox these wholesale — Phase 3.

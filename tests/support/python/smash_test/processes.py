@@ -30,8 +30,7 @@ def run_script(script: Path, *args: str, timeout: int = 300,
     proc = subprocess.run(
         [sys.executable, str(script), *args],
         capture_output=True, text=True, timeout=timeout,
-        env=env, cwd=cwd or script.parent,
-    )
+        env=env, cwd=cwd or script.parent, check=False)
     return ScriptResult(proc.returncode, proc.stdout + proc.stderr)
 
 

@@ -79,7 +79,7 @@ unemulated, the original priority becomes wrong.
 
 ## Fix
 
-`decomp/src/mv/mvopening/mvopeningroom.c`, two PORT-gated changes:
+`components/decomp/src/mv/mvopening/mvopeningroom.c`, two PORT-gated changes:
 
 1. **`mvOpeningRoomTransitionOverlayProcDisplay`**: early-return under
    `#ifdef PORT`. The Overlay mesh contributes nothing visible when

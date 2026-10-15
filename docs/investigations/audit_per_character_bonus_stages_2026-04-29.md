@@ -50,8 +50,8 @@ Each entry is **latent** — would fire only under specific conditions that have
 
 ### A1. Samus weapon `wp->owner_gobj` NULL deref class
 
-- `decomp/src/wp/wpsamus/wpsamuschargeshot.c:261`
-- `decomp/src/wp/wpsamus/wpsamusbomb.c:194`
+- `components/decomp/src/wp/wpsamus/wpsamuschargeshot.c:261`
+- `components/decomp/src/wp/wpsamus/wpsamusbomb.c:194`
 
 Both reflector callbacks call `ftGetStruct(wp->owner_gobj)` and then `wpMainReflectorSetLR(wp, fp)` (which derefs `fp->lr` at `wpmain.c:105`) with no NULL guard.
 
@@ -63,8 +63,8 @@ Fix shape would be a `if (wp->owner_gobj == NULL || ftGetStruct(wp->owner_gobj) 
 
 ### C1. Kirby specialhi `default: while (TRUE)` panic
 
-- `decomp/src/ft/ftchar/ftkirby/ftkirbyspecialhi.c:30-34` (flag1 default)
-- `decomp/src/ft/ftchar/ftkirby/ftkirbyspecialhi.c:82-87` (flag2 default)
+- `components/decomp/src/ft/ftchar/ftkirby/ftkirbyspecialhi.c:30-34` (flag1 default)
+- `components/decomp/src/ft/ftchar/ftkirby/ftkirbyspecialhi.c:82-87` (flag2 default)
 
 ```c
 default:
@@ -81,7 +81,7 @@ Fix shape would be `#ifdef PORT break; #else while (TRUE) {...} #endif`. Defer u
 
 ### C2. Kirby Mario-copy fireball — broken AVOID_UB safety net
 
-- `decomp/src/ft/ftchar/ftkirby/ftkirbycopymariospecialn.c:41-60`
+- `components/decomp/src/ft/ftchar/ftkirby/ftkirbycopymariospecialn.c:41-60`
 
 The `#if defined(AVOID_UB) return; #else break; #endif` block sits between two case labels with no preceding `default:`. Currently dead code — unreachable by switch design. The bug is the *safety net* is non-functional, not that the switch falls through today.
 
@@ -91,8 +91,8 @@ Defer — document the fragility; no need to ship a rewrite of the case dispatch
 
 ### C3. Ness PK Thunder double-reflect — documented in-source by decomp
 
-- `decomp/src/wp/wpness/wpnesspkthunder.c:613-617` (the deref site)
-- `decomp/src/wp/wpness/wpnesspkthunder.c:546-547` (the root cause + suggested fix)
+- `components/decomp/src/wp/wpness/wpnesspkthunder.c:613-617` (the deref site)
+- `components/decomp/src/wp/wpness/wpnesspkthunder.c:546-547` (the root cause + suggested fix)
 
 ```c
 // Line 546-547:

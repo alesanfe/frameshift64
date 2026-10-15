@@ -5,7 +5,7 @@
 
 **Decision:**
 - `src/` — all port-layer C++ code, split by responsibility: `application/`, `core/`, `bridge/`, `netplay/`, `features/`, `presentation/`, `resources/`, `platform/`, `compatibility/`.
-- `game/decomp/` stays physically at `decomp/` (submodule); same for `libultraship/`, `torch/`. Moving submodule paths is deferred — see ADR 0002.
+- `game/components/decomp/` stays physically at `components/decomp/` (submodule); same for `components/libultraship/`, `components/game-runtime/`. Moving submodule paths is deferred — see ADR 0002.
 - `services/netplay-lobby/` — the Cloudflare lobby service, deployable independently.
 - `mods/` — mod SDK, examples (ex `mods/examples/`), templates.
 - `tools/` — reusable programs; `scripts/` — thin automation; `tests/` — automated checks; `config/` — tool configuration; `docs/` — docs by function; `assets/` — source assets + extraction config; `out/` — all generated output (gitignored).

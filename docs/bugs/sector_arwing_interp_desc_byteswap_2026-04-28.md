@@ -29,7 +29,7 @@ So non-figatree spline descriptors decoded the wrong `kind` and `points_num`. Po
 
 ## Fix
 
-`decomp/src/sys/interp.c` now normalizes `SYInterpDesc` headers for both resource classes before any field reads:
+`components/decomp/src/sys/interp.c` now normalizes `SYInterpDesc` headers for both resource classes before any field reads:
 
 - For normal non-figatree descriptors, call `portFixupStructU16(desc, 0, 1)` to rotate descriptor word 0 into the byte order expected by the PORT `SYInterpDesc` struct. The full-width f32 fields and pointed-to f32 arrays are already native after pass1, so they are not touched.
 - For fighter figatree descriptors, keep the existing halfswapped first word, but un-halfswap full-width `unk04` and `length` once on first access. The existing gated data-block un-halfswap remains figatree-only.
@@ -38,6 +38,6 @@ This preserves the Samus dodge/figatree fix while restoring stage and movie spli
 
 ## Files Touched
 
-- `decomp/src/sys/interp.c`
-- `decomp/src/sys/interp.h`
+- `components/decomp/src/sys/interp.c`
+- `components/decomp/src/sys/interp.h`
 

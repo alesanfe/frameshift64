@@ -169,14 +169,14 @@ Issues surfaced by the real-NDK armeabi-v7a build (CI) that are absent on
 arm64-v8a (LP64), with their fixes:
 
 - **`malloc`/`calloc`/`realloc` redeclaration.** The decomp shim header
-  `decomp/include/stdlib.h` declared `malloc` with an `unsigned long` size
+  `components/decomp/include/stdlib.h` declared `malloc` with an `unsigned long` size
   param. On LP64 that equals `size_t`; on ILP32 `size_t` is `unsigned int`, so
   clang's `-Werror=incompatible-library-redeclaration` fired against the
   builtin `void *(unsigned int)`. The fix lives in the decomp submodule: under
   `PORT`, include `<stddef.h>` and declare `malloc(size_t)`, keeping the strict
   diagnostic enabled.
 
-- **`taskman.c` 64-bit guard.** `decomp/src/sys/taskman.c` had a PORT-only
+- **`taskman.c` 64-bit guard.** `components/decomp/src/sys/taskman.c` had a PORT-only
   `_Static_assert(sizeof(uintptr_t) == 8, ...)` — a blanket "PORT requires
   64-bit" guardrail (it protects no actual 8-byte packing). Relaxed to accept
   4- or 8-byte `uintptr_t`. This lives in the decomp submodule.

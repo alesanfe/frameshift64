@@ -1,5 +1,5 @@
 // Top-level build script. Plugin versions are pinned here; subprojects
-// just `id("...")` without re-declaring versions.
+// just `id("...")` without redeclaring versions.
 
 plugins {
     // AGP 8.13 is the first AGP line that fully supports Gradle 9.x, which

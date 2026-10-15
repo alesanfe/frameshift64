@@ -40,9 +40,9 @@ swapping back to OpenGL is safe for debugging.)
 The two backends share `Fast3dWindow.cpp` dispatch but diverge in
 the renderer implementation:
 
-- `libultraship/src/fast/backends/gfx_metal.cpp` — Metal renderer
-- `libultraship/src/fast/backends/gfx_opengl.cpp` — OpenGL renderer
-- `libultraship/src/fast/Fast3dWindow.cpp:141,147` — backend
+- `components/libultraship/src/fast/backends/gfx_metal.cpp` — Metal renderer
+- `components/libultraship/src/fast/backends/gfx_opengl.cpp` — OpenGL renderer
+- `components/libultraship/src/fast/Fast3dWindow.cpp:141,147` — backend
   selection switch
 
 Likely suspects in the Metal path:

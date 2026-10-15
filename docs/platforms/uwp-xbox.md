@@ -25,7 +25,7 @@ configuration file remain in UWP LocalState, so replacing the package or USB
 game data does not overwrite saves. Mods are loaded from `E:\BattleShip\mods`.
 
 The optional custom-stage CSS preview images are ROM-derived and therefore are
-not distributed. They can be generated with `tools/asset-pipeline/derive_stage_assets.py`
+not distributed. They can be generated with `tools/assets/pipeline/derive_stage_assets.py`
 (Python + Pillow) and copied to `E:\BattleShip\assets\css_icons`; gameplay does
 not depend on them.
 

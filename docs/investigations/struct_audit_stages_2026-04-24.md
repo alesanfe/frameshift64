@@ -3,10 +3,10 @@
 Target: explain why "some stages render properly, some don't" from struct-layout side (stage render vertex streams via Fast3D are out of scope).
 
 **Scope:**
-- `decomp/src/mp/mptypes.h`: `MPGroundData`, `MPGroundDesc`, `MPGeometryData`, `MPVertexData`, `MPVertexInfo`, `MPVertexLinks`, `MPLineData`, `MPLineInfo`, `MPMapObjData`, `MPItemWeights`, `MPYakumonoDObj`, `MPCollData`.
-- `decomp/src/gr/grtypes.h`: `GRAttackColl`, `GRHazard`, `GRObstacle`, `GRDisplayDesc`, `GRFileInfo`, `GRStruct` union.
-- `decomp/src/gr/grvars.h`: per-stage `GRCommonGroundVars*` / `GRBonusGroundVars*` variants.
-- `decomp/src/gr/grcommon/`, `decomp/src/gr/grbonus/`: stage init code.
+- `components/decomp/src/mp/mptypes.h`: `MPGroundData`, `MPGroundDesc`, `MPGeometryData`, `MPVertexData`, `MPVertexInfo`, `MPVertexLinks`, `MPLineData`, `MPLineInfo`, `MPMapObjData`, `MPItemWeights`, `MPYakumonoDObj`, `MPCollData`.
+- `components/decomp/src/gr/grtypes.h`: `GRAttackColl`, `GRHazard`, `GRObstacle`, `GRDisplayDesc`, `GRFileInfo`, `GRStruct` union.
+- `components/decomp/src/gr/grvars.h`: per-stage `GRCommonGroundVars*` / `GRBonusGroundVars*` variants.
+- `components/decomp/src/gr/grcommon/`, `components/decomp/src/gr/grbonus/`: stage init code.
 
 ---
 
@@ -32,7 +32,7 @@ Classification key:
 - **B** = plain-typed, contains pointers or mixed u8/u16 fields inside u32 words → check PORT-token coverage and fixup-range coverage.
 - **C** = purely scalar u32/f32, no subword fields, no pointers → pass1 BSWAP32 alone is correct.
 
-### `decomp/src/mp/mptypes.h`
+### `components/decomp/src/mp/mptypes.h`
 
 | Struct | Class | Notes |
 |---|---|---|
@@ -49,7 +49,7 @@ Classification key:
 | `MPYakumonoDObj` | **C** | Array of `DObj*` pointers. Runtime-allocated. **OK.** |
 | `MPCollData` | **C** | Huge runtime state only, never ROM-loaded. **OK.** |
 
-### `decomp/src/gr/grtypes.h`
+### `components/decomp/src/gr/grtypes.h`
 
 | Struct | Class | Notes |
 |---|---|---|
@@ -59,7 +59,7 @@ Classification key:
 | `GRFileInfo` | **Special** | `intptr_t file_id, offset` — on LP64 each entry is 16 bytes (vs. 8 on N64). **This is fine** because the arrays (`dMPCollisionGroundFileInfos`, `dMNMapsFileInfos`) are compile-time C initializers of symbolic constants — no ROM data is being indexed by this layout. **OK.** |
 | `GRStruct` union | **C** | Union of per-stage variant structs; allocated in RAM, never ROM-loaded. Per-variant details in next section. |
 
-### `decomp/src/gr/grvars.h` — per-stage variants
+### `components/decomp/src/gr/grvars.h` — per-stage variants
 
 All of these are **runtime** structs (game state held in `gGRCommonStruct` at `grcommon/*.c`). Not ROM-loaded. Filled in by per-stage `grXInitAll` with runtime pointers / computed values. **All Class C from the ROM-load perspective.**
 
@@ -114,12 +114,12 @@ Four pointer-sized fields on PORT as `u32` tokens (`dobjdesc`, `anim_joints`, `p
 
 **Systemic issue with callers (not the struct itself):** 7 call sites in `sc1pmode/*.c` and `ef/efground.c` do `(uintptr_t)gr_desc[1].dobjdesc` without `PORT_RESOLVE`. See §1 stage table. Listed inline here for grep convenience:
 
-- `decomp/src/sc/sc1pmode/sc1pbonusstage.c:452` — Break the Targets dobjdesc
-- `decomp/src/sc/sc1pmode/sc1pbonusstage.c:453` — Break the Targets anim_joints
-- `decomp/src/sc/sc1pmode/sc1pgame.c:1571, 1573` — Final Destination camera anim
-- `decomp/src/sc/sc1pmode/sc1pgame.c:2042, 2044` — FD boss-defeat camera anim
-- `decomp/src/sc/sc1pmode/sc1pgameboss.c:1020` — Master Hand file_head
-- `decomp/src/ef/efground.c:1594` — ambient effects file_head
+- `components/decomp/src/sc/sc1pmode/sc1pbonusstage.c:452` — Break the Targets dobjdesc
+- `components/decomp/src/sc/sc1pmode/sc1pbonusstage.c:453` — Break the Targets anim_joints
+- `components/decomp/src/sc/sc1pmode/sc1pgame.c:1571, 1573` — Final Destination camera anim
+- `components/decomp/src/sc/sc1pmode/sc1pgame.c:2042, 2044` — FD boss-defeat camera anim
+- `components/decomp/src/sc/sc1pmode/sc1pgameboss.c:1020` — Master Hand file_head
+- `components/decomp/src/ef/efground.c:1594` — ambient effects file_head
 
 All seven need `PORT_RESOLVE(gMPCollisionGroundData->gr_desc[1].dobjdesc)` in place of the bare cast. Pattern is identical to fixes already applied in `grinishie.c:568`, `grpupupu.c:666`, etc.
 
@@ -181,8 +181,8 @@ No new bitfield-class (A) structs were found in the audited files — the stage-
 
 ## Appendix — search methodology
 
-- Enumerated per-stage files: `ls decomp/src/gr/grcommon/ decomp/src/gr/grbonus/` (10 stage .c/.h files).
-- Grepped for `portFixupStruct*` in `decomp/src/mp/` and `decomp/src/gr/` — all calls live in `mpcollision.c`.
+- Enumerated per-stage files: `ls components/decomp/src/gr/grcommon/ components/decomp/src/gr/grbonus/` (10 stage .c/.h files).
+- Grepped for `portFixupStruct*` in `components/decomp/src/mp/` and `components/decomp/src/gr/` — all calls live in `mpcollision.c`.
 - Grepped for `PORT_RESOLVE` + `gr_desc[*].dobjdesc` — 90 resolved, 7 unresolved → the unresolved set is the §1 bug list.
-- Read `src/integration/decomp/lbreloc_byteswap.cpp:985-1017` to confirm `portFixupStructU16` is rotate16 and `portFixupStructU32` is `__builtin_bswap32`.
+- Read `src/game/engine/decomp/lbreloc_byteswap.cpp:985-1017` to confirm `portFixupStructU16` is rotate16 and `portFixupStructU32` is `__builtin_bswap32`.
 - No rabbitizer disasm needed: no `IS_BIG_ENDIAN` bitfield structs in the audited headers.

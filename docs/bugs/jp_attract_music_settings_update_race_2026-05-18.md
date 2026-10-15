@@ -1,8 +1,8 @@
 # JP build: attract/intro music silent — PORT audio settings-update race
 
 **Date:** 2026-05-18
-**Area:** `decomp/src/sc/scmanager.c` (`scManagerRunLoop`, `#ifdef PORT`
-branch) ↔ `decomp/src/sys/audio.c` audio-thread settings-update restart
+**Area:** `components/decomp/src/sc/scmanager.c` (`scManagerRunLoop`, `#ifdef PORT`
+branch) ↔ `components/decomp/src/sys/audio.c` audio-thread settings-update restart
 **Symptom (JP only):** attract/intro/title BGM silent. SFX works, stage
 music works, JP text/assets fine. US plays the same sequence correctly.
 

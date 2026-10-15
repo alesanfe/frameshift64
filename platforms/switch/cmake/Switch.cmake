@@ -9,10 +9,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     # with hundreds of undefined SDL/OpenGL symbols. Scan the vendored LUS
     # sources and fail at configure time with an actionable message instead.
     file(GLOB_RECURSE SSB64_LUS_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/libultraship/src/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/libultraship/src/*.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/libultraship/src/*.h"
-        "${CMAKE_CURRENT_SOURCE_DIR}/libultraship/include/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/components/libultraship/src/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/components/libultraship/src/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/components/libultraship/src/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/components/libultraship/include/*.h"
     )
     set(SSB64_LUS_HAS_SWITCH FALSE)
     foreach(lus_src IN LISTS SSB64_LUS_SOURCES)
@@ -109,7 +109,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
             "${CMAKE_BINARY_DIR}/f3d.o2r"
             "${SWITCH_GAME_DIR}/"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/assets/configuration/controllers/gamecontrollerdb.txt"
+            "${CMAKE_SOURCE_DIR}/config/controllers/gamecontrollerdb.txt"
             "${SWITCH_GAME_DIR}/gamecontrollerdb.txt"
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "${SWITCH_GAME_DIR}/shader_cache"

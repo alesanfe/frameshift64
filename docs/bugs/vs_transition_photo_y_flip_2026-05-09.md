@@ -3,7 +3,7 @@
 **Date:** 2026-05-09
 **Class:** Decomp/port-bridge orientation mismatch + OpenGL FBO sample-direction asymmetry
 **Issue:** GitHub #157
-**Files:** `decomp/src/lb/lbtransition.c`, `libultraship/src/fast/{interpreter.cpp, backends/gfx_opengl.cpp}`, `libultraship/include/fast/backends/{gfx_rendering_api.h, gfx_opengl.h}`
+**Files:** `components/decomp/src/lb/lbtransition.c`, `components/libultraship/src/fast/{interpreter.cpp, backends/gfx_opengl.cpp}`, `components/libultraship/include/fast/backends/{gfx_rendering_api.h, gfx_opengl.h}`
 **Status:** RESOLVED on D3D11, Metal, and OpenGL.
 
 ## Symptom
@@ -20,7 +20,7 @@ The VS photo capture and the 1P photo capture call the same bridge entry
 point (`port_capture_register_fb_for_subrect`) but the original N64 memcpy
 loops they replace walk the framebuffer in **opposite directions**:
 
-`decomp/src/sc/sc1pmode/sc1pstageclear.c:2268-2300` (1P stage clear):
+`components/decomp/src/sc/sc1pmode/sc1pstageclear.c:2268-2300` (1P stage clear):
 
 ```c
 framebuffer_pixels = ... + SYVIDEO_BORDER_SIZE(320, 10, u16) + SYVIDEO_BORDER_SIZE(1, 10, u16);
@@ -33,7 +33,7 @@ for (i = 0; i < 220; i++) {
 
 → heap row 0 = N64 row 10 (TOP of photo).
 
-`decomp/src/lb/lbtransition.c:326-338` (VS transition):
+`components/decomp/src/lb/lbtransition.c:326-338` (VS transition):
 
 ```c
 framebuffer_pixels = ... + SYVIDEO_BORDER_SIZE(320, 10, u16)

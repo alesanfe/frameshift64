@@ -48,9 +48,9 @@ Forces every item spawn to be a bumper. One bumper spawns at a time.
 ## What is verified
 
 1. **The bumper goes through the opaque display path.** A `port_log` placed in
-   `itDisplayOPAProcDisplay` (`decomp/src/it/itdisplay.c`) fires for every bumper draw
+   `itDisplayOPAProcDisplay` (`components/decomp/src/it/itdisplay.c`) fires for every bumper draw
    and reports `attr->is_display_xlu=0`, `attr->is_display_colanim=0`,
-   `kind_dump=16`. Routing in `itManagerCreateItem` (`decomp/src/it/itmanager.c`) is:
+   `kind_dump=16`. Routing in `itManagerCreateItem` (`components/decomp/src/it/itmanager.c`) is:
 
    ```c
    if (attr->is_display_colanim)
@@ -77,7 +77,7 @@ Forces every item spawn to be a bumper. One bumper spawns at a time.
 
 3. **An ImportTexture-side diagnostic gated on a "drawing bumper" flag does
    not fire.** A flag set/cleared around the bumper proc in `itdisplay.c` was
-   intended to gate logging inside `libultraship/src/fast/interpreter.cpp`, but
+   intended to gate logging inside `components/libultraship/src/fast/interpreter.cpp`, but
    the flag is always 0 by the time the queued DL actually runs. This is
    consistent with Fast3D's known async DL queue: C-side state set during the
    game-tick draw pass cannot be read from the renderer pass that consumes the

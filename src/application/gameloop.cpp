@@ -21,13 +21,13 @@
 
 #include "gameloop.h"
 #include "coroutine.h"
-#include "netplay/session/netlobby.h"
-#include "gameplay/enhancements.h"
+#include "networking/netplay/session/netlobby.h"
+#include "game/gameplay/enhancements.h"
 #include "resources/interpolation/frame_interpolation.h"
-#include "rendering/widescreen/widescreen.h"
+#include "interfaces/rendering/widescreen/widescreen.h"
 #include "port.h"
 #include "port_watchdog.h"
-#include "integration/hooks/Events.h"
+#include "game/engine/hooks/Events.h"
 
 #include <libultraship/libultraship.h>
 #include <libultraship/bridge/eventsbridge.h>
@@ -66,7 +66,7 @@ extern "C" int portFastCaptureBackbufferPNG(const char *path);
 /* Simulated N64 VI VBlank: propagates the queued framebuffer to "current"
  * so the scheduler's CheckReadyFramebuffer fnCheck can correctly stall a
  * gfx task when VI is still using the slot the game wants to draw into.
- * Implemented in src/compatibility/n64_stubs.c. */
+ * Implemented in src/platform/compatibility/n64_stubs.c. */
 extern "C" void port_vi_simulate_vblank(void);
 
 /* Save-write failure reporting — sticky flag in port_save.cpp polled once
@@ -98,7 +98,7 @@ extern OSMesgQueue gSYSchedulerTaskMesgQueue;
  * port_make_os_mesg_int() — fully-initialised OSMesg from an integer code.
  *
  * The decomp treats OSMesg as `void*` (PR/os.h); libultraship treats it as a
- * union { u8; u16; u32; void*; } (libultraship/libultra/message.h). Both are
+ * union { u8; u16; u32; void*; } (components/libultraship/libultra/message.h). Both are
  * 8 bytes, so the calling convention matches, but writing only one union
  * member from C++ leaves the remaining bytes uninitialised — whatever was on
  * the stack in that slot. On MSVC/x64 those bytes happened to be zero and
@@ -908,9 +908,9 @@ void PortPushFrame(void)
 			sFreezePacing = (env != nullptr) ? std::atoi(env) : 1;
 		}
 		if (sFreezePacing) {
-			auto context = Ship::Context::GetInstance();
-			auto window = context
-				? std::dynamic_pointer_cast<Fast::Fast3dWindow>(context->GetWindow())
+			auto ctx = Ship::Context::GetInstance();
+			auto window = ctx
+				? std::dynamic_pointer_cast<Fast::Fast3dWindow>(ctx->GetWindow())
 				: nullptr;
 			if (window) {
 				/* Held frame: present k paced subframes of the cached

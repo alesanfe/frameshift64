@@ -38,7 +38,7 @@ Pixel bytes like `FF0011FF` decode to R=255,G=0,B=17,A=255 (opaque dark-red), co
 
 ### XOR-4 TMEM deswizzle is NOT applied to 32bpp — this is correct
 
-decomp/include/PR/gbi.h defines:
+components/decomp/include/PR/gbi.h defines:
 ```c
 #define G_IM_SIZ_32b_LOAD_BLOCK  G_IM_SIZ_32b   // NOT G_IM_SIZ_16b
 ```
@@ -49,7 +49,7 @@ Empirical test confirmed: applying XOR-4 to 32bpp data reversed the gradient on 
 
 ### `line_size *= 2` fix in interpreter.cpp is present and correct
 
-`G_IM_SIZ_32b_LINE_BYTES = 2` means the SetTile `line` field is half the actual DRAM stride. The fix at `libultraship/src/fast/interpreter.cpp:2149-2152` doubles `line_size` for G_IM_SIZ_32b tiles before computing tex_width/tex_height:
+`G_IM_SIZ_32b_LINE_BYTES = 2` means the SetTile `line` field is half the actual DRAM stride. The fix at `components/libultraship/src/fast/interpreter.cpp:2149-2152` doubles `line_size` for G_IM_SIZ_32b tiles before computing tex_width/tex_height:
 - line=43 bytes → ×8 = 344 → ×2 = 688 → ÷4 = tex_width=172 ✓
 - tex_size_bytes=2752 / 688 = tex_height=4 ✓
 
@@ -75,12 +75,12 @@ This is correct. No change needed here.
 
 ## Files Involved
 
-- `decomp/src/mn/mncommon/mntitle.c` — title screen sprite creation
-- `decomp/src/lb/lbcommon.c:2629-2675` — `lbCommonDrawSObjBitmap` 32bpp LOAD_BLOCK + SetTile GBI sequence
-- decomp/include/PR/gbi.h:455,460` — `G_IM_SIZ_32b_LINE_BYTES=2`, `G_IM_SIZ_32b_LOAD_BLOCK=G_IM_SIZ_32b`
-- `libultraship/src/fast/interpreter.cpp:2143-2173` — `line_size *= 2` for G_IM_SIZ_32b (present, correct)
-- `libultraship/src/fast/interpreter.cpp:863-912` — `ImportTextureRgba32`
-- `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData` (BSWAP + deswizzle logic)
+- `components/decomp/src/mn/mncommon/mntitle.c` — title screen sprite creation
+- `components/decomp/src/lb/lbcommon.c:2629-2675` — `lbCommonDrawSObjBitmap` 32bpp LOAD_BLOCK + SetTile GBI sequence
+- components/decomp/include/PR/gbi.h:455,460` — `G_IM_SIZ_32b_LINE_BYTES=2`, `G_IM_SIZ_32b_LOAD_BLOCK=G_IM_SIZ_32b`
+- `components/libultraship/src/fast/interpreter.cpp:2143-2173` — `line_size *= 2` for G_IM_SIZ_32b (present, correct)
+- `components/libultraship/src/fast/interpreter.cpp:863-912` — `ImportTextureRgba32`
+- `src/game/engine/decomp/lbreloc_byteswap.cpp` — `portFixupSpriteBitmapData` (BSWAP + deswizzle logic)
 
 ## Next Investigation Steps
 

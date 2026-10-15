@@ -3,7 +3,7 @@
 #
 # CMake (CMakeLists.txt + CMakePresets.json + cmake/) remains the source of
 # truth for compilation. This Makefile only provides short, consistent
-# commands over CMake, ctest, pytest (tools/testing/run_tests.py), the
+# commands over CMake, ctest, pytest (tools/developer/testing/run_tests.py), the
 # standalone drivers in tests/, and the platform scripts in scripts/.
 #
 #   make setup                       doctor + submodules + lobby-install + configure
@@ -143,18 +143,18 @@ endif
 # ------------------------------------------------------------------------------
 # Real scripts / dirs (verified against the tree — keep in sync)
 # ------------------------------------------------------------------------------
-LINT_SCRIPT          := tools/lint/run_project_lint.py
-MODULE_DEPS_SCRIPT   := tools/lint/check_module_deps.py
-ENV_VARS_SCRIPT      := tools/lint/check_env_vars.py
-DOCS_CHECK_SCRIPT    := tools/lint/check_docs.py
-RETIRED_PATHS_SCRIPT := tools/lint/check_retired_paths.py
-RELEASE_BIN_SCRIPT   := tools/lint/check_release_binary.py
-CVAR_SCHEMA_SCRIPT   := tools/lint/check_cvar_schema.py
-GEN_HEADERS_SCRIPT   := tools/lint/check_generated_headers.py
-SBOM_SCRIPT          := tools/lint/gen_sbom.py
-TEST_RUNNER          := tools/testing/run_tests.py
-COVERAGE_TOOL        := tools/testing/coverage.py
-PARSER_FUZZ          := tools/fuzz/run_parser_fuzz.py
+LINT_SCRIPT          := tools/analysis/lint/run_project_lint.py
+MODULE_DEPS_SCRIPT   := tools/analysis/lint/check_module_deps.py
+ENV_VARS_SCRIPT      := tools/analysis/lint/check_env_vars.py
+DOCS_CHECK_SCRIPT    := tools/analysis/lint/check_docs.py
+RETIRED_PATHS_SCRIPT := tools/analysis/lint/check_retired_paths.py
+RELEASE_BIN_SCRIPT   := tools/analysis/lint/check_release_binary.py
+CVAR_SCHEMA_SCRIPT   := tools/analysis/lint/check_cvar_schema.py
+GEN_HEADERS_SCRIPT   := tools/analysis/lint/check_generated_headers.py
+SBOM_SCRIPT          := tools/analysis/lint/gen_sbom.py
+TEST_RUNNER          := tools/developer/testing/run_tests.py
+COVERAGE_TOOL        := tools/developer/testing/coverage.py
+PARSER_FUZZ          := tools/analysis/fuzz/run_parser_fuzz.py
 LOBBY_DIR            := services/netplay-lobby
 LOBBY_SECURITY       := $(LOBBY_DIR)/tests/test-lobby-security.js
 LOBBY_FUZZ           := $(LOBBY_DIR)/tests/test-lobby-fuzz.js
@@ -288,7 +288,8 @@ REQUIRED_FILES := CMakeLists.txt CMakePresets.json Makefile pyproject.toml \
 	$(TEST_RUNNER) $(LINT_SCRIPT) $(MODULE_DEPS_SCRIPT) \
 	$(LOBBY_DIR)/package.json $(LOBBY_DIR)/package-lock.json \
 	roms/README.md
-REQUIRED_DIRS  := src include decomp libultraship torch cmake tools \
+REQUIRED_DIRS  := src include components/decomp components/libultraship \
+	components/game-runtime cmake tools \
 	assets assets/game config/controllers services platforms tests docs \
 	config generated specs roms
 

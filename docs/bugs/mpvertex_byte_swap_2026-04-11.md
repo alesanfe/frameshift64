@@ -22,7 +22,7 @@ Both fixups run before `mpCollisionInitLineIDsAll` / `func_ovl2_800FB554`, so do
 
 Samus snaps down to Y=-258.6, which matches Kongo Jungle's right-side lower platform. Both fighters enter `nMPKineticsGround` instead of `nMPKineticsAir`.
 
-**Files:** `decomp/src/mp/mpcollision.c` — `mpCollisionInitGroundData`.
+**Files:** `components/decomp/src/mp/mpcollision.c` — `mpCollisionInitGroundData`.
 
 **Caveat:** The rotate16 formula `(byte_count + 3) / 4` rounds up, so for odd struct counts it overruns the last struct by 2 bytes into whatever data follows the array in the file. Since `portFixupStructU16` is idempotent-per-(base, offset) but not idempotent-by-math, if the 2-byte overrun touches data that another fixup also rotates, the adjacent data could end up double-rotated (= corrupt). No regression observed across scenes 27-45 in a 180-second run, but this remains a latent risk class for any stage whose vertex data is immediately followed by another byte-swap-sensitive struct.
 

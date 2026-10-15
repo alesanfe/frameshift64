@@ -1,6 +1,6 @@
 # Strict warnings for FIRST-PARTY port code only (src/). Attach to the
 # ssb64_port_options interface so smash_* modules + exe inherit them;
-# external code (decomp/, libultraship/, torch/, FetchContent deps) never
+# external code (components/decomp/, components/libultraship/, components/game-runtime/, FetchContent deps) never
 # sees these flags — their warnings must not gate our build.
 #
 # SSB64_WARNINGS_AS_ERRORS=ON promotes warnings to errors for the same

@@ -1,7 +1,7 @@
 name: README stats
 
 # GitHub renders README images as static assets, so the charts under
-# assets/readme-stats are regenerated and committed by this workflow.
+# assets/branding/readme are regenerated and committed by this workflow.
 # Star timestamps are available directly from the stargazers API. Release
 # download timestamps are not, so the downloads chart uses current asset
 # counts grouped by release tag, platform, and ROM region.
@@ -16,7 +16,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/readme-stats.yml'
-      - 'tools/codegen/generate_readme_stats.py'
+      - 'tools/code-generation/generate_readme_stats.py'
       - 'README.md'
 
 permissions:
@@ -46,12 +46,12 @@ jobs:
             echo "README_STATS_TOKEN is not configured on this repository; skipping chart generation."
             exit 0
           fi
-          python3 tools/codegen/generate_readme_stats.py --repo "$GITHUB_REPOSITORY"
+          python3 tools/code-generation/generate_readme_stats.py --repo "$GITHUB_REPOSITORY"
       - name: Commit chart updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A assets/readme-stats
+          git add -A assets/branding/readme
           if git diff --cached --quiet; then
             echo "README stats are already up to date."
             exit 0

@@ -2,7 +2,7 @@
 
 **Status:** accepted (2026-10)
 
-Client netplay code lives in `src/netplay/` (was `src/netplay/`): lobby client (`netlobby.*`), ruleset sync (`netrules.*`), UDP transport (`udp_transport.*`), WebSocket transport (`websocket_transport.*`), rollback segment config (`netrollback_seg.h`).
+Client netplay code lives in `src/networking/netplay/` (was `src/networking/netplay/`): lobby client (`netlobby.*`), ruleset sync (`netrules.*`), UDP transport (`udp_transport.*`), WebSocket transport (`websocket_transport.*`), rollback segment config (`netrollback_seg.h`).
 
 The lobby **service** lives in `services/netplay-lobby/` (was `server/`): `services/netplay-lobby/src/infrastructure/cloudflare/worker.js` is the deployable Durable-Object worker, `services/netplay-lobby/src/infrastructure/local/node-lobby.mjs` the local-dev stand-in, `services/netplay-lobby/tests/security/test-lobby-security.js` its security test.
 

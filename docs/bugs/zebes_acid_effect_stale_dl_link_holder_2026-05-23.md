@@ -7,13 +7,13 @@ multiple repro attempts**.
 **Family:** [`dl_link_stale_pointer_guard_2026-05-09`](dl_link_stale_pointer_guard_2026-05-09.md) /
 [`linux_stale_scene_data_family_2026-05-11`](linux_stale_scene_data_family_2026-05-11.md)
 **Platform:** Linux glibc — observed on Fedora 43 / Nobara, native Release builds.
-**Files affected for diagnosis:** `decomp/src/sys/objdisplay.c` (augmented bail log),
-`decomp/src/sys/objman.c` (per-GObj alloc tracking macro). Both still in place as tripwires for
+**Files affected for diagnosis:** `components/decomp/src/sys/objdisplay.c` (augmented bail log),
+`components/decomp/src/sys/objman.c` (per-GObj alloc tracking macro). Both still in place as tripwires for
 future regressions of this class.
 
 ## The fix (landed)
 
-`decomp/src/sc/scmanager.c::scManagerRunLoop` — alongside the existing Issue #103 `fighter_gobj`
+`components/decomp/src/sc/scmanager.c::scManagerRunLoop` — alongside the existing Issue #103 `fighter_gobj`
 NULLing at the top of the `while (TRUE)` scene-dispatch loop, two new PORT-only blocks before
 the `switch (gSCManagerSceneData.scene_curr)`:
 
@@ -105,8 +105,8 @@ cross-referencing the bailed `gobj=` address against the `gobj_alloc` records an
 
 | Stale GObj | Allocator call | Source line | BSS holder |
 |---|---|---|---|
-| **Ground** (`id = 1010 = nGCCommonKindGround`, `link_id = 1 = nGCCommonLinkIDGround`) — persistent every frame | `grZebesMakeAcid` | `decomp/src/gr/grcommon/grzebes.c:84` | `gGRCommonStruct.zebes.map_gobj` (set at line 85, **never cleared**) |
-| **Effect** (`id = 1011 = nGCCommonKindEffect`, `link_id = 6 = nGCCommonLinkIDEffect`) — transient, frame 30 only | `efManagerMakeEffect` (and many siblings in `efmanager.c`) | `decomp/src/ef/efmanager.c:1964` etc. | Various per-effect storage; effect free-list and instance lists in `gEFManager...` globals |
+| **Ground** (`id = 1010 = nGCCommonKindGround`, `link_id = 1 = nGCCommonLinkIDGround`) — persistent every frame | `grZebesMakeAcid` | `components/decomp/src/gr/grcommon/grzebes.c:84` | `gGRCommonStruct.zebes.map_gobj` (set at line 85, **never cleared**) |
+| **Effect** (`id = 1011 = nGCCommonKindEffect`, `link_id = 6 = nGCCommonLinkIDEffect`) — transient, frame 30 only | `efManagerMakeEffect` (and many siblings in `efmanager.c`) | `components/decomp/src/ef/efmanager.c:1964` etc. | Various per-effect storage; effect free-list and instance lists in `gEFManager...` globals |
 
 Both wrappers pass `func_run=NULL` by design (effects are driven by `efManagerFuncRun`; ground
 GObjs run via `gcAddGObjProcess`-attached callbacks), so the `func_run=(nil)` in the bail log isn't
@@ -121,7 +121,7 @@ damage — it's confirmation that we're looking at the right kinds.
    `llGRZebesMapAcidDObjDesc`) has `dl_link` fields pointing into the loaded reloc data which
    lives in the **scene arena**.
 2. The attract demo advances to the next opening scene. The port's recycle path in
-   `syTaskmanStartTask` (`decomp/src/sys/taskman.c:1356`) — and equivalent scene-cleanup paths
+   `syTaskmanStartTask` (`components/decomp/src/sys/taskman.c:1356`) — and equivalent scene-cleanup paths
    inside `scManagerRunLoop` — `memset(0)` the scene arena. **The Zebes Ground GObj is NOT
    destroyed** — there is no `grZebesDestroy` / `grZebesUnload`, no per-stage teardown hook, and
    no generic mass-clear of `gGCCommonLinks[]`. The GObj remains linked.
@@ -160,7 +160,7 @@ the GObj kept its stale `dl_link` for the rest of the run. Reverted.
 
 ## Where the fix actually needs to go
 
-The right hook is **inside `scManagerRunLoop`** in `decomp/src/sc/scmanager.c`, around the
+The right hook is **inside `scManagerRunLoop`** in `components/decomp/src/sc/scmanager.c`, around the
 top of the `while (TRUE) { switch (gSCManagerSceneData.scene_curr) { ... } }` block at line 944.
 A PORT-gated cross-scene cleanup block already exists there at lines 961-965 — the existing block
 NULLs `fighter_gobj` slots in the three persistent battle-state structs across scene boundaries
@@ -178,7 +178,7 @@ right place and the right precedent. The fix should:
    the BSS pointer dangling. Known holders to clear:
    - `gGRCommonStruct.zebes.map_gobj` (and the equivalent for every other stage in
      `gGRCommonStruct.*.{map_gobj, ground_gobj, twister_gobj, gate_gobj, tarucann_gobj}` — see
-     `grep -rn 'gGRCommonStruct\.[a-z_]*\.[a-z_]*gobj' decomp/src/gr/`)
+     `grep -rn 'gGRCommonStruct\.[a-z_]*\.[a-z_]*gobj' components/decomp/src/gr/`)
    - Effect-manager free lists / instance arrays in `gEFManager*` globals (need to enumerate)
    - Likely similar holders in `gMP*`, `gFT*`, `gWP*`, `gIT*` namespaces.
 3. **Order matters:** sweep BEFORE any subsequent arena memset on the same boundary, so
@@ -193,12 +193,12 @@ right place and the right precedent. The fix should:
 Two patches added this session that are NOT cleanup-worthy on their own and should be **retained**
 in `linux-stability-fixes` to help the agent that picks this up:
 
-- **`decomp/src/sys/objdisplay.c::gcDrawDObjTreeDLLinks` bail log** augmented to include
+- **`components/decomp/src/sys/objdisplay.c::gcDrawDObjTreeDLLinks` bail log** augmented to include
   `dobj.flags`, `dobj.vec`, `parent_gobj` (pointer + `id`, `link_id`, `obj_kind`, `func_run`
   pointer), and a 16-byte hex dump of the stale `dl_link` memory. The `gobj.id` + caller LR
   combination is the pin-down — without these the family doc could only narrow to "some Ground /
   some Effect GObj."
-- **`decomp/src/sys/objman.c::PORT_LOG_GOBJ_ALLOC` macro** at the four
+- **`components/decomp/src/sys/objman.c::PORT_LOG_GOBJ_ALLOC` macro** at the four
   `gcMakeGObj{SPAfter,SPBefore,After,Before}` wrappers, filtered to the leak-prone kinds
   (`id=1010` Ground, `id=1011` Effect) to keep log volume low. Each record:
 

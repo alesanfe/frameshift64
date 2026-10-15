@@ -88,7 +88,7 @@ static void init_lut(void)
 {
 	int i;
 	if (sLutInit) return;
-	memset(sOpcodeLut, 0, sizeof(sOpcodeLut));
+	memset((void *)sOpcodeLut, 0, sizeof(sOpcodeLut));
 	for (i = 0; i < sOpcodeTableSize; i++) {
 		sOpcodeLut[sOpcodeTable[i].opcode] = sOpcodeTable[i].name;
 	}

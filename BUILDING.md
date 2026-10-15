@@ -92,9 +92,9 @@ the same flow (`cmake --preset windows-release`).
 - Switching versions is just a different build dir + `-DSSB64_VERSION`;
   both can be built and kept side by side.
 - A normal build also produces the standalone `torch` sidecar and copies
-  `config.yml`, `assets/configuration/extraction/<ver>`, `f3d.o2r`, `assets/configuration/controllers/gamecontrollerdb.txt`, and the
+  `config.yml`, `assets/game/<ver>`, `f3d.o2r`, `config/controllers/gamecontrollerdb.txt`, and the
   menu fonts next to the executable.
-- The checked-in reloc YAMLs (`assets/configuration/extraction/<ver>/reloc_*.yml`) and the
+- The checked-in reloc YAMLs (`assets/game/<ver>/reloc_*.yml`) and the
   generated `src/resources/RelocFileTable.<ver>.cpp` are treated as
   source inputs, not rebuilt on every compile.
 

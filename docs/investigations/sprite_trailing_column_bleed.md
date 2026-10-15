@@ -1,7 +1,7 @@
 # Sprite Trailing-Column Bleed — Fighter-Intro "MARIO" Title Card
 
 **Date:** 2026-04-11
-**Files touched:** `src/integration/decomp/lbreloc_byteswap.cpp` (`portFixupSpriteBitmapData`)
+**Files touched:** `src/game/engine/decomp/lbreloc_byteswap.cpp` (`portFixupSpriteBitmapData`)
 
 ## Symptom
 
@@ -79,7 +79,7 @@ sampler ever touches the unused column, so the smear does not appear.
 > The actual root cause was a Fast3D upload/UV-normalisation mismatch in
 > libultraship (GPU texture uploaded at `width_img`, UV normalised by
 > `width`, producing a subtle right-edge stretch).  The fix now lives in
-> `libultraship/src/fast/interpreter.cpp` as a new
+> `components/libultraship/src/fast/interpreter.cpp` as a new
 > `ClampUploadWidthToTile` helper called from `ImportTextureIA8` and
 > `ImportTextureI4`.  See `docs/bugs/title_border_right_edge_slice_2026-04-14.md`
 > for the full writeup.  The two earlier port-side revisions (zero-fill

@@ -8,7 +8,7 @@ Known bug class example: `GMRumbleEventDefault` (fixed 2026-04-19) — positiona
 
 ## Structs with Endian-Conditional Bitfields (Full Inventory)
 
-### Fighter Motion / Animation Events (decomp/src/ft/fttypes.h)
+### Fighter Motion / Animation Events (components/decomp/src/ft/fttypes.h)
 
 **Union with endian-conditional bitfield:**
 - `union FTAnimDesc` (lines 59-90) — flags union with reordered bitfields
@@ -20,8 +20,8 @@ Known bug class example: `GMRumbleEventDefault` (fixed 2026-04-19) — positiona
   - BE: `s16 motion_id : 10; u16 attack_id : 6`
   - LE: `u16 attack_id : 6; s16 motion_id : 10`
   - **Status**: SAFE (FIXED) — Under `#ifdef PORT`, declares as plain fields `s16 motion_id; u16 attack_id` (not bitfields). Size bumps to 4 bytes but fixes positional init issue. All FTStatusDesc initializations in fighter character files use positional inits and rely on this fix.
-  - **Location**: All `dFT*SpecialStatusDescs[]` arrays in `decomp/src/ft/ftchar/*/*.h`
-  - **Example**: `decomp/src/ft/ftchar/ftmario/ftmariostatus.h:7-27`
+  - **Location**: All `dFT*SpecialStatusDescs[]` arrays in `components/decomp/src/ft/ftchar/*/*.h`
+  - **Example**: `components/decomp/src/ft/ftchar/ftmario/ftmariostatus.h:7-27`
 
 **FTMotionEvent* structs (motion script bytecode):**
 - `struct FTMotionEventDefault` (lines 301-310): opcode:6 | value:26
@@ -35,7 +35,7 @@ Known bug class example: `GMRumbleEventDefault` (fixed 2026-04-19) — positiona
 - **Status**: SAFE — These are loaded from ROM motion script data files, never initialized with positional initializers in C code.
 - **Note**: Some have leading pad bits on LE (e.g., FTMotionEventMakeAttack5, FTMotionEventSetAttackOffset1) to align fields to same physical bit positions as BE.
 
-### Game Manager Color Animation Scripts (decomp/src/gm/gmtypes.h)
+### Game Manager Color Animation Scripts (components/decomp/src/gm/gmtypes.h)
 
 - `union GMStatFlags` (lines 65-87) — bitfield struct inside union
   - BE: `unused:3 | is_smash_attack:1 | ga:1 | is_projectile:1 | attack_id:10`
@@ -48,19 +48,19 @@ Known bug class example: `GMRumbleEventDefault` (fixed 2026-04-19) — positiona
 - `struct GMColEventBlendRGBA2` (lines 269-282): r:8 | g:8 | b:8 | a:8 (byte order reversed on LE)
 - `struct GMColEventMakeEffect1` (lines 290-305): opcode:6 | joint_id:7 | effect_id:9 | flag:10
 - **Plus GMColEventMakeEffect2-4, GMColEventSetLight, etc.**
-- **Status**: SAFE — All initialized via `gmColCommand*` macros in `decomp/src/gm/gmdef.h` that use manual `GC_FIELDSET()` bit packing, not relying on struct bitfield layout.
-- **Location**: `decomp/src/gm/gmcolscripts.c` — all color animation event tables use these macros.
+- **Status**: SAFE — All initialized via `gmColCommand*` macros in `components/decomp/src/gm/gmdef.h` that use manual `GC_FIELDSET()` bit packing, not relying on struct bitfield layout.
+- **Location**: `components/decomp/src/gm/gmcolscripts.c` — all color animation event tables use these macros.
 
-### Rumble Event Scripts (decomp/src/gm/gmtypes.h)
+### Rumble Event Scripts (components/decomp/src/gm/gmtypes.h)
 
 - `struct GMRumbleEventDefault` (lines 338-345): opcode:3 | param:13
   - BE: opcode first
   - LE: param first
-  - **Status**: SAFE (FIXED) — `decomp/src/gm/gmrumble.c` uses `#define GMRUMBLE_EV(op, p) { .opcode = (op), .param = (p) }` under PORT, wrapping positional init with designated form.
+  - **Status**: SAFE (FIXED) — `components/decomp/src/gm/gmrumble.c` uses `#define GMRUMBLE_EV(op, p) { .opcode = (op), .param = (p) }` under PORT, wrapping positional init with designated form.
   - **Fixed**: 2026-04-19 (see `docs/bugs/rumble_event_bitfield_init_2026-04-19.md`)
-  - **Example**: All `dGMRumbleEventN[]` tables in `decomp/src/gm/gmrumble.c`
+  - **Example**: All `dGMRumbleEventN[]` tables in `components/decomp/src/gm/gmrumble.c`
 
-### Item Hitbox Events (decomp/src/it/ittypes.h)
+### Item Hitbox Events (components/decomp/src/it/ittypes.h)
 
 - `struct ITAttackEvent` (lines 115-138): timer:8 (u8) | angle:10 | damage:8 | pad:14 | size:16
   - BE: `u8 timer` followed by `s32 angle:10 | u32 damage:8 | u32 :14 | u16 size`
@@ -84,8 +84,8 @@ Known bug class example: `GMRumbleEventDefault` (fixed 2026-04-19) — positiona
 
 **FTStatusDesc arrays** (all character status descriptors):
 - Pattern: Positional initializers with inline comments marking each field
-- Risk: Early concern, but FTMotionFlags was pre-emptively fixed under PORT
-- Example: `decomp/src/ft/ftchar/ftmario/ftmariostatus.h:10-27`
+- Risk: Early concern, but FTMotionFlags was preemptively fixed under PORT
+- Example: `components/decomp/src/ft/ftchar/ftmario/ftmariostatus.h:10-27`
 ```c
 {
     nFTMarioMotionAttack13,           // Motion ID → FTMotionFlags.motion_id
@@ -114,9 +114,9 @@ Known bug class example: `GMRumbleEventDefault` (fixed 2026-04-19) — positiona
 
 ## Endian-Conditional Structs WITHOUT Bitfields (Not at Risk)
 
-- `struct SYInterpDesc` (decomp/src/sys/interp.h) — conditional byte ordering, not bitfields
-- `struct FTModelPart` (decomp/src/ft/fttypes.h) — conditional u8 flag padding position
-- `struct FTCommonPart` (decomp/src/ft/fttypes.h) — conditional u8 flag padding position
+- `struct SYInterpDesc` (components/decomp/src/sys/interp.h) — conditional byte ordering, not bitfields
+- `struct FTModelPart` (components/decomp/src/ft/fttypes.h) — conditional u8 flag padding position
+- `struct FTCommonPart` (components/decomp/src/ft/fttypes.h) — conditional u8 flag padding position
 
 ## Conclusion
 
@@ -125,15 +125,15 @@ Known bug class example: `GMRumbleEventDefault` (fixed 2026-04-19) — positiona
 2. **Avoided positional init** by loading from file data (FTMotionEvent*, AObjEvent*, ITEvent*)
 3. **Used manual bit packing** via macros (GMColEvent*, etc.)
 
-All endian-conditional bitfield structs are either safe or have been pre-emptively addressed. The codebase does not exhibit the bug pattern at scale.
+All endian-conditional bitfield structs are either safe or have been preemptively addressed. The codebase does not exhibit the bug pattern at scale.
 
 ### Structs Initialized with Positional Inits (All Safe)
 
 | Struct | File | Initializer | Status |
 |--------|------|-------------|--------|
-| FTMotionFlags (nested in FTStatusDesc) | decomp/src/ft/fttypes.h:271 | FTStatusDesc arrays (ftchar/*/*.h) | SAFE (PORT fix: plain fields) |
-| GMStatFlags (nested in FTStatusDesc) | decomp/src/gm/gmtypes.h:65 | FTStatusDesc arrays (ftchar/*/*.h) | SAFE (correct bit positions) |
-| GMRumbleEventDefault | decomp/src/gm/gmtypes.h:338 | gmrumble.c:dGMRumbleEventN[] | SAFE (designated init macro) |
+| FTMotionFlags (nested in FTStatusDesc) | components/decomp/src/ft/fttypes.h:271 | FTStatusDesc arrays (ftchar/*/*.h) | SAFE (PORT fix: plain fields) |
+| GMStatFlags (nested in FTStatusDesc) | components/decomp/src/gm/gmtypes.h:65 | FTStatusDesc arrays (ftchar/*/*.h) | SAFE (correct bit positions) |
+| GMRumbleEventDefault | components/decomp/src/gm/gmtypes.h:338 | gmrumble.c:dGMRumbleEventN[] | SAFE (designated init macro) |
 
 ### Structs NOT Initialized in C Code (Safe by Design)
 

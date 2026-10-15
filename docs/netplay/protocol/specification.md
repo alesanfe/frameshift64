@@ -1,6 +1,6 @@
 # Netplay wire protocol — normative specification
 
-Status: **normative**. `decomp/src/sys/netpeer.c` is the reference
+Status: **normative**. `components/decomp/src/sys/netpeer.c` is the reference
 implementation; where this document and the code disagree, the code is
 correct and this document must be fixed in the same PR.
 

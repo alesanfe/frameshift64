@@ -19,7 +19,7 @@ purple background"), at tic 190 of `mvOpeningRunFuncRun`.
 
 ## Root cause
 
-`decomp/src/mv/mvopening/mvopeningrun.c:323-336` had a `#ifdef PORT` block
+`components/decomp/src/mv/mvopening/mvopeningrun.c:323-336` had a `#ifdef PORT` block
 introduced in commit `66e108c` (2026-04-11) that stubbed out both
 `mvOpeningRunMakeCrash()` (the impact-flash DObj) and the paired
 `func_800269C0_275C0(nSYAudioFGMExplodeL)` (the explosion FGM trigger).
@@ -33,11 +33,11 @@ and the decomp `while(TRUE)` panic fired.
 The same commit (`66e108c`) shipped two infrastructure fixes that
 *together* address the underlying byte-order issue:
 
-1. `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupBitmapArray` and
+1. `src/game/engine/decomp/lbreloc_byteswap.cpp` — `portFixupBitmapArray` and
    `portFixupSpriteBitmapData` now register protected struct ranges so
    `portRelocFixupTextureAtRuntime` won't re-BSWAP previously fixed-up
    memory when an over-sized TLUT load extends past the palette.
-2. `decomp/src/lb/lbcommon.c` — NULL-bitmap log-and-skip safety net replaces
+2. `components/decomp/src/lb/lbcommon.c` — NULL-bitmap log-and-skip safety net replaces
    the decomp `while(TRUE)` panic.
 
 Those fixes were sufficient to make `mvOpeningRunMakeCrash`'s draw path
@@ -98,10 +98,10 @@ play, this plays.
 
 | Subject | Path |
 |---|---|
-| Stubbed call site | `decomp/src/mv/mvopening/mvopeningrun.c:322-326` |
-| `mvOpeningRunMakeCrash` | `decomp/src/mv/mvopening/mvopeningrun.c:207` |
+| Stubbed call site | `components/decomp/src/mv/mvopening/mvopeningrun.c:322-326` |
+| `mvOpeningRunMakeCrash` | `components/decomp/src/mv/mvopening/mvopeningrun.c:207` |
 | Crash file reloc id | `llMVOpeningRunCrashFileID = 0x4B` |
 | Reloc data offsets | `llMVOpeningRunCrashDObjDesc / MObjSub / MatAnimJoint` in `generated/include/us/reloc_data.us.h` |
 | Original stubbing commit | `66e108c` (2026-04-11) |
-| Protected-range fix | `src/integration/decomp/lbreloc_byteswap.cpp` (`portFixupBitmapArray`) |
-| NULL-bitmap safety net | `decomp/src/lb/lbcommon.c:lbCommonStartSprite` |
+| Protected-range fix | `src/game/engine/decomp/lbreloc_byteswap.cpp` (`portFixupBitmapArray`) |
+| NULL-bitmap safety net | `components/decomp/src/lb/lbcommon.c:lbCommonStartSprite` |

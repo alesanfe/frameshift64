@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 test_extraction_recipes.py — Structural + golden-hash validation for the
-checked-in Torch extraction recipes under assets/recipes/.
+checked-in Torch extraction recipes under assets/game/.
 
 TD-006: the generated recipes are the contract between the ROM pipeline
 (generate_yamls.py / generate_fighter_slices.py) and torch; a silent edit or
@@ -43,7 +43,7 @@ except ImportError:
     sys.exit(2)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-EXTRACTION_DIR = REPO_ROOT / "assets" / "recipes"
+EXTRACTION_DIR = REPO_ROOT / "assets" / "game"
 GOLDEN_PATH = REPO_ROOT / "tests" / "support" / "golden" / "extraction_recipes.sha256"
 
 # Generous ceilings — SSB64 ROMs are 32 MiB; these bounds catch garbage

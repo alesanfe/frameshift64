@@ -8,9 +8,9 @@ rebuilt into `out/` and ignored.
 
 | Path | Generator | Regenerate when |
 |------|-----------|-----------------|
-| `assets/recipes/<ver>/reloc_*.yml` | `tools/codegen/generate_yamls.py` (from `tools/codegen/reloc_data_symbols.<ver>.txt` + ROM) | reloc symbol lists change (rare; frozen v1.0). Golden-hashed: `tests/support/golden/extraction_recipes.sha256` — update via `python tests/integration/assets/extraction_recipes_test.py --update` |
-| `assets/recipes/<ver>/*.yml` (audio, particles, transitions…) | same | recipe tweaks |
-| `generated/src/<ver>/RelocFileTable.<ver>.cpp` + `generated/include/` | `tools/codegen/generate_reloc_table.py` | reloc yamls change. Enforced by `check_generated_headers` (banner) + `make codegen-check` (CI: regen must be a no-op) |
+| `assets/game/<ver>/reloc_*.yml` | `tools/code-generation/generate_yamls.py` (from `tools/code-generation/reloc_data_symbols.<ver>.txt` + ROM) | reloc symbol lists change (rare; frozen v1.0). Golden-hashed: `tests/support/golden/extraction_recipes.sha256` — update via `python tests/integration/assets/extraction_recipes_test.py --update` |
+| `assets/game/<ver>/*.yml` (audio, particles, transitions…) | same | recipe tweaks |
+| `generated/src/<ver>/RelocFileTable.<ver>.cpp` + `generated/include/` | `tools/code-generation/generate_reloc_table.py` | reloc yamls change. Enforced by `check_generated_headers` (banner) + `make codegen-check` (CI: regen must be a no-op) |
 | `include/reloc_data.<ver>.h` | splat/reloc pipeline | `#define` symbol→id map; no ROM bytes |
 
 Policy: every committed generated file must carry the generated banner
@@ -40,6 +40,6 @@ instead of the generator inputs.
 ```
 git status --porcelain   # must stay clean after build+test
 make codegen-check       # generated files match generators
-python tools/lint/check_generated_headers.py
+python tools/analysis/lint/check_generated_headers.py
 python tests/integration/assets/extraction_recipes_test.py
 ```

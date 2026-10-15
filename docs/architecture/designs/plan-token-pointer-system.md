@@ -50,13 +50,13 @@ All of the following compile and link into `ssb64.exe`:
 | `src/resources/relocation/RelocPointerTable.h` | Token table API: `portRelocRegisterPointer()`, `portRelocResolvePointer()`, `RELOC_RESOLVE()` macro |
 | `src/resources/relocation/RelocPointerTable.cpp` | Flat-array implementation, O(1) lookup, 256K initial capacity |
 | `src/resources/relocation/RelocFileTable.h` | Maps file_id (0-2131) to .o2r resource path |
-| `generated/src/us/RelocFileTable.us.cpp` | Auto-generated from assets/configuration/extraction/us/reloc_*.yml (regenerate via `python tools/codegen/generate_reloc_table.py`) |
+| `generated/src/us/RelocFileTable.us.cpp` | Auto-generated from assets/game/us/reloc_*.yml (regenerate via `python tools/code-generation/generate_reloc_table.py`) |
 | `src/resources/relocation/RelocFile.h` | LUS Resource type holding decompressed file data + reloc metadata |
 | `src/resources/relocation/RelocFileFactory.h/.cpp` | LUS factory: reads RELO resources from .o2r |
 | `src/resources/relocation/ResourceType.h` | SSB64Reloc = 0x52454C4F ("RELO") |
-| `src/integration/decomp/lbreloc_bridge.cpp` | Full replacement of `decomp/src/lb/lbreloc.c` — loads from LUS ResourceManager, token-based relocation |
-| `src/integration/port_types.h` | Decomp type definitions (u32, s32, etc.) without pulling in `include/` which shadows system headers |
-| `decomp/src/lb/lbreloc.c` | Wrapped in `#ifndef PORT` — excluded from port build |
+| `src/game/engine/decomp/lbreloc_bridge.cpp` | Full replacement of `components/decomp/src/lb/lbreloc.c` — loads from LUS ResourceManager, token-based relocation |
+| `src/game/engine/decomp/port_types.h` | Decomp type definitions (u32, s32, etc.) without pulling in `include/` which shadows system headers |
+| `components/decomp/src/lb/lbreloc.c` | Wrapped in `#ifndef PORT` — excluded from port build |
 
 The bridge (`lbreloc_bridge.cpp`):
 - Loads files via `Ship::Context::GetInstance()->GetResourceManager()->LoadResource(path)`
@@ -64,7 +64,7 @@ The bridge (`lbreloc_bridge.cpp`):
 - Walks internal reloc chain: computes real pointer, registers as token, writes 32-bit token into 4-byte slot
 - Walks external reloc chain: loads dependency file, computes target, registers token
 - Maintains status buffer caching (identical to original)
-- All functions have C linkage matching `decomp/src/lb/lbreloc.h` declarations
+- All functions have C linkage matching `components/decomp/src/lb/lbreloc.h` declarations
 
 ### Phase 1: COMPLETE — DObjDesc family struct changes + PORT_RESOLVE
 
@@ -87,20 +87,20 @@ Pointer fields in FILE DATA (loaded from .o2r) that need `#ifdef PORT` changes:
 
 | Struct | Pointer field(s) | File |
 |--------|-----------------|------|
-| `LBRelocDesc` | `void *p` | `decomp/src/lb/lbtypes.h` |
-| `DObjDesc` | `void *dl` | `decomp/src/sys/objtypes.h` |
-| `DObjTraDesc` | `void *dl` | `decomp/src/sys/objtypes.h` |
-| `DObjMultiList` | `Gfx *dl1, *dl2` | `decomp/src/sys/objtypes.h` |
-| `DObjDLLink` | `Gfx *dl` | `decomp/src/sys/objtypes.h` |
-| `DObjDistDL` | `Gfx *dl` | `decomp/src/sys/objtypes.h` |
-| `DObjDistDLLink` | `DObjDLLink *dl_link` | `decomp/src/sys/objtypes.h` |
-| `AObjEvent32` | `void *p` (union) | `decomp/src/sys/objtypes.h` |
-| `MObjSub` | `void **sprites`, `void **palettes` | `decomp/src/sys/objtypes.h` |
-| `Sprite` | `Bitmap *bitmap`, `Gfx *rsp_dl`, `Gfx *rsp_dl_next`, `int *LUT` | decomp/include/PR/sp.h |
-| `Bitmap` | `void *buf` | decomp/include/PR/sp.h |
-| `LBScriptDesc` | `LBScript *scripts[1]` | `decomp/src/lb/lbtypes.h` |
-| `LBTextureDesc` | `LBTexture *textures[1]` | `decomp/src/lb/lbtypes.h` |
-| `LBTexture` | `void *data[1]` | `decomp/src/lb/lbtypes.h` |
+| `LBRelocDesc` | `void *p` | `components/decomp/src/lb/lbtypes.h` |
+| `DObjDesc` | `void *dl` | `components/decomp/src/sys/objtypes.h` |
+| `DObjTraDesc` | `void *dl` | `components/decomp/src/sys/objtypes.h` |
+| `DObjMultiList` | `Gfx *dl1, *dl2` | `components/decomp/src/sys/objtypes.h` |
+| `DObjDLLink` | `Gfx *dl` | `components/decomp/src/sys/objtypes.h` |
+| `DObjDistDL` | `Gfx *dl` | `components/decomp/src/sys/objtypes.h` |
+| `DObjDistDLLink` | `DObjDLLink *dl_link` | `components/decomp/src/sys/objtypes.h` |
+| `AObjEvent32` | `void *p` (union) | `components/decomp/src/sys/objtypes.h` |
+| `MObjSub` | `void **sprites`, `void **palettes` | `components/decomp/src/sys/objtypes.h` |
+| `Sprite` | `Bitmap *bitmap`, `Gfx *rsp_dl`, `Gfx *rsp_dl_next`, `int *LUT` | components/decomp/include/PR/sp.h |
+| `Bitmap` | `void *buf` | components/decomp/include/PR/sp.h |
+| `LBScriptDesc` | `LBScript *scripts[1]` | `components/decomp/src/lb/lbtypes.h` |
+| `LBTextureDesc` | `LBTexture *textures[1]` | `components/decomp/src/lb/lbtypes.h` |
+| `LBTexture` | `void *data[1]` | `components/decomp/src/lb/lbtypes.h` |
 
 **NOT affected** (runtime-allocated, not in file data): GObj, DObj, MObj, AObj, CObj,
 SObj, GObjProcess, LBGenerator, LBParticle, LBTransform — these are created by game
@@ -113,21 +113,21 @@ addresses handled by Fast3D. Raw textures, audio, animation keyframes are pure d
 
 ### Phase 1: DObjDesc — COMPLETE (2026-04-04)
 
-Changed pointer fields to `u32` under `#ifdef PORT` in `decomp/src/sys/objtypes.h`:
+Changed pointer fields to `u32` under `#ifdef PORT` in `components/decomp/src/sys/objtypes.h`:
 - DObjDesc.dl, DObjTraDesc.dl, DObjMultiList.dl1/dl2, DObjDLLink.dl,
   DObjDistDL.dl, DObjDistDLLink.dl_link
 
 Added `PORT_RESOLVE()` macro in `objtypes.h` — resolves tokens on PORT,
 no-op passthrough on non-PORT. Wrapped 23 access sites across 10 files:
-- `decomp/src/sys/objanim.c` (6), `decomp/src/sys/objdisplay.c` (8), `decomp/src/sys/objhelper.c` (2)
-- `decomp/src/ft/ftparam.c` (2), `decomp/src/ft/ftmain.c` (1)
-- `decomp/src/ef/efground.c` (2), `decomp/src/gr/grmodelsetup.c` (2), `decomp/src/it/itmanager.c` (2)
-- `decomp/src/lb/lbcommon.c` (6), `decomp/src/sc/sc1pmode/sc1pgameboss.c` (2)
+- `components/decomp/src/sys/objanim.c` (6), `components/decomp/src/sys/objdisplay.c` (8), `components/decomp/src/sys/objhelper.c` (2)
+- `components/decomp/src/ft/ftparam.c` (2), `components/decomp/src/ft/ftmain.c` (1)
+- `components/decomp/src/ef/efground.c` (2), `components/decomp/src/gr/grmodelsetup.c` (2), `components/decomp/src/it/itmanager.c` (2)
+- `components/decomp/src/lb/lbcommon.c` (6), `components/decomp/src/sc/sc1pmode/sc1pgameboss.c` (2)
 
 NULL checks (`field != NULL`) work as-is since token 0 == NULL.
 `_Static_assert` size checks added for all 6 structs. Build passes clean.
 
-**Note**: FTModelPart.dl and FTAccessPart.dl (in `decomp/src/ft/fttypes.h`) are also
+**Note**: FTModelPart.dl and FTAccessPart.dl (in `components/decomp/src/ft/fttypes.h`) are also
 file-data pointer fields that need the same treatment — discovered during Phase 1
 but deferred to a new phase since they have additional pointer fields (mobjsubs,
 matanim_joints) that belong to later phases.
@@ -137,7 +137,7 @@ matanim_joints) that belong to later phases.
 Changed `void *p` to `u32 p` under `#ifdef PORT` in AObjEvent32 union.
 Union stays at 4 bytes. `_Static_assert` added.
 
-Wrapped 9 access sites in `decomp/src/sys/objanim.c` with `PORT_RESOLVE()`:
+Wrapped 9 access sites in `components/decomp/src/sys/objanim.c` with `PORT_RESOLVE()`:
 - DObj animation: SetAnim (L513), Jump (L525), SetInterp (L561)
 - MObj material animation: SetAnim (L1088), Jump (L1095)
 - CObj camera animation: SetAnim (L2732), Jump (L2739), SetInterp (L2776, L2790)
@@ -147,7 +147,7 @@ All accesses are read-only. 6 are script pointer chaining (SetAnim/Jump),
 
 ### Phase 3a: Sprite / Bitmap struct changes — COMPLETE (2026-04-04)
 
-Changed 5 pointer fields to `u32` under `#ifdef PORT` in decomp/include/PR/sp.h:
+Changed 5 pointer fields to `u32` under `#ifdef PORT` in components/decomp/include/PR/sp.h:
 - `Bitmap.buf`, `Sprite.LUT`, `Sprite.bitmap`, `Sprite.rsp_dl`, `Sprite.rsp_dl_next`
 
 Added `PORT_REGISTER()` macro in `objtypes.h` — wraps `portRelocRegisterPointer()`
@@ -166,8 +166,8 @@ Wrapped `unref_800162C8` in `#ifndef PORT` (objdisplay.c) — unreferenced N64
 sprite draw that writes runtime Gfx* into rsp_dl_next (incompatible with u32).
 
 `PORT_REGISTER()` at 7 direct LUT assignment sites (lbRelocGetFileData → u32 token):
-- `decomp/src/mn/mnoption/mnbackupclear.c` (4 assignments, 1 PORT_RESOLVE comparison)
-- `decomp/src/mn/mnplayers/mnplayersvs.c` (2), `mnplayers1ptraining.c` (2),
+- `components/decomp/src/mn/mnoption/mnbackupclear.c` (4 assignments, 1 PORT_RESOLVE comparison)
+- `components/decomp/src/mn/mnplayers/mnplayersvs.c` (2), `mnplayers1ptraining.c` (2),
   `mnplayers1pgame.c` (1), `mnplayers1pbonus.c` (1)
 
 Changed `sMNBackupClearOptionConfirmLUTOrigin` type to `u32` under PORT (mnbackupclear.c).
@@ -204,13 +204,13 @@ Build passes clean on MSVC.
 
 ### Phase 4: MObjSub sprites/palettes — COMPLETE (2026-04-04)
 
-Changed 2 pointer fields to `u32` under `#ifdef PORT` in `decomp/src/sys/objtypes.h`:
+Changed 2 pointer fields to `u32` under `#ifdef PORT` in `components/decomp/src/sys/objtypes.h`:
 - `void **sprites` → `u32 sprites` (token to array of texture image tokens)
 - `void **palettes` → `u32 palettes` (token to array of palette tokens)
 
 `_Static_assert(sizeof(MObjSub) == 0x78)` added.
 
-Wrapped 3 access sites in `decomp/src/sys/objdisplay.c` with double PORT_RESOLVE:
+Wrapped 3 access sites in `components/decomp/src/sys/objdisplay.c` with double PORT_RESOLVE:
 - Line ~1264: `palettes[(s32)mobj->palette_id]` — palette lookup for MOBJ_FLAG_PALETTE
 - Line ~1367: `sprites[mobj->texture_id_next]` — texture image for MOBJ_FLAG_FRAC|SPLIT
 - Line ~1438: `sprites[mobj->texture_id_curr]` — texture image for MOBJ_FLAG_FRAC|ALPHA
@@ -226,17 +226,17 @@ Build passes clean on MSVC.
 
 ### Phase 5: LBScriptDesc / LBTextureDesc / LBTexture — COMPLETE (2026-04-04)
 
-Changed 3 pointer array fields to `u32` under `#ifdef PORT` in `decomp/src/lb/lbtypes.h`:
+Changed 3 pointer array fields to `u32` under `#ifdef PORT` in `components/decomp/src/lb/lbtypes.h`:
 - `LBScriptDesc.scripts[1]`, `LBTextureDesc.textures[1]`, `LBTexture.data[1]`
 
 `_Static_assert` size checks: `sizeof(LBScriptDesc) == 8`, `sizeof(LBTextureDesc) == 8`,
 `sizeof(LBTexture) == 28`.
 
-Changed 2 static variable types in `decomp/src/lb/lbparticle.c` under `#ifdef PORT`:
+Changed 2 static variable types in `components/decomp/src/lb/lbparticle.c` under `#ifdef PORT`:
 - `sLBParticleScriptBanks` → `u32 *[]` (was `LBScript **[]`)
 - `sLBParticleTextureBanks` → `u32 *[]` (was `LBTexture **[]`)
 
-Wrapped access sites in `decomp/src/lb/lbparticle.c`:
+Wrapped access sites in `components/decomp/src/lb/lbparticle.c`:
 - `lbParticleSetupBankID` (3 loops): `PORT_REGISTER` for offset→token conversion,
   `PORT_RESOLVE` + local `LBTexture *tex` for inner data resolution loops
 - `lbParticleMakeChildScriptID`: `PORT_RESOLVE` for script bank lookup + texture flags
@@ -251,22 +251,22 @@ Build passes clean on MSVC.
 
 ## Build Strategy for the Bridge
 
-The bridge (`src/integration/decomp/lbreloc_bridge.cpp`) needs both decomp types and LUS C++
+The bridge (`src/game/engine/decomp/lbreloc_bridge.cpp`) needs both decomp types and LUS C++
 APIs. The `include/` dir shadows system headers, so it can't go on the C++ target's
 include path.
 
 **Solution**: The bridge is a C++ file that includes decomp type headers from `src/`
 (already on the path). For types from `include/` (like `ssb_types.h`), a thin
-`src/integration/port_types.h` provides the needed typedefs (u32, s32, u16, etc.)
+`src/game/engine/decomp/port_types.h` provides the needed typedefs (u32, s32, u16, etc.)
 using `<cstdint>` — no dependency on the decomp `include/` directory.
 
-The bridge re-declares the structs it needs (LBFileNode, LBRelocSetup, LBInternBuffer,
+The bridge redeclares the structs it needs (LBFileNode, LBRelocSetup, LBInternBuffer,
 LBTableEntry) locally — these MUST stay ABI-compatible with the decomp definitions
-in `decomp/src/lb/lbtypes.h`.
+in `components/decomp/src/lb/lbtypes.h`.
 
 ## Known Issues / Future Work
 
-- **Endianness**: RESOLVED — `portRelocByteSwapBlob()` in `src/integration/decomp/lbreloc_byteswap.cpp`
+- **Endianness**: RESOLVED — `portRelocByteSwapBlob()` in `src/game/engine/decomp/lbreloc_byteswap.cpp`
   performs a two-pass byte-swap on each file blob after memcpy, before the reloc chain walk:
   Pass 1 blanket-swaps every u32 word (fixes DL commands, struct fields, reloc descriptors).
   Pass 2 parses native-endian DL commands to find vertex/texture regions and applies targeted

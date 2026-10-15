@@ -18,7 +18,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ### Animation & Interpolation
 
-#### **SYInterpDesc** (`decomp/src/sys/interp.h:8-36`) — ✓ FIXED
+#### **SYInterpDesc** (`components/decomp/src/sys/interp.h:8-36`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -31,15 +31,15 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `keyframes` | 0x10 | u32 token | ✔️ Safe (full u32) |
 | `quartics` | 0x14 | u32 token | ✔️ Safe (full u32) |
 
-**Loader:** `decomp/src/sys/interp.c:72-79` — calls `portFixupStructU16(desc, 0, 1)` before any field reads. ✓
+**Loader:** `components/decomp/src/sys/interp.c:72-79` — calls `portFixupStructU16(desc, 0, 1)` before any field reads. ✓
 
-**Files touched:** `decomp/src/sys/interp.c` (2026-04-28 fix for non-figatree descriptors)
+**Files touched:** `components/decomp/src/sys/interp.c` (2026-04-28 fix for non-figatree descriptors)
 
 **Risk:** NONE (fixed 2026-04-28)
 
 ---
 
-#### **AObjEvent16** (`decomp/src/sys/objtypes.h:79-99`) — ✓ FIXED
+#### **AObjEvent16** (`components/decomp/src/sys/objtypes.h:79-99`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -47,13 +47,13 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `flags:10` | 0x00-0x01 | u16 bitfield | ✓ Fixed |
 | `opcode:5` | 0x00-0x01 | u16 bitfield | ✓ Fixed |
 
-**Loader:** Fighter animation decoder (`decomp/src/sys/objanim.c`, `decomp/src/ft/ftanim.c`) — these structs are decoded via union as `s16`/`u16` fields; the LE bitfield branch correctly extracts from the post-BSWAP32 u16 order. ✓
+**Loader:** Fighter animation decoder (`components/decomp/src/sys/objanim.c`, `components/decomp/src/ft/ftanim.c`) — these structs are decoded via union as `s16`/`u16` fields; the LE bitfield branch correctly extracts from the post-BSWAP32 u16 order. ✓
 
 **Risk:** NONE (bitfields properly handled in LE branch)
 
 ---
 
-#### **AObjEvent32** (`decomp/src/sys/objtypes.h:102-128`) — ✓ FIXED
+#### **AObjEvent32** (`components/decomp/src/sys/objtypes.h:102-128`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -70,14 +70,14 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ### Stage Geometry & Collision
 
-#### **MPVertexData** (`decomp/src/mp/mptypes.h:34-38`) — ✓ FIXED
+#### **MPVertexData** (`components/decomp/src/mp/mptypes.h:34-38`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
 | `pos` | 0x00-0x03 | Vec2h (2×s16) | ✓ Fixed (portFixupStructU16 applied to vertex_data array) |
 | `vertex_flags` | 0x04-0x05 | u16 | ✓ Fixed (u16 pair rotated) |
 
-**Loader:** `decomp/src/mp/mpcollision.c:4110` — `portFixupStructU16(gMPCollisionVertexData, 0, vpos_words)` ✓
+**Loader:** `components/decomp/src/mp/mpcollision.c:4110` — `portFixupStructU16(gMPCollisionVertexData, 0, vpos_words)` ✓
 
 **Bug report:** `docs/bugs/mpvertex_byte_swap_2026-04-11.md` — DK-vs-Samus intro collision broke due to u16 corruption; fixed.
 
@@ -85,59 +85,59 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ---
 
-#### **MPVertexLinks** (`decomp/src/mp/mptypes.h:24-27`) — ✓ FIXED
+#### **MPVertexLinks** (`components/decomp/src/mp/mptypes.h:24-27`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
 | `vertex1` | 0x00 | u16 | ✓ Fixed |
 | `vertex2` | 0x02 | u16 | ✓ Fixed |
 
-**Loader:** `decomp/src/mp/mpcollision.c:4071` — `portFixupStructU16(gMPCollisionVertexLinks, 0, (unsigned int)gMPCollisionLinesNum)` ✓
+**Loader:** `components/decomp/src/mp/mpcollision.c:4071` — `portFixupStructU16(gMPCollisionVertexLinks, 0, (unsigned int)gMPCollisionLinesNum)` ✓
 
 **Risk:** NONE (fixed 2026-04-11)
 
 ---
 
-#### **MPLineData** (`decomp/src/mp/mptypes.h:45-49`) — ✓ FIXED
+#### **MPLineData** (`components/decomp/src/mp/mptypes.h:45-49`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
 | `group_id` | 0x00 | u16 | ✓ Fixed |
 | `line_count` | 0x02 | u16 | ✓ Fixed |
 
-**Loader:** `decomp/src/mp/mpcollision.c:4059` — `portFixupStructU16(line_info_ptr, 0, lineinfo_words)` ✓
+**Loader:** `components/decomp/src/mp/mpcollision.c:4059` — `portFixupStructU16(line_info_ptr, 0, lineinfo_words)` ✓
 
 **Risk:** NONE (fixed 2026-04-08)
 
 ---
 
-#### **MPMapObjData** (`decomp/src/mp/mptypes.h:92-96`) — ✓ FIXED
+#### **MPMapObjData** (`components/decomp/src/mp/mptypes.h:92-96`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
 | `mapobj_kind` | 0x00 | u16 | ✓ Fixed |
 | `pos` | 0x02-0x05 | Vec2h (2×s16) | ✓ Fixed |
 
-**Loader:** `decomp/src/mp/mpcollision.c:4050` — `portFixupStructU16(gMPCollisionMapObjs, 0, mapobj_words)` ✓
+**Loader:** `components/decomp/src/mp/mpcollision.c:4050` — `portFixupStructU16(gMPCollisionMapObjs, 0, mapobj_words)` ✓
 
 **Risk:** NONE (fixed 2026-04-08)
 
 ---
 
-#### **MPGeometryData** (`decomp/src/mp/mptypes.h:57-75`) — ✓ FIXED
+#### **MPGeometryData** (`components/decomp/src/mp/mptypes.h:57-75`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
 | `yakumono_count` | 0x00 | u16 | ✓ Fixed (portFixupStructU16 at offset 0, word 1) |
 | `mapobj_count` | 0x14 | u16 | ✓ Fixed (portFixupStructU16 at offset 0x14, word 1) |
 
-**Loader:** `decomp/src/mp/mpcollision.c:4037-4038` — two `portFixupStructU16` calls ✓
+**Loader:** `components/decomp/src/mp/mpcollision.c:4037-4038` — two `portFixupStructU16` calls ✓
 
 **Risk:** NONE (fixed 2026-04-08)
 
 ---
 
-#### **MPGroundData** (`decomp/src/mp/mptypes.h:193-237`) — ✓ FIXED
+#### **MPGroundData** (`components/decomp/src/mp/mptypes.h:193-237`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -149,7 +149,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `map_bound_team_*` | 0x80-0x8E | s16 pairs | ✓ Fixed (portFixupStructU16 covers) |
 | `zoom_start` / `zoom_end` | 0x90-0x9B | Vec3h pairs | ✓ Fixed |
 
-**Loader:** `decomp/src/mp/mpcollision.c:3979-3989` — comprehensive fixup suite ✓
+**Loader:** `components/decomp/src/mp/mpcollision.c:3979-3989` — comprehensive fixup suite ✓
 
 **Bug report:** `docs/bugs/mpgrounddata_layer_mask_u8_byteswap_2026-04-22.md` — Sector Z hull missing due to layer_mask=0 mis-read; fixed.
 
@@ -159,7 +159,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ### Material & Object Animation
 
-#### **MObjSub** (`decomp/src/sys/objtypes.h:320-370`) — ✓ FIXED
+#### **MObjSub** (`components/decomp/src/sys/objtypes.h:320-370`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -176,10 +176,10 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `prim_pad` | 0x3A-0x3B | 2×u8 | ✓ Fixed |
 
 **Loader:** Called from multiple places:
-- `decomp/src/lb/lbcommon.c:1054, 1288, 1339` — all call `portFixupMObjSub(mobjsub)` ✓
-- `decomp/src/sys/objanim.c` — fighters/weapons/effects all use shared path ✓
+- `components/decomp/src/lb/lbcommon.c:1054, 1288, 1339` — all call `portFixupMObjSub(mobjsub)` ✓
+- `components/decomp/src/sys/objanim.c` — fighters/weapons/effects all use shared path ✓
 
-**Helper:** `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupMObjSub` handles the mixed u16/u8 fields with rotate16 + bswap32 on the color/pad words. ✓
+**Helper:** `src/game/engine/decomp/lbreloc_byteswap.cpp` — `portFixupMObjSub` handles the mixed u16/u8 fields with rotate16 + bswap32 on the color/pad words. ✓
 
 **Risk:** NONE (dedicated helper in use)
 
@@ -187,7 +187,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ### Fighter Attributes
 
-#### **FTAttributes** (`decomp/src/ft/fttypes.h`) — ✓ VERIFIED
+#### **FTAttributes** (`components/decomp/src/ft/fttypes.h`) — ✓ VERIFIED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -200,7 +200,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `heavyget_sfx` | 0xE8 | u16 | ✓ Fixed |
 | `is_have_*` bitfield | 0x100 | u32 bitfield (22 bits + 10 pad) | ✓ Fixed (LE LSB-first branch matches BE MSB-first) |
 
-**Loader:** `decomp/src/ft/ftmanager.c:721` — `portFixupFTAttributes(attr)` ✓
+**Loader:** `components/decomp/src/ft/ftmanager.c:721` — `portFixupFTAttributes(attr)` ✓
 
 **Audit:** `docs/investigations/struct_audit_ftattributes_2026-04-24.md` — comprehensive field-by-field disasm verification; all offsets confirmed. ✓
 
@@ -210,7 +210,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ### Item & Weapon Attributes
 
-#### **ITAttributes** (`decomp/src/it/ittypes.h:232-340`) — ✓ FIXED
+#### **ITAttributes** (`components/decomp/src/it/ittypes.h:232-340`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -227,7 +227,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `map_coll_width` | 0x30 | s16 | ✓ Fixed |
 | `size` | 0x32 | u16 | ✓ Fixed |
 
-**Loader:** `decomp/src/it/itmanager.c` (inferred, not directly checked) — calls `portFixupStructU16(attr, 0x14, 8)` per inline comment. ⚠ **NEED VERIFICATION**
+**Loader:** `components/decomp/src/it/itmanager.c` (inferred, not directly checked) — calls `portFixupStructU16(attr, 0x14, 8)` per inline comment. ⚠ **NEED VERIFICATION**
 
 **Comment in struct:** "itmanager.c:portFixupStructU16(attr, 0x14, 8) undoes that." (ittypes.h:266)
 
@@ -235,7 +235,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ---
 
-#### **WPAttributes** (`decomp/src/wp/wptypes.h:36-126`) — ✓ LIKELY FIXED
+#### **WPAttributes** (`components/decomp/src/wp/wptypes.h:36-126`) — ✓ LIKELY FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -247,7 +247,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `size` | 0x14 | u16 | ✓ Likely fixed |
 | `_angle_raw` (PORT-only) | 0x16 | u16 | ✓ Likely fixed (manual arithmetic extraction; no pass-1 issue) |
 
-**Loader:** `decomp/src/wp/wpmanager.c` (inferred) — likely shares the ITAttributes fixup path or has its own. ⚠ **NEED VERIFICATION**
+**Loader:** `components/decomp/src/wp/wpmanager.c` (inferred) — likely shares the ITAttributes fixup path or has its own. ⚠ **NEED VERIFICATION**
 
 **Struct comment:** Detailed explanation of IDO packing and angle extraction via arithmetic shift. No mention of fixup in the struct itself, but WPAttributes is much smaller and may not need it if loaders use read-only paths.
 
@@ -257,7 +257,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ### Sprite & Bitmap
 
-#### **Sprite** (decomp/include/PR/sp.h:65-117`) — ✓ FIXED
+#### **Sprite** (components/decomp/include/PR/sp.h:65-117`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -279,18 +279,18 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `frac_s` / `frac_t` | 0x40-0x43 | 2×s16 | ✓ Fixed |
 
 **Loader:** Multiple paths call `portFixupSprite()`:
-- `decomp/src/lb/lbcommon.c:3057` ✓
-- `decomp/src/sc/sccommon/scexplain.c:22` ✓
-- `decomp/src/mn/mncommon/mntitle.c:921` ✓
-- `decomp/src/if/ifcommon.c:36` ✓
+- `components/decomp/src/lb/lbcommon.c:3057` ✓
+- `components/decomp/src/sc/sccommon/scexplain.c:22` ✓
+- `components/decomp/src/mn/mncommon/mntitle.c:921` ✓
+- `components/decomp/src/if/ifcommon.c:36` ✓
 
-**Helper:** `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupSprite` rotates all s16/u16 pairs and applies BSWAP32 to color + format words. ✓
+**Helper:** `src/game/engine/decomp/lbreloc_byteswap.cpp` — `portFixupSprite` rotates all s16/u16 pairs and applies BSWAP32 to color + format words. ✓
 
 **Risk:** NONE (dedicated fixup helper in all loaders)
 
 ---
 
-#### **Bitmap** (decomp/include/PR/sp.h:33-57`) — ✓ FIXED
+#### **Bitmap** (components/decomp/include/PR/sp.h:33-57`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -303,11 +303,11 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 | `LUToffset` | 0x0E | s16 | ✓ Fixed |
 
 **Loader:** Called from sprite loaders via `portFixupBitmapArray()`:
-- `decomp/src/lb/lbcommon.c:3062` ✓
-- `decomp/src/sc/sccommon/scexplain.c:27` ✓
+- `components/decomp/src/lb/lbcommon.c:3062` ✓
+- `components/decomp/src/sc/sccommon/scexplain.c:27` ✓
 - etc.
 
-**Helper:** `src/integration/decomp/lbreloc_byteswap.cpp` — `portFixupBitmap` rotates all s16 pairs. ✓
+**Helper:** `src/game/engine/decomp/lbreloc_byteswap.cpp` — `portFixupBitmap` rotates all s16 pairs. ✓
 
 **Risk:** NONE (dedicated fixup helper)
 
@@ -315,7 +315,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ### Display Lists & Rendering
 
-#### **DObjDLLink** (`decomp/src/sys/objtypes.h:456-464`) — ✔️ SAFE
+#### **DObjDLLink** (`components/decomp/src/sys/objtypes.h:456-464`) — ✔️ SAFE
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -328,7 +328,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ---
 
-#### **DObjDesc** (`decomp/src/sys/objtypes.h:422-433`) — ✔️ SAFE
+#### **DObjDesc** (`components/decomp/src/sys/objtypes.h:422-433`) — ✔️ SAFE
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -342,7 +342,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ### Collision & Hit Detection
 
-#### **ITDamageColl** (`decomp/src/it/ittypes.h:175-181`) — ? **NEED VERIFICATION**
+#### **ITDamageColl** (`components/decomp/src/it/ittypes.h:175-181`) — ? **NEED VERIFICATION**
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -356,7 +356,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ---
 
-#### **ITAttackEvent** (`decomp/src/it/ittypes.h:115-138`) — ✓ FIXED
+#### **ITAttackEvent** (`components/decomp/src/it/ittypes.h:115-138`) — ✓ FIXED
 
 | Field | Offset | Type | Status |
 |-------|--------|------|--------|
@@ -372,7 +372,7 @@ This audit identifies structs with `u8` and `u16` fields that are loaded from re
 
 ---
 
-#### **ITMonsterEvent** (`decomp/src/it/ittypes.h:140-173`) — ✓ FIXED
+#### **ITMonsterEvent** (`components/decomp/src/it/ittypes.h:140-173`) — ✓ FIXED
 
 Same pattern as ITAttackEvent; packed u8 timer correctly handled. ✓
 
@@ -430,7 +430,7 @@ The following structs were checked and confirmed to contain only u32/f32/pointer
 
 **Current status:** Comment in struct says "itmanager.c:portFixupStructU16(attr, 0x14, 8) undoes that" but direct grep not performed.
 
-**Action:** Grep `decomp/src/it/itmanager.c` for `portFixupStructU16` calls to confirm the fixup is in place.
+**Action:** Grep `components/decomp/src/it/itmanager.c` for `portFixupStructU16` calls to confirm the fixup is in place.
 
 **Confidence:** HIGH (struct comment is explicit)
 
@@ -440,7 +440,7 @@ The following structs were checked and confirmed to contain only u32/f32/pointer
 
 **Current status:** No comment in struct; wpmanager.c not directly audited.
 
-**Action:** Grep `decomp/src/wp/wpmanager.c` for fixup calls; confirm whether WPAttributes needs the same rotate16 treatment as ITAttributes or if the read path avoids the issue (e.g., via bitfield extraction or integer arithmetic).
+**Action:** Grep `components/decomp/src/wp/wpmanager.c` for fixup calls; confirm whether WPAttributes needs the same rotate16 treatment as ITAttributes or if the read path avoids the issue (e.g., via bitfield extraction or integer arithmetic).
 
 **Confidence:** MEDIUM (bitfield read paths may make this safe)
 
@@ -481,15 +481,15 @@ The following structs were checked and confirmed to contain only u32/f32/pointer
 ## Files Touched by This Audit
 
 - **Reviewed:** 
-  - `decomp/src/sys/interp.h` / `decomp/src/sys/interp.c`
-  - `decomp/src/sys/objtypes.h`
-  - `decomp/src/mp/mptypes.h` / `decomp/src/mp/mpcollision.c`
-  - `decomp/src/ft/fttypes.h` / `decomp/src/ft/ftmanager.c`
-  - `decomp/src/it/ittypes.h` / `decomp/src/it/itmanager.c` (inferred)
-  - `decomp/src/wp/wptypes.h` / `decomp/src/wp/wpmanager.c` (inferred)
-  - `decomp/src/lb/lbcommon.c`
-  - decomp/include/PR/sp.h
-  - `src/integration/decomp/lbreloc_byteswap.h` / `lbreloc_byteswap.cpp`
+  - `components/decomp/src/sys/interp.h` / `components/decomp/src/sys/interp.c`
+  - `components/decomp/src/sys/objtypes.h`
+  - `components/decomp/src/mp/mptypes.h` / `components/decomp/src/mp/mpcollision.c`
+  - `components/decomp/src/ft/fttypes.h` / `components/decomp/src/ft/ftmanager.c`
+  - `components/decomp/src/it/ittypes.h` / `components/decomp/src/it/itmanager.c` (inferred)
+  - `components/decomp/src/wp/wptypes.h` / `components/decomp/src/wp/wpmanager.c` (inferred)
+  - `components/decomp/src/lb/lbcommon.c`
+  - components/decomp/include/PR/sp.h
+  - `src/game/engine/decomp/lbreloc_byteswap.h` / `lbreloc_byteswap.cpp`
 
 - **Related documentation:**
   - `docs/bugs/mpgrounddata_layer_mask_u8_byteswap_2026-04-22.md`

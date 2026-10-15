@@ -153,8 +153,8 @@ All values are now in the expected ranges; the earlier port's values (damage=64,
 
 ## Files touched
 
-- `decomp/src/wp/wptypes.h` — rename `_pad_before_combat_bits` → `_angle_raw`; rewrite Word 1/2/3 PORT bitfield order to match IDO's physical layout.
-- `decomp/src/wp/wpmanager.c` — extract angle via `((s16)attr->_angle_raw) >> 6` instead of the (incorrect) `BITFIELD_SEXT10(attr->angle)`.
+- `components/decomp/src/wp/wptypes.h` — rename `_pad_before_combat_bits` → `_angle_raw`; rewrite Word 1/2/3 PORT bitfield order to match IDO's physical layout.
+- `components/decomp/src/wp/wpmanager.c` — extract angle via `((s16)attr->_angle_raw) >> 6` instead of the (incorrect) `BITFIELD_SEXT10(attr->angle)`.
 
 ## Related
 
@@ -164,4 +164,4 @@ All values are now in the expected ranges; the earlier port's values (damage=64,
 
 ## Followups
 
-**`ITAttributes` has the same bug pattern.** The Word B1/B2/B3 bitfield declarations in `decomp/src/it/ittypes.h` are structured identically to the pre-fix `WPAttributes` (angle at the "top" of Word B1, knockback_weight at start of Word B2, etc.). Items currently don't crash (the `type` field fix addressed the Pokeball/Capsule crash), but damage/element/angle/attack_count decode for items is almost certainly as wrong as weapons were before this fix. Mechanical application of the same pattern — `_angle_raw` in place of `_pad_before_combat_bits`, reversed bitfield order for clang LE — should fix items analogously. Defer until after weapons are verified in-game.
+**`ITAttributes` has the same bug pattern.** The Word B1/B2/B3 bitfield declarations in `components/decomp/src/it/ittypes.h` are structured identically to the pre-fix `WPAttributes` (angle at the "top" of Word B1, knockback_weight at start of Word B2, etc.). Items currently don't crash (the `type` field fix addressed the Pokeball/Capsule crash), but damage/element/angle/attack_count decode for items is almost certainly as wrong as weapons were before this fix. Mechanical application of the same pattern — `_angle_raw` in place of `_pad_before_combat_bits`, reversed bitfield order for clang LE — should fix items analogously. Defer until after weapons are verified in-game.

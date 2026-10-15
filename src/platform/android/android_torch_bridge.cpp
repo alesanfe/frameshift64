@@ -1,7 +1,7 @@
 // android_torch_bridge.cpp — non-CLI entry points for Torch on Android.
 //
 // Torch's normal main() lives behind STANDALONE && !__EMSCRIPTEN__ in
-// torch/src/main.cpp and uses CLI11 to drive the Companion class. On
+// components/game-runtime/src/main.cpp and uses CLI11 to drive the Companion class. On
 // Android we ship Torch as a separate shared library (libtorch_runner.so)
 // that the first-run Activity loads to extract a ROM the user picked
 // via the Storage Access Framework.

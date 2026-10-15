@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "support" / "harness" / "netplay"))
-import session_runner as sr  # noqa: E402
+import session_runner as sr
 
 
 def main() -> int:
@@ -31,6 +31,12 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=4242)
     ap.add_argument("--base-port", type=int, default=7801)
     ap.add_argument("--inject-desync", type=int, default=-1)
+    ap.add_argument("--replay-frames", type=int, default=0,
+                    help="host records its inputs for <n> frames into "
+                         "<out>/replays/replay-*.ssr (cross-platform verify oracle)")
+    ap.add_argument("--sync-trace", action="store_true",
+                    help="host also writes SSB64_SYNC_TRACE to "
+                         "<out>/host.sync.trace (replay-verify oracle)")
     ap.add_argument("--mutant", default="",
                     choices=["", "accept_bad_session", "accept_bad_checksum",
                              "no_forward_guard"],
@@ -72,6 +78,11 @@ def main() -> int:
             "SSB64_NETPLAY_MUTANT": a.mutant,
             "SSB64_NETPLAY_PACKETFUZZ": a.packet_fuzz,
         }
+        if is_host:
+            if a.replay_frames > 0:
+                env["SSB64_REPLAY_RECORD_FRAMES"] = str(a.replay_frames)
+            if a.sync_trace:
+                env["SSB64_SYNC_TRACE"] = str(out / "host.sync.trace")
         return sr.spawn_game(build, name, env, out)
 
     procs = [

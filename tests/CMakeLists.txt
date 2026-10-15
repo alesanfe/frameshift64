@@ -58,13 +58,13 @@ endfunction()
 #       LABELS netplay protocol deterministic)
 
 # ── unit/netplay ───────────────────────────────────────────────────────
-# Pure wire codec (src/netplay/protocol/) — the first self-contained
+# Pure wire codec (src/networking/netplay/protocol/) — the first self-contained
 # native suite (test-catalog §D.1 NET-PROTO). Compiles the codec directly;
 # no game state, no ROM, no network.
 smash_add_test(NAME netpacket_test TYPE unit TIMEOUT 15
     SOURCES
         unit/netplay/protocol/netpacket_test.c
-        ${CMAKE_SOURCE_DIR}/src/netplay/protocol/netpacket.c
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/protocol/netpacket.c
     LABELS netplay protocol deterministic)
 target_include_directories(netpacket_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
@@ -72,7 +72,7 @@ target_include_directories(netpacket_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 # Coverage-guided parser fuzzing (TD-010). Opt-in: requires clang's
 # -fsanitize=fuzzer, so it's gated on its own option rather than riding
 # SSB64_BUILD_TESTING. The mutation-driven in-binary driver
-# (tools/fuzz/run_parser_fuzz.py + SSB64_FUZZ_PARSER hook) covers the
+# (tools/analysis/fuzz/run_parser_fuzz.py + SSB64_FUZZ_PARSER hook) covers the
 # file-loading parsers that need real game state; these targets cover
 # the pure codecs.
 #
@@ -89,7 +89,7 @@ if (SSB64_BUILD_FUZZERS)
     # SSNP wire codec — self-contained C, no game state.
     add_executable(net_packet_fuzzer
         fuzz/net_packet_fuzzer.c
-        ${CMAKE_SOURCE_DIR}/src/netplay/protocol/netpacket.c)
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/protocol/netpacket.c)
     target_include_directories(net_packet_fuzzer PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_compile_options(net_packet_fuzzer PRIVATE ${SSB64_FUZZ_FLAGS})
     target_link_options(net_packet_fuzzer PRIVATE ${SSB64_FUZZ_FLAGS})

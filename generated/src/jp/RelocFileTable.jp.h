@@ -8,7 +8,7 @@ extern "C" {
 
 /**
  * Maps file_id (0–2106) to the resource path in the .o2r archive.
- * Auto-generated from assets/configuration/extraction/jp/reloc_*.yml by tools/codegen/generate_reloc_table.py.
+ * Auto-generated from assets/game/jp/reloc_*.yml by tools/code-generation/generate_reloc_table.py.
  */
 extern const char* const gRelocFileTable[RELOC_FILE_COUNT];
 

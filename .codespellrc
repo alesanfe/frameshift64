@@ -1,4 +1,4 @@
 [codespell]
-skip = .git,.venv-lint,build,build-lint,assets,decomp,libultraship,torch,mods/examples,.claude,node_modules,mods,out,*.o,*.a,*.dll,*.exe,*.png,*.jpg,*.jpeg,*.gif,*.zip,*.bin,*.otr,*.o2r,*.trace,*.z64,services/netplay-lobby/cloudflare/node_modules,x64
-ignore-words-list = nd,th,fo,ba,ser,mos,hda,hist,crate,afile,te,siz,ue
+skip = .git,.venv-lint,build,build-lint,assets,decomp,libultraship,torch,mods/examples,.claude,node_modules,mods,out,*.o,*.a,*.dll,*.exe,*.png,*.jpg,*.jpeg,*.gif,*.zip,*.bin,*.otr,*.o2r,*.trace,*.z64,services/netplay-lobby/cloudflare/node_modules,x64,components,*audit_static_analysis_2026-10-14.md,*deep_technical_audit_2026-10-14.md
+ignore-words-list = nd,th,fo,ba,ser,mos,hda,hist,crate,afile,te,siz,ue,sav,statics,seh,unparseable,derails,deriver,copyin,sting,ist,ontext,strat,posible,asume,relevante,lod,pres
 quiet-level = 2

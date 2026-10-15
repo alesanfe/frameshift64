@@ -2,7 +2,7 @@
 
 ## Summary
 
-**FTAttributes is correct as declared in `decomp/src/ft/fttypes.h`.** All spot-checked field offsets and the single bitfield word (`is_have_*` flags at offset `0x100`) match IDO's emitted load/shift/mask sequences for the N64 build. No mismatches found; no rewrite needed. The companion file `decomp/src/ft/ftdef.h` contains no bitfield-heavy ROM-backed structs (only a `FTKEY_EVENT_STICK` macro under `#if IS_BIG_ENDIAN`, already handled).
+**FTAttributes is correct as declared in `components/decomp/src/ft/fttypes.h`.** All spot-checked field offsets and the single bitfield word (`is_have_*` flags at offset `0x100`) match IDO's emitted load/shift/mask sequences for the N64 build. No mismatches found; no rewrite needed. The companion file `components/decomp/src/ft/ftdef.h` contains no bitfield-heavy ROM-backed structs (only a `FTKEY_EVENT_STICK` macro under `#if IS_BIG_ENDIAN`, already handled).
 
 Related bitfield-heavy structs in the same file (`FTMotionEvent*` family, `FTAttackColl`, `FTItemThrow`, `FTItemSwing`) are **out of scope** — they're either runtime-only (allocated and written by port code, never pass1-swapped as ROM data) or are motion-script events that are a separate audit target. The `FTMotionEvent*` family in particular should be the next audit target since it has extensive `#if IS_BIG_ENDIAN` bitfield branches and is decoded from ROM motion scripts every frame.
 

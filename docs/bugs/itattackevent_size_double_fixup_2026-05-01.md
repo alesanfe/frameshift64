@@ -68,20 +68,20 @@ fixup was the problem.
 Removed `portFixupStructU16(&ev[ip->event_id], 0x04, 1)` from all 7 call
 sites:
 
-- `decomp/src/it/itmain.c::itMainUpdateAttackEvent`
-- `decomp/src/it/itcommon/itbombhei.c::itBombHeiCommonUpdateAttackEvent`
-- `decomp/src/it/itcommon/itmsbomb.c::itMSBombExplodeUpdateAttackEvent`
-- `decomp/src/it/itground/itmarumine.c::itMarumineExplodeUpdateAttackEvent`
-- `decomp/src/it/itground/itporygon.c::itPorygonCommonUpdateMonsterEvent`
-- `decomp/src/it/itground/itfushigibana.c::itFushigibanaCommonUpdateMonsterEvent`
-- `decomp/src/it/itfighter/itlinkbomb.c::itLinkBombExplodeUpdateAttackEvent`
+- `components/decomp/src/it/itmain.c::itMainUpdateAttackEvent`
+- `components/decomp/src/it/itcommon/itbombhei.c::itBombHeiCommonUpdateAttackEvent`
+- `components/decomp/src/it/itcommon/itmsbomb.c::itMSBombExplodeUpdateAttackEvent`
+- `components/decomp/src/it/itground/itmarumine.c::itMarumineExplodeUpdateAttackEvent`
+- `components/decomp/src/it/itground/itporygon.c::itPorygonCommonUpdateMonsterEvent`
+- `components/decomp/src/it/itground/itfushigibana.c::itFushigibanaCommonUpdateMonsterEvent`
+- `components/decomp/src/it/itfighter/itlinkbomb.c::itLinkBombExplodeUpdateAttackEvent`
 
 Kept the legitimate `portFixupStructU16(&ev[i], 0x20, 1)` calls in the two
 ITMonsterEvent callers — `fgm_id` is at offset 0x20 (low half of its word)
 so it genuinely needs the rotation.
 
 Updated `ITAttackEvent` and `ITMonsterEvent` struct comments in
-`decomp/src/it/ittypes.h` with a do-not-fixup-size warning so a future "looks like
+`components/decomp/src/it/ittypes.h` with a do-not-fixup-size warning so a future "looks like
 a missed u16 fixup" sweep doesn't reintroduce the bug.
 
 ## Class

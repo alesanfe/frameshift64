@@ -4,8 +4,8 @@
 //
 // This file is a CMake template (configure_file with @ONLY) — the icon
 // path is filled in at configure time from SSB64_RC_ICON_PATH:
-//   US build → <repo>/assets/icon.ico
-//   JP build → <repo>/assets/icon-jp.ico
+//   US build → <repo>/assets/branding/icons/icon.ico
+//   JP build → <repo>/assets/branding/icons/icon-jp.ico
 // Absolute path so the rc compiler resolves the same regardless of
 // where the generated ssb64.rc lands in the build tree.
 IDI_ICON1 ICON "@SSB64_RC_ICON_PATH@"

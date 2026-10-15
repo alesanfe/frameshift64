@@ -6,4 +6,4 @@
 
 **Fix:** `portNormalizeDisplayListPointer` widens packed DLs to native format with segment 0x0E rewriting, opcode validation, and G_ENDDL guarantee.
 
-**Files:** `libultraship/src/fast/interpreter.cpp`
+**Files:** `components/libultraship/src/fast/interpreter.cpp`

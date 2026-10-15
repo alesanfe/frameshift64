@@ -1,6 +1,6 @@
 # Update security
 
-The updater (`src/distribution/updater/Updater.cpp`) downloads release artifacts. Until
+The updater (`src/application/update/updater/Updater.cpp`) downloads release artifacts. Until
 signature verification lands (TD-009), the trust chain is GitHub Releases
 over TLS — sufficient for integrity against random corruption, not against
 a compromised release.

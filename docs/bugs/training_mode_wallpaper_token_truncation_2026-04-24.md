@@ -22,7 +22,7 @@ SSB64: !!!! CRASH SIGSEGV fault_addr=0x34
 the port:
 
 ```c
-// decomp/src/mp/mptypes.h
+// components/decomp/src/mp/mptypes.h
 #ifdef PORT
     u32 wallpaper;         // reloc token (index into sPointerTable)
 #else
@@ -30,7 +30,7 @@ the port:
 #endif
 ```
 
-`sc1PTrainingModeLoadWallpaper` (decomp/src/sc/sc1pmode/sc1ptrainingmode.c:661)
+`sc1PTrainingModeLoadWallpaper` (components/decomp/src/sc/sc1pmode/sc1ptrainingmode.c:661)
 stores the **raw host pointer** returned by `lbRelocGetFileData` directly
 into this field:
 
@@ -42,7 +42,7 @@ On N64 that's fine — the field is a `Sprite*`. On the port with LP64:
 
 1. The 64-bit host pointer is truncated to 32 bits when assigned to
    `u32 wallpaper`. The low 32 bits of the pointer end up in the field.
-2. `grWallpaperMakeStatic` (decomp/src/gr/grwallpaper.c:178) reads it back
+2. `grWallpaperMakeStatic` (components/decomp/src/gr/grwallpaper.c:178) reads it back
    through `PORT_RESOLVE`:
    ```c
    (Sprite*)PORT_RESOLVE(gMPCollisionGroundData->wallpaper)
@@ -62,7 +62,7 @@ trips this bug.
 
 ## Fix
 
-`decomp/src/sc/sc1pmode/sc1ptrainingmode.c` — register the raw pointer as a
+`components/decomp/src/sc/sc1pmode/sc1ptrainingmode.c` — register the raw pointer as a
 token before storing it, so `PORT_RESOLVE` round-trips:
 
 ```c

@@ -41,7 +41,7 @@ from pathlib import Path
 
 # --- Bring in the reloc extractor from the neighboring tool -----------------
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "reloc_extract"))
-from reloc_extract import extract_file, read_table_entry  # noqa: E402
+from reloc_extract import extract_file, read_table_entry
 
 # G_IM_FMT_*
 FMT_RGBA = 0
@@ -221,8 +221,7 @@ def apply_swizzle(texels: bytes, width_img: int, height: int, bpp: int,
     # Parameterize by swap chunk size
     if strategy in ("port_current", "xor4"):
         half, full = 4, 8
-        if strategy == "port_current":
-            if row_bytes < 8 or (row_bytes % 8) != 0:
+        if strategy == "port_current" and (row_bytes < 8 or (row_bytes % 8) != 0):
                 return bytes(out)
     elif strategy == "xor2":
         half, full = 2, 4

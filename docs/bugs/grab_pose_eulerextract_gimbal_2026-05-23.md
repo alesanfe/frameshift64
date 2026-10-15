@@ -73,7 +73,7 @@ Both want tolerance-based comparison. Audit candidates: any `gm/gmcollision.c` m
 
 After confirming the offline reproducer was fixed solely by the gimbal-lock tolerance change here (PR #205), we ran the audit hook against the rest of the codebase. JR's repro on `main` (which had PR #204's invalidate machinery applied) **still produced the inverted victim** — so PR #204's `ftParamInvalidateFighterRootChain`, `ftMainApplySlopeContourFlags`, per-frame stale-FULL guard, NULL guards on capture/throw paths, and `mpCommonUpdateFighterSlopeContour` invalidate were demonstrably not load-bearing for the offline bug they were diagnosed against (and the runtime trace had already shown `root_cache_pre = 0, hand_cache_pre = 0` on every one of 975 frames, confirming the invalidate had nothing to clear). Reverted in `398f02978` on the same branch as part of this follow-up.
 
-Sweep scope: `decomp/src/{gm,ft,mp,wp,it,gr,sc,lb,ef,mn,sys/audio}/` and `port/`. libultraship out of scope (separate codebase). Three confirmed sibling sites with the same root-cause class:
+Sweep scope: `components/decomp/src/{gm,ft,mp,wp,it,gr,sc,lb,ef,mn,sys/audio}/` and `port/`. libultraship out of scope (separate codebase). Three confirmed sibling sites with the same root-cause class:
 
 | Site | Shape | Visible blast |
 |---|---|---|

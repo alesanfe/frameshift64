@@ -62,11 +62,11 @@ jobs:
             src include platforms tools \
             > out/reports/lint/cpplint.txt 2>&1 || true
           find . \( -name CMakeLists.txt -o -name '*.cmake' \) \
-            -not -path './build*' -not -path './decomp/*' \
-            -not -path './libultraship/*' -not -path './torch/*' \
+            -not -path './build*' -not -path './components/decomp/*' \
+            -not -path './components/libultraship/*' -not -path './components/game-runtime/*' \
             -print0 | xargs -0 cmake-lint > out/reports/lint/cmake-lint.txt 2>&1 || true
           semgrep scan --config config/analysis/semgrep/smash-classic.yml \
-            src include platforms tools scripts decomp/src/sys \
+            src include platforms tools scripts components/decomp/src/sys \
             > out/reports/lint/semgrep-smash.txt 2>&1 || true
       - name: Summarize findings
         run: |

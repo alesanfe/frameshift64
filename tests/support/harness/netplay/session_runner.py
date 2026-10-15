@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -35,7 +34,7 @@ def lobby_healthy(port: int = 8799, timeout: float = 3.0) -> bool:
         return False
 
 
-def ensure_lobby(out_dir: Path, port: int = 8799) -> "subprocess.Popen | None":
+def ensure_lobby(out_dir: Path, port: int = 8799) -> subprocess.Popen | None:
     """Guarantee something answers on ws://127.0.0.1:<port>. Returns the
     spawned server process (kill it at teardown) or None if one was already
     up. Prefers the Node adapter — `wrangler dev`'s local ws proxy drops
@@ -62,7 +61,7 @@ def ensure_lobby(out_dir: Path, port: int = 8799) -> "subprocess.Popen | None":
 
 
 def spawn_game(build_dir: Path, name: str, env: dict, out_dir: Path,
-               exe_dir: "Path | None" = None) -> subprocess.Popen:
+               exe_dir: Path | None = None) -> subprocess.Popen:
     """Start one BattleShip instance. `env` entries are layered over the
     caller's environment; empty-string values are preserved exactly (some
     hooks check presence, not content — mirrors the ps1 drivers)."""
@@ -85,12 +84,12 @@ def stop_all(procs, grace: float = 3.0) -> None:
             p.kill()
 
 
-def kill_tree(proc: "subprocess.Popen | None") -> None:
+def kill_tree(proc: subprocess.Popen | None) -> None:
     if proc is None or proc.poll() is not None:
         return
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                       capture_output=True)
+                       capture_output=True, check=False)
     else:
         try:
             import signal
@@ -127,7 +126,7 @@ def log_matches(path: Path, pattern: str) -> bool:
         return False
 
 
-def read_trace(out_dir: Path, name: str) -> "list | None":
+def read_trace(out_dir: Path, name: str) -> list | None:
     t = out_dir / f"{name}.trace"
     if not t.exists():
         return None
@@ -135,7 +134,7 @@ def read_trace(out_dir: Path, name: str) -> "list | None":
 
 
 def compare_traces(names, out_dir: Path, ref: str = "host",
-                   min_fields: int = 0) -> "tuple[int, str]":
+                   min_fields: int = 0) -> tuple[int, str]:
     """Pairwise-compare every peer's confirmed-state trace against `ref`.
     min_fields>0 skips half-written teardown lines (localtest's 13-field
     guard). Returns (exit_code, message)."""
@@ -176,7 +175,7 @@ def load_profile(name: str) -> dict:
     except ImportError:  # pragma: no cover — dev environments have pyyaml
         raise SystemExit("pyyaml required for --profile (pip install pyyaml)")
     cfg = yaml.safe_load(
-        (ROOT / "tests" / "config" / "network-profiles.yml").read_text())
+        (ROOT / "tests" / "support" / "config" / "network-profiles.yml").read_text())
     prof = cfg.get("profiles", {}).get(name)
     if prof is None:
         known = ", ".join(sorted(cfg.get("profiles", {})))
@@ -198,7 +197,7 @@ def load_profile(name: str) -> dict:
     return env
 
 
-def log_size_guard(path: Path, max_bytes: int, label: str) -> "str | None":
+def log_size_guard(path: Path, max_bytes: int, label: str) -> str | None:
     try:
         if path.exists() and path.stat().st_size > max_bytes:
             return f"{label}: {path.name} over {max_bytes} bytes (leak?)"

@@ -62,7 +62,7 @@ jobs:
           fetch-depth: 0
       - name: Install build deps
         # libultraship's CMake calls find_package on:
-        #   libzip, nlohmann_json, tinyxml2, spdlog (libultraship/src)
+        #   libzip, nlohmann_json, tinyxml2, spdlog (components/libultraship/src)
         #   SDL2, GLEW                              (mac.cmake)
         # Local dev workflows inherit these from existing brew installs;
         # CI hosts need them explicit. spdlog has a FetchContent fallback
@@ -161,7 +161,7 @@ jobs:
           MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
           MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
           MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
-        run: bash platforms/macos/packaging/package-macos.sh
+        run: bash packaging/macos/package-macos.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         # The .dmg is the standard drag-to-Applications installer macOS
         # users expect. We don't ship the loose .app zip anymore — anyone
@@ -265,7 +265,7 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           SSB64_VERSION: ${{ matrix.version }}
-        run: bash platforms/linux/packaging/package-linux.sh
+        run: bash packaging/linux/package-linux.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: BattleShip-linux-${{ matrix.version }}
@@ -316,7 +316,7 @@ jobs:
           # Match android/app/build.gradle.kts: ndkVersion = "29.0.14206865"
           # and compileSdk = 34. ssb64-port has confirmed r29 + API 34
           # build clean against bionic / NDK toolchain; older NDKs trip on
-          # the ptrdiff_t shim in decomp/include/stddef.h.
+          # the ptrdiff_t shim in components/decomp/include/stddef.h.
           packages: 'platforms;android-34 build-tools;34.0.0 ndk;29.0.14206865'
       - name: Generate f3d.o2r (open-source Fast3D shaders bundled in APK)
         # Mirrors the GenerateF3DO2R CMake target. We don't invoke the full
@@ -324,7 +324,7 @@ jobs:
         # we just need the f3d.o2r file present at repo root so Gradle's
         # stageGameAssets task picks it up at configure time. The file
         # contents are just shaders/ packed as a ZIP — no toolchain needed.
-        working-directory: libultraship/src/fast
+        working-directory: components/libultraship/src/fast
         run: cmake -E tar cf "$GITHUB_WORKSPACE/f3d.o2r" --format=zip shaders
       - name: Decode release keystore (if configured via secrets)
         # If SSB64_ANDROID_KEYSTORE_BASE64 is set in the repo secrets,
@@ -423,7 +423,7 @@ jobs:
       - name: Install build deps
         # Windows runner ships with cmake / Visual Studio Build Tools
         # already. SDL2 comes from vcpkg, which is integrated by
-        # libultraship/CMakeLists's vcpkg bootstrap.
+        # components/libultraship/CMakeLists's vcpkg bootstrap.
         #
         # Pillow: tools/generate_arrow_svg.py + tools/png_to_c_array.py
         # (CSS scroll-arrow PNG generation + bake-to-C-header) import PIL.
@@ -437,7 +437,7 @@ jobs:
         env:
           SSB64_VERSION: ${{ matrix.version }}
           SSB64_ENABLE_SCRIPTING: ${{ matrix.enable_scripting }}
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File platforms/windows/packaging/package-windows.ps1
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File packaging/windows/package-windows.ps1
         shell: pwsh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
@@ -465,7 +465,7 @@ jobs:
         with:
           python-version: '3.x'
       - name: Generate SBOM
-        run: python tools/lint/gen_sbom.py --out artifacts/smash-classic.cdx.json
+        run: python tools/analysis/lint/gen_sbom.py --out artifacts/smash-classic.cdx.json
       - name: Generate SHA256SUMS.txt
         run: |
           find artifacts -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \

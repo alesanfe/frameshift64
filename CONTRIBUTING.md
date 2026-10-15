@@ -5,4 +5,4 @@
 - New port code goes under `src/<module>/` — nothing new at repo root. New tools under `tools/<category>/`, automation under `scripts/<category>/`.
 - Docs are classified by function under `docs/` (living docs vs dated investigations — see `docs/README.md`).
 - Generated output goes to `out/` (gitignored). Never commit ROMs, `.o2r` archives, or copyrighted assets.
-- Lint: `python tools/lint/run_project_lint.py` (writes to `out/reports/lint/`).
+- Lint: `python tools/analysis/lint/run_project_lint.py` (writes to `out/reports/lint/`).

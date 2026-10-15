@@ -41,7 +41,7 @@ uint32_t MissDumpCrc32(const uint8_t* p, size_t n) {
         std::array<uint32_t, 256> t{};
         for (uint32_t i = 0; i < 256; i++) {
             uint32_t c = i;
-            for (int j = 0; j < 8; j++) c = (c >> 1) ^ (0xEDB88320u & -(c & 1u));
+            for (int j = 0; j < 8; j++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
             t[i] = c;
         }
         return t;

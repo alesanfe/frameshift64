@@ -3,7 +3,7 @@
 > **STATUS 2026-04-26: RESOLVED via game-side workaround.** See
 > [`docs/bugs/intro_explosion_overlay_layering_2026-04-26.md`](../bugs/intro_explosion_overlay_layering_2026-04-26.md).
 > The shipped fix is two `#ifdef PORT` hunks in
-> `decomp/src/mv/mvopening/mvopeningroom.c`: skip the Overlay mesh draw
+> `components/decomp/src/mv/mvopening/mvopeningroom.c`: skip the Overlay mesh draw
 > entirely (it would paint an opaque white blob without redirect
 > emulation), and lower the transition camera's `dl_link_priority`
 > 95 → 30 so the Outline silhouette renders on top of all scene
@@ -213,19 +213,19 @@ In rough order of effort:
 
 | Subject | Location |
 |---|---|
-| Outline display callback | `decomp/src/mv/mvopening/mvopeningroom.c:1105` |
-| Overlay display callback | `decomp/src/mv/mvopening/mvopeningroom.c:1074` |
-| Transition + wallpaper creation (frame 1040) | `decomp/src/mv/mvopening/mvopeningroom.c:1369-1373` |
-| Wallpaper sprite render setup | `decomp/src/mv/mvopening/mvopeningroom.c:653` (`mvOpeningRoomWallpaperProcDisplay`) |
+| Outline display callback | `components/decomp/src/mv/mvopening/mvopeningroom.c:1105` |
+| Overlay display callback | `components/decomp/src/mv/mvopening/mvopeningroom.c:1074` |
+| Transition + wallpaper creation (frame 1040) | `components/decomp/src/mv/mvopening/mvopeningroom.c:1369-1373` |
+| Wallpaper sprite render setup | `components/decomp/src/mv/mvopening/mvopeningroom.c:653` (`mvOpeningRoomWallpaperProcDisplay`) |
 | Wallpaper sprite resource | `lbRelocGetFileData(Sprite*, sMVOpeningRoomFiles[7], llMVOpeningRoomWallpaperSprite)` |
-| Per-frame Z clear (real depth-clear via redirect-fill) | `decomp/src/sys/objdisplay.c:2994-3001` |
-| `lbCommonStartSprite` (sets `G_AC_THRESHOLD`) | `decomp/src/lb/lbcommon.c:3145` |
-| Existing redirect-active depth-test override | `libultraship/src/fast/interpreter.cpp:2199-2203` (commit `5fe2efe`) |
-| Existing redirect-fill depth clear | `libultraship/src/fast/interpreter.cpp:3585-3603` (commit `0148b85`) |
-| TextureRectangle redirect skip | `libultraship/src/fast/interpreter.cpp:3529-3531` (commit `4e5fe49`) |
-| AA / texture_edge approximation | `libultraship/src/fast/interpreter.cpp:2256-2270` |
-| Fragment shader alpha-threshold | `libultraship/src/fast/shaders/metal/default.shader.metal:280-281` |
-| ImGui game-FB composite | `libultraship/src/ship/window/gui/Gui.cpp:716-722` |
+| Per-frame Z clear (real depth-clear via redirect-fill) | `components/decomp/src/sys/objdisplay.c:2994-3001` |
+| `lbCommonStartSprite` (sets `G_AC_THRESHOLD`) | `components/decomp/src/lb/lbcommon.c:3145` |
+| Existing redirect-active depth-test override | `components/libultraship/src/fast/interpreter.cpp:2199-2203` (commit `5fe2efe`) |
+| Existing redirect-fill depth clear | `components/libultraship/src/fast/interpreter.cpp:3585-3603` (commit `0148b85`) |
+| TextureRectangle redirect skip | `components/libultraship/src/fast/interpreter.cpp:3529-3531` (commit `4e5fe49`) |
+| AA / texture_edge approximation | `components/libultraship/src/fast/interpreter.cpp:2256-2270` |
+| Fragment shader alpha-threshold | `components/libultraship/src/fast/shaders/metal/default.shader.metal:280-281` |
+| ImGui game-FB composite | `components/libultraship/src/ship/window/gui/Gui.cpp:716-722` |
 
 ## Don't break
 
@@ -235,7 +235,7 @@ In rough order of effort:
   touches depth handling needs to regression-check the fighter
   description scene to make sure the 2D card stays behind the
   model.
-- The per-frame Z clear at `decomp/src/sys/objdisplay.c:2999-3001` uses
+- The per-frame Z clear at `components/decomp/src/sys/objdisplay.c:2999-3001` uses
   the redirect-fill mechanism in `G_CYC_FILL` mode with
   `fill_color = GPACK_ZDZ(G_MAXFBZ, 0)` — anything that changes
   redirect-fill semantics must preserve that case as a

@@ -34,7 +34,7 @@ It does NOT extend to:
   * Anything owned by Nintendo / HAL Laboratory (game code, data, audio,
     textures, models, trademarks). None of that is included in this
     repository.
-  * The decompiled C source under the `decomp/` submodule, which is derived
+  * The decompiled C source under the `components/decomp/` submodule, which is derived
     from the VetriTheRetri/ssb-decomp-re project
     (https://github.com/VetriTheRetri/ssb-decomp-re). At the time of writing,
     the upstream decompilation does not publish an explicit license; this
@@ -43,10 +43,10 @@ It does NOT extend to:
     project (and its contributors) for any rights, terms, or restrictions
     governing reuse of the decomp tree.
   * Decomp-derived content elsewhere in this repository, even though these
-    files live outside the `decomp/` submodule. They originate (verbatim or
+    files live outside the `components/decomp/` submodule. They originate (verbatim or
     derivatively) from the decomp's symbol and file-name tables; the port
     makes no copyright claim over their content and defers to the upstream
-    decomp project on the same terms as the `decomp/` submodule above:
+    decomp project on the same terms as the `components/decomp/` submodule above:
       - `tools/reloc_data_symbols.us.txt` — vendored verbatim from
         ssb-decomp-re's `symbols/reloc_data_symbols.us.txt`.
       - `tools/relocFileDescriptions.us.txt` — decomp-authored file-name
@@ -63,23 +63,23 @@ It does NOT extend to:
     remain MIT-licensed; only the content they emit — when that content
     originates from the decomp — is subject to the upstream-deference
     clause above.
-  * The `libultraship/` submodule (https://github.com/Kenix3/libultraship),
+  * The `components/libultraship/` submodule (https://github.com/Kenix3/libultraship),
     licensed independently by its upstream maintainers under the MIT License:
       Copyright (c) 2022 kenix3 <kenixwhisperwind@gmail.com>
     libultraship was originated by the Harbour Masters team for the
     Ship of Harkinian project and is now maintained at Kenix3/libultraship.
-  * The `torch/` submodule (https://github.com/HarbourMasters/Torch),
+  * The `components/game-runtime/` submodule (https://github.com/HarbourMasters/Torch),
     licensed independently by its upstream maintainers under the MIT License:
       Copyright (c) 2023 Lywx <admin@undervolt.dev>
     Torch is maintained by the Harbour Masters team.
-  * The font assets bundled under `assets/custom/fonts/`, which are licensed
+  * The font assets bundled under `assets/fonts/`, which are licensed
     under the SIL Open Font License, Version 1.1:
       - Montserrat (Copyright 2011 The Montserrat Project Authors,
         https://github.com/JulietaUla/Montserrat) — see
-        `assets/custom/fonts/Montserrat-OFL.txt`.
+        `assets/fonts/Montserrat-OFL.txt`.
       - Inconsolata (Copyright 2006 The Inconsolata Project Authors,
         https://github.com/googlefonts/Inconsolata) — see
-        `assets/custom/fonts/Inconsolata-OFL.txt`.
+        `assets/fonts/Inconsolata-OFL.txt`.
     The full OFL text accompanies each font in its respective `*-OFL.txt`
     file and governs use, modification, and redistribution of the font files.
 

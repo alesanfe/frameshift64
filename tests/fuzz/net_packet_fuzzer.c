@@ -1,7 +1,7 @@
 /* net_packet_fuzzer.c — libFuzzer target for the SSNP wire codec.
  *
  * Feeds arbitrary bytes through every parse entry point of
- * src/netplay/protocol/netpacket.c. The codec is pure (no globals, no
+ * src/networking/netplay/protocol/netpacket.c. The codec is pure (no globals, no
  * I/O) so a crash or sanitizer hit here is always a real finding.
  *
  * Build:
@@ -13,7 +13,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "netplay/protocol/netpacket.h"
+#include "networking/netplay/protocol/netpacket.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {

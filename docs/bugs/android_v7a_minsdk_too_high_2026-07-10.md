@@ -136,7 +136,7 @@ render entry biases the nondeterministic crash toward SIGSEGV). Symbolicated:
 
 ```
 SIGSEGV invalid permissions, fault addr = 0x3003083c   (data deref of a garbage pointer)
-pc = Fast3dWindow::EndFrame()            libultraship/src/fast/Fast3dWindow.cpp:183
+pc = Fast3dWindow::EndFrame()            components/libultraship/src/fast/Fast3dWindow.cpp:183
        (inlined std::shared_ptr<Fast::Interpreter>::operator->)
 lr = port_drain_pending_display_list     src/application/gameloop.cpp:393
 ```

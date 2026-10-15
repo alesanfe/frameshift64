@@ -59,7 +59,7 @@ junit_family = "xunit2"
 
 # Python coverage: tools/ + the test support package. The game binary is
 # C/C++ — covered separately via LLVM instrumentation (see
-# tools/testing/coverage.py and -DSSB64_ENABLE_COVERAGE=ON).
+# tools/developer/testing/coverage.py and -DSSB64_ENABLE_COVERAGE=ON).
 [tool.coverage.run]
 branch = true
 parallel = true
@@ -87,3 +87,16 @@ directory = "out/coverage/python/html"
 
 [tool.coverage.xml]
 output = "out/coverage/python/coverage.xml"
+
+# Repo-pinned lint policy — without this section `ruff check` falls back to
+# whatever config the invoking machine has, so results were not reproducible
+# across hosts. `select` is intentionally absent: the linter's default rule
+# set is kept; only the suppressions below are pinned.
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+# Dev/test tooling: broad excepts, stdout-fallback file handles, and silent
+# try/except-skip are intentional patterns, not production error boundaries.
+"tools/**" = ["BLE001", "SIM115", "S110", "S112", "TRY004", "DTZ011"]
+"tests/**" = ["BLE001", "SIM115", "S110", "S112"]

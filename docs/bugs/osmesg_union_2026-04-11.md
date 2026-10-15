@@ -3,8 +3,8 @@
 **Symptoms:** On macOS/arm64, the scheduler crashed in `sySchedulerExecuteTasksAll + 0x200` with SIGBUS: `blr x8` where `x8 = curr->fnCheck` pointed to an invalid code address. `curr` itself was garbage — not a heap pointer but a stack-range address with low bits looking like `0x16f...01`. This surfaced immediately after "Boot sequence yielded — entering frame loop" as the first task dispatch. The same build worked on Windows because MSVC-x64 happened to leave the relevant stack slots zero.
 
 **Root cause:** `OSMesg` has **two conflicting definitions** visible in the same program:
-- decomp/include/PR/os.h (decomp): `typedef void* OSMesg;`
-- `libultraship/include/libultraship/libultra/message.h`: `typedef union { u8 data8; u16 data16; u32 data32; void* ptr; } OSMesg;`
+- components/decomp/include/PR/os.h (decomp): `typedef void* OSMesg;`
+- `components/libultraship/include/components/libultraship/libultra/message.h`: `typedef union { u8 data8; u16 data16; u32 data32; void* ptr; } OSMesg;`
 
 Both are 8 bytes with 8-byte alignment, so the ABI matches across translation units. But the semantics of a **C-style cast from integer to OSMesg** differ by a mile:
 - In C TUs that see `void*`: `(OSMesg)INTR_VRETRACE` → well-defined int-to-pointer conversion, always zero-extends.

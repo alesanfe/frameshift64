@@ -5,14 +5,12 @@ drives the standalone e2e/netplay drivers under tests/e2e/, and (when a
 native build exists) shells out to ctest for the GTest binaries. Coverage
 of the Python side comes from pytest-cov; C/C++ coverage comes from an
 LLVM-instrumented build (-DSSB64_ENABLE_COVERAGE=ON) merged by
-tools/testing/coverage.py.
+tools/developer/testing/coverage.py.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path

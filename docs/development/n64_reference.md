@@ -23,7 +23,7 @@ When porting, these GBI calls are intercepted by libultraship's Fast3D renderer,
 
 ## Audio
 - **N64 audio**: Software-mixed on the RSP using audio microcode. Audio banks contain instrument definitions, samples (ADPCM compressed), and sequences (MIDI-like).
-- The audio subsystem (`decomp/src/sys/audio.c`, decomp/include/n_audio/) manages sound effects, music, and mixing.
+- The audio subsystem (`components/decomp/src/sys/audio.c`, components/decomp/include/n_audio/) manages sound effects, music, and mixing.
 - In the port, audio processing routes through SDL2 instead of the RSP.
 
 ## Threading Model

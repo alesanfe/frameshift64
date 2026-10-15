@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "support" / "harness" / "netplay"))
-import session_runner as sr  # noqa: E402
+import session_runner as sr
 
 
 def main() -> int:
@@ -26,7 +26,7 @@ def main() -> int:
     ap.add_argument("--jitter-ms", type=int, default=0)
     ap.add_argument("--loss-pct", type=int, default=0)
     ap.add_argument("--profile", default=None,
-                    help="named impairment profile (tests/config/network-profiles.yml)")
+                    help="named impairment profile (tests/support/config/network-profiles.yml)")
     ap.add_argument("--server", default="")
     ap.add_argument("--stage", type=int, default=0)
     ap.add_argument("--force-relay", action="store_true")

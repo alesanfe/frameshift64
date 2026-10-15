@@ -10,7 +10,7 @@ stage-select extra page. Desktop builds showed the icons correctly.
 
 ## Root Cause
 
-Desktop builds run `tools/asset-pipeline/derive_stage_assets.py` against the user's local
+Desktop builds run `tools/assets/pipeline/derive_stage_assets.py` against the user's local
 ROM and place PNGs under:
 
 ```text
@@ -87,7 +87,7 @@ dataStart = tableRomAddr + (fileCount + 1) * entrySize
 ```
 
 This matches torch's `SSB64::GetRelocLayout` and the desktop
-`tools/asset-pipeline/derive_stage_assets.py` (`RELOC_DATA_START = 0x1B2C6C`). With the wrong
+`tools/assets/pipeline/derive_stage_assets.py` (`RELOC_DATA_START = 0x1B2C6C`). With the wrong
 base, `file_data` pointed `0x41CC` bytes short of the real VPK0 stream, so
 every compressed stage file failed to decode and `0/3` icons were produced —
 i.e. the icons would still have been question marks on Android.

@@ -1,0 +1,14 @@
+# Python lint/analysis toolchain for the "Fast lints" CI tier and
+# scripts/development/configure-lint local runs.
+# Install: pip install -r tools/analysis/lint/requirements.txt
+cpplint
+cmakelang
+lizard
+codespell
+yamllint
+ruff
+bandit
+semgrep
+clang-tidy
+cppcheck
+pillow

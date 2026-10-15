@@ -59,7 +59,7 @@
 #include "port_css_stage_assets.h"
 
 #include "app_paths.h"
-#include "integration/decomp/lbreloc_byteswap.h"
+#include "game/engine/decomp/lbreloc_byteswap.h"
 #include "resources/relocation/RelocFile.h"
 #include "resources/relocation/RelocFileTable.h"
 #include "resources/relocation/RelocPointerTable.h"
@@ -264,7 +264,7 @@ static inline void put_f32(uint8_t *b, unsigned off, float v) {
 // RGBA8888 -> IA4 silhouette packer.
 //
 // IA4 is **3 bits of intensity + 1 bit of alpha** per pixel (NOT 4-bit
-// intensity — see libultraship/src/fast/interpreter.cpp ImportTextureIA4).
+// intensity — see components/libultraship/src/fast/interpreter.cpp ImportTextureIA4).
 // 2 pixels per byte; high nibble = even pixel, low nibble = odd pixel.
 //
 // For a silhouette emblem source (RGB ignored, alpha encodes the mask):

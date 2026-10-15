@@ -39,7 +39,7 @@ That moved the search into libultraship. `git diff kenix/main..ssb64 -- src/fast
 
 ## Fix
 
-`libultraship/src/fast/interpreter.cpp`, in the per-vertex fog packing branch:
+`components/libultraship/src/fast/interpreter.cpp`, in the per-vertex fog packing branch:
 
 ```cpp
 } else {
@@ -65,7 +65,7 @@ This is the same family as `primdepth_unimplemented_2026-04-25`: an entire bit-f
 
 ## Files touched
 
-- `libultraship/src/fast/interpreter.cpp` (3 lines + helpful comment) — pushed as `JRickey/libultraship#ssb64@e608ec09`
+- `components/libultraship/src/fast/interpreter.cpp` (3 lines + helpful comment) — pushed as `JRickey/libultraship#ssb64@e608ec09`
 - Submodule pointer bump in outer worktree
 
 ## Validation

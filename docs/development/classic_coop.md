@@ -3,7 +3,7 @@
 Port feature (2026-06-10): a second human can join the entire Classic (1P
 Game) run. Gated behind **Settings → Gameplay → "Classic Co-op (Needs
 reload)"** — default **ON**, latched once at boot
-(`port_classic_coop_latch()` in `src/gameplay/modes/ClassicCoop.cpp`).
+(`port_classic_coop_latch()` in `src/game/gameplay/modes/ClassicCoop.cpp`).
 
 ## Design
 
@@ -80,16 +80,16 @@ reload)"** — default **ON**, latched once at boot
 
 ## Files touched
 
-`src/gameplay/modes/ClassicCoop.cpp` (new), `enhancements.h`,
-`src/presentation/PortMenu.cpp`, `src/application/port.cpp`,
-`decomp/src/sc/sctypes.h`, `decomp/src/sc/scmanager.c`,
-`decomp/src/sc/sc1pmode/sc1pmanager.{c,h}`,
-`decomp/src/sc/sc1pmode/sc1pgame.c`,
-`decomp/src/sc/sc1pmode/sc1pbonusstage.c`,
-`decomp/src/mn/mn1pmode/mn1pmode.c`,
-`decomp/src/mn/mnplayers/mnplayersvs.c`,
-`decomp/src/mn/mnplayers/mnplayers1pgame.c`,
-`decomp/src/ft/ftcommon/ftcommondead.c`.
+`src/game/gameplay/modes/ClassicCoop.cpp` (new), `enhancements.h`,
+`src/interfaces/presentation/PortMenu.cpp`, `src/application/port.cpp`,
+`components/decomp/src/sc/sctypes.h`, `components/decomp/src/sc/scmanager.c`,
+`components/decomp/src/sc/sc1pmode/sc1pmanager.{c,h}`,
+`components/decomp/src/sc/sc1pmode/sc1pgame.c`,
+`components/decomp/src/sc/sc1pmode/sc1pbonusstage.c`,
+`components/decomp/src/mn/mn1pmode/mn1pmode.c`,
+`components/decomp/src/mn/mnplayers/mnplayersvs.c`,
+`components/decomp/src/mn/mnplayers/mnplayers1pgame.c`,
+`components/decomp/src/ft/ftcommon/ftcommondead.c`.
 
 ## Debug / testing
 

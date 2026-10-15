@@ -13,7 +13,7 @@ docs/fighter_appear_body_static_handoff_2026-04-21.md.
 
 Regression introduced by commit 3161c13 ("Walker: reject ambiguous streams
 where raw form also parses cleanly"), which hardened the AObjEvent32
-halfswap walker (`src/compatibility/port_aobj_fixup.cpp`) against over-accepting
+halfswap walker (`src/platform/compatibility/port_aobj_fixup.cpp`) against over-accepting
 already-native streams by rejecting any stream where BOTH the
 un-halfswapped and raw interpretations scan to a clean terminator.
 
@@ -89,6 +89,6 @@ that the "validity" signal is near-useless.
 
 A cheap defense is length comparison: the correct interpretation walks
 further than the accidental one. For this codebase, the threshold lives
-in `src/compatibility/port_aobj_fixup.cpp:walk`. If future changes add new opcodes or
+in `src/platform/compatibility/port_aobj_fixup.cpp:walk`. If future changes add new opcodes or
 adjust field layouts, re-verify the 1-command-raw false-positive rate
 stays the dominant failure mode and the threshold still catches it.

@@ -7,15 +7,15 @@
 Fast3D's `Interpreter::GfxDpSetTile` accepts `masks`/`maskt` but **only uses them to promote `G_TX_WRAP → G_TX_CLAMP` when `masks == NOMASK`**; the actual values are then discarded.  The `texture_tile` struct has no field to store them, so downstream `ImportTexture*` decoders only clamp to the line-derived width/height and the `lrs/uls`-derived `tile_w/tile_h` (which for these materials was *larger* than the line width → no clamp fired).  The result is that Fast3D uploaded a 16x8 CI4 texture for a logically-8x8 material, half of the uploaded texels were padding → palette index 0 → opaque black, and the shader rendered them as-is.  Every other fighter material that happened to have `mask_w >= line_w` (i.e. densely packed data across the whole TMEM line) was unaffected, which is why only hands/feet/helmet-left showed the artefact.
 
 **Fix:**
-1. Add `uint8_t masks, maskt` fields to `texture_tile[8]` in `libultraship/include/fast/interpreter.h`.
+1. Add `uint8_t masks, maskt` fields to `texture_tile[8]` in `components/libultraship/include/fast/interpreter.h`.
 2. Store the parameters in `GfxDpSetTile` alongside the existing shifts/line fields.
 3. In `ImportTextureRgba16`, `ImportTextureCi4`, and `ImportTextureCi8`, clamp the decoded `width`/`height` to `1<<masks` / `1<<maskt` when those values are smaller than the line-derived dimensions (after the existing `SetTileSize lrs/uls` clamp).  This matches the N64 sampler's wrap behaviour for the common case and eliminates the black padding.
 
 The IA and I decoders weren't touched because no fighter/stage BLACK hits were observed in those paths during testing, but the same clamp applies in principle — if any IA/I texture surfaces with similar symptoms, extend the fix.
 
 **Files:**
-- `libultraship/include/fast/interpreter.h` — `texture_tile` struct grew `masks`/`maskt`.
-- `libultraship/src/fast/interpreter.cpp` — `GfxDpSetTile` stores `masks`/`maskt`; `ImportTextureRgba16`/`Ci4`/`Ci8` honour them as a width/height clamp after the existing `lrs/uls` clamp.
+- `components/libultraship/include/fast/interpreter.h` — `texture_tile` struct grew `masks`/`maskt`.
+- `components/libultraship/src/fast/interpreter.cpp` — `GfxDpSetTile` stores `masks`/`maskt`; `ImportTextureRgba16`/`Ci4`/`Ci8` honour them as a width/height clamp after the existing `lrs/uls` clamp.
 
 **Class-of-bug lesson:** Fast3D implements only the RDP features needed for most games.  Whenever an "unused" parameter of a GBI command *is* used by SSB64 for correctness (here: `masks`/`maskt` for 8-wide-in-16-wide-TMEM-line textures), the fix is always on the libultraship side.  Before grinding on byte-level data interpretations, grep the Fast3D tile struct for the field name and confirm it's actually stored — if it isn't, that's the bug.
 
@@ -45,7 +45,7 @@ and it intentionally spins around Z in `itStarRodWeaponStarProcUpdate`, so the
 "not camera-parallel" symptom must be separated from any missing-right-third
 texture symptom before changing texture math again.
 
-**Current diagnostic hook:** `libultraship/src/fast/interpreter.cpp` now has
+**Current diagnostic hook:** `components/libultraship/src/fast/interpreter.cpp` now has
 an inert-by-default render diagnostic logger:
 
 ```sh

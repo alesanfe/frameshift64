@@ -1,6 +1,6 @@
 /*
  * netpacket_test.c — pure codec suite for the SSNP v4 wire format
- * (src/netplay/protocol/netpacket.*). Covers the NET-PROTO block of
+ * (src/networking/netplay/protocol/netpacket.*). Covers the NET-PROTO block of
  * docs/testing/test-catalog.md: length/short-buffer rejection, frame-count
  * boundaries, magic/version/session/checksum rejection, round trips for
  * INPUT/CONTROL/FORWARD, and FORWARD-specific guards.
@@ -8,7 +8,7 @@
  * Self-contained: links only netpacket.c, no game state.
  */
 
-#include "netplay/protocol/netpacket.h"
+#include "networking/netplay/protocol/netpacket.h"
 
 #include <stdio.h>
 #include <stdlib.h>

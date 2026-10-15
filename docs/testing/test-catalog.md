@@ -42,7 +42,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 |-------|------|-------------------|-----|
 | Static | clang-tidy, cppcheck, semgrep, check_docs, yamllint | Workflows exist; `check_docs` not in CI (F-004) | wire CI |
 | Unit | gtest (new) | `tests/unit/` (platform/, resources/) + `tests/integration/`; level-based layout — see tests/README.md, no gtest harness | everything |
-| Component | in-proc harnesses + fakes | netpeer parser reachable via PACKETFUZZ path; pure codec at `src/netplay/protocol/` with `netpacket_test` | no gtest harness (minimal EXPECT harness for now) |
+| Component | in-proc harnesses + fakes | netpeer parser reachable via PACKETFUZZ path; pure codec at `src/networking/netplay/protocol/` with `netpacket_test` | no gtest harness (minimal EXPECT harness for now) |
 | Integration | multi-process Python harness (`tests/support/harness/netplay/` + `tests/e2e/netplay/`; `scripts/testing/*.ps1` are thin wrappers) | `localtest/lobbytest/lobbytest_multi/spectate/lan/compat/soak/mutation/takeover` ✓ | config/save/updater none |
 | System/E2E | headless runs | `AUTOVS` + `MAX_FRAMES` + `RIG_EXIT` | not packaged as one target |
 | Soak/nightly | `determinism.yml` | ROM-gated nightly ✓ | forks get no signal |
@@ -62,7 +62,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 
 | Seam | Mechanism | Enables |
 |------|-----------|---------|
-| Packet parser | `syNetPeerHandlePacket`/`HandleForwardPacket` are call paths over byte buffers; `SSB64_NETPLAY_PACKETFUZZ` proves injected datagrams reach them | codec unit/fuzz tests — codec extracted to `src/netplay/protocol/netpacket.*`, covered by `netpacket_test` |
+| Packet parser | `syNetPeerHandlePacket`/`HandleForwardPacket` are call paths over byte buffers; `SSB64_NETPLAY_PACKETFUZZ` proves injected datagrams reach them | codec unit/fuzz tests — codec extracted to `src/networking/netplay/protocol/netpacket.*`, covered by `netpacket_test` |
 | Network sim | `SIM_{LATENCY,JITTER,LOSS,DUP,REORDER,CORRUPT}_PCT` + `SIM_SEED` in `udp_transport.cpp` | impairment matrix, replayable failures |
 | Headless run | `SSB64_ROLLBACK_AUTOVS` + `SSB64_MAX_FRAMES` + `SSB64_MUTE` + `SSB64_RIG_EXIT` | `smash-classic-sim` target is mostly packaging |
 | Deterministic inputs | `SSB64_NETPLAY_FUZZ` per-tick hash inputs | replayable matches |
@@ -116,7 +116,7 @@ Trace: bug doc / issue / ADR / threat-model row
 
 Implemented as `tests/unit/netplay/protocol/netpacket_test.c` (CTest name
 `netpacket_test`, labels `unit;netplay;protocol;deterministic`) over the pure
-codec `src/netplay/protocol/netpacket.*`. `decomp/src/sys/netpeer.c` now calls
+codec `src/networking/netplay/protocol/netpacket.*`. `components/decomp/src/sys/netpeer.c` now calls
 the codec — `SYNETPEER_*`/`syNetPeerRead|Write|Checksum*` names remain as
 aliases; session state, counters, seq/dup/OOO tracking and link authorization
 stay in netpeer. Covered today: LEN-001, LEN-002, MAG-001, VER-001, SES-001,
@@ -414,7 +414,7 @@ Presets (extend `CMakePresets.json` testPresets):
 
 New enforceable gates:
 - `strings(Release.exe) | grep SSB64_.*MUTANT|PACKETFUZZ|COMPAT_TOKEN` → empty (F-002)
-- codec suite green on every PR touching src/netplay/protocol (planned) or decomp/sys/netpeer*
+- codec suite green on every PR touching src/networking/netplay/protocol (planned) or components/decomp/sys/netpeer*
 - lobby conformance green when either lobby impl changes
 - updater tests must include a negative (tampered) case — a suite that only
   tests the happy path is red

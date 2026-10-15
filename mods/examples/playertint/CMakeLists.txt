@@ -2,7 +2,7 @@
 #
 # Identical in shape to mods/examples/template/CMakeLists.txt: it does NOT
 # compile the mod (libtcc does that at runtime inside the engine). It only
-# amalgamates src/*.c via tools/modding/merge_mod.py, copies headers/assets/manifest
+# amalgamates src/*.c via tools/developer/modding/merge_mod.py, copies headers/assets/manifest
 # into output/, and writes output/build.gen. After `cmake --build build`,
 # drop the output/ folder into <install>/mods/ (or pack it as .o2r).
 
@@ -19,10 +19,10 @@ set(INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${PARENT_DIR}
     ${PARENT_DIR}/src
-    ${PARENT_DIR}/decomp/src
-    ${PARENT_DIR}/decomp/include
-    ${PARENT_DIR}/libultraship/src
-    ${PARENT_DIR}/libultraship/include
+    ${PARENT_DIR}/components/decomp/src
+    ${PARENT_DIR}/components/decomp/include
+    ${PARENT_DIR}/components/libultraship/src
+    ${PARENT_DIR}/components/libultraship/include
 )
 
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
@@ -45,11 +45,11 @@ foreach(SOURCE_FILE ${SRC_FILES})
     add_custom_command(
         OUTPUT ${OUTPUT_FILE}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${INTERMEDIATE_DIR}
-        COMMAND Python3::Interpreter ${PARENT_DIR}/tools/modding/merge_mod.py
+        COMMAND Python3::Interpreter ${PARENT_DIR}/tools/developer/modding/merge_mod.py
                 --out ${OUTPUT_FILE}
                 --includes ${INCLUDE_DIRS}
                 --srcs ${SOURCE_FILE}
-        DEPENDS ${SOURCE_FILE} ${PARENT_DIR}/tools/modding/merge_mod.py
+        DEPENDS ${SOURCE_FILE} ${PARENT_DIR}/tools/developer/modding/merge_mod.py
         VERBATIM
     )
 

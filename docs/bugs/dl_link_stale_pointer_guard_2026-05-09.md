@@ -46,24 +46,24 @@ files happen to land there.
 
 Three-part defense-in-depth:
 
-1. **Recycle the scene heap** (`decomp/src/sys/taskman.c:syTaskmanStartTask`).
+1. **Recycle the scene heap** (`components/decomp/src/sys/taskman.c:syTaskmanStartTask`).
    Replace `free + malloc(16 MiB)` per scene with a singleton 16 MiB
    allocation that's `memset(0)` between scenes. Same VA stays mapped+
    writable forever; stale reads on Linux now return zero/stale bytes (like
    macOS) instead of faulting. Calls `port_taskman_evict_arena_caches`
-   (new wrapper in `src/integration/decomp/lbreloc_bridge.cpp`) to clear the four
+   (new wrapper in `src/game/engine/decomp/lbreloc_bridge.cpp`) to clear the four
    port-side caches that hold pointers into the arena (DL widening,
    texture upload, struct fixup, reloc file ranges).
 
 2. **PORT-only `dl_link` bound check** in `gcDrawDObjTreeDLLinks` and
-   `gcDrawDObjDLLinks` (`decomp/src/sys/objdisplay.c`). Cast `list_id`
+   `gcDrawDObjDLLinks` (`components/decomp/src/sys/objdisplay.c`). Cast `list_id`
    through `u32` so any out-of-range value (negative, or `> ARRAY_COUNT`)
    trips a new bound check; cap iterations at 64 to handle the all-zero
    recycled-memory case where `list_id == 0` && `dl == NULL` would otherwise
    walk indefinitely past the relocData sentinel `{ ARRAY_COUNT, NULL }`.
    First occurrence per frame is logged via `port_log` for triage.
 
-3. **Revert libultraship `beb5b9a1`** (`libultraship/src/fast/interpreter.cpp`). Drop
+3. **Revert libultraship `beb5b9a1`** (`components/libultraship/src/fast/interpreter.cpp`). Drop
    the new top-of-handler `< 4 GB` guard; restore the original 256 MB
    N64-segmented-range guard at the bottom of the handler. Catches
    unresolved tokens (always `≤ 0x0FFFFFFF` on hardware) without rejecting
@@ -124,10 +124,10 @@ been observed crashing on Linux yet.
 
 ## References
 
-- `decomp/src/sys/taskman.c:1316–1352` — Part 1 band-aid
-- `src/integration/decomp/lbreloc_bridge.cpp:146–162` — Part 1 eviction wrapper
-- `decomp/src/sys/objdisplay.c:gcDrawDObjTreeDLLinks` — Part 2 guard
-- `libultraship/src/fast/interpreter.cpp:gfx_set_timg_handler_rdp` —
+- `components/decomp/src/sys/taskman.c:1316–1352` — Part 1 band-aid
+- `src/game/engine/decomp/lbreloc_bridge.cpp:146–162` — Part 1 eviction wrapper
+- `components/decomp/src/sys/objdisplay.c:gcDrawDObjTreeDLLinks` — Part 2 guard
+- `components/libultraship/src/fast/interpreter.cpp:gfx_set_timg_handler_rdp` —
   Part 3 revert
 - docs/linux_intro_skip_crash_handoff_2026-05-09.md — investigation
 - docs/linux_intro_skip_crash_handoff_2026-05-09-session2.md — bisect

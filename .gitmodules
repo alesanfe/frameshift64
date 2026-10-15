@@ -1,12 +1,12 @@
 [submodule "libultraship"]
-	path = libultraship
+	path = components/libultraship
 	url = https://github.com/alesanfe/frameshift64.git
 	branch = libultraship
 [submodule "torch"]
-	path = torch
+	path = components/game-runtime
 	url = https://github.com/JRickey/Torch.git
 	branch = ssb64
 [submodule "decomp"]
-	path = decomp
+	path = components/decomp
 	url = https://github.com/alesanfe/frameshift64.git
 	branch = decomp

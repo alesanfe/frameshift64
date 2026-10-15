@@ -1,7 +1,7 @@
 # Audio bridge swapped sSYAudioSequenceBank1/2 sources
 
 **Date:** 2026-04-24
-**Status:** Fix shipped to `src/integration/decomp/audio_bridge.cpp`. Awaiting in-game verification of audible BGM.
+**Status:** Fix shipped to `src/game/engine/decomp/audio_bridge.cpp`. Awaiting in-game verification of audible BGM.
 **Class:** Port-side asset wiring mismatch — bridge loaded the right CTL files but routed each into the wrong global slot.
 
 ## Symptom
@@ -10,7 +10,7 @@ After the audio buildout reached "fully plumbed but silent" (see `docs/investiga
 
 ## Root cause
 
-The original game's `SYAudioSettings` (in `decomp/src/sys/audio.c`) declares:
+The original game's `SYAudioSettings` (in `components/decomp/src/sys/audio.c`) declares:
 
 ```c
 (uintptr_t)&B1_sounds2_ctl_ROM_START,      // bank1_start
@@ -51,7 +51,7 @@ Effect: the music CSP players were handed the SFX bank's 322-sound table. `__n_l
 
 ## Fix
 
-`src/integration/decomp/audio_bridge.cpp` — swap the two parser blocks so that:
+`src/game/engine/decomp/audio_bridge.cpp` — swap the two parser blocks so that:
 
 ```cpp
 sounds1_ctl → sSYAudioSequenceBank2   // music CSP
@@ -62,7 +62,7 @@ Each bank still uses its paired TBL (`sounds1_tbl` with `sounds1_ctl`, etc.) bec
 
 ## Why the SFX-fallback workaround was added
 
-`syAudioInit` (`decomp/src/sys/audio.c:970`) has a PORT-only fallback:
+`syAudioInit` (`components/decomp/src/sys/audio.c:970`) has a PORT-only fallback:
 
 ```c
 ALInstrument *inst0 = sSYAudioSequenceBank1->instArray[0];

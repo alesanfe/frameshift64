@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../../../torch/lib/libvpk0/vpk0.h"
+#include "../../../components/game-runtime/lib/libvpk0/vpk0.h"
 
 /* Mirror RelocFactory.h constants */
 #define RELOC_TABLE_ROM_ADDR    0x001AC870u

@@ -26,7 +26,7 @@ useful 4×7 digit in the leftmost columns and the rest unused. The
 SetTileSize tells the RDP to clamp rendering to the leftmost 4×7
 square.
 
-`Interpreter::ImportTextureIA4` in `libultraship/src/fast/interpreter.cpp`
+`Interpreter::ImportTextureIA4` in `components/libultraship/src/fast/interpreter.cpp`
 took the line stride (8 bytes → 16 pixels wide) and uploaded that as
 the GPU texture width *without* applying the SetTileSize clamp:
 
@@ -53,7 +53,7 @@ This is the same root cause and same fix shape as
 
 ## Fix
 
-`libultraship/src/fast/interpreter.cpp` — apply
+`components/libultraship/src/fast/interpreter.cpp` — apply
 `ClampUploadWidthToTile` to the IA4 path, mirroring the IA8 / I4
 implementation:
 
@@ -105,7 +105,7 @@ the natural width — but the fix shape is mechanical when one shows up.
 
 ## Files
 
-- `libultraship/src/fast/interpreter.cpp` — `ImportTextureIA4` patched
+- `components/libultraship/src/fast/interpreter.cpp` — `ImportTextureIA4` patched
   to call `ClampUploadWidthToTile`.
 
 ## Not related to

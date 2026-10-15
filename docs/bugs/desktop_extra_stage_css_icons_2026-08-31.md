@@ -20,12 +20,12 @@ binary.
 ## Root Cause
 
 The extra-stage CSS pipeline had exactly one desktop asset source:
-build-time PNGs from `tools/asset-pipeline/derive_stage_assets.py`. Those are ROM-derived,
+build-time PNGs from `tools/assets/pipeline/derive_stage_assets.py`. Those are ROM-derived,
 so packaging scripts can never legally bundle them, and the first-run
 extraction flow (`src/application/first_run.cpp`) never produced them. Release users
 therefore had no PNG → `portCSSGetStageIconSprite()` returned NULL →
 `mnMapsMakeIcons()` fell back to the question-mark sprite
-(`decomp/src/mn/mnmaps/mnmaps.c`).
+(`components/decomp/src/mn/mnmaps/mnmaps.c`).
 
 This is precisely the gap the Android fix's audit hook warned about:
 `docs/bugs/android_extra_stage_css_icons_2026-06-24.md` fixed the same
@@ -80,7 +80,7 @@ degrades to the old question-mark behavior, never a garbage image.
 ## Related: "Bonus Stages" Toggle (issue #267)
 
 The same issue asked for a way to hide the three stages entirely.
-`src/gameplay/modes/BonusStages.cpp` adds `gEnhancements.BonusStagesEnabled`
+`src/game/gameplay/modes/BonusStages.cpp` adds `gEnhancements.BonusStagesEnabled`
 (LUS menu → Settings → Gameplay → "Bonus Stages", default ON). When off,
 `mnMapsCheckLocked()` reports every stage on page 1+ as locked — membership
 is derived from `dMNMapsPageGkinds` via `mnMapsGetPageForGkind`, not a
@@ -103,7 +103,7 @@ the icons.
 
 A ROM-derived runtime asset now has three sources (dev build-time PNG,
 Android first-run PNG, o2r derivation). When adding a fourth stage, update
-all three manifests together: `STAGES` in `tools/asset-pipeline/derive_stage_assets.py`,
+all three manifests together: `STAGES` in `tools/assets/pipeline/derive_stage_assets.py`,
 `kAndroidCssStages` in `src/platform/android/android_torch_bridge.cpp`, and `STAGE_TABLE`
 in `src/resources/loading/css_icons/port_css_stage_assets.cpp` (the latter now carries
 `wp_file_id`/`wp_sprite_off` for the o2r path). The Bonus Stages toggle

@@ -30,7 +30,7 @@ unblocks both SFX (`nFTMotionEventPlayFGM`) and VFX
 - Each scene's `*FighterProcUpdate` calls
   `scSubsysFighterProcUpdate(...)` → `ftMainPlayAnimEventsAll(...)` →
   `ftMainPlayAnim(...)` + `ftMainUpdateMotionEventsAll(...)`.
-- `ftMainParseMotionEvent` (`decomp/src/ft/ftmain.c:158`) handles the event
+- `ftMainParseMotionEvent` (`components/decomp/src/ft/ftmain.c:158`) handles the event
   opcodes, including `nFTMotionEventPlayFGMStoreInfo`,
   `nFTMotionEventMakeEffect`, etc.
 

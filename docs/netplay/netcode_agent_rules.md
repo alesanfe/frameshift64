@@ -18,28 +18,28 @@ Build rollback netcode in phases:
 
 ## Implemented So Far
 
-- `decomp/src/sys/netinput.h` defines `SYNetInputFrame`, `SYNetInputSource`, input history APIs, remote/saved input staging APIs, VS session lifecycle APIs, replay metadata scaffolding, and the VS controller callback.
-- `decomp/src/sys/netinput.c` owns per-player input source state, resolved input history, remote confirmed input history, saved input history, full-match replay frame storage, prediction fallback, VS-local ticks, recording counters, replay metadata, and publishing into `gSYControllerDevices`.
-- `decomp/src/sys/netreplay.c` and `decomp/src/sys/netreplay.h` implement a debug VS replay file runner for explicit metadata plus `SYNetInputFrame` streams.
-- `decomp/src/sys/netpeer.c` and `decomp/src/sys/netpeer.h` implement the debug UDP P2P transport, explicit input packet serialization, packet checksums, and local/remote player slot ownership.
-- `decomp/src/sys/netpeer.c` can bootstrap matching VS battle metadata with `MATCH_CONFIG`, pre-VS `READY` / `START`, and a shared RNG seed.
-- `decomp/src/sys/netpeer.c` now runs a bootstrap-only in-battle start barrier with `BATTLE_READY` / `BATTLE_START` before netinput advances from tick 0.
-- `decomp/src/sys/netpeer.c` exposes a bootstrap-only VS execution gate so `scVSBattleFuncUpdate()` can hold battle/interface updates until both peers have crossed the start barrier.
-- `decomp/src/sys/netpeer.c` now logs rolling validation lines prefixed `SSB64 NetSync:` that pair sliding input-history checksum windows (`syNetInputGetHistoryInputValueChecksumWindow`), cumulative remote-input fingerprints, UDP sequence continuity counters, newest observed remote frame bundle ticks, and a narrow deterministic fighter hash (`syNetSyncHashBattleFighters()` in `decomp/src/sys/netsync.c`).
-- `decomp/src/sc/sccommon/scvsbattle.c` routes VS battle input through `syNetInputFuncRead`.
-- `decomp/src/sc/sccommon/scvsbattle.c` calls `syNetInputStartVSSession()` at VS match start so repeated matches do not inherit previous input history or slot ownership.
-- `decomp/src/sc/sccommon/scvsbattle.c` calls `syNetReplayStartVSSession()` and `syNetReplayUpdate()` for debug record/playback.
-- `decomp/src/sc/sccommon/scvsbattle.c` calls `syNetPeerStartVSSession()`, `syNetPeerUpdate()`, and `syNetPeerStopVSSession()` for debug P2P sessions.
-- `decomp/src/sc/scmanager.c` calls `syNetPeerInitDebugEnv()` during port startup, next to replay debug env setup.
-- `decomp/src/sc/sc1pmode/sc1pgame.c`, `decomp/src/sc/sc1pmode/sc1ptrainingmode.c`, and `decomp/src/sc/sc1pmode/sc1pbonusstage.c` remain on `syControllerFuncRead`.
+- `components/decomp/src/sys/netinput.h` defines `SYNetInputFrame`, `SYNetInputSource`, input history APIs, remote/saved input staging APIs, VS session lifecycle APIs, replay metadata scaffolding, and the VS controller callback.
+- `components/decomp/src/sys/netinput.c` owns per-player input source state, resolved input history, remote confirmed input history, saved input history, full-match replay frame storage, prediction fallback, VS-local ticks, recording counters, replay metadata, and publishing into `gSYControllerDevices`.
+- `components/decomp/src/sys/netreplay.c` and `components/decomp/src/sys/netreplay.h` implement a debug VS replay file runner for explicit metadata plus `SYNetInputFrame` streams.
+- `components/decomp/src/sys/netpeer.c` and `components/decomp/src/sys/netpeer.h` implement the debug UDP P2P transport, explicit input packet serialization, packet checksums, and local/remote player slot ownership.
+- `components/decomp/src/sys/netpeer.c` can bootstrap matching VS battle metadata with `MATCH_CONFIG`, pre-VS `READY` / `START`, and a shared RNG seed.
+- `components/decomp/src/sys/netpeer.c` now runs a bootstrap-only in-battle start barrier with `BATTLE_READY` / `BATTLE_START` before netinput advances from tick 0.
+- `components/decomp/src/sys/netpeer.c` exposes a bootstrap-only VS execution gate so `scVSBattleFuncUpdate()` can hold battle/interface updates until both peers have crossed the start barrier.
+- `components/decomp/src/sys/netpeer.c` now logs rolling validation lines prefixed `SSB64 NetSync:` that pair sliding input-history checksum windows (`syNetInputGetHistoryInputValueChecksumWindow`), cumulative remote-input fingerprints, UDP sequence continuity counters, newest observed remote frame bundle ticks, and a narrow deterministic fighter hash (`syNetSyncHashBattleFighters()` in `components/decomp/src/sys/netsync.c`).
+- `components/decomp/src/sc/sccommon/scvsbattle.c` routes VS battle input through `syNetInputFuncRead`.
+- `components/decomp/src/sc/sccommon/scvsbattle.c` calls `syNetInputStartVSSession()` at VS match start so repeated matches do not inherit previous input history or slot ownership.
+- `components/decomp/src/sc/sccommon/scvsbattle.c` calls `syNetReplayStartVSSession()` and `syNetReplayUpdate()` for debug record/playback.
+- `components/decomp/src/sc/sccommon/scvsbattle.c` calls `syNetPeerStartVSSession()`, `syNetPeerUpdate()`, and `syNetPeerStopVSSession()` for debug P2P sessions.
+- `components/decomp/src/sc/scmanager.c` calls `syNetPeerInitDebugEnv()` during port startup, next to replay debug env setup.
+- `components/decomp/src/sc/sc1pmode/sc1pgame.c`, `components/decomp/src/sc/sc1pmode/sc1ptrainingmode.c`, and `components/decomp/src/sc/sc1pmode/sc1pbonusstage.c` remain on `syControllerFuncRead`.
 - `docs/netplay/netplay_architecture.md` documents the current input architecture.
 
 ## Architecture Rules
 
-- Keep `decomp/src/sys/controller.c` focused on local hardware input and N64-style controller behavior.
-- Put new netplay-only input functions in `decomp/src/sys/netinput.c` and declarations in `decomp/src/sys/netinput.h`.
+- Keep `components/decomp/src/sys/controller.c` focused on local hardware input and N64-style controller behavior.
+- Put new netplay-only input functions in `components/decomp/src/sys/netinput.c` and declarations in `components/decomp/src/sys/netinput.h`.
 - Put deterministic gameplay-state hashing needed for rollback or netplay parity near `netsync`/netpeer rather than scattering ad-hoc checks through fighter code unless a subsystem truly owns the invariant.
-- Keep reusable netplay execution readiness checks in `decomp/src/sys/netpeer.c`; VS scenes should call a query such as `syNetPeerCheckBattleExecutionReady()` rather than duplicating bootstrap state checks.
+- Keep reusable netplay execution readiness checks in `components/decomp/src/sys/netpeer.c`; VS scenes should call a query such as `syNetPeerCheckBattleExecutionReady()` rather than duplicating bootstrap state checks.
 - Do not add remote, predicted, or saved input metadata to `SYController`.
 - Resolve input source first, then publish the selected result into `gSYControllerDevices[player]`.
 - Existing battle/fighter code should continue reading `SYController` fields without knowing the input source.
@@ -80,7 +80,7 @@ Build rollback netcode in phases:
 - Bootstrap P2P now aligns netinput tick 0 and holds VS execution until the start barrier releases, but tick drift after start still requires comparing **NetSync** checksum windows versus **fighter hashes** logged by `netsync`.
 - Duplicate log lines expose transport health: `gap`/`dup`/`ooo` flag sequence regressions independently of staged frame counters because redundant frame bundles hide single packet loss.
 - One-way packet diagnosis is still manual. Keep logging role, local/remote players, tick, staged frames, highest remote tick, dropped packets, late frames, and barrier state when changing netpeer.
-- Narrow gameplay/state hashes exist (`decomp/src/sys/netsync.c`), but snapshot/rollback coverage is intentionally shallow until input parity is nailed down.
+- Narrow gameplay/state hashes exist (`components/decomp/src/sys/netsync.c`), but snapshot/rollback coverage is intentionally shallow until input parity is nailed down.
 - No rollback snapshot/restore API exists yet.
 - No STUN/TURN, NAT traversal, relay fallback, matchmaking, or final session owner model exists yet.
 
@@ -93,10 +93,10 @@ When investigating bootstrap P2P mismatches:
 3. If input checksums agree but **`figh`** diverges, widen the fighter hash footprint (RNG, collision, weapons, hazards) deterministically rather than blaming UDP blindly.
 4. If both traces stay aligned subjective drift likely lives in pacing, presentation ordering, or non-sim telemetry — collect additional tick barriers after locking simulation hashes.
 
-When editing `decomp/src/sys/netpeer.c`:
+When editing `components/decomp/src/sys/netpeer.c`:
 
 - Maintain explicit big-endian serializers and checklist coverage for checksum fields (currently includes `magic`, wire version `2`, `session_id`, `ack_tick`, `packet_seq`, local player ids, redundant frame payloads, and rolling stats).
-- When adding sibling sources under `decomp/src/sys/`, re-run CMake so `file(GLOB_RECURSE)` picks them up (`cmake -B build`).
+- When adding sibling sources under `components/decomp/src/sys/`, re-run CMake so `file(GLOB_RECURSE)` picks them up (`cmake -B build`).
 
 ## Suggested Next Steps
 
@@ -115,4 +115,4 @@ When editing `decomp/src/sys/netpeer.c`:
 
 ## Packaging Note
 
-`platforms/linux/packaging/package-linux.sh` currently includes host DT_RELR handling for AppImage packaging. If Linux AppImage generation stops before creating `dist/BattleShip.AppDir/AppRun`, inspect the DT_RELR probe and avoid early-exit pipelines under `set -euo pipefail`.
+`packaging/linux/package-linux.sh` currently includes host DT_RELR handling for AppImage packaging. If Linux AppImage generation stops before creating `dist/BattleShip.AppDir/AppRun`, inspect the DT_RELR probe and avoid early-exit pipelines under `set -euo pipefail`.

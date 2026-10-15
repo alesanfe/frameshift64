@@ -6,4 +6,4 @@
 
 **Fix:** Disabled the heuristic guard entirely (data inspection can't reliably distinguish packed vs native when many GBI commands have w1=0). Added shader compile failure resilience: `sFailedShaderIds` cache prevents infinite retry, null-program check skips broken draws, `MessageBoxA` calls removed from error paths.
 
-**Files:** `libultraship/src/fast/interpreter.cpp`, `libultraship/src/fast/backends/gfx_direct3d11.cpp`, `libultraship/src/ship/debug/CrashHandler.cpp`, `src/application/gameloop.cpp`
+**Files:** `components/libultraship/src/fast/interpreter.cpp`, `components/libultraship/src/fast/backends/gfx_direct3d11.cpp`, `components/libultraship/src/ship/debug/CrashHandler.cpp`, `src/application/gameloop.cpp`

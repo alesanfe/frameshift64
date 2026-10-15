@@ -63,7 +63,7 @@ distclean: ## rm -rf out/ + lobby node_modules + dist/
 
 # Safe-delete policy: paths must be non-empty, repo-relative, and resolved
 # inside the repo before rm -rf ever runs. NEVER delete: src include
-# assets config docs specs tests/support/fixtures roms decomp libultraship torch.
+# assets config docs specs tests/support/fixtures roms components/*.
 define safe_rmrf
 	@p="$$(cd "$(1)" 2>/dev/null && pwd)"; \
 	root="$$(pwd)"; \

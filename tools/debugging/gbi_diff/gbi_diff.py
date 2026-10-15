@@ -45,8 +45,6 @@ import difflib
 import re
 import sys
 from dataclasses import dataclass
-from typing import Optional
-
 
 # ============================================================================
 #  Data structures
@@ -98,7 +96,7 @@ FRAME_END_RE = re.compile(r'^=== END FRAME (\d+)\s*(?:—|-)\s*(\d+) commands ==
 
 
 def parse_trace(filepath: str,
-                want_frames: Optional[set] = None) -> dict[int, Frame]:
+                want_frames: set | None = None) -> dict[int, Frame]:
     """Parse a .gbi trace file into a dict of frame_number -> Frame.
 
     If `want_frames` is supplied, only frames whose number is in the set
@@ -107,7 +105,7 @@ def parse_trace(filepath: str,
     ~100s to ~5s by avoiding regex matching on ~6M unrelated cmd lines.
     """
     frames: dict[int, Frame] = {}
-    current_frame: Optional[int] = None
+    current_frame: int | None = None
     current_cmds: list[GbiCommand] = []
     keep_current = True  # whether the current frame is in want_frames
 
@@ -202,11 +200,11 @@ class Divergence:
     index, used only for display ordering.
     """
     cmd_index: int
-    port_cmd: Optional[GbiCommand]
-    emu_cmd: Optional[GbiCommand]
+    port_cmd: GbiCommand | None
+    emu_cmd: GbiCommand | None
     reason: str  # What diverged: opcode, w0, w1, extra in port, extra in emu
-    port_pos: Optional[int] = None
-    emu_pos: Optional[int] = None
+    port_pos: int | None = None
+    emu_pos: int | None = None
 
 
 def cmd_key(cmd: GbiCommand, ignore_addresses: bool) -> tuple:
@@ -331,7 +329,7 @@ def diff_frame(port_frame: Frame, emu_frame: Frame,
 #  Output formatting
 # ============================================================================
 
-def format_cmd(label: str, cmd: Optional[GbiCommand]) -> str:
+def format_cmd(label: str, cmd: GbiCommand | None) -> str:
     """Format a command for diff output."""
     if cmd is None:
         return f"  {label}: (absent)"
@@ -501,7 +499,7 @@ def main():
     # Build a frame filter so the parser can skip irrelevant frames in
     # huge emu traces (~3.7 GB / 6M lines).  Without this a single-frame
     # query parses the entire file end-to-end.
-    want_frames: Optional[set] = None
+    want_frames: set | None = None
     if args.frame is not None:
         want_frames = {args.frame}
     elif args.frame_range:

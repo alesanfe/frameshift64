@@ -1,6 +1,6 @@
 # Fast3D Backend Audit: Unimplemented / Stubbed RDP/RSP Features
 **Date:** 2026-04-28  
-**Scope:** `libultraship/src/fast/` — N64 RDP/RSP features that are stubbed or incomplete  
+**Scope:** `components/libultraship/src/fast/` — N64 RDP/RSP features that are stubbed or incomplete  
 **Impact Focus:** Misrendering bugs specific to SSB64 (vs. crashes)
 
 ## Executive Summary
@@ -20,7 +20,7 @@ Fast3D bundles Emill's emulator-grade re-implementation, which stubs several N64
 
 ### 1. YUV Texture Format — FIXED (2026-10-14)
 
-**File:** `libultraship/src/fast/interpreter.cpp` — `Interpreter::ImportTextureYuv`
+**File:** `components/libultraship/src/fast/interpreter.cpp` — `Interpreter::ImportTextureYuv`
 
 **Status:** Implemented. `G_IM_FMT_YUV`/`G_IM_SIZ_16b` decodes YUV16 4:2:2
 (even texels `{Y,Cb}`, odd texels `{Y,Cr}`) to RGBA8 with the BT.601 matrix —
@@ -46,7 +46,7 @@ No known SSB64 content sets custom constants.
 
 ### 2. Color-Image Redirect Guard in GfxSpTri1 — NOW PROPERLY IMPLEMENTED
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/libultraship/src/fast/interpreter.cpp:2381-2385`
+**File:** `/Users/jackrickey/Dev/ssb64-port/components/libultraship/src/fast/interpreter.cpp:2381-2385`
 
 **Code:**
 ```cpp
@@ -64,8 +64,8 @@ if (redirect_active) {
 **Risk:** SHIPPED-BUG-LIKELY (but now guarded)
 
 **SSB64 Callsites:**
-- `decomp/src/mv/mvopening/mvopeningroom.c:1095+1100` — `mvOpeningRoomTransitionOverlayProcDisplay` (now PORT-gated, never executes)
-- `decomp/src/mv/mvopening/mvopeningroom.c:1114+1118+1124` — `mvOpeningRoomTransitionOutlineProcDisplay` (redirects, draws triangle + fill)
+- `components/decomp/src/mv/mvopening/mvopeningroom.c:1095+1100` — `mvOpeningRoomTransitionOverlayProcDisplay` (now PORT-gated, never executes)
+- `components/decomp/src/mv/mvopening/mvopeningroom.c:1114+1118+1124` — `mvOpeningRoomTransitionOutlineProcDisplay` (redirects, draws triangle + fill)
 
 **Context:** The opening-scene transition uses this N64 trick to write depth-mask values into the Z-buffer via triangle draws, which Fast3D cannot emulate because it doesn't actually redirect the color target. The guard remaps depth-test logic when the redirect is active: instead of reading depth-test from `G_ZBUFFER` geometry mode, it reads from `Z_CMP` in the render mode — matching real N64 semantics where Z-buffer writes happen but Z-compare is separate.
 
@@ -79,7 +79,7 @@ if (redirect_active) {
 
 ### 3. Background Scaling — FIXED (2026-10-14)
 
-**File:** `libultraship/src/fast/interpreter.cpp` — `Interpreter::Gfxs2dexBg1cyc`
+**File:** `components/libultraship/src/fast/interpreter.cpp` — `Interpreter::Gfxs2dexBg1cyc`
 
 **Status:** Implemented. `scaleW`/`scaleH` (u5.10 texels-per-pixel in
 `F3DuObjScaleBg_t`) now feed `dsdx`/`dtdy` directly — same fixed-point units
@@ -97,7 +97,7 @@ a game using the S2DEX scroll-window feature would need per-row `ult`.
 
 ### 4. Direct3D11 Texture Wrap Mode — ALREADY FIXED
 
-**File:** `libultraship/src/fast/backends/gfx_direct3d11.cpp` — `gfx_cm_to_d3d11` (~line 591)
+**File:** `components/libultraship/src/fast/backends/gfx_direct3d11.cpp` — `gfx_cm_to_d3d11` (~line 591)
 
 **Status:** Verified fixed — the audit excerpted an older revision. Current code:
 ```cpp
@@ -120,7 +120,7 @@ confirmed; no remaining work.
 
 ### 5. RDP Sync Command Stubs — LOW RISK
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/libultraship/src/fast/interpreter.cpp:5383-5386, 5389`
+**File:** `/Users/jackrickey/Dev/ssb64-port/components/libultraship/src/fast/interpreter.cpp:5383-5386, 5389`
 
 **Commands:** `RDP_G_RDPLOADSYNC`, `RDP_G_RDPPIPESYNC`, `RDP_G_RDPTILESYNC`, `RDP_G_RDPFULLSYNC`, `RDP_G_SETCONVERT`
 
@@ -145,7 +145,7 @@ confirmed; no remaining work.
 
 ### 6. Culling Display List Handler — FIXED (2026-10-14)
 
-**File:** `libultraship/src/fast/interpreter.cpp` — `gfx_cull_dl_handler_f3dex2`
+**File:** `components/libultraship/src/fast/interpreter.cpp` — `gfx_cull_dl_handler_f3dex2`
 
 **Status:** Implemented. `G_CULLDL` (`gSPCullDisplayList(v0, vn)`) is a
 conditional call: the sub-display-list at `w1` executes only when the vertex
@@ -156,7 +156,7 @@ RSP semantics. Range indices are stored doubled in `w0`; both are clamped to
 `MAX_VERTICES + 4` before use. Culled = `SegAddr`'d sub-DL is never pushed
 and execution continues at the next command.
 
-**SSB64 Usage:** No grep hits for `gSPCullDisplayList` in `decomp/src/`; asset
+**SSB64 Usage:** No grep hits for `gSPCullDisplayList` in `components/decomp/src/`; asset
 DLs may still emit it. This is primarily a correctness/perf improvement for
 modded or uncommon content.
 
@@ -164,14 +164,14 @@ modded or uncommon content.
 
 ### 7. G_ZS_PRIM Depth Source (Primitive Depth) — ✓ FIXED
 
-**File:** `/Users/jackrickey/Dev/ssb64-port/libultraship/src/fast/interpreter.cpp:2647-2658, 4639-4640`
+**File:** `/Users/jackrickey/Dev/ssb64-port/components/libultraship/src/fast/interpreter.cpp:2647-2658, 4639-4640`
 
 **Status:** COMPLETE and VERIFIED (2026-04-25 fix)
 
 **GBI Feature:** `gDPSetPrimDepth(z, dz)` + `G_ZS_PRIM` depth source
 
 **SSB64 Callsites:**
-- Every 2D sprite using `SP_Z` flag in decomp/src/libultra/sp/sprite.c:207
+- Every 2D sprite using `SP_Z` flag in components/decomp/src/libultra/sp/sprite.c:207
 - Portrait/card overlays in fighter description scenes
 - mvOpeningRoom wallpaper depth setup
 
@@ -291,10 +291,10 @@ The shader generation correctly maps combiner inputs to shader constants. YUV mo
 ## Files Involved
 
 ### Primary
-- `/Users/jackrickey/Dev/ssb64-port/libultraship/src/fast/interpreter.cpp` — Main RDP/RSP handlers
-- `/Users/jackrickey/Dev/ssb64-port/libultraship/src/fast/backends/gfx_direct3d11.cpp` — D3D11 wrap-mode handler
-- `/Users/jackrickey/Dev/ssb64-port/libultraship/src/fast/backends/gfx_opengl.cpp` — Reference (correct impl.)
-- `/Users/jackrickey/Dev/ssb64-port/libultraship/src/fast/backends/gfx_metal.cpp` — Reference (correct impl.)
+- `/Users/jackrickey/Dev/ssb64-port/components/libultraship/src/fast/interpreter.cpp` — Main RDP/RSP handlers
+- `/Users/jackrickey/Dev/ssb64-port/components/libultraship/src/fast/backends/gfx_direct3d11.cpp` — D3D11 wrap-mode handler
+- `/Users/jackrickey/Dev/ssb64-port/components/libultraship/src/fast/backends/gfx_opengl.cpp` — Reference (correct impl.)
+- `/Users/jackrickey/Dev/ssb64-port/components/libultraship/src/fast/backends/gfx_metal.cpp` — Reference (correct impl.)
 
 ### Related Bug Docs
 - `docs/bugs/primdepth_unimplemented_2026-04-25.md` — G_ZS_PRIM fix (now resolved)
@@ -302,8 +302,8 @@ The shader generation correctly maps combiner inputs to shader constants. YUV mo
 - `docs/bugs/whispy_canopy_metal_fallback_texture_2026-04-25.md` — Metal texture binding fix
 
 ### Game Source (SSB64 Usage)
-- decomp/src/libultra/sp/sprite.c — YUV sprite paths
-- `decomp/src/mv/mvopening/mvopeningroom.c` — Color-image redirect + transition tris
-- `decomp/src/if/ifcommon.c` — Magnifier bubble (color-image redirect)
-- `decomp/src/sys/objdisplay.c` — Z-buffer clear idiom
+- components/decomp/src/libultra/sp/sprite.c — YUV sprite paths
+- `components/decomp/src/mv/mvopening/mvopeningroom.c` — Color-image redirect + transition tris
+- `components/decomp/src/if/ifcommon.c` — Magnifier bubble (color-image redirect)
+- `components/decomp/src/sys/objdisplay.c` — Z-buffer clear idiom
 

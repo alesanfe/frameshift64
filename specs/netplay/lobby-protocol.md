@@ -2,7 +2,7 @@
 
 Canonical implementations: `services/netplay-lobby/src/infrastructure/cloudflare/worker.js`
 (Cloudflare DO), `services/netplay-lobby/src/infrastructure/local/node-lobby.mjs` (local
-mirror), `src/netplay/session/netlobby.cpp` (client).
+mirror), `src/networking/netplay/session/netlobby.cpp` (client).
 
 Invariants every implementation must keep:
 

@@ -8,8 +8,8 @@ Tracks the 2026-10 repository reorganization.
   netplay, features, presentation, resources, platform, compatibility)
 - `server/` → `services/netplay-lobby/` (cloudflare + node reference +
   security tests)
-- `assets/configuration/extraction/` → `assets/configuration/extraction/<region>`; controllers →
-  `assets/configuration/controllers/`; css icons → `assets/source/`
+- `assets/game/` → `assets/game/<region>`; controllers →
+  `config/controllers/`; css icons → `assets/source/`
 - `tools/` classified (asset-pipeline, auditing, codegen, debugging, lint,
   modding, save-editor); `tools/debugging/` merged in
 - `scripts/` classified (build, ci, development, packaging, testing)
@@ -24,7 +24,7 @@ Tracks the 2026-10 repository reorganization.
 
 ## In progress / next
 
-- `src/netplay/` internal split: protocol / transport / rollback / lobby
+- `src/networking/netplay/` internal split: protocol / transport / rollback / lobby
   (TD-001) — pure code motion once active netplay debugging lands
 - CMake component targets (TD-002)
 - Session manifest handshake (TD-008)
