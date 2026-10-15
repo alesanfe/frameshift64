@@ -65,6 +65,6 @@ list in sync with `REQUIRED_FILES` / `REQUIRED_DIRS` in the Makefile.
 2. Update the variable/table above **and** in `Makefile`.
 3. Update consumers: `CMakeLists.txt`, `cmake/*.cmake`, `tools/**`,
    `tests/**`, `.github/workflows/*`, `.pre-commit-config.yaml`,
-   `.yamllint.yml`, `.gitignore`, golden manifests (`tests/golden/`).
+   `.yamllint.yml`, `.gitignore`, golden manifests (`tests/support/golden/`).
 4. Add the old path to `tools/lint/check_retired_paths.py`.
 5. `make layout-check && make verify-fast`.

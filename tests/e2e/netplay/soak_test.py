@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness" / "netplay"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "support" / "harness" / "netplay"))
 import session_runner as sr  # noqa: E402
 
 MAX_LOG_BYTES = 200 * 1024 * 1024

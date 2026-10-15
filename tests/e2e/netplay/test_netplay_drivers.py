@@ -1,7 +1,7 @@
 """pytest wrappers for the standalone e2e netplay drivers.
 
 The drivers in this directory are the real implementation (shared
-harness: tests/harness/netplay/session_runner.py). These wrappers give
+harness: tests/support/harness/netplay/session_runner.py). These wrappers give
 them pytest collection, markers, JUnit reporting and artifact capture —
 the same coverage CI and local runs had through the .ps1 wrappers.
 
@@ -21,7 +21,7 @@ import pytest
 from smash_test.processes import run_script  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-FIXTURE_REPLAYS = Path(__file__).resolve().parents[2] / "fixtures" / "replays"
+FIXTURE_REPLAYS = Path(__file__).resolve().parents[2] / "support" / "fixtures" / "replays"
 _WINDOWS = sys.platform == "win32"
 
 # name -> (script, extra args, needs_powershell)
@@ -73,7 +73,7 @@ def test_replay_takeover(build_dir, artifacts_dir):
     replays = sorted(FIXTURE_REPLAYS.glob("*.ssr")) + \
         sorted(FIXTURE_REPLAYS.glob("*.ssbreplay"))
     if not replays:
-        pytest.skip("no replay fixture under tests/fixtures/replays/")
+        pytest.skip("no replay fixture under tests/support/fixtures/replays/")
     result = run_script(
         HERE / "replay_takeover_test.py",
         "--replay", str(replays[0]),

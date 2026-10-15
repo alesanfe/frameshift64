@@ -28,7 +28,7 @@ desync in production is silent match corruption.
 
 - No single-headless-process determinism check (needs
   `smash-classic-sim`, see strategy.md).
-- No replay corpus in `tests/fixtures/replays/`.
+- No replay corpus in `tests/support/fixtures/replays/`.
 - libm parity is solved by compiling the decomp's own trig — any new
   transcendental in game code must go through the same path, not host
   libm (`docs/bugs/` → `trig_host_libm_divergence`).

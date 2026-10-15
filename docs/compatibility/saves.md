@@ -13,9 +13,9 @@ downgrade it.
 - A corrupted save degrades to defaults with a visible warning; the corrupt
   file is preserved alongside for debugging.
 
-## Test fixtures (target layout — see tests/fixtures/)
+## Test fixtures (target layout — see tests/support/fixtures/)
 
-    tests/fixtures/saves/
+    tests/support/fixtures/saves/
     ├── original-n64/         # controller pak / flash dumps we support
     ├── previous-releases/    # saves produced by each shipped version
     ├── corrupted/            # truncated, bad CRC, bad magic

@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness" / "netplay"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "support" / "harness" / "netplay"))
 import session_runner as sr  # noqa: E402
 
 
@@ -78,7 +78,7 @@ def main() -> int:
                              r"rollback FAILED|dropping|silent"):
             print(l)
 
-    code, msg = sr.compare_traces(names, out)
+    code, msg = sr.compare_traces(names, out, min_fields=13)
     if code == 0:
         msg += " (LAN direct)"
     print(msg)

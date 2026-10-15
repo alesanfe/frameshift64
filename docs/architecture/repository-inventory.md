@@ -68,7 +68,7 @@ build-uwp) `.pre-commit-config.yaml`
   `tools/codegen/generate_{yamls,reloc_table}.py`,
   `tests/integration/assets/extraction_recipes_test.py`,
   `.github/workflows/build-uwp.yml`, `.pre-commit-config.yaml`,
-  `.yamllint.yml`, `tests/golden/extraction_recipes.sha256`
+  `.yamllint.yml`, `tests/support/golden/extraction_recipes.sha256`
 - Retired paths are vetoed by `tools/lint/check_retired_paths.py`
   (top-level dirs + source/CMake literals).
 - Module boundary rules: `config/lint/module-deps-baseline.txt` +

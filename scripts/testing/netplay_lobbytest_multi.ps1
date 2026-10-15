@@ -1,5 +1,5 @@
 # Thin wrapper — the test lives in tests/e2e/netplay/lobbytest_multi_test.py
-# (driven by tests/harness/netplay/session_runner.py). This script only maps
+# (driven by tests/support/harness/netplay/session_runner.py). This script only maps
 # the historical parameters.
 param(
     [int]$Players = 3,

@@ -68,13 +68,15 @@ RETIRED_REF = re.compile(
     # test-tree reorg (level-based tests/): the flat unit/ names and the
     # seeds/ corpus dir are retired — new paths under tests/<level>/<domain>
     r'|tests/unit/test_(?:extraction_recipes|extern_ids|vpk0|package_mod)'
-    r'|tests/unit/corou'
-    # assets/configuration/ split (2026-10): recipes → assets/recipes/,
-    # controllers → assets/controllers/
-    r'|assets/configuration/(?:extraction|controllers)tine_test\.cpp'
+    r'|tests/unit/coroutine_test\.cpp'
     r'|tests/fuzz/seeds'
-    # assets/configuration split into recipes/ + controllers/:
-    r'|assets/configuration)'
+    # tests support consolidation (2026-10): fixtures/harness/golden →
+    # tests/support/{fixtures,harness,golden}/
+    r'|tests/(?:fixtures|harness|golden)/'
+    # assets/configuration/ split into recipes/ + controllers/:
+    r'|assets/configuration'
+    # config/analysis/ consolidation (2026-10): semgrep + static-analysis
+    r'|config/(?:semgrep|static-analysis)/)'
 )
 
 SCAN_EXT = {".c", ".cpp", ".h", ".hpp", ".cmake", ".txt"}

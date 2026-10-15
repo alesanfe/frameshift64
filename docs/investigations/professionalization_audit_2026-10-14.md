@@ -153,7 +153,7 @@ flowchart TB
 - **Boot**: `main` → port init → LUS window/graphics → locate `BattleShip.o2r`
   (+ recipe-hash sidecar check) → boot decomp scene manager → ImGui shell.
 - **Assets**: user ROM → Torch (`-s` staged `torch-src/` with `config.yml` +
-  `assets/configuration/extraction/<region>` recipes) → `BattleShip.o2r`
+  `assets/recipes/<region>` recipes) → `BattleShip.o2r`
   beside binary. `f3d.o2r` shaders built separately.
 - **Local match**: decomp scene → `gamemanager` → sim ticks, port hooks for
   save/mods/reloc.
@@ -275,8 +275,8 @@ Severity: **C**ritical **H**igh **M**edium **L**ow **I**nfo. Effort: S/M/L.
 | F-016 | H | unit | `tests/` = 4 files | Essentially zero unit coverage of port code (parser edge cases, reloc, config); all verification is process-level PS1 harnesses | Add gtest (already-FetchContent pattern exists) with `smash_tests` target; start with `protocol/` codec — pure functions, easy win | V |
 | F-017 | M | determinism | `determinism.yml` | Suite exists but is **entirely ROM-gated** (skips without `BASEROM_US_Z64` secret) — right call legally; consequence: external forks get no signal | Also run ROM-free tests unconditionally (unit codec, lobby tests, doc check) | V |
 | F-018 | M | fuzz | `netpeer.c` fuzz tiers | Seeded in-engine fuzz exists ✓, but no coverage-guided libFuzzer target + no crash-input corpus/minimization | Add tests/fuzz/ (planned) libFuzzer harness on the pure `protocol/` codec after F-003 | V |
-| F-019 | M | assets | none | No golden asset test (hash/size/count per region) — recipe hash covers drift but not content regressions | tests/fixtures/assets/ (planned) golden manifests (TD-006) | V |
-| F-020 | L | replays | `tests/fixtures/replays/` empty | Corpus dirs created but empty | Seed with a recorded desync regression replay | V |
+| F-019 | M | assets | none | No golden asset test (hash/size/count per region) — recipe hash covers drift but not content regressions | tests/support/fixtures/assets/ (planned) golden manifests (TD-006) | V |
+| F-020 | L | replays | `tests/support/fixtures/replays/` empty | Corpus dirs created but empty | Seed with a recorded desync regression replay | V |
 
 ### Governance / DX / releases
 
@@ -367,7 +367,7 @@ Compact issue specs (labels: see issue-template convention `area:*`, `type:*`, `
 16. **.editorconfig + blame-ignore-revs** — `type:documentation priority:low`.
 17. **libFuzzer targets** — `area:netplay type:feature priority:normal` — after #3; AC: tests/fuzz/* runs in CI job (min 60s/fuzzer nightly).
 18. **Mod capability manifest** — `area:mods type:feature priority:normal` — AC: netplay handshake rejects undeclared simulation mods.
-19. **Save/config migration tests** — fixtures under `tests/fixtures/saves`.
+19. **Save/config migration tests** — fixtures under `tests/support/fixtures/saves`.
 20. **Structured logging event layer** — `area:observability type:feature priority:low` — wrap `port_log` sink; AC: `--log-json` emits JSONL.
 
 ---

@@ -51,7 +51,7 @@ harness is the planned unification.
 
 ## Replay corpus (target layout)
 
-    tests/fixtures/replays/
+    tests/support/fixtures/replays/
     ├── 1v1/ 4-player/ items/ stages/ grabs/ projectiles/
     ├── respawns/ edge-cases/ historical-regressions/
 

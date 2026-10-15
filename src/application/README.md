@@ -19,5 +19,5 @@ implement them.
 
 ## Tests
 
-`tests/e2e/first_run/`, `tests/harness/headless/` — the binary itself
+`tests/e2e/first_run/`, `tests/support/harness/headless/` — the binary itself
 is the test rig (`AUTOVS`/`MAX_FRAMES`/`RIG_EXIT` env hooks).

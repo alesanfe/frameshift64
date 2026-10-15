@@ -18,14 +18,14 @@ This covers toolchain/layout drift. It does not yet cover intentional
 
 ## Region builds
 
-US and JP are separate recipe sets (`assets/configuration/extraction/us`,
+US and JP are separate recipe sets (`assets/recipes/us`,
 `.../jp`) producing separate per-build-dir extraction sinks; runtime
-stages `assets/configuration/extraction/<region>` + `config.yml` next to the binary for first-run
+stages `assets/recipes/<region>` + `config.yml` next to the binary for first-run
 extraction and sidecar-Torch re-extraction.
 
 ## Golden tests (target)
 
-    tests/fixtures/assets/
+    tests/support/fixtures/assets/
     └── per region: { expected hash, size, resource count, load check }
 
 Tracked as TD-006.

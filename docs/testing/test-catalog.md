@@ -43,7 +43,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 | Static | clang-tidy, cppcheck, semgrep, check_docs, yamllint | Workflows exist; `check_docs` not in CI (F-004) | wire CI |
 | Unit | gtest (new) | `tests/unit/` (platform/, resources/) + `tests/integration/`; level-based layout — see tests/README.md, no gtest harness | everything |
 | Component | in-proc harnesses + fakes | netpeer parser reachable via PACKETFUZZ path; pure codec at `src/netplay/protocol/` with `netpacket_test` | no gtest harness (minimal EXPECT harness for now) |
-| Integration | multi-process Python harness (`tests/harness/netplay/` + `tests/e2e/netplay/`; `scripts/testing/*.ps1` are thin wrappers) | `localtest/lobbytest/lobbytest_multi/spectate/lan/compat/soak/mutation/takeover` ✓ | config/save/updater none |
+| Integration | multi-process Python harness (`tests/support/harness/netplay/` + `tests/e2e/netplay/`; `scripts/testing/*.ps1` are thin wrappers) | `localtest/lobbytest/lobbytest_multi/spectate/lan/compat/soak/mutation/takeover` ✓ | config/save/updater none |
 | System/E2E | headless runs | `AUTOVS` + `MAX_FRAMES` + `RIG_EXIT` | not packaged as one target |
 | Soak/nightly | `determinism.yml` | ROM-gated nightly ✓ | forks get no signal |
 

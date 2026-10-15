@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness" / "netplay"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "support" / "harness" / "netplay"))
 import session_runner as sr  # noqa: E402
 
 
@@ -91,7 +91,7 @@ def main() -> int:
                              r"DESYNC|rollback FAILED"):
             print(l)
 
-    code, msg = sr.compare_traces(["host", "client"], out)
+    code, msg = sr.compare_traces(["host", "client"], out, min_fields=13)
     print(msg)
     return code
 
