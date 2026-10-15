@@ -9,7 +9,7 @@
 #ifdef PORT
 #include "resources/loading/audio/audio_playback.h"
 #include "resources/loading/audio/audio_dma.h"
-#include "integration/decomp/audio_bridge.h"
+#include "game/engine/decomp/audio_bridge.h"
 #include "acmd_trace/acmd_trace.h"
 #include "port_log.h"
 extern void func_80026738_27338(void *arg0);

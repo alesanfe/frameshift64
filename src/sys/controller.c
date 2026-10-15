@@ -4,7 +4,7 @@
 #include <sys/scheduler.h>
 #include <missing_libultra.h>
 #include <PR/os.h>
-#include "gameplay/enhancements.h"
+#include "game/gameplay/enhancements.h"
 #include "sc/scmanager.h"
 #include "sc/sctypes.h"
 

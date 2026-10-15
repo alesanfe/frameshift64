@@ -1,7 +1,7 @@
 #include <ft/fighter.h>
 #include <it/item.h>
 #ifdef PORT
-#include "gameplay/enhancements.h"
+#include "game/gameplay/enhancements.h"
 #endif
 
 // // // // // // // // // // // //

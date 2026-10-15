@@ -3,7 +3,7 @@
 #include <sys/debug.h>
 
 #ifdef PORT
-#include "integration/decomp/particle_bank_bridge.h"
+#include "game/engine/decomp/particle_bank_bridge.h"
 #endif
 
 // // // // // // // // // // // //

@@ -671,3 +671,23 @@ sb32 syNetReplayLoadDebugFile(const char *path)
 #endif
 	return TRUE;
 }
+
+#ifdef PORT
+/* UI replay playback (Play -> Replays): loads the .ssr, applies the recorded
+ * battle metadata the same way the boot-time SSB64_REPLAY_PLAY path does,
+ * then hands off to the VS battle scene. syNetReplayStartVSSession arms the
+ * saved-input source when the battle scene initializes. */
+sb32 portNetReplayPlayFile(const char *path)
+{
+	extern void portSCManagerRequestScene(s32 target);
+
+	if (syNetReplayLoadDebugFile(path) == FALSE)
+	{
+		return FALSE;
+	}
+	syNetReplayApplyBattleMetadata(&sSYNetReplayLoadedMetadata);
+	syUtilsSetRandomSeed(sSYNetReplayLoadedMetadata.rng_seed);
+	portSCManagerRequestScene(nSCKindVSBattle);
+	return TRUE;
+}
+#endif

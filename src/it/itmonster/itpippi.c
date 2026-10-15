@@ -5,7 +5,7 @@
 extern void *func_800269C0_275C0(u16 id);
 
 #ifdef PORT
-#include <gameplay/enhancements.h>
+#include <game/gameplay/enhancements.h>
 #endif
 
 // // // // // // // // // // // //

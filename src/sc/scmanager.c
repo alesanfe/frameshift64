@@ -1953,4 +1953,60 @@ sb32 portSCManagerConsumeReset(void)
 
 	return TRUE;
 }
+
+/* Region-stable scene targets for the port UI's Play section: SCKind
+ * numeric values differ between US and JP builds (nSCKindStartup is US-only),
+ * so the menu selects by name and this table does the mapping. Keep the
+ * enum order in sync with the copy in PortMenu.cpp — the port can't include
+ * scdef.h without pulling the decomp type stack into a C++ TU. */
+enum SCPortSceneKind
+{
+	nSCPortSceneTitle,
+	nSCPortSceneMainMenu,
+	nSCPortScene1PModeMenu,
+	nSCPortSceneVSModeMenu,
+	nSCPortSceneVSCharSelect,
+	nSCPortScene1PCharSelect,
+	nSCPortSceneTrainingCharSelect,
+	nSCPortSceneVSRecords,
+	nSCPortSceneCharData,
+};
+
+void portSCManagerRequestPortScene(s32 port_scene)
+{
+	s32 target;
+
+	switch (port_scene)
+	{
+		case nSCPortSceneMainMenu:
+			target = nSCKindModeSelect;
+			break;
+		case nSCPortScene1PModeMenu:
+			target = nSCKind1PMode;
+			break;
+		case nSCPortSceneVSModeMenu:
+			target = nSCKindVSMode;
+			break;
+		case nSCPortSceneVSCharSelect:
+			target = nSCKindPlayersVS;
+			break;
+		case nSCPortScene1PCharSelect:
+			target = nSCKind1PGamePlayers;
+			break;
+		case nSCPortSceneTrainingCharSelect:
+			target = nSCKindPlayers1PTraining;
+			break;
+		case nSCPortSceneVSRecords:
+			target = nSCKindVSRecord;
+			break;
+		case nSCPortSceneCharData:
+			target = nSCKindCharacters;
+			break;
+		case nSCPortSceneTitle:
+		default:
+			target = nSCKindTitle;
+			break;
+	}
+	portSCManagerRequestScene(target);
+}
 #endif

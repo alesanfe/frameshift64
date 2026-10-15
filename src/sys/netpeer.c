@@ -19,8 +19,8 @@ extern void port_log(const char *fmt, ...);
 
 #ifdef PORT
 #include <string.h>
-#include <netplay/transport/udp_transport.h>
-#include <netplay/protocol/netpacket.h>
+#include <networking/netplay/transport/udp_transport.h>
+#include <networking/netplay/protocol/netpacket.h>
 
 /* The codec provides the wire primitives; keep the historical syNetPeer*
  * names as aliases so the call sites below stay in decomp style. */
@@ -2946,3 +2946,34 @@ void syNetPeerStopVSSession(void)
 #endif
 	sSYNetPeerIsActive = FALSE;
 }
+
+#ifdef PORT
+/* Connection-quality snapshot for the lobby UI: per-remote packet
+ * accounting plus the remote's declared advantage (our rollback depth for
+ * its inputs). player is the game slot (0..MAXCONTROLLERS-1). */
+void portNetPeerGetRemoteStats(s32 player, u32 *gaps, u32 *dups, u32 *ooo, s32 *advantage)
+{
+	SYNetPeerRemote *remote = syNetPeerGetRemoteByPlayer(player);
+
+	if (remote == NULL)
+	{
+		return;
+	}
+	if (gaps != NULL)
+	{
+		*gaps = remote->seq_gaps;
+	}
+	if (dups != NULL)
+	{
+		*dups = remote->seq_duplicates;
+	}
+	if (ooo != NULL)
+	{
+		*ooo = remote->seq_out_of_order;
+	}
+	if (advantage != NULL)
+	{
+		*advantage = remote->remote_advantage;
+	}
+}
+#endif

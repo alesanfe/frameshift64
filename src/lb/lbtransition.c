@@ -3,7 +3,7 @@
 #include <reloc_data.h>
 
 #ifdef PORT
-#include <integration/decomp/framebuffer_capture.h>
+#include <game/engine/decomp/framebuffer_capture.h>
 #endif
 
 extern void *gSYSchedulerCurrentFramebuffer;

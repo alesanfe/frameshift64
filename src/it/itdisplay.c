@@ -5,7 +5,7 @@
 #include <sys/matrix.h>
 
 #ifdef PORT
-#include <gameplay/enhancements.h>
+#include <game/gameplay/enhancements.h>
 #endif
 
 extern SYMallocRegion gSYTaskmanGraphicsHeap;
