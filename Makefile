@@ -717,11 +717,11 @@ gen-headers-check: ## Generated-file banner check
 security: semgrep dependency-audit release-binary-check sbom
 	@$(call success,Security checks passed)
 
-semgrep: ## Semgrep rules in config/semgrep
+semgrep: ## Semgrep rules in config/analysis/semgrep
 	@if ! command -v semgrep >/dev/null 2>&1; then \
 	  $(call failure,semgrep required); exit 1; fi
 	@mkdir -p "$(REPORT_DIR)/security"
-	@semgrep --config config/semgrep --error \
+	@semgrep --config config/analysis/semgrep --error \
 	  --json-output "$(REPORT_DIR)/security/semgrep.json" .
 
 dependency-audit: ## npm audit (lobby) + submodule pins
@@ -884,7 +884,7 @@ distclean: ## rm -rf out/ + lobby node_modules + dist/
 
 # Safe-delete policy: paths must be non-empty, repo-relative, and resolved
 # inside the repo before rm -rf ever runs. NEVER delete: src include
-# assets config docs specs tests/fixtures roms decomp libultraship torch.
+# assets config docs specs tests/support/fixtures roms decomp libultraship torch.
 define safe_rmrf
 	@p="$$(cd "$(1)" 2>/dev/null && pwd)"; \
 	root="$$(pwd)"; \
