@@ -1,0 +1,167 @@
+# Repository tree — 11909b61 (2026-10-15)
+# tracked top-level entries + 2-level view of key dirs
+
+src/
+  application
+  audio
+  compatibility
+  config
+  diagnostics
+  distribution
+  game
+  gameplay
+  input
+  integration
+  netplay
+  observability
+  persistence
+  platform
+  presentation
+  rendering
+  resources
+  social
+
+tests/
+  CMakeLists.txt
+  README.md
+  config
+  conftest.py
+  contract
+  e2e
+  fixtures
+  fuzz
+  golden
+  harness
+  integration
+  regression
+  security
+  smoke
+  support
+  unit
+
+assets/
+  BattleShip.svg
+  BattleShipIcon.icon
+  controllers
+  custom
+  icon-jp.icns
+  icon-jp.ico
+  icon-jp.png
+  icon.icns
+  icon.ico
+  icon.png
+  macos_dmg_banner.png
+  readme-stats
+  recipes
+  source
+
+services/
+  netplay-lobby
+
+platforms/
+  README.md
+  android
+  linux
+  macos
+  switch
+  uwp
+  windows
+
+config/
+  lint
+  project
+  semgrep
+  static-analysis
+
+tools/
+  asset-pipeline
+  auditing
+  codegen
+  debugging
+  fuzz
+  lint
+  modding
+  release
+  save-editor
+  testing
+
+scripts/
+  build
+  development
+  testing
+
+generated/
+  README.md
+  include
+  src
+
+specs/
+  README.md
+  mod-api
+  netplay
+  packages
+  save-format
+  updates
+
+roms/
+  baserom.us.z64
+
+mods/
+  README.md
+  examples
+  templates
+
+docs/
+  README.md
+  architecture
+  bugs
+  compatibility
+  contributing
+  decisions
+  development
+  engineering
+  investigations
+  modding
+  netplay
+  platforms
+  screenshots
+  security
+  testing
+
+cmake/
+  Codegen.cmake
+  CopyDirIfExists.cmake
+  Findtinyxml2.cmake
+  ModO2R.cmake
+  RuntimeAssets.cmake
+  StageAssetRecipes.cmake
+  funchook_capstone_bump.cmake
+  macho_text_rwx.py
+  macos_entitlements.plist
+
+## other top-level dirs:
+decomp
+include
+libultraship
+out
+torch
+x64
+
+## top-level files:
+AGENTS.md
+BUILDING.md
+CHANGELOG.md
+CLAUDE.md
+CMakeLists.txt
+CMakePresets.json
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+GOVERNANCE.md
+LICENSE
+MAINTAINERS.md
+Makefile
+README.md
+SECURITY.md
+SUPPORT.md
+VERSION
+pyproject.toml
