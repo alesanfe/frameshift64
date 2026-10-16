@@ -2,6 +2,25 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__SWITCH__)
+#include <stdint.h>
+// No dynamic loading on Switch — gfxPointerInLoadedModule() returns false.
+// switch.h is not included here: its s64/u64/... typedefs conflict with
+// libultra/types.h. Forward-declare the single libnx syscall we need instead;
+// the MemoryInfo layout is a stable kernel ABI.
+extern "C" {
+typedef struct {
+    uint64_t addr;
+    uint64_t size;
+    uint32_t type;
+    uint32_t attr;
+    uint32_t perm;
+    uint32_t device_refcount;
+    uint32_t ipc_refcount;
+    uint32_t padding;
+} MemoryInfo;
+uint32_t svcQueryMemory(MemoryInfo* meminfo, uint32_t* pageinfo, uint64_t addr);
+}
 #else
 #include <dlfcn.h>
 #include <sys/mman.h>
@@ -312,6 +331,10 @@ bool gfxPointerInLoadedModule(const void* ptr) {
     // leftover (0x01000000, 0x0E000000, ...) would land "inside a module"
     // and the SETTIMG/G_VTX guards would never fire.
     return mod != nullptr && mod != GetModuleHandleA(nullptr);
+#elif defined(__SWITCH__)
+    // No dlopen'd modules on Switch — nothing can satisfy "pointer inside a
+    // loaded module", so the guards simply never see a foreign-module hit.
+    return false;
 #else
     // Same main-image exclusion as Windows. On Linux the port links
     // non-PIE, so the executable itself owns the sub-256MB VA range that
@@ -479,6 +502,30 @@ bool gfxPointerHasReadableBytes(const void* ptr, size_t size) {
         cursor += available;
     }
 
+    return true;
+#elif defined(__SWITCH__)
+    // Switch: walk the mapping table with svcQueryMemory. Any page range that
+    // is unmapped (Perm_None) or lacks read permission fails the probe, same
+    // contract as the VirtualQuery/mincore versions.
+    uintptr_t cursor = reinterpret_cast<uintptr_t>(ptr);
+    const uintptr_t end = cursor + size;
+    if (end < cursor) {
+        return false;
+    }
+    while (cursor < end) {
+        MemoryInfo info = {};
+        uint32_t pageInfo = 0;
+        svcQueryMemory(&info, &pageInfo, cursor);
+        constexpr uint32_t kPermR = 1; // Perm_R from <switch/types.h>
+        if ((info.perm & kPermR) == 0) {
+            return false;
+        }
+        const uintptr_t regionEnd = static_cast<uintptr_t>(info.addr) + info.size;
+        if (regionEnd <= cursor) {
+            return false;
+        }
+        cursor = regionEnd;
+    }
     return true;
 #else
     // POSIX: probe with mincore(2) — it fails with ENOMEM when any page in

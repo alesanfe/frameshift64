@@ -36,6 +36,7 @@ ArchiveManager::~ArchiveManager() {
 }
 
 bool ArchiveManager::IsLoaded() {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     return !mArchives.empty();
 }
 
@@ -48,12 +49,16 @@ std::shared_ptr<File> ArchiveManager::LoadFile(const std::string& filePath) {
 }
 
 std::shared_ptr<File> ArchiveManager::LoadFile(uint64_t hash) {
-    auto archive = mFileToArchive[hash];
-    if (archive == nullptr) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
+    // find(), not operator[]: a lookup miss must not insert a null entry —
+    // besides the data race on the buckets, HasFile() uses .count() and would
+    // report phantom files for every hash ever queried.
+    auto it = mFileToArchive.find(hash);
+    if (it == mFileToArchive.end() || it->second == nullptr) {
         return nullptr;
     }
 
-    return archive->LoadFile(hash);
+    return it->second->LoadFile(hash);
 }
 
 bool ArchiveManager::HasFile(const std::string& filePath) {
@@ -61,11 +66,14 @@ bool ArchiveManager::HasFile(const std::string& filePath) {
 }
 
 bool ArchiveManager::HasFile(uint64_t hash) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     return mFileToArchive.count(hash) > 0;
 }
 
 std::shared_ptr<Archive> ArchiveManager::GetArchiveFromFile(const std::string& filePath) {
-    return mFileToArchive[CRC64(filePath.c_str())];
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
+    auto it = mFileToArchive.find(CRC64(filePath.c_str()));
+    return it != mFileToArchive.end() ? it->second : nullptr;
 }
 
 std::shared_ptr<std::vector<std::string>> ArchiveManager::ListFiles(const std::string& searchMask) {
@@ -78,6 +86,7 @@ std::shared_ptr<std::vector<std::string>> ArchiveManager::ListFiles(const std::s
 
 std::shared_ptr<std::vector<std::string>> ArchiveManager::ListFiles(const std::list<std::string>& includes,
                                                                     const std::list<std::string>& excludes) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     auto list = std::make_shared<std::vector<std::string>>();
     for (const auto& [hash, path] : mHashes) {
         if (includes.empty() && excludes.empty()) {
@@ -110,6 +119,7 @@ std::shared_ptr<std::vector<std::string>> ArchiveManager::ListFiles(const std::l
 }
 
 std::shared_ptr<std::vector<std::string>> ArchiveManager::ListDirectories(const std::string& searchMask) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     auto list = std::make_shared<std::vector<std::string>>();
     for (const std::string& dir : mDirectories) {
         if (glob_match(searchMask.c_str(), dir.c_str())) {
@@ -120,14 +130,17 @@ std::shared_ptr<std::vector<std::string>> ArchiveManager::ListDirectories(const 
 }
 
 std::vector<uint32_t> ArchiveManager::GetGameVersions() {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     return mGameVersions;
 }
 
 void ArchiveManager::AddGameVersion(uint32_t newGameVersion) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     mGameVersions.push_back(newGameVersion);
 }
 
 std::shared_ptr<std::vector<std::shared_ptr<Archive>>> ArchiveManager::GetArchives() {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     auto archives = std::make_shared<std::vector<std::shared_ptr<Archive>>>();
     for (const auto& archive : mArchives) {
         archives->push_back(archive);
@@ -136,6 +149,7 @@ std::shared_ptr<std::vector<std::shared_ptr<Archive>>> ArchiveManager::GetArchiv
 }
 
 void ArchiveManager::ResetVirtualFileSystem() {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     // Store the original list of archives because we will clear it and re-add them.
     // The re-add will trigger the file virtual file system to get populated.
     auto archives = mArchives;
@@ -152,6 +166,7 @@ void ArchiveManager::ResetVirtualFileSystem() {
 
 bool ArchiveManager::WriteFile(std::shared_ptr<Archive> archive, const std::string& filePath,
                                const std::vector<uint8_t>& data) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     if (archive) {
         if (archive->WriteFile(filePath, data)) {
             auto hash = CRC64(filePath.c_str());
@@ -164,6 +179,7 @@ bool ArchiveManager::WriteFile(std::shared_ptr<Archive> archive, const std::stri
 }
 
 size_t ArchiveManager::RemoveArchive(const std::string& path) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     for (size_t i = 0; i < mArchives.size(); i++) {
         if (path == mArchives[i]->GetPath()) {
             mArchives[i]->Unload();
@@ -181,6 +197,7 @@ size_t ArchiveManager::RemoveArchive(std::shared_ptr<Archive> archive) {
 }
 
 void ArchiveManager::SetArchives(std::shared_ptr<std::vector<std::shared_ptr<Archive>>> archives) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     mArchives.clear();
 
     if (archives) {
@@ -193,6 +210,7 @@ void ArchiveManager::SetArchives(std::shared_ptr<std::vector<std::shared_ptr<Arc
 }
 
 const std::string* ArchiveManager::HashToString(uint64_t hash) const {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     auto it = mHashes.find(hash);
     return it != mHashes.end() ? &it->second : nullptr;
 }
@@ -236,6 +254,7 @@ std::vector<std::string> ArchiveManager::GetArchiveListInPaths(const std::vector
 }
 
 std::shared_ptr<Archive> ArchiveManager::AddArchive(const std::string& archivePath) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     const std::filesystem::path path = archivePath;
     const std::string extension = path.extension().string();
     std::shared_ptr<Archive> archive = nullptr;
@@ -261,6 +280,7 @@ std::shared_ptr<Archive> ArchiveManager::AddArchive(const std::string& archivePa
 }
 
 std::shared_ptr<Archive> ArchiveManager::AddArchive(std::shared_ptr<Archive> archive) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     if (!archive->IsLoaded()) {
         SPDLOG_WARN("Attempting to add unloaded Archive at {} to Archive Manager", archive->GetPath());
         return nullptr;
@@ -293,6 +313,7 @@ std::shared_ptr<Archive> ArchiveManager::AddArchive(std::shared_ptr<Archive> arc
 }
 
 bool ArchiveManager::IsGameVersionValid(uint32_t gameVersion) {
+    const std::lock_guard<std::recursive_mutex> lock(mMutex);
     return mValidGameVersions.empty() || mValidGameVersions.contains(gameVersion);
 }
 

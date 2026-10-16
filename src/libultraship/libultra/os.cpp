@@ -1,6 +1,7 @@
 #include "libultraship/libultraship.h"
 #include "libultraship/bridge/controllerbridge.h"
 #include <SDL2/SDL.h>
+#include <filesystem>
 #include <ratio>
 
 // Establish a chrono duration for the N64 46.875MHz clock rate
@@ -25,18 +26,89 @@ int32_t osContInit(OSMesgQueue* mq, uint8_t* controllerBits, OSContStatus* statu
     // pool tears down on the way out, leaving a 0xE06D7363 crash that's
     // hard to diagnose from a user log.
     try {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+
         std::string controllerDb = Ship::Context::LocateFileAcrossAppDirs("gamecontrollerdb.txt");
-        int mappingsAdded = SDL_GameControllerAddMappingsFromFile(controllerDb.c_str());
-        if (mappingsAdded >= 0) {
-            SPDLOG_INFO("Added SDL game controllers from \"{}\" ({})", controllerDb, mappingsAdded);
-        } else {
-            SPDLOG_ERROR("Failed add SDL game controller mappings from \"{}\" ({})", controllerDb, SDL_GetError());
+        fs::path controllerDbPath(controllerDb);
+        bool loadedControllerDb = false;
+
+        if (fs::exists(controllerDbPath, ec)) {
+            int mappingsAdded = SDL_GameControllerAddMappingsFromFile(controllerDbPath.string().c_str());
+            if (mappingsAdded >= 0) {
+                SPDLOG_INFO("Added SDL game controllers from \"{}\" ({})", controllerDbPath.string(), mappingsAdded);
+                loadedControllerDb = true;
+            } else {
+                SPDLOG_WARN("Failed add SDL game controller mappings from \"{}\" ({})", controllerDbPath.string(),
+                            SDL_GetError());
+            }
+        }
+
+        if (!loadedControllerDb) {
+            fs::path cwdFallback = fs::current_path(ec) / "gamecontrollerdb.txt";
+            if (fs::exists(cwdFallback, ec)) {
+                int mappingsAdded = SDL_GameControllerAddMappingsFromFile(cwdFallback.string().c_str());
+                if (mappingsAdded >= 0) {
+                    SPDLOG_INFO("Added SDL game controllers from fallback \"{}\" ({})", cwdFallback.string(),
+                                mappingsAdded);
+                    loadedControllerDb = true;
+                } else {
+                    SPDLOG_WARN("Failed add SDL game controller mappings from fallback \"{}\" ({})",
+                                cwdFallback.string(), SDL_GetError());
+                }
+            }
+        }
+
+        if (!loadedControllerDb) {
+            SPDLOG_WARN("osContInit: gamecontrollerdb.txt not found in app dirs/cwd; using built-in and runtime "
+                        "fallback mappings");
         }
     } catch (const std::exception& e) {
         SPDLOG_ERROR("osContInit: skipping gamecontrollerdb.txt — {}", e.what());
-    } catch (...) {
-        SPDLOG_ERROR("osContInit: skipping gamecontrollerdb.txt — unknown exception");
+    } catch (...) { SPDLOG_ERROR("osContInit: skipping gamecontrollerdb.txt — unknown exception"); }
+
+#if defined(__SWITCH__)
+    // SDL's bundled DB and upstream gamecontrollerdb.txt often gate Joy-Con
+    // mappings behind desktop platform tags. Inject Switch-specific fallbacks
+    // so detached Joy-Cons are always recognized as SDL game controllers.
+    static const char* kSwitchJoyConFallbackMappings[] = {
+        "060000007e0500000620000000000000,Nintendo Switch Combined "
+        "Joy-Cons,a:b0,b:b1,back:b9,dpdown:b15,dpleft:b16,dpright:b17,dpup:b14,guide:b11,leftshoulder:b5,leftstick:b12,"
+        "lefttrigger:b7,leftx:a0,lefty:a1,misc1:b4,rightshoulder:b6,rightstick:b13,righttrigger:b8,rightx:a2,righty:a3,"
+        "start:b10,x:b3,y:b2,platform:Nintendo Switch,",
+        "060000007e0500000820000000000000,Nintendo Switch Combined "
+        "Joy-Cons,a:b0,b:b1,back:b9,dpdown:b15,dpleft:b16,dpright:b17,dpup:b14,guide:b11,leftshoulder:b5,leftstick:b12,"
+        "lefttrigger:b7,leftx:a0,lefty:a1,misc1:b4,rightshoulder:b6,rightstick:b13,righttrigger:b8,rightx:a2,righty:a3,"
+        "start:b10,x:b3,y:b2,platform:Nintendo Switch,",
+        "050000007e0500000620000001800000,Nintendo Switch Left "
+        "Joy-Con,a:b16,b:b15,back:b4,leftshoulder:b6,leftstick:b12,leftx:a1,lefty:a0~,rightshoulder:b8,start:b9,x:b14,"
+        "y:b17,platform:Nintendo Switch,",
+        "050000007e0500000720000001800000,Nintendo Switch Right "
+        "Joy-Con,a:b1,b:b2,back:b9,leftshoulder:b4,leftstick:b10,leftx:a1~,lefty:a0,rightshoulder:b6,start:b8,x:b0,y:"
+        "b3,platform:Nintendo Switch,",
+        "030000007e0500000620000001000000,Joy-Con "
+        "(L),+leftx:h0.2,+lefty:h0.4,-leftx:h0.8,-lefty:h0.1,a:b0,b:b1,back:b13,leftshoulder:b4,leftstick:b10,"
+        "rightshoulder:b5,start:b8,x:b2,y:b3,platform:Nintendo Switch,",
+        "030000007e0500000720000001000000,Joy-Con "
+        "(R),+leftx:h0.2,+lefty:h0.4,-leftx:h0.8,-lefty:h0.1,a:b0,b:b1,back:b12,leftshoulder:b4,leftstick:b11,"
+        "rightshoulder:b5,start:b9,x:b2,y:b3,platform:Nintendo Switch,",
+        "050000007e0500000620000001000000,Joy-Con "
+        "(L),+leftx:h0.2,+lefty:h0.4,-leftx:h0.8,-lefty:h0.1,a:b0,b:b1,back:b13,leftshoulder:b4,leftstick:b10,"
+        "rightshoulder:b5,start:b8,x:b2,y:b3,platform:Nintendo Switch,",
+        "050000007e0500000720000001000000,Joy-Con "
+        "(R),+leftx:h0.2,+lefty:h0.4,-leftx:h0.8,-lefty:h0.1,a:b0,b:b1,back:b12,leftshoulder:b4,leftstick:b11,"
+        "rightshoulder:b5,start:b9,x:b2,y:b3,platform:Nintendo Switch,",
+    };
+
+    int fallbackMappingsAdded = 0;
+    for (const char* mapping : kSwitchJoyConFallbackMappings) {
+        int rc = SDL_GameControllerAddMapping(mapping);
+        if (rc >= 0) {
+            fallbackMappingsAdded++;
+        }
     }
+    SPDLOG_INFO("osContInit: injected {} Switch Joy-Con fallback mapping(s)", fallbackMappingsAdded);
+#endif
 
     // Run RaphnetPhysicalDeviceManager init BEFORE SDL_Init(GAMECONTROLLER).
     // The raphnet adapter exposes both a HID joystick interface (which SDL

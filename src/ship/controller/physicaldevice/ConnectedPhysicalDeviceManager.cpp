@@ -1,5 +1,57 @@
 #include "ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.h"
+#include <array>
 #include <spdlog/spdlog.h>
+
+#if defined(__SWITCH__)
+namespace {
+constexpr uint16_t kNintendoVendorId = 0x057E;
+constexpr uint16_t kJoyConLeftProductId = 0x2006;
+constexpr uint16_t kJoyConRightProductId = 0x2007;
+
+enum class JoyConSide {
+    None,
+    Left,
+    Right,
+};
+
+JoyConSide GetJoyConSide(SDL_GameController* gamepad) {
+    const auto type = SDL_GameControllerGetType(gamepad);
+    if (type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT) {
+        return JoyConSide::Left;
+    }
+    if (type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT) {
+        return JoyConSide::Right;
+    }
+
+    SDL_Joystick* joystick = SDL_GameControllerGetJoystick(gamepad);
+    if (joystick != nullptr) {
+        const uint16_t vendor = SDL_JoystickGetVendor(joystick);
+        const uint16_t product = SDL_JoystickGetProduct(joystick);
+
+        if (vendor == kNintendoVendorId) {
+            if (product == kJoyConLeftProductId) {
+                return JoyConSide::Left;
+            }
+            if (product == kJoyConRightProductId) {
+                return JoyConSide::Right;
+            }
+        }
+    }
+
+    const char* name = SDL_GameControllerName(gamepad);
+    if (name != nullptr) {
+        if (SDL_strstr(name, "Joy-Con (L)") != nullptr || SDL_strstr(name, "Joy-Con Left") != nullptr) {
+            return JoyConSide::Left;
+        }
+        if (SDL_strstr(name, "Joy-Con (R)") != nullptr || SDL_strstr(name, "Joy-Con Right") != nullptr) {
+            return JoyConSide::Right;
+        }
+    }
+
+    return JoyConSide::None;
+}
+} // namespace
+#endif
 
 namespace Ship {
 ConnectedPhysicalDeviceManager::ConnectedPhysicalDeviceManager() {
@@ -89,6 +141,7 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
 
     mConnectedSDLGamepads.clear();
     mConnectedSDLGamepadNames.clear();
+    mIgnoredInstanceIds.clear();
     static SDL_JoystickGUID sZeroGuid;
 
     for (int32_t i = 0; i < SDL_NumJoysticks(); i++) {
@@ -174,17 +227,66 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
     }
     for (int32_t newId : newInstanceIds) {
         uint8_t freePort = UINT8_MAX;
-        for (uint8_t port = 0; port < 4; port++) {
-            bool occupied = false;
+#if defined(__SWITCH__)
+        // Joy-Con (L)+(R) halves map to one port: if the sibling half is the
+        // sole occupant of a port, join it there. Otherwise honor SDL's
+        // player index when that port is free, then fall through to
+        // first-free.
+        const JoyConSide newSide = GetJoyConSide(mConnectedSDLGamepads[newId]);
+        if (newSide != JoyConSide::None) {
+            const JoyConSide siblingSide = (newSide == JoyConSide::Left) ? JoyConSide::Right : JoyConSide::Left;
             for (const auto& [instanceId, gamepad] : mConnectedSDLGamepads) {
-                if (!mIgnoredInstanceIds[port].contains(instanceId)) {
-                    occupied = true;
+                if (instanceId == newId || GetJoyConSide(gamepad) != siblingSide) {
+                    continue;
+                }
+                for (uint8_t port = 0; port < 4; port++) {
+                    size_t unignored = 0;
+                    bool siblingHere = false;
+                    for (const auto& [otherId, otherPad] : mConnectedSDLGamepads) {
+                        if (!mIgnoredInstanceIds[port].contains(otherId)) {
+                            unignored++;
+                            siblingHere = (otherId == instanceId);
+                        }
+                    }
+                    if (siblingHere && unignored == 1) {
+                        freePort = port;
+                        break;
+                    }
+                }
+                if (freePort != UINT8_MAX) {
                     break;
                 }
             }
-            if (!occupied) {
-                freePort = port;
-                break;
+        }
+        if (freePort == UINT8_MAX) {
+            const int32_t playerIndex = SDL_GameControllerGetPlayerIndex(mConnectedSDLGamepads[newId]);
+            if (playerIndex >= 0 && playerIndex < 4) {
+                bool occupied = false;
+                for (const auto& [instanceId, gamepad] : mConnectedSDLGamepads) {
+                    if (!mIgnoredInstanceIds[playerIndex].contains(instanceId)) {
+                        occupied = true;
+                        break;
+                    }
+                }
+                if (!occupied) {
+                    freePort = static_cast<uint8_t>(playerIndex);
+                }
+            }
+        }
+#endif
+        if (freePort == UINT8_MAX) {
+            for (uint8_t port = 0; port < 4; port++) {
+                bool occupied = false;
+                for (const auto& [instanceId, gamepad] : mConnectedSDLGamepads) {
+                    if (!mIgnoredInstanceIds[port].contains(instanceId)) {
+                        occupied = true;
+                        break;
+                    }
+                }
+                if (!occupied) {
+                    freePort = port;
+                    break;
+                }
             }
         }
         if (freePort == UINT8_MAX) {

@@ -1,5 +1,90 @@
 #include "ship/controller/raphnet/RaphnetTransport.h"
 
+#if defined(__SWITCH__)
+
+#include <spdlog/spdlog.h>
+
+namespace Ship {
+
+RaphnetTransport::RaphnetTransport() : mDevice(nullptr), mVid(0), mPid(0), mReportSize(gRntDefaultReportSize) {
+    for (int i = 0; i < gRntMaxChannelsPerAdapter; ++i) {
+        mFirstPollLogged[i] = false;
+        mFirstErrorLogged[i] = false;
+        mErrorCount[i] = 0;
+    }
+}
+
+RaphnetTransport::~RaphnetTransport() {
+    Close();
+}
+
+std::string RaphnetTransport::ToUtf8(const std::wstring& w) {
+    std::string out;
+    out.reserve(w.size());
+    for (wchar_t c : w) {
+        out.push_back((c >= 0x20 && c <= 0x7E) ? static_cast<char>(c) : '?');
+    }
+    return out;
+}
+
+std::string RaphnetTransport::FormatHidError(hid_device* dev) {
+    (void)dev;
+    return "hidapi backend disabled on Switch";
+}
+
+bool RaphnetTransport::Open(const std::string& hidPath, uint16_t vid, uint16_t pid, const std::wstring& serial) {
+    (void)hidPath;
+    (void)vid;
+    (void)pid;
+    (void)serial;
+    SPDLOG_INFO("[raphnet] Open skipped on Switch: native hidapi backend is disabled");
+    return false;
+}
+
+void RaphnetTransport::Close() {
+}
+
+bool RaphnetTransport::GetVersion(std::string& outVersion) {
+    (void)outVersion;
+    return false;
+}
+
+bool RaphnetTransport::GetControllerType(uint8_t channel, uint8_t& outType) {
+    (void)channel;
+    (void)outType;
+    return false;
+}
+
+bool RaphnetTransport::SuspendPolling(bool suspend) {
+    (void)suspend;
+    return false;
+}
+
+bool RaphnetTransport::SetVibration(uint8_t channel, bool on) {
+    (void)channel;
+    (void)on;
+    return false;
+}
+
+bool RaphnetTransport::Poll(uint8_t channel, OSContPad& pad) {
+    (void)channel;
+    (void)pad;
+    return false;
+}
+
+int RaphnetTransport::Exchange(const uint8_t* tx, size_t txLen, uint8_t* rx, size_t rxMax, int timeoutMs) {
+    (void)tx;
+    (void)txLen;
+    (void)rx;
+    (void)rxMax;
+    (void)timeoutMs;
+    return -1;
+}
+
+} // namespace Ship
+
+#else
+
 #include <hidapi.h>
 #include <spdlog/spdlog.h>
 
@@ -39,21 +124,19 @@ namespace {
 // (default level WARN). Returns 0 on any failure; caller falls back to
 // auto-negotiation.
 int QueryWindowsCapsBufferSize(const std::string& hidPath) {
-    HANDLE h = CreateFileA(hidPath.c_str(), 0,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-                           OPEN_EXISTING, 0, nullptr);
+    HANDLE h = CreateFileA(hidPath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         DWORD lastErr = GetLastError();
-        SPDLOG_WARN("[raphnet-diag] CreateFileA('{}') for caps query failed: GetLastError={}",
-                    hidPath, (unsigned)lastErr);
+        SPDLOG_WARN("[raphnet-diag] CreateFileA('{}') for caps query failed: GetLastError={}", hidPath,
+                    (unsigned)lastErr);
         return 0;
     }
     int size = 0;
     PHIDP_PREPARSED_DATA preparsed = nullptr;
     if (!HidD_GetPreparsedData(h, &preparsed) || preparsed == nullptr) {
         DWORD lastErr = GetLastError();
-        SPDLOG_WARN("[raphnet-diag] HidD_GetPreparsedData failed for '{}': GetLastError={}",
-                    hidPath, (unsigned)lastErr);
+        SPDLOG_WARN("[raphnet-diag] HidD_GetPreparsedData failed for '{}': GetLastError={}", hidPath,
+                    (unsigned)lastErr);
         CloseHandle(h);
         return 0;
     }
@@ -66,14 +149,10 @@ int QueryWindowsCapsBufferSize(const std::string& hidPath) {
                     "FeatureReportByteLength={} NumberLinkCollectionNodes={} "
                     "NumberInputButtonCaps={} NumberInputValueCaps={} "
                     "NumberFeatureButtonCaps={} NumberFeatureValueCaps={}",
-                    (unsigned)caps.UsagePage, (unsigned)caps.Usage,
-                    (unsigned)caps.InputReportByteLength,
-                    (unsigned)caps.OutputReportByteLength,
-                    (unsigned)caps.FeatureReportByteLength,
-                    (unsigned)caps.NumberLinkCollectionNodes,
-                    (unsigned)caps.NumberInputButtonCaps,
-                    (unsigned)caps.NumberInputValueCaps,
-                    (unsigned)caps.NumberFeatureButtonCaps,
+                    (unsigned)caps.UsagePage, (unsigned)caps.Usage, (unsigned)caps.InputReportByteLength,
+                    (unsigned)caps.OutputReportByteLength, (unsigned)caps.FeatureReportByteLength,
+                    (unsigned)caps.NumberLinkCollectionNodes, (unsigned)caps.NumberInputButtonCaps,
+                    (unsigned)caps.NumberInputValueCaps, (unsigned)caps.NumberFeatureButtonCaps,
                     (unsigned)caps.NumberFeatureValueCaps);
     } else {
         SPDLOG_WARN("[raphnet-diag] HidP_GetCaps NTSTATUS=0x{:08x}", (unsigned)st);
@@ -108,8 +187,7 @@ std::string HexBytes(const uint8_t* buf, size_t len) {
 
 } // namespace
 
-RaphnetTransport::RaphnetTransport()
-    : mDevice(nullptr), mVid(0), mPid(0), mReportSize(gRntDefaultReportSize) {
+RaphnetTransport::RaphnetTransport() : mDevice(nullptr), mVid(0), mPid(0), mReportSize(gRntDefaultReportSize) {
     for (int i = 0; i < gRntMaxChannelsPerAdapter; ++i) {
         mFirstPollLogged[i] = false;
         mFirstErrorLogged[i] = false;
@@ -144,8 +222,7 @@ std::string RaphnetTransport::FormatHidError(hid_device* dev) {
     return ToUtf8(std::wstring(w));
 }
 
-bool RaphnetTransport::Open(const std::string& hidPath, uint16_t vid, uint16_t pid,
-                            const std::wstring& serial) {
+bool RaphnetTransport::Open(const std::string& hidPath, uint16_t vid, uint16_t pid, const std::wstring& serial) {
     std::lock_guard<std::mutex> lock(mLock);
 
     if (mDevice != nullptr) {
@@ -163,8 +240,8 @@ bool RaphnetTransport::Open(const std::string& hidPath, uint16_t vid, uint16_t p
     // default to spdlog::level::warn — see Context::InitLogging). Open runs
     // once per session so noise is bounded; per-frame Poll logs stay at
     // INFO/TRACE. The "[raphnet-diag]" prefix is grep-friendly for triage.
-    SPDLOG_WARN("[raphnet-diag] Open() vid=0x{:04x} pid=0x{:04x} serial='{}' path='{}'",
-                vid, pid, ToUtf8(serial), hidPath);
+    SPDLOG_WARN("[raphnet-diag] Open() vid=0x{:04x} pid=0x{:04x} serial='{}' path='{}'", vid, pid, ToUtf8(serial),
+                hidPath);
 
     mDevice = hid_open_path(hidPath.c_str());
     if (mDevice == nullptr) {
@@ -221,8 +298,7 @@ bool RaphnetTransport::Open(const std::string& hidPath, uint16_t vid, uint16_t p
             int n = Exchange(cmd, sizeof(cmd), rep, sizeof(rep), 1000);
             SPDLOG_WARN("[raphnet-diag] defensive SUSPEND_POLLING(0): n={} rep[0]=0x{:02x} "
                         "rep_bytes='{}'",
-                        n, n > 0 ? rep[0] : 0,
-                        HexBytes(rep, n > 0 ? (size_t)n : 0));
+                        n, n > 0 ? rep[0] : 0, HexBytes(rep, n > 0 ? (size_t)n : 0));
             sized = true;
         } else {
             SPDLOG_WARN("[raphnet-diag] HidP_GetCaps returned {} for path '{}' — falling back to "
@@ -248,11 +324,9 @@ bool RaphnetTransport::Open(const std::string& hidPath, uint16_t vid, uint16_t p
             lastRep0 = (n > 0) ? rep[0] : 0;
             SPDLOG_WARN("[raphnet-diag] auto-neg probe size={}: n={} rep[0]=0x{:02x} "
                         "rep_bytes='{}'",
-                        candidate, n, lastRep0,
-                        HexBytes(rep, n > 0 ? (size_t)n : 0));
+                        candidate, n, lastRep0, HexBytes(rep, n > 0 ? (size_t)n : 0));
             if (n >= 1 && rep[0] == gRntRqSuspendPolling) {
-                SPDLOG_WARN("[raphnet-diag] auto-neg accepted size={} (opcode echo confirmed)",
-                            mReportSize);
+                SPDLOG_WARN("[raphnet-diag] auto-neg accepted size={} (opcode echo confirmed)", mReportSize);
                 negotiated = true;
                 break;
             }
@@ -297,12 +371,10 @@ bool RaphnetTransport::Open(const std::string& hidPath, uint16_t vid, uint16_t p
         }
         SPDLOG_WARN("[raphnet-diag] SUSPEND_POLLING(1) reply: n={} rep[0]=0x{:02x} "
                     "rep_bytes='{}' — native SI access armed",
-                    n, n > 0 ? rep[0] : 0,
-                    HexBytes(rep, n > 0 ? (size_t)n : 0));
+                    n, n > 0 ? rep[0] : 0, HexBytes(rep, n > 0 ? (size_t)n : 0));
     }
 
-    SPDLOG_WARN("[raphnet-diag] Open() complete — entering Poll loop with mReportSize={}",
-                mReportSize);
+    SPDLOG_WARN("[raphnet-diag] Open() complete — entering Poll loop with mReportSize={}", mReportSize);
     return true;
 }
 
@@ -353,8 +425,7 @@ bool RaphnetTransport::GetVersion(std::string& outVersion) {
     uint8_t rep[64] = {};
     int n = Exchange(cmd, sizeof(cmd), rep, sizeof(rep), 1000);
     if (n < 0 || n < 1) {
-        SPDLOG_ERROR("[raphnet] GET_VERSION exchange failed (n={}, err={})", n,
-                     FormatHidError(mDevice));
+        SPDLOG_ERROR("[raphnet] GET_VERSION exchange failed (n={}, err={})", n, FormatHidError(mDevice));
         return false;
     }
     SPDLOG_WARN("[raphnet-diag] GET_VERSION reply: n={} bytes='{}'", n, HexBytes(rep, n));
@@ -398,13 +469,11 @@ bool RaphnetTransport::GetControllerType(uint8_t channel, uint8_t& outType) {
     uint8_t rep[16] = {};
     int n = Exchange(cmd, sizeof(cmd), rep, sizeof(rep), 1000);
     if (n < 0) {
-        SPDLOG_ERROR("[raphnet] GET_CONTROLLER_TYPE chn={} failed (n={}, err={})", channel, n,
-                     FormatHidError(mDevice));
+        SPDLOG_ERROR("[raphnet] GET_CONTROLLER_TYPE chn={} failed (n={}, err={})", channel, n, FormatHidError(mDevice));
         outType = gRntCtlTypeNone;
         return false;
     }
-    SPDLOG_DEBUG("[raphnet] GET_CONTROLLER_TYPE chn={} response ({} bytes): {}", channel, n,
-                 HexBytes(rep, n));
+    SPDLOG_DEBUG("[raphnet] GET_CONTROLLER_TYPE chn={} response ({} bytes): {}", channel, n, HexBytes(rep, n));
     // Response layout: rep[0]=opcode echo (0x06), rep[1]=channel echo, rep[2]=type.
     // Older v3 firmware (< v3.4) doesn't implement this command and may
     // return garbage / repeat the opcode; we guard via opcode-echo check.
@@ -412,17 +481,24 @@ bool RaphnetTransport::GetControllerType(uint8_t channel, uint8_t& outType) {
         outType = rep[2];
         const char* typeName = "unknown";
         switch (outType) {
-            case gRntCtlTypeNone:     typeName = "NONE"; break;
-            case gRntCtlTypeN64:      typeName = "N64"; break;
-            case gRntCtlTypeGameCube: typeName = "GAMECUBE"; break;
-            default:                  typeName = "OTHER"; break;
+            case gRntCtlTypeNone:
+                typeName = "NONE";
+                break;
+            case gRntCtlTypeN64:
+                typeName = "N64";
+                break;
+            case gRntCtlTypeGameCube:
+                typeName = "GAMECUBE";
+                break;
+            default:
+                typeName = "OTHER";
+                break;
         }
-        SPDLOG_INFO("[raphnet] adapter '{}' chn={} controller type: {} (0x{:02x})",
-                    ToUtf8(mSerial), channel, typeName, outType);
+        SPDLOG_INFO("[raphnet] adapter '{}' chn={} controller type: {} (0x{:02x})", ToUtf8(mSerial), channel, typeName,
+                    outType);
         return true;
     }
-    SPDLOG_WARN("[raphnet] GET_CONTROLLER_TYPE chn={} unexpected response: {}", channel,
-                HexBytes(rep, n));
+    SPDLOG_WARN("[raphnet] GET_CONTROLLER_TYPE chn={} unexpected response: {}", channel, HexBytes(rep, n));
     outType = gRntCtlTypeNone;
     return false;
 }
@@ -453,8 +529,8 @@ bool RaphnetTransport::SetVibration(uint8_t channel, bool on) {
     uint8_t rep[8] = {};
     int n = Exchange(cmd, sizeof(cmd), rep, sizeof(rep), 1000);
     if (n < 0) {
-        SPDLOG_WARN("[raphnet] SET_VIBRATION chn={} on={} failed (n={}, err={})", channel, on ? 1 : 0,
-                    n, FormatHidError(mDevice));
+        SPDLOG_WARN("[raphnet] SET_VIBRATION chn={} on={} failed (n={}, err={})", channel, on ? 1 : 0, n,
+                    FormatHidError(mDevice));
         return false;
     }
     SPDLOG_TRACE("[raphnet] SET_VIBRATION chn={} on={} OK", channel, on ? 1 : 0);
@@ -467,8 +543,7 @@ bool RaphnetTransport::Poll(uint8_t channel, OSContPad& pad) {
         return false;
     }
     if (channel >= gRntMaxChannelsPerAdapter) {
-        SPDLOG_ERROR("[raphnet] Poll: channel {} out of range (max {})", channel,
-                     gRntMaxChannelsPerAdapter - 1);
+        SPDLOG_ERROR("[raphnet] Poll: channel {} out of range (max {})", channel, gRntMaxChannelsPerAdapter - 1);
         return false;
     }
 
@@ -478,20 +553,19 @@ bool RaphnetTransport::Poll(uint8_t channel, OSContPad& pad) {
     uint8_t rep[16] = {};
     int n = Exchange(cmd, sizeof(cmd), rep, sizeof(rep), 50);
 
-    if (n < 0 || n < 3 || rep[0] != gRntRqGcn64RawSi || rep[1] != channel ||
-        rep[2] != gN64GetStatusReplyLen || n < 3 + gN64GetStatusReplyLen) {
+    if (n < 0 || n < 3 || rep[0] != gRntRqGcn64RawSi || rep[1] != channel || rep[2] != gN64GetStatusReplyLen ||
+        n < 3 + gN64GetStatusReplyLen) {
         ++mErrorCount[channel];
         if (!mFirstErrorLogged[channel]) {
             mFirstErrorLogged[channel] = true;
-            SPDLOG_ERROR(
-                "[raphnet] FIRST poll FAILURE chn={} on adapter '{}' vid=0x{:04x} pid=0x{:04x}: "
-                "n={} response='{}' (request='{}', mReportSize={}). Subsequent failures "
-                "throttled to 1/60.",
-                channel, ToUtf8(mSerial), mVid, mPid, n, HexBytes(rep, n > 0 ? (size_t)n : 0),
-                HexBytes(cmd, sizeof(cmd)), mReportSize);
+            SPDLOG_ERROR("[raphnet] FIRST poll FAILURE chn={} on adapter '{}' vid=0x{:04x} pid=0x{:04x}: "
+                         "n={} response='{}' (request='{}', mReportSize={}). Subsequent failures "
+                         "throttled to 1/60.",
+                         channel, ToUtf8(mSerial), mVid, mPid, n, HexBytes(rep, n > 0 ? (size_t)n : 0),
+                         HexBytes(cmd, sizeof(cmd)), mReportSize);
         } else if ((mErrorCount[channel] % 60) == 0) {
-            SPDLOG_WARN("[raphnet] poll FAILURE chn={} (count={}, n={}, err={})", channel,
-                        mErrorCount[channel], n, FormatHidError(mDevice));
+            SPDLOG_WARN("[raphnet] poll FAILURE chn={} (count={}, n={}, err={})", channel, mErrorCount[channel], n,
+                        FormatHidError(mDevice));
         }
         return false;
     }
@@ -513,17 +587,16 @@ bool RaphnetTransport::Poll(uint8_t channel, OSContPad& pad) {
         // port. Subsequent polls drop back to TRACE.
         SPDLOG_WARN("[raphnet-diag] FIRST successful poll chn={} on adapter '{}': "
                     "request='{}' response='{}' → button=0x{:04x} stick=({},{})",
-                    channel, ToUtf8(mSerial), HexBytes(cmd, sizeof(cmd)), HexBytes(rep, n),
-                    pad.button, pad.stick_x, pad.stick_y);
+                    channel, ToUtf8(mSerial), HexBytes(cmd, sizeof(cmd)), HexBytes(rep, n), pad.button, pad.stick_x,
+                    pad.stick_y);
     } else {
-        SPDLOG_TRACE("[raphnet] poll chn={} button=0x{:04x} stick=({},{})", channel, pad.button,
-                     pad.stick_x, pad.stick_y);
+        SPDLOG_TRACE("[raphnet] poll chn={} button=0x{:04x} stick=({},{})", channel, pad.button, pad.stick_x,
+                     pad.stick_y);
     }
     return true;
 }
 
-int RaphnetTransport::Exchange(const uint8_t* tx, size_t txLen, uint8_t* rx, size_t rxMax,
-                               int timeoutMs) {
+int RaphnetTransport::Exchange(const uint8_t* tx, size_t txLen, uint8_t* rx, size_t rxMax, int timeoutMs) {
     // Caller MUST hold mLock. We don't take it here — see GetVersion()'s
     // commentary about the lock contract.
     if (mDevice == nullptr) {
@@ -543,8 +616,7 @@ int RaphnetTransport::Exchange(const uint8_t* tx, size_t txLen, uint8_t* rx, siz
     if (sent < 0) {
         SPDLOG_ERROR("[raphnet] hid_send_feature_report failed (sent={}, err={}, "
                      "buffer_size={}, cmd='{}')",
-                     sent, FormatHidError(mDevice), sendBuf.size(),
-                     HexBytes(tx, copyLen));
+                     sent, FormatHidError(mDevice), sendBuf.size(), HexBytes(tx, copyLen));
         return -1;
     }
     SPDLOG_TRACE("[raphnet] TX {} bytes (cmd='{}')", sent, HexBytes(tx, copyLen));
@@ -565,7 +637,7 @@ int RaphnetTransport::Exchange(const uint8_t* tx, size_t txLen, uint8_t* rx, siz
     int retryCount = 0;
     while (true) {
         std::vector<uint8_t> recvBuf(mReportSize + 1, 0);
-        recvBuf[0] = 0x00;  // Windows requires the report id to be set on input.
+        recvBuf[0] = 0x00; // Windows requires the report id to be set on input.
         int got = hid_get_feature_report(mDevice, recvBuf.data(), recvBuf.size());
         if (got > 1) {
             int payloadLen = got - 1;
@@ -580,8 +652,7 @@ int RaphnetTransport::Exchange(const uint8_t* tx, size_t txLen, uint8_t* rx, siz
             // what HidP_GetCaps reports — see [raphnet-diag] caps line above).
             SPDLOG_ERROR("[raphnet] hid_get_feature_report failed (got={}, err={}, "
                          "buffer_size={}, retry_count={}, cmd='{}')",
-                         got, FormatHidError(mDevice), recvBuf.size(), retryCount,
-                         HexBytes(tx, copyLen));
+                         got, FormatHidError(mDevice), recvBuf.size(), retryCount, HexBytes(tx, copyLen));
             return -1;
         }
         // got == 0 (Linux/macOS) or got == 1 (Windows hidapi report-id+1
@@ -599,3 +670,5 @@ int RaphnetTransport::Exchange(const uint8_t* tx, size_t txLen, uint8_t* rx, siz
 }
 
 } // namespace Ship
+
+#endif

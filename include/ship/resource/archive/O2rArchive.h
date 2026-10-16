@@ -5,6 +5,7 @@
 #include <string>
 #include <stdint.h>
 #include <string>
+#include <mutex>
 
 #include "zip.h"
 
@@ -29,5 +30,11 @@ class O2rArchive final : virtual public Archive {
 
   private:
     zip_t* mZipArchive;
+    // libzip is not thread-safe per archive: concurrent zip_* calls on the
+    // same zip_t corrupt its internal state (observed as heap corruption
+    // inside zip.dll during zip_close at shutdown). The ResourceManager
+    // thread pool calls LoadFile from several workers, so every entry point
+    // touching mZipArchive serializes on this mutex.
+    std::mutex mMutex;
 };
 } // namespace Ship

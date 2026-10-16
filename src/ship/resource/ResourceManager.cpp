@@ -68,6 +68,15 @@ void ResourceManager::Init(const std::vector<std::string>& archivePaths,
 
 ResourceManager::~ResourceManager() {
     SPDLOG_INFO("destruct ResourceManager");
+    // Drain the pool before any member tears down. Members destruct in
+    // reverse declaration order (mMutex first!), so without this a worker
+    // could still be inside LoadFileProcess() touching a destroyed mutex or,
+    // worse, a live thread calling zip_fread() racing ~ArchiveManager's
+    // zip_close() — libzip is not thread-safe per archive, and that
+    // concurrent access is what corrupted zip.dll's heap at shutdown.
+    if (mThreadPool) {
+        mThreadPool->wait();
+    }
 }
 
 bool ResourceManager::IsLoaded() {
@@ -152,6 +161,7 @@ std::shared_ptr<IResource> ResourceManager::LoadResourceProcess(const ResourceId
     auto file = LoadFileProcess(identifier.Path);
     if (file == nullptr) {
         SPDLOG_TRACE("Failed to load resource file at path {}", identifier.Path);
+        const std::lock_guard<std::mutex> lock(mMutex);
         mResourceCache[identifier] = ResourceLoadError::NotFound;
         return nullptr;
     }
@@ -407,9 +417,13 @@ size_t ResourceManager::UnloadResource(const ResourceIdentifier& identifier) {
     std::variant<ResourceLoadError, std::shared_ptr<IResource>> value = nullptr;
     size_t ret = 0;
     // We can only erase the resource if we have any resources for that owner.
-    if (mResourceCache.contains(identifier)) {
+    // contains() must sit inside the lock too: an unlocked lookup racing a
+    // concurrent insert/erase on the same map is a data race on the buckets.
+    {
         const std::lock_guard<std::mutex> lock(mMutex);
-        mResourceCache.erase(identifier);
+        if (mResourceCache.contains(identifier)) {
+            mResourceCache.erase(identifier);
+        }
     }
 
     return ret;

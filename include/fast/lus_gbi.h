@@ -129,10 +129,17 @@ constexpr int8_t RDP_G_SETTARGETINTERPINDEX = OPCODE(0x46);
 #define G_RDP_TEXRECT_CHECK ((-1 * G_TEXRECTFLIP) & 0xff)
 #endif
 
-/* macros for command parsing: */
+/* macros for command parsing: libultra/gbi.h may already have defined
+ * these when both headers reach one TU — don't redefine. */
+#ifndef GDMACMD
 #define GDMACMD(x) (x)
+#endif
+#ifndef GIMMCMD
 #define GIMMCMD(x) = OPCODE(G_IMMFIRST - (x))
+#endif
+#ifndef GRDPCMD
 #define GRDPCMD(x) (0xff - (x))
+#endif
 
 #define G_DMACMDSIZ 128
 #define G_IMMCMDSIZ 64
@@ -799,7 +806,7 @@ constexpr int8_t RDP_G_SETTARGETINTERPINDEX = OPCODE(0x46);
 #define G_DL_PUSH 0x00
 #define G_DL_NOPUSH 0x01
 
-#if defined(_MSC_VER) || defined(__GNUC__)
+#if (defined(_MSC_VER) || defined(__GNUC__)) && !defined(_LANGUAGE_C)
 #define _LANGUAGE_C
 #endif
 

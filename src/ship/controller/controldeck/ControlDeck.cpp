@@ -170,12 +170,30 @@ void ControlDeck::Init(uint8_t* controllerBits) {
         }
     }
 
+#if defined(__SWITCH__)
+    // On Switch, seed default SDL mappings for every unconfigured port so
+    // auto-assigned pads can drive P2-P4 without manual setup.
+    for (size_t i = 0; i < mPorts.size(); ++i) {
+        auto controller = mPorts[i]->GetConnectedController();
+        if (controller == nullptr || controller->HasConfig()) {
+            continue;
+        }
+
+        if (i == 0) {
+            controller->AddDefaultMappings(PhysicalDeviceType::Keyboard);
+            controller->AddDefaultMappings(PhysicalDeviceType::Mouse);
+        }
+
+        controller->AddDefaultMappings(PhysicalDeviceType::SDLGamepad);
+    }
+#else
     // if we don't have a config for controller 1, set default bindings
     if (!mPorts[0]->GetConnectedController()->HasConfig()) {
         mPorts[0]->GetConnectedController()->AddDefaultMappings(PhysicalDeviceType::Keyboard);
         mPorts[0]->GetConnectedController()->AddDefaultMappings(PhysicalDeviceType::Mouse);
         mPorts[0]->GetConnectedController()->AddDefaultMappings(PhysicalDeviceType::SDLGamepad);
     }
+#endif
 
     // Gamepad defaults for ports 2-4 as well: SDL mappings only fire for
     // pads routed to their port, so these stay dormant until a pad is

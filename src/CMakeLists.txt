@@ -84,13 +84,13 @@ target_link_libraries(libultraship PRIVATE hidapi::hidapi)
 #   * Linux/BSD: use the system libusb-1.0 (pkg-config) when present.
 #   * Everything else (Windows, macOS, or Linux without libusb-dev): build libusb
 #     statically from libusb-cmake, so no DLL/dylib needs to ship with the game.
-#   * Not available on Android, iOS or the UWP/Xbox build (no raw USB access).
+#   * Not available on Android, iOS, Switch or the UWP/Xbox build (no raw USB access).
 # On Windows the adapter must be bound to the WinUSB driver (e.g. via Zadig or
 # Dolphin's driver installer) for libusb to open it.
 option(LUS_GCADAPTER "Native GameCube adapter support (libusb)" ON)
 option(LUS_GCADAPTER_FETCH_LIBUSB "Always build libusb from source instead of using the system one" OFF)
 if (LUS_GCADAPTER AND NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS"
-    AND NOT BATTLESHIP_UWP)
+    AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT BATTLESHIP_UWP)
     set(_LUS_LIBUSB_TARGET "")
     if (NOT LUS_GCADAPTER_FETCH_LIBUSB AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME MATCHES "BSD"))
         find_package(PkgConfig QUIET)

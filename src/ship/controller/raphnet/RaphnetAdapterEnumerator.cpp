@@ -1,5 +1,21 @@
 #include "ship/controller/raphnet/RaphnetAdapterEnumerator.h"
 
+#if defined(__SWITCH__)
+
+namespace Ship {
+
+bool RaphnetAdapterEnumerator::IsRaphnetVendor(uint16_t vid) {
+    return vid == gRaphnetVid || vid == gRaphnetVidLegacy1781 || vid == gRaphnetVidLegacy1740;
+}
+
+std::vector<RaphnetAdapterInfo> RaphnetAdapterEnumerator::EnumerateAdapters() {
+    return {};
+}
+
+} // namespace Ship
+
+#else
+
 #include <hidapi.h>
 #include <spdlog/spdlog.h>
 
@@ -34,8 +50,8 @@ void EnumerateOneVid(uint16_t vid, std::vector<RaphnetAdapterInfo>& out) {
         // supported in native mode — users with those should fall back to
         // SDL HID joystick mode.
         if (cur->interface_number <= 0) {
-            SPDLOG_DEBUG("[raphnet] skipping vid=0x{:04x} pid=0x{:04x} interface={} (joystick surface)",
-                         cur->vendor_id, cur->product_id, cur->interface_number);
+            SPDLOG_DEBUG("[raphnet] skipping vid=0x{:04x} pid=0x{:04x} interface={} (joystick surface)", cur->vendor_id,
+                         cur->product_id, cur->interface_number);
             continue;
         }
         RaphnetAdapterInfo info;
@@ -45,7 +61,7 @@ void EnumerateOneVid(uint16_t vid, std::vector<RaphnetAdapterInfo>& out) {
         info.Serial = (cur->serial_number != nullptr) ? std::wstring(cur->serial_number) : std::wstring();
         info.ProductName = (cur->product_string != nullptr) ? std::wstring(cur->product_string) : std::wstring();
         info.InterfaceNumber = cur->interface_number;
-        info.MaxChannelsHint = 4;  // probed per-channel later via GetControllerType
+        info.MaxChannelsHint = 4; // probed per-channel later via GetControllerType
         out.push_back(std::move(info));
         ++kept;
     }
@@ -66,3 +82,5 @@ std::vector<RaphnetAdapterInfo> RaphnetAdapterEnumerator::EnumerateAdapters() {
 }
 
 } // namespace Ship
+
+#endif

@@ -67,7 +67,7 @@ else()
     set(STB_IMAGE_SIZE 0)
 endif()
 if (STB_IMAGE_SIZE EQUAL 0)
-    set(STB_FALLBACK "${CMAKE_SOURCE_DIR}/torch/lib/n64graphics/stb_image.h")
+    set(STB_FALLBACK "${CMAKE_SOURCE_DIR}/components/game-runtime/lib/n64graphics/stb_image.h")
     if (EXISTS "${STB_FALLBACK}")
         message(WARNING "stb_image.h download failed/empty; using fallback at ${STB_FALLBACK}")
         file(COPY "${STB_FALLBACK}" DESTINATION "${STB_DIR}")
@@ -126,7 +126,7 @@ endif()
 # Heavy first-build cost (~10-20s extra link), so default OFF on the mobile
 # targets that don't yet have a CRT-shader UI. Desktops get it ON so user
 # .glsl drops Just Work cross-backend.
-if (CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     set(_LUS_PP_TRANSPILER_DEFAULT OFF)
 else()
     set(_LUS_PP_TRANSPILER_DEFAULT ON)
@@ -203,8 +203,9 @@ FetchContent_MakeAvailable(prism)
 # in libultraship still link cleanly; at runtime hid_init() reports
 # success but hid_enumerate() returns nullptr, so RaphnetPhysicalDeviceManager
 # decides "no adapter found" and the SDL2 / Java HIDDeviceManager handles
-# everything that's actually present.
-if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+# everything that's actually present. Switch is in the same boat: no USB
+# host HID access from a retail .nro, so the same stub applies.
+if (CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     set(_LUS_HIDAPI_STUB_DIR ${CMAKE_CURRENT_BINARY_DIR}/hidapi_stub)
     file(MAKE_DIRECTORY ${_LUS_HIDAPI_STUB_DIR})
     file(WRITE ${_LUS_HIDAPI_STUB_DIR}/hidapi.h [=[

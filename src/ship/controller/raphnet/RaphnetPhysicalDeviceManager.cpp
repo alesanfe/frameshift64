@@ -1,5 +1,88 @@
 #include "ship/controller/raphnet/RaphnetPhysicalDeviceManager.h"
 
+#if defined(__SWITCH__)
+
+#include <spdlog/spdlog.h>
+
+namespace Ship {
+
+RaphnetPhysicalDeviceManager::RaphnetPhysicalDeviceManager() : mInitialized(false) {
+}
+
+RaphnetPhysicalDeviceManager::~RaphnetPhysicalDeviceManager() {
+    Shutdown();
+}
+
+bool RaphnetPhysicalDeviceManager::Init() {
+    // Switch relies on SDL2's gamecontroller backend, which is implemented
+    // via libnx on devkitPro. Native hidapi-based Raphnet probing is disabled.
+    SPDLOG_INFO("[raphnet] native hidapi backend disabled on Switch; using SDL2/libnx controller input");
+    mInitialized = true;
+    return true;
+}
+
+void RaphnetPhysicalDeviceManager::Shutdown() {
+    for (auto& binding : mPortBindings) {
+        binding.Transport.reset();
+        binding.Channel = 0;
+    }
+    mTransports.clear();
+    mClaimedVids.clear();
+    mInitialized = false;
+}
+
+std::shared_ptr<RaphnetTransport> RaphnetPhysicalDeviceManager::GetTransportForPort(uint8_t portIndex) const {
+    if (portIndex >= MAXCONTROLLERS) {
+        return nullptr;
+    }
+    return mPortBindings[portIndex].Transport;
+}
+
+int RaphnetPhysicalDeviceManager::GetChannelForPort(uint8_t portIndex) const {
+    if (portIndex >= MAXCONTROLLERS) {
+        return -1;
+    }
+    return mPortBindings[portIndex].Transport != nullptr ? mPortBindings[portIndex].Channel : -1;
+}
+
+bool RaphnetPhysicalDeviceManager::IsPortClaimed(uint8_t portIndex) const {
+    if (portIndex >= MAXCONTROLLERS) {
+        return false;
+    }
+    return mPortBindings[portIndex].Transport != nullptr;
+}
+
+int RaphnetPhysicalDeviceManager::ClaimedPortCount() const {
+    int n = 0;
+    for (const auto& b : mPortBindings) {
+        if (b.Transport != nullptr) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+bool RaphnetPhysicalDeviceManager::IsClaimedSdlVendor(uint16_t vid) const {
+    return mClaimedVids.contains(vid);
+}
+
+void RaphnetPhysicalDeviceManager::ReleasePort(uint8_t portIndex) {
+    if (portIndex >= MAXCONTROLLERS) {
+        return;
+    }
+    auto& binding = mPortBindings[portIndex];
+    binding.Transport.reset();
+    binding.Channel = 0;
+}
+
+void RaphnetPhysicalDeviceManager::RunSelfTest() {
+    SPDLOG_INFO("[raphnet] self-test skipped on Switch: native hidapi backend is disabled");
+}
+
+} // namespace Ship
+
+#else
+
 #include <hidapi.h>
 #include <spdlog/spdlog.h>
 
@@ -23,7 +106,7 @@ namespace {
 // (serial, channel) so reboot ordering is plug-independent.
 struct N64Candidate {
     std::shared_ptr<RaphnetTransport> Transport;
-    uint8_t                           Channel;
+    uint8_t Channel;
 };
 
 std::string Wide2Ascii(const std::wstring& w) {
@@ -81,11 +164,11 @@ bool RaphnetPhysicalDeviceManager::Init() {
                 RaphnetAdapterInfo info;
                 info.HidPath = StringHelper::Sprintf("MOCK:%d", i);
                 info.Vid = gRaphnetVid;
-                info.Pid = 0xFFFF;  // synthetic PID; real raphnet PIDs do not collide
+                info.Pid = 0xFFFF; // synthetic PID; real raphnet PIDs do not collide
                 info.Serial = L"mock-" + std::to_wstring(i);
                 info.ProductName = L"Mock Raphnet Adapter";
                 info.InterfaceNumber = 1;
-                info.MaxChannelsHint = 1;  // mock only has 1 channel
+                info.MaxChannelsHint = 1; // mock only has 1 channel
                 adapters.insert(adapters.begin(), std::move(info));
             }
         }
@@ -117,8 +200,8 @@ bool RaphnetPhysicalDeviceManager::Init() {
             transport = std::make_shared<RaphnetTransport>();
         }
         if (!transport->Open(info.HidPath, info.Vid, info.Pid, info.Serial)) {
-            SPDLOG_WARN("[raphnet] failed to open '{}' (vid=0x{:04x} pid=0x{:04x}); skipping",
-                        Wide2Ascii(info.Serial), info.Vid, info.Pid);
+            SPDLOG_WARN("[raphnet] failed to open '{}' (vid=0x{:04x} pid=0x{:04x}); skipping", Wide2Ascii(info.Serial),
+                        info.Vid, info.Pid);
             continue;
         }
         mTransports.push_back(transport);
@@ -157,8 +240,7 @@ bool RaphnetPhysicalDeviceManager::Init() {
                 candidates.push_back({ transport, ch });
             } else if (type == gRntCtlTypeNone) {
                 // Empty channel — log but don't claim.
-                SPDLOG_DEBUG("[raphnet] adapter '{}' chn={}: empty",
-                             Wide2Ascii(transport->GetSerial()), ch);
+                SPDLOG_DEBUG("[raphnet] adapter '{}' chn={}: empty", Wide2Ascii(transport->GetSerial()), ch);
             } else {
                 SPDLOG_INFO("[raphnet] adapter '{}' chn={}: non-N64 controller type 0x{:02x}; "
                             "this is SSB64 — channel skipped",
@@ -169,15 +251,14 @@ bool RaphnetPhysicalDeviceManager::Init() {
 
     // Sort candidates deterministically by (serial, channel) so port
     // assignment is reboot-stable.
-    std::sort(candidates.begin(), candidates.end(),
-              [](const N64Candidate& a, const N64Candidate& b) {
-                  const auto& sa = a.Transport->GetSerial();
-                  const auto& sb = b.Transport->GetSerial();
-                  if (sa != sb) {
-                      return sa < sb;
-                  }
-                  return a.Channel < b.Channel;
-              });
+    std::sort(candidates.begin(), candidates.end(), [](const N64Candidate& a, const N64Candidate& b) {
+        const auto& sa = a.Transport->GetSerial();
+        const auto& sb = b.Transport->GetSerial();
+        if (sa != sb) {
+            return sa < sb;
+        }
+        return a.Channel < b.Channel;
+    });
 
     // Phase 1: honor explicit per-port pinning via CVAR
     // gControllers.PortN.RaphnetSerial. If a candidate's serial matches the
@@ -187,8 +268,7 @@ bool RaphnetPhysicalDeviceManager::Init() {
     auto cvars = Ship::Context::GetInstance()->GetConsoleVariables();
     std::vector<bool> claimed(candidates.size(), false);
     for (int port = 0; port < MAXCONTROLLERS; ++port) {
-        std::string cvarKey = StringHelper::Sprintf(
-            CVAR_PREFIX_CONTROLLERS ".Port%d.RaphnetSerial", port + 1);
+        std::string cvarKey = StringHelper::Sprintf(CVAR_PREFIX_CONTROLLERS ".Port%d.RaphnetSerial", port + 1);
         std::string pinSerial = cvars->GetString(cvarKey.c_str(), "");
         if (pinSerial.empty()) {
             continue;
@@ -209,8 +289,7 @@ bool RaphnetPhysicalDeviceManager::Init() {
             }
         }
         if (mPortBindings[port].Transport == nullptr) {
-            SPDLOG_WARN("[raphnet] {} = '{}' but no enumerated adapter matches; pin ignored",
-                        cvarKey, pinSerial);
+            SPDLOG_WARN("[raphnet] {} = '{}' but no enumerated adapter matches; pin ignored", cvarKey, pinSerial);
         }
     }
 
@@ -225,16 +304,15 @@ bool RaphnetPhysicalDeviceManager::Init() {
             ++portIdx;
         }
         if (portIdx >= MAXCONTROLLERS) {
-            SPDLOG_WARN("[raphnet] more N64 candidates ({}) than game ports ({}); ignoring extras",
-                        candidates.size(), MAXCONTROLLERS);
+            SPDLOG_WARN("[raphnet] more N64 candidates ({}) than game ports ({}); ignoring extras", candidates.size(),
+                        MAXCONTROLLERS);
             break;
         }
         mPortBindings[portIdx].Transport = candidates[i].Transport;
         mPortBindings[portIdx].Channel = candidates[i].Channel;
-        SPDLOG_INFO("[raphnet] port {} ← adapter serial='{}' chn={} (vid=0x{:04x} pid=0x{:04x})",
-                    portIdx, Wide2Ascii(candidates[i].Transport->GetSerial()),
-                    candidates[i].Channel, candidates[i].Transport->GetVid(),
-                    candidates[i].Transport->GetPid());
+        SPDLOG_INFO("[raphnet] port {} ← adapter serial='{}' chn={} (vid=0x{:04x} pid=0x{:04x})", portIdx,
+                    Wide2Ascii(candidates[i].Transport->GetSerial()), candidates[i].Channel,
+                    candidates[i].Transport->GetVid(), candidates[i].Transport->GetPid());
         ++portIdx;
     }
 
@@ -284,8 +362,7 @@ void RaphnetPhysicalDeviceManager::Shutdown() {
     mInitialized = false;
 }
 
-std::shared_ptr<RaphnetTransport>
-RaphnetPhysicalDeviceManager::GetTransportForPort(uint8_t portIndex) const {
+std::shared_ptr<RaphnetTransport> RaphnetPhysicalDeviceManager::GetTransportForPort(uint8_t portIndex) const {
     if (portIndex >= MAXCONTROLLERS) {
         return nullptr;
     }
@@ -342,9 +419,9 @@ void RaphnetPhysicalDeviceManager::RunSelfTest() {
 
     int adapterIdx = 0;
     for (auto& transport : mTransports) {
-        SPDLOG_INFO("[raphnet] --- adapter {} (vid=0x{:04x} pid=0x{:04x} serial='{}' version='{}') ---",
-                    adapterIdx, transport->GetVid(), transport->GetPid(),
-                    Wide2Ascii(transport->GetSerial()), transport->GetVersionString());
+        SPDLOG_INFO("[raphnet] --- adapter {} (vid=0x{:04x} pid=0x{:04x} serial='{}' version='{}') ---", adapterIdx,
+                    transport->GetVid(), transport->GetPid(), Wide2Ascii(transport->GetSerial()),
+                    transport->GetVersionString());
 
         for (uint8_t ch = 0; ch < gRntMaxChannelsPerAdapter; ++ch) {
             uint8_t type = gRntCtlTypeNone;
@@ -363,15 +440,14 @@ void RaphnetPhysicalDeviceManager::RunSelfTest() {
                 OSContPad pad = {};
                 bool ok = transport->Poll(ch, pad);
                 if (ok) {
-                    SPDLOG_INFO("[raphnet]   poll[{}] button=0x{:04x} stick=({},{})", i,
-                                pad.button, pad.stick_x, pad.stick_y);
+                    SPDLOG_INFO("[raphnet]   poll[{}] button=0x{:04x} stick=({},{})", i, pad.button, pad.stick_x,
+                                pad.stick_y);
                 } else {
                     SPDLOG_WARN("[raphnet]   poll[{}] FAILED", i);
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
-            SPDLOG_INFO("[raphnet] adapter {} chn={}: vibration test (100 ms on, then off)",
-                        adapterIdx, ch);
+            SPDLOG_INFO("[raphnet] adapter {} chn={}: vibration test (100 ms on, then off)", adapterIdx, ch);
             transport->SetVibration(ch, true);
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             transport->SetVibration(ch, false);
@@ -382,3 +458,5 @@ void RaphnetPhysicalDeviceManager::RunSelfTest() {
 }
 
 } // namespace Ship
+
+#endif

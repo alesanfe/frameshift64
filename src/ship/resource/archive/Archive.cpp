@@ -276,9 +276,12 @@ void Archive::IndexFile(const std::string& filePath) {
 }
 
 std::shared_ptr<File> Archive::LoadFile(uint64_t hash) {
-    const std::string& filePath =
-        *Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToString(hash);
-    return LoadFile(filePath);
+    const std::string* filePath =
+        Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToString(hash);
+    if (filePath == nullptr) {
+        return nullptr;
+    }
+    return LoadFile(*filePath);
 }
 
 } // namespace Ship

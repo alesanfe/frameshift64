@@ -3,23 +3,70 @@
 #include "ship/Context.h"
 #include "ship/window/Window.h"
 #include "spdlog/spdlog.h"
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <cstdio>
+#include <cstdlib>
+#include <windows.h>
+#endif
 
 namespace Ship {
 O2rArchive::O2rArchive(const std::string& archivePath) : Archive(archivePath) {
 }
 
 O2rArchive::~O2rArchive() {
-    SPDLOG_TRACE("destruct o2rarchive: {}", GetPath());
+    SPDLOG_INFO("destruct o2rarchive: {}", GetPath());
     Close();
 }
 
+// MSVC debug-only instrumentation for the shutdown heap-corruption crash:
+// validate that mZipArchive's own allocation block is intact on the shared
+// (ucrtbased) debug heap before handing it to zip_close(). If the block was
+// stomped by an out-of-bounds writer elsewhere, the validator reports false
+// BEFORE the free inside libzip trips 0xC0000374. Enabled at runtime with
+// SSB64_HEAP_CHECK — no cost in normal or release runs.
+#if defined(_MSC_VER) && defined(_DEBUG)
+static bool O2rSharedHeapCheck(const char* tag, const zip_t* za) {
+    if (std::getenv("SSB64_HEAP_CHECK") == nullptr) {
+        return true;
+    }
+    HMODULE ucrt = GetModuleHandleW(L"ucrtbased.dll");
+    int ptrOk = -1, heapOk = -1;
+    if (ucrt != nullptr) {
+        using IsValidPtrFn = int (*)(const void*);
+        using CheckMemFn = int (*)();
+        auto isValidPtr = reinterpret_cast<IsValidPtrFn>(GetProcAddress(ucrt, "_CrtIsValidHeapPointer"));
+        auto checkMem = reinterpret_cast<CheckMemFn>(GetProcAddress(ucrt, "_CrtCheckMemory"));
+        ptrOk = isValidPtr ? isValidPtr(za) : -1;
+        heapOk = checkMem ? checkMem() : -1;
+    }
+    // Direct fflush'd write — spdlog output is lost when the process dies in
+    // the very call we are instrumenting.
+    if (FILE* f = std::fopen("heap_probe.log", "a")) {
+        std::fprintf(f, "heap-check %s: archive=%p heap_ok=%d block_ok=%d\n", tag,
+                     static_cast<const void*>(za), heapOk, ptrOk);
+        std::fclose(f);
+    }
+    SPDLOG_INFO("heap-check {}: archive={} heap_ok={} block_ok={}", tag, static_cast<const void*>(za), heapOk,
+                ptrOk);
+    return ptrOk != 0;
+}
+#else
+static bool O2rSharedHeapCheck(const char*, const zip_t*) {
+    return true;
+}
+#endif
+
 std::shared_ptr<File> O2rArchive::LoadFile(uint64_t hash) {
-    const std::string& filePath =
-        *Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToString(hash);
-    return LoadFile(filePath);
+    const std::string* filePath =
+        Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToString(hash);
+    if (filePath == nullptr) {
+        return nullptr;
+    }
+    return LoadFile(*filePath);
 }
 
 std::shared_ptr<File> O2rArchive::LoadFile(const std::string& filePath) {
+    const std::lock_guard<std::mutex> lock(mMutex);
     if (mZipArchive == nullptr) {
         SPDLOG_TRACE("Failed to open file {} from zip archive {}. Archive not open.", filePath, GetPath());
         return nullptr;
@@ -67,6 +114,7 @@ std::shared_ptr<File> O2rArchive::LoadFile(const std::string& filePath) {
 }
 
 bool O2rArchive::Open() {
+    const std::lock_guard<std::mutex> lock(mMutex);
     mZipArchive = zip_open(GetPath().c_str(), ZIP_CREATE, nullptr);
     if (mZipArchive == nullptr) {
         SPDLOG_ERROR("Failed to load zip file \"{}\"", GetPath());
@@ -90,10 +138,13 @@ bool O2rArchive::Open() {
 }
 
 bool O2rArchive::Close() {
+    const std::lock_guard<std::mutex> lock(mMutex);
     if (mZipArchive == nullptr) {
         SPDLOG_ERROR("Cannot close zip file. Zip file not loaded. \"{}\"", GetPath());
         return false;
     }
+
+    O2rSharedHeapCheck("pre-zip_close", mZipArchive);
 
     if (zip_close(mZipArchive) == -1) {
         SPDLOG_ERROR("Failed to close zip file \"{}\"", GetPath());
@@ -105,6 +156,7 @@ bool O2rArchive::Close() {
 }
 
 bool O2rArchive::WriteFile(const std::string& filePath, const std::vector<uint8_t>& data) {
+    const std::lock_guard<std::mutex> lock(mMutex);
     if (!mZipArchive) {
         SPDLOG_ERROR("Cannot write to zip: Archive is not open.");
         return false;
@@ -130,6 +182,9 @@ bool O2rArchive::WriteFile(const std::string& filePath, const std::vector<uint8_
         SPDLOG_ERROR("Failed to save changes to zip archive: {} ({})", zip_error_strerror(error),
                      zip_error_code_zip(error));
         zip_discard(mZipArchive); // Close zip and discard changes
+        // zip_discard frees the archive — clear the handle or the destructor's
+        // Close() would call zip_close() on freed memory.
+        mZipArchive = nullptr;
         return false;
     }
 

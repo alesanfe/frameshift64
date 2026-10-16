@@ -62,9 +62,12 @@ std::shared_ptr<File> OtrArchive::LoadFile(const std::string& filePath) {
 }
 
 std::shared_ptr<File> OtrArchive::LoadFile(uint64_t hash) {
-    const std::string& filePath =
-        *Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToString(hash);
-    return LoadFile(filePath);
+    const std::string* filePath =
+        Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToString(hash);
+    if (filePath == nullptr) {
+        return nullptr;
+    }
+    return LoadFile(*filePath);
 }
 
 bool OtrArchive::Open() {

@@ -6,6 +6,7 @@
 #include <list>
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
 #include <stdint.h>
 #include "ship/resource/File.h"
 
@@ -50,6 +51,14 @@ class ArchiveManager {
     void ResetVirtualFileSystem();
 
   private:
+    // Guards the index maps and mArchives. Workers on the ResourceManager
+    // thread pool call LoadFile()/HasFile()/HashToString() concurrently while
+    // mod installs and SetArchives() mutate the same tables — unordered_map
+    // reads racing inserts corrupt the buckets. Recursive because Load(),
+    // ResetVirtualFileSystem() and the hash lookups re-enter the manager on
+    // the same thread. Lock order: this mutex, then the per-archive mutex —
+    // never held in the opposite order.
+    mutable std::recursive_mutex mMutex;
     std::vector<std::shared_ptr<Archive>> mArchives;
     std::vector<uint32_t> mGameVersions;
     std::unordered_set<uint32_t> mValidGameVersions;
