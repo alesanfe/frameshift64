@@ -2951,7 +2951,8 @@ void syNetPeerStopVSSession(void)
 /* Connection-quality snapshot for the lobby UI: per-remote packet
  * accounting plus the remote's declared advantage (our rollback depth for
  * its inputs). player is the game slot (0..MAXCONTROLLERS-1). */
-void portNetPeerGetRemoteStats(s32 player, u32 *gaps, u32 *dups, u32 *ooo, s32 *advantage)
+void portNetPeerGetRemoteStats(s32 player, u32 *gaps, u32 *dups, u32 *ooo, s32 *advantage,
+                               u32 *recvHighwater)
 {
 	SYNetPeerRemote *remote = syNetPeerGetRemoteByPlayer(player);
 
@@ -2974,6 +2975,10 @@ void portNetPeerGetRemoteStats(s32 player, u32 *gaps, u32 *dups, u32 *ooo, s32 *
 	if (advantage != NULL)
 	{
 		*advantage = remote->remote_advantage;
+	}
+	if (recvHighwater != NULL)
+	{
+		*recvHighwater = remote->recv_seq_highwater;
 	}
 }
 #endif

@@ -24,7 +24,8 @@ extern void syNetPeerMakeOnlineMetadata(SYNetInputReplayMetadata *metadata, u32 
 
 #ifdef PORT
 extern sb32 sSYNetPeerIsSpectator;
-extern void portNetPeerGetRemoteStats(s32 player, u32 *gaps, u32 *dups, u32 *ooo, s32 *advantage);
+extern void portNetPeerGetRemoteStats(s32 player, u32 *gaps, u32 *dups, u32 *ooo, s32 *advantage,
+                                      u32 *recvHighwater);
 extern void syNetPeerAddSpecLink(s32 link);
 extern void syNetPeerRemoveSpecLink(s32 link);
 extern void syNetPeerBeginSpecCatchUp(s32 link);
