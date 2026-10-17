@@ -85,6 +85,11 @@
 #endif
 
 extern "C" void PortRegisterEvents(void);
+#if defined(SSB64_TEST_HOOKS) && defined(_MSC_VER) && defined(_DEBUG)
+/* Defined in core/observability/heap_check_boot.cpp — point-in-time probe of
+ * the shared (ucrtbased) debug heap; no-op unless SSB64_HEAP_CHECK is set. */
+extern "C" int portSharedCrtHeapValidate(const char* tag);
+#endif
 
 #ifndef DISABLE_SCRIPTING
 /* Force the linker to pull bridge .obj files into the EXE so their
@@ -308,6 +313,11 @@ struct PortMsvcCatchableType {
 
 static void portLogMsvcCxxThrow(EXCEPTION_POINTERS* info)
 {
+	/* Decoder dereferences throw-record metadata supplied by the runtime.
+	 * On fibers / mid-teardown / fundamental thrown types those pointers can
+	 * be stale — this diagnostic path must never fault while reporting, so
+	 * every deref is image-bounds-checked and the whole body sits in SEH. */
+	__try {
 	const EXCEPTION_RECORD* er = info->ExceptionRecord;
 	if (er->NumberParameters < 3) {
 		port_log("    C++ throw: (no parameters)\n");
@@ -324,18 +334,35 @@ static void portLogMsvcCxxThrow(EXCEPTION_POINTERS* info)
 		return;
 	}
 
+	// Every metadata pointer must live inside the throwing module image.
+	uintptr_t imgEnd = 0;
+	MODULEINFO mi = {0};
+	if (GetModuleInformation(GetCurrentProcess(), (HMODULE)imgBase, &mi, sizeof(mi))) {
+		imgEnd = (uintptr_t)mi.lpBaseOfDll + mi.SizeOfImage;
+	}
+	auto inImage = [&](const void* p) -> bool {
+		const uintptr_t a = (uintptr_t)p;
+		return a >= imgBase && a < imgEnd;
+	};
+	if (imgEnd == 0 || !inImage(throwInfo)) {
+		port_log("    C++ throw: thrown=%p (ThrowInfo %p outside image)\n",
+		         thrownObj, (const void*)throwInfo);
+		return;
+	}
+
 	auto* cta = (const PortMsvcCatchableTypeArray*)
 	            (imgBase + (uint32_t)throwInfo->pCatchableTypeArray);
-	if (!cta || cta->nCatchableTypes == 0) {
-		port_log("    C++ throw: thrown=%p (empty CatchableTypeArray)\n", thrownObj);
+	if (!inImage(cta) || cta->nCatchableTypes == 0) {
+		port_log("    C++ throw: thrown=%p (empty/out-of-image CatchableTypeArray)\n", thrownObj);
 		return;
 	}
 
 	auto* ct = (const PortMsvcCatchableType*)
 	           (imgBase + (uint32_t)cta->arrayOfCatchableTypes[0]);
-	const std::type_info* ti = (const std::type_info*)
-	                           (imgBase + (uint32_t)ct->pType);
-	const char* tname = ti ? ti->name() : "(null)";
+	const std::type_info* ti = inImage(ct)
+	                           ? (const std::type_info*)(imgBase + (uint32_t)ct->pType)
+	                           : nullptr;
+	const char* tname = (ti && inImage(ti)) ? ti->name() : "(null)";
 
 	// Most std exceptions live at offset 0 in the catchable layout (single
 	// inheritance, no virtual bases). For multi-inherit / virtual-base
@@ -343,7 +370,7 @@ static void portLogMsvcCxxThrow(EXCEPTION_POINTERS* info)
 	// the type name regardless. We attempt what() only when offset 0 looks
 	// safe per CatchableType properties.
 	const char* what = nullptr;
-	if (thrownObj && (ct->properties & 0x4) == 0) {
+	if (thrownObj && ct && (ct->properties & 0x4) == 0) {
 		// Try as std::exception. Catch any access violation just in case
 		// the layout differs — vectored handlers must not throw.
 		__try {
@@ -357,6 +384,9 @@ static void portLogMsvcCxxThrow(EXCEPTION_POINTERS* info)
 	         tname, thrownObj,
 	         what ? " what=" : "",
 	         what ? what     : "");
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		port_log("    C++ throw: (metadata decode faulted)\n");
+	}
 }
 
 static LONG CALLBACK portWindowsVectoredHandler(EXCEPTION_POINTERS* info)
@@ -404,7 +434,11 @@ static LONG CALLBACK portWindowsVectoredHandler(EXCEPTION_POINTERS* info)
 		port_log("    [%2u] %p %s\n", i, frames[i], fsym[0] ? fsym : "(no sym)");
 	}
 
-	if (InterlockedCompareExchange(&sMinidumpWritten, 1, 0) == 0) {
+	// First-chance faults are often benign (SEH may still handle them);
+	// they get their own counter so a swallowed fault cannot starve the
+	// dump for the actually-fatal unhandled exception.
+	static volatile LONG sFirstChanceMinidumpWritten = 0;
+	if (InterlockedCompareExchange(&sFirstChanceMinidumpWritten, 1, 0) == 0) {
 		portWriteMinidump(info, "first-chance");
 	}
 	return EXCEPTION_CONTINUE_SEARCH;
@@ -719,10 +753,83 @@ int PortInit(int argc, char* argv[]) {
 	}
 }
 
-static int PortInitImpl(int /*argc*/, char* /*argv*/[]) {
+#ifdef SSB64_TEST_HOOKS
+/* Test-hook env shims - only compiled into test builds. Shipped binaries
+ * ignore these flags entirely. */
+static void port_setenv(const char* name, const char* value) {
+#ifdef _WIN32
+	_putenv_s(name, value);
+#else
+	setenv(name, value, 1);
+#endif
+}
+
+/* Translate argv into SSB64_* env vars before any lazy getenv() static
+ * initializes, so test rigs can drive hooks without platform env syntax:
+ *
+ *   --test-mode          -> SSB64_TEST_MODE=1 + SSB64_NO_UPDATE_CHECK=1
+ *                           (both only when unset in the real env - CI
+ *                           marks the run automated and the updater
+ *                           never touches the network).
+ *   --ssb64-<name>=<val> -> SSB64_<NAME>=<val>; <name> accepts
+ *                           [A-Za-z0-9_] and is uppercased, so the flag
+ *                           can never set PATH, HOME, or any non-SSB64
+ *                           variable regardless of case.
+ *
+ * Documented in docs/development/env_vars.md ("Command-line equivalents"). */
+static void PortApplyCliEnvArgs(int argc, char* argv[]) {
+	for (int i = 1; i < argc; i++) {
+		const char* a = argv[i];
+		if (a == nullptr || a[0] != '-' || a[1] != '-') {
+			continue;
+		}
+		if (std::strcmp(a, "--test-mode") == 0) {
+			if (std::getenv("SSB64_TEST_MODE") == nullptr) {
+				port_setenv("SSB64_TEST_MODE", "1");
+			}
+			if (std::getenv("SSB64_NO_UPDATE_CHECK") == nullptr) {
+				port_setenv("SSB64_NO_UPDATE_CHECK", "1");
+			}
+			port_log("SSB64: --test-mode (SSB64_TEST_MODE=1, "
+			         "SSB64_NO_UPDATE_CHECK=1)\n");
+			continue;
+		}
+		const char* body = a + 2;
+		const char* eq = nullptr;
+		size_t nlen = 0;
+		if (std::strncmp(body, "ssb64-", 6) == 0) {
+			body += 6;
+			eq = std::strchr(body, '=');
+			nlen = eq != nullptr ? (size_t)(eq - body) : 0;
+		} else {
+			continue;
+		}
+		bool valid = eq != nullptr && nlen > 0 && nlen < 80;
+		char name[96];
+		std::memcpy(name, "SSB64_", 6);
+		for (size_t j = 0; valid && j < nlen; j++) {
+			const char c = body[j];
+			valid = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+			        (c >= '0' && c <= '9') || c == '_';
+			name[6 + j] = (c >= 'a' && c <= 'z') ? (char)(c - 'a' + 'A') : c;
+		}
+		if (!valid) {
+			port_log("SSB64: ignoring malformed flag '%s'\n", a);
+			continue;
+		}
+		name[6 + nlen] = '\0';
+		port_setenv(name, eq + 1);
+		port_log("SSB64: %s=%s (from argv)\n", name, eq + 1);
+	}
+}
+#endif /* SSB64_TEST_HOOKS */
+
+static int PortInitImpl(int argc, char* argv[]) {
 	port_log("SSB64: PortInit entered\n");
 
 #ifdef SSB64_TEST_HOOKS
+	PortApplyCliEnvArgs(argc, argv);
+
 	/* TD-010 — parser fuzz entry point. `tools/analysis/fuzz/run_parser_fuzz.py`
 	 * drives this: SSB64_FUZZ_PARSER=<manifest|replay|json|save> +
 	 * SSB64_FUZZ_INPUT=<path> parses the file through the real parser and
@@ -770,11 +877,7 @@ static int PortInitImpl(int /*argc*/, char* /*argv*/[]) {
 			/* File-load coverage: point the SRAM override at the fuzz input
 			 * and mirror it into the .meta sidecar, so checkSaveFormat, the
 			 * sidecar sscanf and the image read path all run on fuzz bytes. */
-#ifdef _WIN32
-			_putenv_s("SSB64_SAVE_PATH", input);
-#else
-			setenv("SSB64_SAVE_PATH", input, 1);
-#endif
+			port_setenv("SSB64_SAVE_PATH", input);
 			{
 				std::string meta = input;
 				const size_t dot = meta.find_last_of('.');
@@ -1127,6 +1230,10 @@ static int PortInitImpl(int /*argc*/, char* /*argv*/[]) {
 	// polled and used to fill the ROM path field.
 	if (!sContext->InitFileDropMgr()) { port_log("SSB64: InitFileDropMgr failed\n"); return 1; }
 	port_log("SSB64: FileDropMgr OK\n");
+	/* Mod/pack drop consumer registered at boot (not on first
+	 * Texture Packs menu render) so a .zip/.o2r/.png dropped
+	 * before the user ever opens the menu still installs. */
+	ssb64::enhancements::RegisterModPackDropHandler();
 
 	/* First-run flow:
 	 *   1. Silent extraction: if a ROM sits at app-data / bundle / cwd we
@@ -1559,10 +1666,18 @@ int main(int argc, char* argv[]) {
 			const char* safeEnv = std::getenv("SSB64_SAFE_MODE");
 			const bool forced = safeEnv != nullptr && safeEnv[0] != '\0' &&
 				!(safeEnv[0] == '0' && safeEnv[1] == '\0');
-			port_diag_set_safe_mode((!bundle.empty() || forced) ? 1 : 0);
+			/* One-shot request from Support -> "Restart in Safe Mode": the
+			 * marker sits next to crash.marker and is consumed here. */
+			const size_t smSep = logPath.find_last_of("/\\");
+			const std::string smDir = (smSep == std::string::npos) ? "." : logPath.substr(0, smSep);
+			const std::string smReq = smDir + "/safemode.request";
+			const bool requested = std::filesystem::exists(smReq) &&
+				(std::filesystem::remove(smReq), true);
+			port_diag_set_safe_mode((!bundle.empty() || forced || requested) ? 1 : 0);
 			if (port_diag_safe_mode_active()) {
 				port_log("SSB64: safe mode active (%s) — mods and hi-res packs skipped this launch\n",
-				         !bundle.empty() ? "previous run crashed" : "SSB64_SAFE_MODE set");
+				         !bundle.empty() ? "previous run crashed" :
+				         (forced ? "SSB64_SAFE_MODE set" : "user-requested"));
 			}
 		}
 
@@ -1757,6 +1872,17 @@ int main(int argc, char* argv[]) {
 	while (WindowIsRunning()) {
 		PortPushFrame();
 		frame++;
+#if defined(SSB64_TEST_HOOKS) && defined(_MSC_VER) && defined(_DEBUG)
+		/* Heap-corruption bisect: validate the shared (ucrtbased) debug heap
+		 * once per frame when SSB64_HEAP_CHECK is set; heap_probe.log records
+		 * frame-N ENTER/DONE so the first DONE-missing line brackets the
+		 * corrupting frame. */
+		if (std::getenv("SSB64_HEAP_CHECK") != nullptr) {
+			char tag[40];
+			snprintf(tag, sizeof(tag), "frame-%d", frame);
+			portSharedCrtHeapValidate(tag);
+		}
+#endif
 
 		if (!firstRunHintShown && frame == 60) {
 			auto cv = sContext->GetConsoleVariables();
@@ -1787,6 +1913,9 @@ int main(int argc, char* argv[]) {
 	PortGameShutdown();
 	port_log("SSB64: PortGameShutdown returned\n");
 
+#if defined(SSB64_TEST_HOOKS) && defined(_MSC_VER) && defined(_DEBUG)
+	portSharedCrtHeapValidate("pre-PortShutdown");
+#endif
 	PortShutdown();
 	portRenderDocShutdown();
 #ifdef __SWITCH__

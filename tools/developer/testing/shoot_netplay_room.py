@@ -35,19 +35,23 @@ HEALTH = "http://127.0.0.1:8799/health"
 CAPTURE_SIZE = (960, 800)
 
 
-def appdata_cfg(exe_dir: Path) -> Path:
-    # A cfg next to the exe shadows the app-storage one at runtime, whatever
-    # the build flags say — seed the file the game will actually read.
-    local = exe_dir / "BattleShip.cfg.json"
-    if local.is_file():
-        return local
+def app_cfg_paths(exe_dir: Path) -> list:
+    """Every location the runtime may resolve its config from. NON_PORTABLE
+    builds read only SDL_GetPrefPath (%APPDATA%\BattleShip) — see
+    Context::InitConfiguration -> GetPathRelativeToAppDirectory — while a
+    portable build reads ./BattleShip.cfg.json. Seed all candidates: the
+    unused one is inert, never shadowing."""
+    paths = []
     appdata = os.environ.get("APPDATA")
     if appdata:
-        return Path(appdata) / "BattleShip" / "BattleShip.cfg.json"
-    return Path.home() / ".config" / "BattleShip" / "BattleShip.cfg.json"
+        paths.append(Path(appdata) / "BattleShip" / "BattleShip.cfg.json")
+    else:
+        paths.append(Path.home() / ".config" / "BattleShip" / "BattleShip.cfg.json")
+    paths.append(exe_dir / "BattleShip.cfg.json")
+    return paths
 
 
-def write_cfg(cfg_path: Path, size: tuple) -> None:
+def write_cfg(cfg_path: Path, size: tuple, lang: int = 0) -> None:
     cfg = {}
     if cfg_path.is_file():
         try:
@@ -57,6 +61,9 @@ def write_cfg(cfg_path: Path, size: tuple) -> None:
     menu = cfg.setdefault("CVars", {}).setdefault("gSettings", {}).setdefault("Menu", {})
     menu["ActiveHeader"] = "Online"
     menu["OnlineSidebarSection"] = "Netplay"
+    # Keep room captures canonical-English: write_cfg preserves unknown keys,
+    # so a Language seed left over from an i18n run would otherwise leak in.
+    cfg["CVars"]["gSettings"]["Language"] = lang
     cfg["CVars"]["gOpenPortMenu"] = 1
     win = cfg.setdefault("Window", {})
     win["Width"], win["Height"] = size
@@ -86,17 +93,23 @@ def main() -> int:
     ap.add_argument("--work", type=Path,
                     default=REPO_ROOT / "out" / "lobby_shots",
                     help="Scratch dir for code file, saves and raw frames")
+    ap.add_argument("--lang", type=int, default=0,
+                    help="gSettings.Language to seed (0=en,1=es,2=fr,3=de,4=pt)")
     args = ap.parse_args()
 
     exe = args.bin.resolve() / "BattleShip.exe"
     if not exe.is_file():
         print(f"error: {exe} not found", file=sys.stderr)
         return 2
+    # Absolute paths — SSB64_SCREENSHOT_DIR is resolved against the exe's CWD,
+    # so a relative --work would scatter frames under out/build/<preset>/Debug.
+    args.work = args.work.resolve()
+    args.out = args.out.resolve()
     args.work.mkdir(parents=True, exist_ok=True)
     args.out.mkdir(parents=True, exist_ok=True)
 
-    cfg_path = appdata_cfg(exe.parent)
-    old_cfg = cfg_path.read_bytes() if cfg_path.is_file() else None
+    cfg_paths = app_cfg_paths(exe.parent)
+    old_cfgs = {p: p.read_bytes() if p.is_file() else None for p in cfg_paths}
     code_file = args.work / "code.txt"
     code_file.unlink(missing_ok=True)
     procs: list[subprocess.Popen] = []
@@ -105,7 +118,8 @@ def main() -> int:
 
     try:
         w, _, h = args.size.partition("x")
-        write_cfg(cfg_path, (int(w), int(h)))
+        for cfg_path in cfg_paths:
+            write_cfg(cfg_path, (int(w), int(h)), args.lang)
 
         lobby_log = open(args.work / "lobby.log", "w", encoding="utf-8")
         lobby = subprocess.Popen(["node", str(LOBBY), "8799"],
@@ -169,10 +183,11 @@ def main() -> int:
                                capture_output=True, check=False)
             else:
                 lobby.kill()
-        if old_cfg is not None:
-            cfg_path.write_bytes(old_cfg)
-        elif cfg_path.is_file():
-            cfg_path.unlink()
+        for cfg_path, old_cfg in old_cfgs.items():
+            if old_cfg is not None:
+                cfg_path.write_bytes(old_cfg)
+            elif cfg_path.is_file():
+                cfg_path.unlink()
 
 
 if __name__ == "__main__":

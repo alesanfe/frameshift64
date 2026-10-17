@@ -25,15 +25,15 @@
 #include <unistd.h>  // _exit
 #endif
 
-#include "resources/relocation/RelocFile.h"
-#include "resources/relocation/RelocFileTable.h"
-#include "resources/relocation/RelocPointerTable.h"
+#include "RelocFile.h"
+#include "RelocFileTable.h"
+#include "RelocPointerTable.h"
 
 /* sys/netrollback.c: file bytes are excluded from rollback snapshots. */
 extern "C" void syNetRollbackNoteFileLoad(void *dst, size_t size, int is_figatree);
-#include "resources/relocation/SyntheticReloc.h"
+#include "SyntheticReloc.h"
 #include "ssb64_reloc_rebuild.h"
-#include "game/engine/decomp/lbreloc_byteswap.h"
+#include "lbreloc_byteswap.h"
 
 extern "C" void port_aobj_register_halfswapped_range(void *base, unsigned long size);
 
@@ -41,7 +41,7 @@ extern "C" void port_aobj_register_halfswapped_range(void *base, unsigned long s
 // These MUST be ABI-compatible with the decomp definitions in lbtypes.h.
 // We define them here to avoid including the decomp's include/ directory
 // (which shadows system headers and breaks C++ standard library includes).
-#include "game/engine/decomp/port_types.h"
+#include "port_types.h"
 
 #define LBRELOC_CACHE_ALIGN(x) (((x) + 0xF) & ~0xF)
 

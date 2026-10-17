@@ -36,11 +36,12 @@
 #include "websocket_transport.h"
 #include "port_log.h"
 #include "netrules.h"
+#include "PortI18n.h"
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
 #ifndef DISABLE_SCRIPTING
-#include "game/modding/ModRegistry.h"
+#include "ModRegistry.h"
 #endif
 
 #include <algorithm>
@@ -275,6 +276,7 @@ struct Peer {
     unsigned int last_send_ms = 0;        /* HELLO/PICK pacing */
     unsigned int last_heard_ms = 0;
     int relay_requested = 0;              /* client: asked the room to relay */
+    bool ready = false;                   /* v2 roster "ready" flag */
 };
 
 struct AutoLobby {
@@ -330,6 +332,7 @@ struct Lobby {
     unsigned int last_keepalive_ms = 0;
 
     bool after_match = false;
+    bool my_ready = false;                /* our ready-check flag (v2 rooms) */
     std::string last_start_payload;       /* last STARTM sent; specs arriving pre-start get a copy */
 
     std::mt19937 rng{std::random_device{}()};
@@ -434,6 +437,7 @@ void shutdown_net(void)
     sLobby.up_key.clear();
     sLobby.start_sent_ms = 0;
     sLobby.last_start_ms = 0;
+    sLobby.my_ready = false;
 }
 
 void fail(const std::string &why)
@@ -631,6 +635,20 @@ void send_endpoint_if_ready(void)
     }
 }
 
+/* Ready-check rides the v2 roster broadcast: {type:"ready",ready:0|1} -> the
+ * room stamps it on our slot and everyone sees it on the next "peers". v1
+ * and LAN rooms have no roster - their PICK handshake stays the gate, so this
+ * is a no-op there (and spectators never ready-up). */
+void send_ready_state(void)
+{
+    if (sLobby.server_version != 2 || sLobby.lan || sLobby.spectate || !sLobby.ws_welcomed) {
+        return;
+    }
+    char msg[64];
+    std::snprintf(msg, sizeof(msg), "{\"type\":\"ready\",\"ready\":%d}", sLobby.my_ready ? 1 : 0);
+    port_ws_send_text(msg);
+}
+
 /* ---- wire format ----
  * Lobby packets are plain text "SSBL <VERB> ..." so the relay stream and the
  * UDP stream can share one parser. During a match the engine speaks its own
@@ -718,7 +736,7 @@ void apply_match_start(int player_count, int my_game_slot, unsigned int stage, u
 void begin_match(void)
 {
     sLobby.after_match = false;
-    set_state(PORT_NETLOBBY_IN_MATCH, "Match running (rollback).");
+    set_state(PORT_NETLOBBY_IN_MATCH, TR("Match running (rollback)."));
 }
 
 void update_status(void)
@@ -730,16 +748,23 @@ void update_status(void)
     int n = count_connected_peers() + 1;
     if (sLobby.spectate) {
         int specs_players = sLobby.player_count;
-        std::snprintf(text, sizeof(text), "Spectating room %s (%d player%s) - waiting for the host to start.",
-                      sLobby.code.c_str(), specs_players, specs_players == 1 ? "" : "s");
+        std::snprintf(text, sizeof(text),
+                      specs_players == 1
+                          ? TR("Spectating room %s (%d player) - waiting for the host to start.")
+                          : TR("Spectating room %s (%d players) - waiting for the host to start."),
+                      sLobby.code.c_str(), specs_players);
     } else if (sLobby.is_host) {
         int watching = count_connected_specs();
         if (watching > 0) {
-            std::snprintf(text, sizeof(text), "%d player%s + %d watching - press Start match (up to 4).",
-                          n, n == 1 ? "" : "s", watching);
+            std::snprintf(text, sizeof(text),
+                          n == 1 ? TR("%d player + %d watching - press Start match (up to 4).")
+                                 : TR("%d players + %d watching - press Start match (up to 4)."),
+                          n, watching);
         } else {
-            std::snprintf(text, sizeof(text), "%d player%s connected - press Start match (up to 4).",
-                          n, n == 1 ? "" : "s");
+            std::snprintf(text, sizeof(text),
+                          n == 1 ? TR("%d player connected - press Start match (up to 4).")
+                                 : TR("%d players connected - press Start match (up to 4)."),
+                          n);
         }
     } else {
         /* clients only hold a direct link to the host - count_connected_peers
@@ -747,8 +772,10 @@ void update_status(void)
         if (sLobby.player_count > n) {
             n = sLobby.player_count;
         }
-        std::snprintf(text, sizeof(text), "Connected (%d player%s) - waiting for host to start.",
-                      n, n == 1 ? "" : "s");
+        std::snprintf(text, sizeof(text),
+                      n == 1 ? TR("Connected (%d player) - waiting for host to start.")
+                             : TR("Connected (%d players) - waiting for host to start."),
+                      n);
     }
     set_state(PORT_NETLOBBY_CONNECTED, text);
 }
@@ -889,11 +916,13 @@ void handle_game_message(Peer &p, const std::vector<std::string> &args)
                 port_log("SSB64 Lobby: player %d version mismatch (%s != %s) - dropped\n",
                          p.slot, p.version.c_str(), kGameVersion);
                 peer_drop(p.slot);
-                sLobby.status = "Dropped a peer on an incompatible version - waiting for players.";
+                sLobby.status = TR("Dropped a peer on an incompatible version - waiting for players.");
                 update_status();
             } else {
-                fail(std::string("Version mismatch - you're on ") + kGameVersion +
-                     ", a peer is on " + p.version + ".");
+                char ver_msg[256];
+                std::snprintf(ver_msg, sizeof(ver_msg), TR("Version mismatch - you're on %s, a peer is on %s."),
+                              kGameVersion, p.version.c_str());
+                fail(ver_msg);
             }
             return;
         }
@@ -906,10 +935,10 @@ void handle_game_message(Peer &p, const std::vector<std::string> &args)
                 if (sLobby.is_host) {
                     port_log("SSB64 Lobby: player %d build/mod mismatch - dropped\n", p.slot);
                     peer_drop(p.slot);
-                    sLobby.status = "Dropped a peer with a different build or mod set.";
+                    sLobby.status = TR("Dropped a peer with a different build or mod set.");
                     update_status();
                 } else {
-                    fail("Build or mod mismatch - all players must run the same build and mods.");
+                    fail(TR("Build or mod mismatch - all players must run the same build and mods."));
                 }
                 return;
             }
@@ -1225,6 +1254,15 @@ void on_roster(const std::string &text)
         } else if (slot >= 0 && slot <= 3) {
             if (slot != sLobby.my_slot) {
                 update_peer_endpoints(slot, entry);
+                Peer *p = peer_for_slot(slot);
+                if (p != nullptr) {
+                    p->ready = json_field(entry, "ready") == "true";
+                }
+            } else if (sLobby.server_version == 2 &&
+                       (json_field(entry, "ready") == "true") != sLobby.my_ready) {
+                /* the room's copy of our flag went stale (a reconnect resets
+                 * it server-side) - re-announce our truth */
+                send_ready_state();
             }
         }
         at = (entry_end == std::string::npos) ? entry_end : entry_end + 1;
@@ -1287,12 +1325,14 @@ void on_server_text(const char *text)
             sLobby.my_slot = sLobby.is_host ? 0 : 1;
         }
         if (sLobby.spectate) {
-            set_state(PORT_NETLOBBY_CONNECTED,
-                      "Spectating room " + sLobby.code + " - waiting for the host to start.");
+            char room_msg[160];
+            std::snprintf(room_msg, sizeof(room_msg),
+                          TR("Spectating room %s - waiting for the host to start."), sLobby.code.c_str());
+            set_state(PORT_NETLOBBY_CONNECTED, room_msg);
         } else if (sLobby.is_host && sLobby.state == PORT_NETLOBBY_CREATING) {
-            set_state(PORT_NETLOBBY_WAITING, "Room open - share the code, waiting for players.");
+            set_state(PORT_NETLOBBY_WAITING, TR("Room open - share the code, waiting for players."));
         } else if (!sLobby.is_host && sLobby.state == PORT_NETLOBBY_JOINING) {
-            set_state(PORT_NETLOBBY_PUNCHING, "Joined room - connecting to host.");
+            set_state(PORT_NETLOBBY_PUNCHING, TR("Joined room - connecting to host."));
         }
         send_endpoint_if_ready();
         return;
@@ -1307,7 +1347,7 @@ void on_server_text(const char *text)
         update_peer_endpoints(sLobby.is_host ? 1 : 0, entry);
         sLobby.player_count = 2;
         if (sLobby.state == PORT_NETLOBBY_WAITING || sLobby.state == PORT_NETLOBBY_JOINING) {
-            set_state(PORT_NETLOBBY_PUNCHING, "Peer joined - punching through NAT.");
+            set_state(PORT_NETLOBBY_PUNCHING, TR("Peer joined - punching through NAT."));
         }
         return;
     }
@@ -1334,7 +1374,7 @@ void on_server_text(const char *text)
             int left = std::atoi(slot.c_str());
             if (left == 0) {       // host left: the room is over
                 if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-                    fail("Host left the room.");
+                    fail(TR("Host left the room."));
                 }
                 return;
             }
@@ -1350,15 +1390,15 @@ void on_server_text(const char *text)
         }
         sLobby.player_count = 1;
         if (sLobby.is_host && sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-            set_state(PORT_NETLOBBY_WAITING, "Peer left - waiting for players.");
+            set_state(PORT_NETLOBBY_WAITING, TR("Peer left - waiting for players."));
         } else if (!sLobby.is_host && sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-            fail("Host left the room.");
+            fail(TR("Host left the room."));
         }
         return;
     }
     if (type == "host_left") {
         if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-            fail("Host left the room.");
+            fail(TR("Host left the room."));
         }
         return;
     }
@@ -1368,17 +1408,19 @@ void on_server_text(const char *text)
             msg = json_field(text, "message");
         }
         if (msg == "room-full") {
-            fail("Room is full (4 players).");
+            fail(TR("Room is full (4 players)."));
         } else if (msg == "version-mismatch") {
-            fail("Room runs a different netplay build.");
+            fail(TR("Room runs a different netplay build."));
         } else if (msg == "room-in-use") {
-            fail("Room code already in use - try hosting again.");
+            fail(TR("Room code already in use - try hosting again."));
         } else if (msg == "no-such-room") {
-            fail("No such room.");
+            fail(TR("No such room."));
         } else if (msg == "bad-code") {
-            fail("Invalid room code.");
+            fail(TR("Invalid room code."));
         } else {
-            fail("Server error: " + msg);
+            char err[256];
+            std::snprintf(err, sizeof(err), TR("Server error: %s"), msg.c_str());
+            fail(err);
         }
         return;
     }
@@ -1421,7 +1463,7 @@ void pump_peers(unsigned int now)
             if (now - p.joined_ms > kPeerJoinTimeoutMs) {
                 port_log("SSB64 Lobby: player %d unreachable (punch + relay failed)\n", p.slot);
                 if (!sLobby.is_host) {
-                    fail("Could not reach the host.");
+                    fail(TR("Could not reach the host."));
                     return;
                 }
                 peer_drop(p.slot);
@@ -1455,7 +1497,7 @@ void pump_peers(unsigned int now)
             now - p.last_heard_ms > kPeerTimeoutMs) {
             port_log("SSB64 Lobby: player %d timed out\n", p.slot);
             if (!sLobby.is_host) {
-                fail("Lost connection to the host.");
+                fail(TR("Lost connection to the host."));
                 return;
             }
             peer_drop(p.slot);
@@ -1564,7 +1606,7 @@ void host_start_sequence(unsigned int now)
             }
         }
         if (count_connected_peers() == 0) {
-            fail("No players responded - match aborted.");
+            fail(TR("No players responded - match aborted."));
             return;
         }
         int n = gather_roster(sLobby.start_wire, sLobby.start_fkinds, sLobby.start_tjs);
@@ -1690,7 +1732,7 @@ extern "C" void port_netlobby_update(void)
     /* while the engine runs the match it owns the socket; only watch the WS
      * for room-level events (host leaving mid-match etc.) */
     if (port_ws_state() == PORT_WS_FAILED && sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-        fail("Lost connection to the lobby server.");
+        fail(TR("Lost connection to the lobby server."));
         return;
     }
     char text[2048];
@@ -1737,13 +1779,13 @@ extern "C" void port_netlobby_host(const char *server, int fkind, int stage, int
         sLobby.stun_txid[i] = static_cast<uint8_t>(sLobby.rng() & 0xFF);
     }
     if (!port_udp_open("0.0.0.0:0")) {
-        fail("Could not open a UDP socket.");
+        fail(TR("Could not open a UDP socket."));
         return;
     }
     sLobby.code = new_code();
     sLobby.last_keepalive_ms = port_udp_now_ms();
     port_log("SSB64 Lobby: hosting, STUN + room create...\n");
-    set_state(PORT_NETLOBBY_CREATING, "Creating room...");
+    set_state(PORT_NETLOBBY_CREATING, TR("Creating room..."));
     send_stun();
     connect_server();
 }
@@ -1765,12 +1807,14 @@ extern "C" void port_netlobby_join(const char *server, const char *code, int fki
         sLobby.stun_txid[i] = static_cast<uint8_t>(sLobby.rng() & 0xFF);
     }
     if (!port_udp_open("0.0.0.0:0")) {
-        fail("Could not open a UDP socket.");
+        fail(TR("Could not open a UDP socket."));
         return;
     }
     sLobby.last_keepalive_ms = port_udp_now_ms();
     port_log("SSB64 Lobby: joining room %s\n", sLobby.code.c_str());
-    set_state(PORT_NETLOBBY_JOINING, "Joining room " + sLobby.code + "...");
+    char join_msg[96];
+    std::snprintf(join_msg, sizeof(join_msg), TR("Joining room %s..."), sLobby.code.c_str());
+    set_state(PORT_NETLOBBY_JOINING, join_msg);
     send_stun();
     connect_server();
 }
@@ -1795,12 +1839,14 @@ extern "C" void port_netlobby_spectate(const char *server, const char *code)
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
     if (!port_udp_open("0.0.0.0:0")) {
-        fail("Could not open a UDP socket.");
+        fail(TR("Could not open a UDP socket."));
         return;
     }
     sLobby.last_keepalive_ms = port_udp_now_ms();
     port_log("SSB64 Lobby: spectating room %s\n", sLobby.code.c_str());
-    set_state(PORT_NETLOBBY_JOINING, "Joining room " + sLobby.code + " as spectator...");
+    char join_msg[96];
+    std::snprintf(join_msg, sizeof(join_msg), TR("Joining room %s as spectator..."), sLobby.code.c_str());
+    set_state(PORT_NETLOBBY_JOINING, join_msg);
     connect_server();
 }
 
@@ -1826,11 +1872,14 @@ extern "C" void port_netlobby_lan_host(int port, int fkind, int stage, int stock
     char bind[32];
     std::snprintf(bind, sizeof(bind), "0.0.0.0:%d", (port > 0) ? port : kLanDefaultPort);
     if (!port_udp_open(bind)) {
-        fail("Could not open the UDP port.");
+        fail(TR("Could not open the UDP port."));
         return;
     }
     port_log("SSB64 Lobby: LAN host on %s\n", local_endpoint().c_str());
-    set_state(PORT_NETLOBBY_WAITING, "LAN host listening on " + local_endpoint() + " - share this address.");
+    char lan_msg[160];
+    std::snprintf(lan_msg, sizeof(lan_msg), TR("LAN host listening on %s - share this address."),
+                  local_endpoint().c_str());
+    set_state(PORT_NETLOBBY_WAITING, lan_msg);
 }
 
 extern "C" void port_netlobby_lan_join(const char *endpoint, int fkind)
@@ -1847,18 +1896,20 @@ extern "C" void port_netlobby_lan_join(const char *endpoint, int fkind)
         ep += ":" + std::to_string(kLanDefaultPort);
     }
     if (!port_udp_open("0.0.0.0:0")) {
-        fail("Could not open a UDP socket.");
+        fail(TR("Could not open a UDP socket."));
         return;
     }
     Peer *p = peer_new(0);
     if (p == nullptr) {
-        fail("Internal error.");
+        fail(TR("Internal error."));
         return;
     }
     p->candidates.push_back(ep);
     p->joined_ms = p->last_heard_ms = port_udp_now_ms();
     port_log("SSB64 Lobby: LAN join %s\n", ep.c_str());
-    set_state(PORT_NETLOBBY_PUNCHING, "Connecting to " + ep + "...");
+    char conn_msg[160];
+    std::snprintf(conn_msg, sizeof(conn_msg), TR("Connecting to %s..."), ep.c_str());
+    set_state(PORT_NETLOBBY_PUNCHING, conn_msg);
     send_to_peer(*p, lan_hello().c_str());
 }
 
@@ -1866,7 +1917,7 @@ extern "C" void port_netlobby_cancel(void)
 {
     shutdown_net();
     sLobby.state = PORT_NETLOBBY_IDLE;
-    sLobby.status = "Pick Host or Join to play online.";
+    sLobby.status = TR("Pick Host or Join to play online.");
 }
 
 extern "C" void port_netlobby_start_match(void)
@@ -1906,7 +1957,7 @@ extern "C" void port_netlobby_start_match(void)
     }
     sLobby.start_sent_ms = port_udp_now_ms();
     sLobby.last_start_ms = 0;
-    set_state(PORT_NETLOBBY_STARTING, "Starting match...");
+    set_state(PORT_NETLOBBY_STARTING, TR("Starting match..."));
     if (sLobby.server_version >= 2) {
         port_ws_send_text("{\"type\":\"start\"}");
     }
@@ -1915,9 +1966,52 @@ extern "C" void port_netlobby_start_match(void)
 extern "C" void port_netlobby_set_fkind(int fkind)
 {
     sLobby.my_fkind = fkind;
+    /* changing the pick revokes our "ready": the room re-announces it so
+     * nobody starts on a fighter we no longer want */
+    if (sLobby.my_ready) {
+        sLobby.my_ready = false;
+        send_ready_state();
+    }
     for (Peer &p : sLobby.peers) {
         p.got_pong = false;   // re-announce the pick
     }
+}
+
+extern "C" void port_netlobby_set_ready(int ready)
+{
+    const bool want = (ready != 0);
+    if (sLobby.spectate || want == sLobby.my_ready) {
+        return;
+    }
+    sLobby.my_ready = want;
+    send_ready_state();
+}
+
+extern "C" int port_netlobby_is_ready(void)
+{
+    return sLobby.my_ready ? 1 : 0;
+}
+
+extern "C" int port_netlobby_peer_ready_at(int index)
+{
+    Peer *p = peer_for_slot(port_netlobby_peer_slot(index));
+    return (p != nullptr && p->ready) ? 1 : 0;
+}
+
+/* 1 when every connected player peer has flagged ready. v1 and LAN rooms
+ * have no ready channel - they report 1 so the PICK handshake stays the only
+ * gate there. Spectators and unconnected stragglers never block the start. */
+extern "C" int port_netlobby_all_ready(void)
+{
+    if (sLobby.lan || sLobby.server_version != 2) {
+        return 1;
+    }
+    for (const Peer &p : sLobby.peers) {
+        if (p.slot >= 0 && p.slot <= 3 && p.connected && !p.ready) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 extern "C" void port_netlobby_on_match_end(void)
@@ -1929,13 +2023,20 @@ extern "C" void port_netlobby_on_match_end(void)
     }
     for (Peer &p : sLobby.peers) {
         p.go = false;
+        p.ready = false;
         p.last_heard_ms = port_udp_now_ms();
     }
     sLobby.after_match = true;
+    /* rematch needs a fresh ready-check: clear ours and let peers' clients
+     * publish their own clears */
+    if (sLobby.my_ready) {
+        sLobby.my_ready = false;
+        send_ready_state();
+    }
     if (sLobby.is_host) {
-        set_state(PORT_NETLOBBY_CONNECTED, "Match ended - press Start match for a rematch.");
+        set_state(PORT_NETLOBBY_CONNECTED, TR("Match ended - press Start match for a rematch."));
     } else {
-        set_state(PORT_NETLOBBY_CONNECTED, "Match ended - waiting for host.");
+        set_state(PORT_NETLOBBY_CONNECTED, TR("Match ended - waiting for host."));
     }
 }
 
@@ -2001,18 +2102,19 @@ extern "C" int port_netlobby_peer_ping_at(int index)
 }
 
 extern "C" int port_netlobby_peer_stats_at(int index, unsigned *gaps, unsigned *dups, unsigned *ooo,
-                                           int *advantage)
+                                           int *advantage, unsigned *recv_highwater)
 {
     /* sys/netpeer.c keeps per-remote counters keyed by game slot. */
-    extern void portNetPeerGetRemoteStats(int player, unsigned *g, unsigned *d, unsigned *o, int *a);
+    extern void portNetPeerGetRemoteStats(int player, unsigned *g, unsigned *d, unsigned *o, int *a,
+                                          unsigned *h);
     const int slot = port_netlobby_peer_slot(index);
-    unsigned g = 0, d = 0, o = 0;
+    unsigned g = 0, d = 0, o = 0, h = 0;
     int adv = 0;
 
     if (slot < 0) {
         return 0;
     }
-    portNetPeerGetRemoteStats(slot, &g, &d, &o, &adv);
+    portNetPeerGetRemoteStats(slot, &g, &d, &o, &adv, &h);
     if (g == 0 && d == 0 && o == 0 && adv == 0) {
         return 0; /* no stats yet (or never netpeer'd — local slot etc.) */
     }
@@ -2020,6 +2122,7 @@ extern "C" int port_netlobby_peer_stats_at(int index, unsigned *gaps, unsigned *
     if (dups != nullptr) *dups = d;
     if (ooo != nullptr) *ooo = o;
     if (advantage != nullptr) *advantage = adv;
+    if (recv_highwater != nullptr) *recv_highwater = h;
     return 1;
 }
 

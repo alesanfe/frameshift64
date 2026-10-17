@@ -44,3 +44,14 @@ The in-engine runtime (hook manager, registry, symbol resolver, mod bridge) live
   `python tools/developer/modding/convert_gliden64_pack.py --pack <dir|zip> --out mods/<name>`.
 
 **Note:** the repo root `mods/` dir is also where HiResPack scans for user texture packs on dev launches — everything except `sdk/`, `examples/`, `templates/`, `tests/` and this file is gitignored (see `.gitignore`).
+
+## Localization policy
+
+Mod-authored content is **not** part of the game's translation table:
+manifest fields (`name`, `description`, `author`) and any strings a mod
+emits are rendered verbatim in the author's language. This applies to
+`examples/` and `templates/` as well — they are reference content, not UI
+chrome. The surrounding menu strings (buttons, tooltips, panel labels)
+are translated in `assets/lang/` like the rest of the UI; the structural
+test `tests/unit/presentation/menu_structure_test.py` enforces that
+coverage for `src/` only.

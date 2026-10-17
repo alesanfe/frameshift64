@@ -35,7 +35,31 @@ permissions:
   attestations: write   # publish artifact attestations for release assets.
 
 jobs:
+  gate:
+    # Release gate: ROM-free test suite runs before any build job starts,
+    # so a broken menu/schema/lobby can't ship. Mirrors repo-checks.yml.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+      - name: Menu structure / usability invariants
+        run: python tests/unit/presentation/menu_structure_test.py
+      - name: CVar schema coverage (TD-005)
+        run: python tools/analysis/lint/check_cvar_schema.py
+      - name: Install lobby deps
+        working-directory: services/netplay-lobby
+        run: npm ci
+      - name: Lobby security suite
+        run: node services/netplay-lobby/tests/security/test-lobby-security.js
+      - name: Lobby fuzz suite
+        run: node services/netplay-lobby/tests/fuzz/test-lobby-fuzz.js 400
   build-macos:
+    needs: gate
     runs-on: macos-14
     # Hosted runners (macOS arm64 especially) intermittently stall mid-compile
     # and only die at the ~1h "lost communication with the server" mark — see
@@ -178,6 +202,7 @@ jobs:
           if-no-files-found: error
 
   build-linux:
+    needs: gate
     # Build on jammy (glibc 2.35) so the AppImage runs everywhere we
     # care about: Steam Deck (Holo, glibc 2.38), Debian 12 (2.36),
     # Fedora 38+ (2.37+), Ubuntu 22.04+. The AppImage links against
@@ -275,6 +300,7 @@ jobs:
           if-no-files-found: error
 
   build-android:
+    needs: gate
     name: build-android (${{ matrix.abi }})
     # US-only — the Android pipeline (Gradle asset staging, touch overlay,
     # ROM picker UI) has only ever been tested against the US decomp.
@@ -391,6 +417,7 @@ jobs:
           if-no-files-found: error
 
   build-windows:
+    needs: gate
     name: build-windows (${{ matrix.version }})
     runs-on: windows-2022
     timeout-minutes: 30

@@ -273,13 +273,12 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 		}
 #else
 		fwrite(out, 1, olen, f);
-#endif
-	#if defined(BATTLESHIP_UWP)
-	/* Xbox Device Portal may terminate a failed UWP process before stdio's
-	 * normal-exit flush runs. Keep startup diagnostics durable so failures
-	 * can be diagnosed from LocalState without attaching a debugger. */
+		/* Header contract: every write is durable so crash-time reports
+		 * (vectored handler, crash filter) survive process death. stdio
+		 * buffering would otherwise silently drop them — observed: the
+		 * exception section vanished mid-line on a heap-corruption kill. */
 		fflush(f);
-	#endif
+#endif
 	}
 	if (sJsonFile != NULL) {
 		char jline[4700];
@@ -357,6 +356,10 @@ void port_exit_process(int code)
 	TerminateProcess(GetCurrentProcess(), (UINT)code);
 	/* Only reached if TerminateProcess itself failed; never return into the game. */
 	_exit(code);
+#elif defined(__SWITCH__)
+	/* Immediate kernel exit — no atexit/unwind, same contract as the other
+	 * platforms' paths here. Declared via <switch.h> above. */
+	svcExitProcess();
 #else
 	_exit(code);
 #endif

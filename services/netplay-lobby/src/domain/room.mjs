@@ -79,6 +79,7 @@ export class LobbyRoom {
     info.rate = { win: 0, text: 0, bin: 0 };
     info.endpoints = 0;
     info.lastSeen = Date.now();
+    info.ready = false;
     this.sockets.set(ws, info);
     return info;
   }
@@ -246,8 +247,12 @@ export class LobbyRoom {
         role: i.kind,
         public: i.endpoint?.public || "-",
         local: i.endpoint?.local || "-",
+        ready: i.ready === true,
       });
-      redacted.push({ slot: i.slot, role: i.kind, public: "-", local: "-" });
+      /* Spectators may see who is ready — it leaks nothing the redacted
+       * roster is meant to hide (no endpoints). */
+      redacted.push({ slot: i.slot, role: i.kind, public: "-", local: "-",
+                      ready: i.ready === true });
     }
     const fullText = JSON.stringify({ type: "peers", players: full });
     const redactedText = JSON.stringify({ type: "peers", players: redacted });
@@ -296,6 +301,16 @@ export class LobbyRoom {
           local: String(msg.local || "-").slice(0, 64),
         };
         if (wi.version === 2) this.broadcastRoster(); else this.introduceV1();
+        break;
+      case "ready":
+        /* Ready-check (v2): a player toggles {type:"ready",ready:0|1} and the
+         * flag rides the next roster broadcast. v1 rooms have no roster, so
+         * the flag is ignored there — v1 keeps its PICK handshake. The flag
+         * dies with the socket; clients re-send after reconnect. */
+        if (wi.version === 2) {
+          wi.ready = msg.ready === true || msg.ready === 1;
+          this.broadcastRoster();
+        }
         break;
       case "relay":
         if (wi.version === 2) {

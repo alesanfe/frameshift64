@@ -35,10 +35,14 @@ VERSIONS = {
 # regardless of the caller's CWD (add_custom_target ignores WORKING_DIRECTORY).
 ROOT = Path(__file__).resolve().parents[2]
 
+# Generated output is a build artifact; the build passes --out-dir
+# <binary-dir>/generated so files land in the build tree, not the source root.
+OUT_DIR    = ROOT / "generated"
+
 # Defaults (US) so the module is importable without selecting a version.
 YAML_DIR   = ROOT / VERSIONS["us"]["yaml_dir"]
-OUTPUT     = ROOT / f"generated/src/us/{VERSIONS['us']['stem']}.cpp"
-OUTPUT_H   = ROOT / f"generated/src/us/{VERSIONS['us']['stem']}.h"
+OUTPUT     = OUT_DIR / f"src/us/{VERSIONS['us']['stem']}.cpp"
+OUTPUT_H   = OUT_DIR / f"src/us/{VERSIONS['us']['stem']}.h"
 FILE_COUNT = VERSIONS["us"]["file_count"]
 
 
@@ -47,8 +51,8 @@ def select_version(version):
     global YAML_DIR, OUTPUT, OUTPUT_H, FILE_COUNT
     cfg = VERSIONS[version]
     YAML_DIR   = ROOT / cfg["yaml_dir"]
-    OUTPUT     = ROOT / f"generated/src/{version}/{cfg['stem']}.cpp"
-    OUTPUT_H   = ROOT / f"generated/src/{version}/{cfg['stem']}.h"
+    OUTPUT     = OUT_DIR / f"src/{version}/{cfg['stem']}.cpp"
+    OUTPUT_H   = OUT_DIR / f"src/{version}/{cfg['stem']}.h"
     FILE_COUNT = cfg["file_count"]
 
 
@@ -57,6 +61,7 @@ def write_if_changed(path: Path, content: str) -> None:
     timestamp and force a pointless recompile+relink on every build."""
     if path.exists() and path.read_text(encoding="utf-8") == content:
         return
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
 
 
@@ -163,7 +168,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", choices=sorted(VERSIONS), default="us",
                         help="ROM version (default: us)")
-    select_version(parser.parse_args().version)
+    parser.add_argument("--out-dir", type=Path, default=None,
+                        help="Generated-output root (default: <repo>/generated)")
+    args = parser.parse_args()
+    global OUT_DIR
+    if args.out_dir is not None:
+        OUT_DIR = args.out_dir.resolve()
+    select_version(args.version)
 
     os.chdir(Path(__file__).resolve().parents[2])
     entries = parse_yaml_entries(YAML_DIR)

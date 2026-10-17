@@ -154,6 +154,22 @@ extern "C" int port_diag_safe_mode_active(void) {
     return sSafeModeActive ? 1 : 0;
 }
 
+extern "C" void port_diag_request_safe_mode(void) {
+    if (!sCrashDirSet || sCrashDir[0] == '\0') {
+        return;
+    }
+    char path[1200];
+    size_t n = std::strlen(sCrashDir);
+    if (n + 18 >= sizeof(path)) return;
+    std::memcpy(path, sCrashDir, n);
+    std::memcpy(path + n, "/safemode.request", 18); /* includes NUL */
+    FILE* f = fopen(path, "w");
+    if (f != nullptr) {
+        fputs("reason=user-requested\n", f);
+        fclose(f);
+    }
+}
+
 extern "C" void port_diag_write_crash_marker(const char *reason, uintptr_t fault_addr) {
     if (!sCrashDirSet || sCrashDir[0] == '\0') {
         return;

@@ -48,6 +48,7 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_SAFE_MODE` | force safe mode for one launch — mods and hi-res texture packs skipped (also auto-arms after a crash); `0`/`empty` = unset |
 | `SSB64_SAVE_PATH` | save location override (CI/debug) |
 | `SSB64_NO_UPDATE_CHECK` | disable updater |
+| `SSB64_TEST_MODE` | marks the process as an automated test run (set by `--test-mode`); also auto-arms `SSB64_NO_UPDATE_CHECK` unless already set |
 | `SSB64_LOG_PATH` | log destination |
 | `SSB64_LOG_JSON` | mirror every log line as JSONL (`{"t","sid","lvl","cat","msg"}`) to `<log>.jsonl` — structured events for tooling; `token=`/`key=`/`secret=`/`password=` values and the home-dir prefix are redacted in the mirror |
 | `SSB64_MUTE` | silence audio |
@@ -96,11 +97,31 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_WIZARD_AUTOCANCEL` | auto-cancel the first-run wizard at frame N |
 | `SSB64_SYNTH_SELFTEST` | deblob synthesis validation harness; exits before game boot |
 | `SSB64_FUZZ_{PARSER,INPUT}` | parser fuzz entry (manifest/replay/json); parse file then exit — driven by `tools/analysis/fuzz/run_parser_fuzz.py` |
+| `SSB64_HEAP_{CHECK,CHECK_ALWAYS,HOOK,WATCH}` | ucrtbased debug-heap probes (MSVC Debug only): `CHECK` installs point-in-time integrity walks, `CHECK_ALWAYS` arms them unconditionally at boot, `HOOK` registers an `_CrtSetAllocHook` that walks the debug block list per allocation, `WATCH` arms a data-breakpoint watchpoint logging to `heap_watch.log` |
+| `SSB64_HEAP_{GWATCH,TRACE,XCHECK}` | heap-probe tuning (MSVC Debug only): `GWATCH` arms DR0/DR1 write-watchpoints on ucrtbased's `__acrt_first_block/__acrt_last_block` globals, `TRACE` enables the per-operation hook trace, `XCHECK` enables the O(heap) `HeapValidate` foreign-heap check per free (off by default — it stalls runs quadratically) |
+| `SSB64_HEAP_FRAMES` | MSVC Debug only: opt-in to per-frame debug-block-list walks. Off by default because walking the live list while resource workers mutate it faults on recycled nodes and each first-chance AV dumps ~50 MB via the vectored handler. |
+| `SSB64_I18N_DIAG` | log the first 8 `TR()` lookups per run (key, lang, table size, HIT/MISS) — translation-drift debugging |
 
 *Policy:* gating rule = "does setting this mutate gameplay, let a
 packet/peer/session be accepted that correct validation would reject, inject
 bytes into the wire, or bypass normal boot?" → `SSB64_TEST_HOOKS`.
 Observation-only and user-facing config stay available in shipped builds.
+
+### Command-line equivalents
+
+`PortInit` translates argv into env vars before any lazy `getenv()` static
+initializes, so hooks are reachable on platforms without a shell env:
+
+- `--test-mode` → `SSB64_TEST_MODE=1` + `SSB64_NO_UPDATE_CHECK=1` (both
+  only when unset in the real env). Marks the process as automated.
+- `--ssb64-<name>=<val>` → `SSB64_<NAME>=<val>`; `<name>` accepts
+  `[A-Za-z0-9_]` and is uppercased, so the flag can never touch `PATH`,
+  `HOME`, or any non-`SSB64_` variable regardless of case. Malformed
+  flags are logged and ignored.
+
+Example: `BattleShip.exe --test-mode --ssb64-MAX_FRAMES=300
+--ssb64-HEADLESS=1` runs an automated 300-frame headless boot with
+no platform env syntax.
 
 ### Android env injection (test hooks only)
 

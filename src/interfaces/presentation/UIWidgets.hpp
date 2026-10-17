@@ -18,7 +18,7 @@
 #include <imgui.h>
 #include <libultraship/libultraship.h>
 #include "Compat.h"
-#include "core/i18n/Locale.h"
+#include "PortI18n.h"
 
 namespace UIWidgets {
 

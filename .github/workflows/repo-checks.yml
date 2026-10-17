@@ -30,6 +30,8 @@ jobs:
         run: python tools/analysis/lint/check_module_deps.py
       - name: Retired-path regression guard
         run: python tools/analysis/lint/check_retired_paths.py
+      - name: Menu structure / usability invariants
+        run: python tests/unit/presentation/menu_structure_test.py
       - name: CVar schema coverage (TD-005)
         run: python tools/analysis/lint/check_cvar_schema.py
       - name: Extraction recipes (structure + golden hashes)

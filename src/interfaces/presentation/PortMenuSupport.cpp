@@ -6,17 +6,18 @@
 // Licensed under the MIT License; see LICENSE at repository root.
 
 #include "PortMenu.h"
+#include "PortMenuShared.h"
 
 #include "Toasts.h"
 #include "UIWidgets.hpp"
 #include "Compat.h"
 #include "app_paths.h"
-#include "core/i18n/Locale.h"
-#include "game/gameplay/enhancements.h"
-#include "networking/netplay/session/netlobby.h"
+#include "PortI18n.h"
+#include "enhancements.h"
+#include "netlobby.h"
 #ifndef DISABLE_SCRIPTING
 #include "app_mods.h"
-#include "core/config/schema.h"
+#include "schema.h"
 #endif
 
 #include <ship/Context.h>
@@ -34,6 +35,38 @@
 namespace fs = std::filesystem;
 
 extern "C" int port_diag_safe_mode_active(void);
+extern "C" void port_diag_request_safe_mode(void);
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <process.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#include <limits.h>
+#endif
+
+void ssb64::RequestSafeModeRestart() {
+    port_diag_request_safe_mode();
+    /* The safe-mode gate only runs at process start — a console "reset"
+     * doesn't re-read it, so we must relaunch for real. */
+#if defined(_WIN32)
+    char exePath[MAX_PATH];
+    if (GetModuleFileNameA(nullptr, exePath, MAX_PATH) != 0) {
+        _spawnl(_P_NOWAIT, exePath, exePath, nullptr);
+        Ship::Context::GetInstance()->GetWindow()->Close();
+        return;
+    }
+#elif defined(__linux__)
+    char exePath[PATH_MAX];
+    const ssize_t n = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+    if (n > 0) {
+        exePath[n] = '\0';
+        execl(exePath, exePath, nullptr); /* replaces this process */
+    }
+#endif
+    /* macOS / other: marker is written, user restarts manually. */
+    ssb64::ToastInfo(TR("Safe mode will engage on next launch — restart the game"));
+}
 
 namespace ssb64 {
 
@@ -84,7 +117,7 @@ static void RenderDiagnostics(WidgetInfo&) {
     ImGui::Text(TR("Audio:       %s"), audio);
     ImGui::Text(TR("Game data:   %s"), o2rOk ? "Verified present" : "MISSING — first-run will re-extract");
     ImGui::Text(TR("Mods:        %d mounted, %d loaded, %d problem%s"), mountedMods, loadedMods, badMods, badMods == 1 ? "" : "s");
-    ImGui::Text(TR("Netplay:     %s"), port_netlobby_status());
+    ImGui::Text(TR("Netplay:     %s"), TR(port_netlobby_status()));
     if (port_diag_safe_mode_active()) {
         ImGui::TextColored(SemanticColors::Warning, "%s",
                            TR("Safe mode:   ON — mods & texture packs skipped this run"));
@@ -133,6 +166,13 @@ void PortMenu::AddMenuSupport() {
                 ->Dispatch("reset");
         })
         .Options(ButtonOptions().Tooltip("Reload the game process state (same as the console reset command).")
+                     .Size(Sizes::Inline));
+
+    AddWidget(path, "Restart in Safe Mode", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([](WidgetInfo&) { RequestSafeModeRestart(); })
+        .Options(ButtonOptions().Tooltip("Relaunches the game without mods or hi-res texture packs. "
+                                         "Use when a bad mod or pack crashes on startup.")
                      .Size(Sizes::Inline));
 
 #ifndef __ANDROID__
@@ -185,7 +225,8 @@ void PortMenu::AddMenuSupport() {
         })
         .Callback([](WidgetInfo&) {
             ssb64::enhancements::StartGameUpdate();
-        });
+        })
+        .Options(ButtonOptions().Tooltip("Downloads, verifies and installs the update, then restarts."));
 
     // 3. "Downloading... XX%" Text (Also handles the "Complete" text)
     AddWidget(path, "Download Status", WIDGET_TEXT)
@@ -221,7 +262,8 @@ void PortMenu::AddMenuSupport() {
         .Callback([](WidgetInfo&) {
             // Pass true to bypass the single-session lock
             ssb64::enhancements::CheckForUpdatesAsync(true);
-        });
+        })
+        .Options(ButtonOptions().Tooltip("Checks for a new release now, even if one was already checked."));
 #endif // !__ANDROID__ (Updater)
 }
 

@@ -11,7 +11,7 @@
  * for each declared event so REGISTER_LISTENER / CALL_EVENT can dispatch.
  */
 #define INIT_EVENT_IDS
-#include "game/engine/hooks/Events.h"
+#include "Events.h"
 
 #include "libultraship/bridge/eventsbridge.h"
 

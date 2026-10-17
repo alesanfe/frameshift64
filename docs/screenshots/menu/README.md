@@ -42,8 +42,8 @@ blind approval of a broken one.
 
 | | |
 |---|---|
-| ![Quick Match](play-quick-match.png) | ![Records](play-records.png) |
-| Quick Match | Records |
+| ![Jump to Screen](play-jump-to-screen.png) | ![Records](play-records.png) |
+| Jump to Screen | Records |
 | ![Replays](play-replays.png) | |
 | Replays | |
 
@@ -53,6 +53,8 @@ blind approval of a broken one.
 |---|---|
 | ![General](settings-general.png) | ![Display](settings-display.png) |
 | General | Display |
+| ![Modified](settings-modified.png) | |
+| Modified (settings differing from defaults) | |
 | ![Image Quality](settings-image-quality.png) | ![Advanced](settings-advanced.png) |
 | Image Quality | Advanced |
 | ![Match Rules](settings-match-rules.png) | ![Classic Mode](settings-classic-mode.png) |
@@ -84,9 +86,23 @@ python tools/developer/testing/shoot_netplay_room.py
 
 It spins up `node-lobby.mjs` on :8799, launches two instances
 (`SSB64_LOBBY_HOST` / `SSB64_LOBBY_JOIN` + `SSB64_LOBBY_CODE_FILE`), and
-dumps each framebuffer mid-room at 960×800. If a stale lobby process is
-already bound to :8799 the script silently reuses it — kill leftover
-`node.exe` instances when room state looks wrong.
+dumps each framebuffer mid-room at 960×800. If its spawned lobby dies while
+:8799 stays healthy the script warns — kill the leftover `node.exe` and
+rerun.
+
+The i18n smoke test captures one shot per shipped language plus the loader
+fallback paths (missing/malformed/out-of-range → English):
+
+```bash
+python tools/developer/testing/shoot_languages.py --out out/screens/lang-test
+```
+
+Both scripts seed every config location the runtime might use — the config
+is read from `SDL_GetPrefPath` (`%APPDATA%\BattleShip\`) under `NON_PORTABLE`
+builds (wired via `#cmakedefine` → generated `install_config.h`), and from
+`./BattleShip.cfg.json` in portable ones. `ActiveHeader` written back on
+exit is asserted (`SEED?` line) so a mis-seeded run can't silently shoot the
+wrong section.
 
 ## Customization
 

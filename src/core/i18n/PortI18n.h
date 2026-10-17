@@ -1,5 +1,5 @@
 /*
- * Locale.h — string-table i18n for the port UI.
+ * PortI18n.h — string-table i18n for the port UI.
  *
  * English source literals are the lookup keys (gettext-style): wrap a
  * string in TR("...") and it renders translated when a non-English

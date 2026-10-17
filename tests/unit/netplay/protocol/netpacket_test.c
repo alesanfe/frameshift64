@@ -9,13 +9,11 @@
  */
 
 #include "networking/netplay/protocol/netpacket.h"
+#include "smash_test/check.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#define EXPECT(cond) \
-	do { if (!(cond)) { fprintf(stderr, "FAIL %s:%d %s\n", __FILE__, __LINE__, #cond); exit(1); } } while (0)
 
 static NBNetPacketContext ctx(u32 session, s32 src, s32 local, s32 forwarded)
 {
@@ -61,8 +59,8 @@ static NBNetPacketInput make_input(void)
 static void test_checksum_vectors(void)
 {
 	/* FNV-1a("a") is a fixed published value. */
-	EXPECT(nbNetPacketChecksumBytes(NULL, 0) == 2166136261U);
-	EXPECT(nbNetPacketChecksumBytes((const u8 *)"a", 1) == 0xE40C292CU);
+	SMASH_EXPECT(nbNetPacketChecksumBytes(NULL, 0) == 2166136261U);
+	SMASH_EXPECT(nbNetPacketChecksumBytes((const u8 *)"a", 1) == 0xE40C292CU);
 }
 
 /* ── INPUT round trip + rejections ──────────────────────────────────── */
@@ -74,19 +72,19 @@ static void test_input_round_trip(void)
 	NBNetPacketInput in = make_input();
 	NBNetPacketContext c = ctx(in.session_id, 1, 0, 0);
 
-	EXPECT(nbNetPacketBuildInput(buf, &in) == NB_NETPACKET_PACKET_BYTES);
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, &out) == NB_NETPACKET_OK);
-	EXPECT(out.session_id == in.session_id);
-	EXPECT(out.ack_tick == in.ack_tick);
-	EXPECT(out.seq == in.seq);
-	EXPECT(out.player == in.player);
-	EXPECT(out.frame_count == in.frame_count);
-	EXPECT(out.local_player == in.local_player);
-	EXPECT(out.remote_player == in.remote_player);
-	EXPECT(out.remote_advantage == in.remote_advantage);
-	EXPECT(out.check_tick == in.check_tick);
-	EXPECT(out.check_hash == in.check_hash);
-	EXPECT(memcmp(out.frames, in.frames, sizeof(in.frames)) == 0);
+	SMASH_EXPECT(nbNetPacketBuildInput(buf, &in) == NB_NETPACKET_PACKET_BYTES);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, &out) == NB_NETPACKET_OK);
+	SMASH_EXPECT(out.session_id == in.session_id);
+	SMASH_EXPECT(out.ack_tick == in.ack_tick);
+	SMASH_EXPECT(out.seq == in.seq);
+	SMASH_EXPECT(out.player == in.player);
+	SMASH_EXPECT(out.frame_count == in.frame_count);
+	SMASH_EXPECT(out.local_player == in.local_player);
+	SMASH_EXPECT(out.remote_player == in.remote_player);
+	SMASH_EXPECT(out.remote_advantage == in.remote_advantage);
+	SMASH_EXPECT(out.check_tick == in.check_tick);
+	SMASH_EXPECT(out.check_hash == in.check_hash);
+	SMASH_EXPECT(memcmp(out.frames, in.frames, sizeof(in.frames)) == 0);
 }
 
 static void test_input_size_gates(void)
@@ -96,13 +94,13 @@ static void test_input_size_gates(void)
 	NBNetPacketContext c = ctx(in.session_id, 1, 0, 0);
 
 	nbNetPacketBuildInput(buf, &in);
-	EXPECT(nbNetPacketParseInput(buf, 0, &c, NULL) == NB_NETPACKET_BAD_SIZE);
-	EXPECT(nbNetPacketParseInput(buf, NB_NETPACKET_PACKET_BYTES - 1, &c, NULL)
+	SMASH_EXPECT(nbNetPacketParseInput(buf, 0, &c, NULL) == NB_NETPACKET_BAD_SIZE);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, NB_NETPACKET_PACKET_BYTES - 1, &c, NULL)
 		   == NB_NETPACKET_BAD_SIZE);
-	EXPECT(nbNetPacketParseInput(buf, NB_NETPACKET_PACKET_BYTES + 1, &c, NULL)
+	SMASH_EXPECT(nbNetPacketParseInput(buf, NB_NETPACKET_PACKET_BYTES + 1, &c, NULL)
 		   == NB_NETPACKET_BAD_SIZE);
 	/* Validation-only call: NULL out pointer is accepted. */
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), NULL, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), NULL, NULL) == NB_NETPACKET_OK);
 }
 
 static void test_input_field_rejection(void)
@@ -114,25 +112,25 @@ static void test_input_field_rejection(void)
 	nbNetPacketBuildInput(buf, &in);
 
 	buf[0] ^= 0xFF;   /* magic lives at offset 0, big-endian */
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_MAGIC);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_MAGIC);
 	nbNetPacketBuildInput(buf, &in);
 
 	buf[5] = 3;       /* version low byte (BE u16 at 4..5) */
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_VERSION);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_VERSION);
 	nbNetPacketBuildInput(buf, &in);
 
 	c = ctx(in.session_id + 1, 1, 0, 0);
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_SESSION);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_SESSION);
 
 	c = ctx(in.session_id, 2, 0, 0);   /* wrong src slot */
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_PLAYER);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_PLAYER);
 
 	c = ctx(in.session_id, 1, 3, 0);   /* packet not addressed to us */
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_REMOTE);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_BAD_REMOTE);
 
 	/* Forwarded datagrams skip the remote_player binding. */
 	c = ctx(in.session_id, 1, 3, 1);
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
 }
 
 static void test_input_frame_count_boundary(void)
@@ -144,11 +142,11 @@ static void test_input_frame_count_boundary(void)
 	in.frame_count = 0;
 	nbNetPacketBuildInput(buf, &in);
 	c = ctx(in.session_id, 1, 0, 0);
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
 
 	in.frame_count = 16;
 	nbNetPacketBuildInput(buf, &in);
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
 
 	/* 17 and 255 don't round-trip through the builder (u8 field, builder
 	 * writes it verbatim) — mutate the count byte and re-checksum so only
@@ -159,7 +157,7 @@ static void test_input_frame_count_boundary(void)
 		u8 *tail = buf + sizeof(buf) - 4;
 		nbNetPacketWriteU32(&tail, sum);
 	}
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), NULL, NULL) == NB_NETPACKET_BAD_FRAME_COUNT);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), NULL, NULL) == NB_NETPACKET_BAD_FRAME_COUNT);
 
 	buf[21] = 255;
 	{
@@ -167,7 +165,7 @@ static void test_input_frame_count_boundary(void)
 		u8 *tail = buf + sizeof(buf) - 4;
 		nbNetPacketWriteU32(&tail, sum);
 	}
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), NULL, NULL) == NB_NETPACKET_BAD_FRAME_COUNT);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), NULL, NULL) == NB_NETPACKET_BAD_FRAME_COUNT);
 }
 
 static void test_input_checksum_rejection(void)
@@ -185,7 +183,7 @@ static void test_input_checksum_rejection(void)
 		u8 saved = buf[i];
 
 		buf[i] ^= 0x01;
-		EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) != NB_NETPACKET_OK);
+		SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) != NB_NETPACKET_OK);
 		buf[i] = saved;
 	}
 }
@@ -199,12 +197,12 @@ static void test_input_mutant_flags(void)
 	nbNetPacketBuildInput(buf, &in);
 	c.ignore_session = 1;
 	c.session_id = 0;   /* mismatch that must now pass */
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
 
 	buf[30] ^= 0xFF;
 	c = ctx(in.session_id, 1, 0, 0);
 	c.ignore_checksum = 1;
-	EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(buf), &c, NULL) == NB_NETPACKET_OK);
 }
 
 /* ── CONTROL ────────────────────────────────────────────────────────── */
@@ -213,9 +211,9 @@ static void test_control_round_trip(void)
 {
 	u8 buf[NB_NETPACKET_CONTROL_PACKET_BYTES];
 
-	EXPECT(nbNetPacketBuildControl(buf, NB_NETPACKET_PACKET_BATTLE_START, 0xABCD)
+	SMASH_EXPECT(nbNetPacketBuildControl(buf, NB_NETPACKET_PACKET_BATTLE_START, 0xABCD)
 		   == NB_NETPACKET_CONTROL_PACKET_BYTES);
-	EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD)
+	SMASH_EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD)
 		   == NB_NETPACKET_PACKET_BATTLE_START);
 }
 
@@ -224,16 +222,16 @@ static void test_control_rejection(void)
 	u8 buf[NB_NETPACKET_CONTROL_PACKET_BYTES];
 
 	nbNetPacketBuildControl(buf, NB_NETPACKET_PACKET_READY, 0xABCD);
-	EXPECT(nbNetPacketParseControl(buf, sizeof(buf) - 1, 0xABCD)
+	SMASH_EXPECT(nbNetPacketParseControl(buf, sizeof(buf) - 1, 0xABCD)
 		   == -NB_NETPACKET_BAD_SIZE);
-	EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD + 1)
+	SMASH_EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD + 1)
 		   == -NB_NETPACKET_BAD_SESSION);
 	buf[3] ^= 0xFF;
-	EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD)
+	SMASH_EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD)
 		   == -NB_NETPACKET_BAD_CHECKSUM);
 	nbNetPacketBuildControl(buf, NB_NETPACKET_PACKET_READY, 0xABCD);
 	buf[0] ^= 0xFF;
-	EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD)
+	SMASH_EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD)
 		   == -NB_NETPACKET_BAD_CHECKSUM); /* checksum first */
 }
 
@@ -244,11 +242,11 @@ static void test_delay_round_trip(void)
 	u8 buf[NB_NETPACKET_DELAY_PACKET_BYTES];
 	u32 delay = 0;
 
-	EXPECT(nbNetPacketBuildDelay(buf, 0xABCD, 3) == NB_NETPACKET_DELAY_PACKET_BYTES);
-	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay) == NB_NETPACKET_OK);
-	EXPECT(delay == 3);
+	SMASH_EXPECT(nbNetPacketBuildDelay(buf, 0xABCD, 3) == NB_NETPACKET_DELAY_PACKET_BYTES);
+	SMASH_EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay) == NB_NETPACKET_OK);
+	SMASH_EXPECT(delay == 3);
 	/* NULL out-param is a validation-only call. */
-	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, NULL) == NB_NETPACKET_OK);
 }
 
 static void test_delay_rejection(void)
@@ -257,18 +255,18 @@ static void test_delay_rejection(void)
 	u32 delay;
 
 	nbNetPacketBuildDelay(buf, 0xABCD, 2);
-	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf) - 1, 0xABCD, &delay)
+	SMASH_EXPECT(nbNetPacketParseDelay(buf, sizeof(buf) - 1, 0xABCD, &delay)
 		   == -NB_NETPACKET_BAD_SIZE);
-	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf) + 1, 0xABCD, &delay)
+	SMASH_EXPECT(nbNetPacketParseDelay(buf, sizeof(buf) + 1, 0xABCD, &delay)
 		   == -NB_NETPACKET_BAD_SIZE);
-	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD + 1, &delay)
+	SMASH_EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD + 1, &delay)
 		   == -NB_NETPACKET_BAD_SESSION);
 	buf[3] ^= 0xFF;
-	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay)
+	SMASH_EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay)
 		   == -NB_NETPACKET_BAD_CHECKSUM);
 	nbNetPacketBuildDelay(buf, 0xABCD, 2);
 	buf[4] ^= 0xFF; /* version byte — checksum still fails first */
-	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay)
+	SMASH_EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &delay)
 		   == -NB_NETPACKET_BAD_CHECKSUM);
 }
 
@@ -279,12 +277,12 @@ static void test_spec_progress_round_trip(void)
 	u8 buf[NB_NETPACKET_DELAY_PACKET_BYTES];
 	u32 tick = 0;
 
-	EXPECT(nbNetPacketBuildSpecProgress(buf, 0xABCD, 12345) == NB_NETPACKET_DELAY_PACKET_BYTES);
-	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, &tick) == NB_NETPACKET_OK);
-	EXPECT(tick == 12345);
-	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketBuildSpecProgress(buf, 0xABCD, 12345) == NB_NETPACKET_DELAY_PACKET_BYTES);
+	SMASH_EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, &tick) == NB_NETPACKET_OK);
+	SMASH_EXPECT(tick == 12345);
+	SMASH_EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, NULL) == NB_NETPACKET_OK);
 	/* a SPEC_PROGRESS datagram must not validate as DELAY and vice versa */
-	EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &tick)
+	SMASH_EXPECT(nbNetPacketParseDelay(buf, sizeof(buf), 0xABCD, &tick)
 		   == -NB_NETPACKET_BAD_TYPE);
 }
 
@@ -294,14 +292,14 @@ static void test_spec_progress_rejection(void)
 	u32 tick;
 
 	nbNetPacketBuildSpecProgress(buf, 0xABCD, 7);
-	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf) - 1, 0xABCD, &tick)
+	SMASH_EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf) - 1, 0xABCD, &tick)
 		   == -NB_NETPACKET_BAD_SIZE);
-	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf) + 1, 0xABCD, &tick)
+	SMASH_EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf) + 1, 0xABCD, &tick)
 		   == -NB_NETPACKET_BAD_SIZE);
-	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD + 1, &tick)
+	SMASH_EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD + 1, &tick)
 		   == -NB_NETPACKET_BAD_SESSION);
 	buf[3] ^= 0xFF;
-	EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, &tick)
+	SMASH_EXPECT(nbNetPacketParseSpecProgress(buf, sizeof(buf), 0xABCD, &tick)
 		   == -NB_NETPACKET_BAD_CHECKSUM);
 }
 
@@ -321,15 +319,15 @@ static void test_forward_round_trip(void)
 	nbNetPacketBuildInput(inner, &in);
 	wrap_size = nbNetPacketBuildForward(wrap, sizeof(wrap), inner, sizeof(inner),
 										(u8)in.player, in.session_id);
-	EXPECT(wrap_size == sizeof(inner) + NB_NETPACKET_FORWARD_HEADER_BYTES + 4);
-	EXPECT(nbNetPacketIsForward(wrap, (s32)wrap_size) == 1);
-	EXPECT(nbNetPacketIsForward(inner, sizeof(inner)) == 0);
+	SMASH_EXPECT(wrap_size == sizeof(inner) + NB_NETPACKET_FORWARD_HEADER_BYTES + 4);
+	SMASH_EXPECT(nbNetPacketIsForward(wrap, (s32)wrap_size) == 1);
+	SMASH_EXPECT(nbNetPacketIsForward(inner, sizeof(inner)) == 0);
 
-	EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, &src,
+	SMASH_EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, &src,
 								   &inner_out, &inner_size) == NB_NETPACKET_OK);
-	EXPECT(src == in.player);
-	EXPECT(inner_size == sizeof(inner));
-	EXPECT(memcmp(inner_out, inner, inner_size) == 0);
+	SMASH_EXPECT(src == in.player);
+	SMASH_EXPECT(inner_size == sizeof(inner));
+	SMASH_EXPECT(memcmp(inner_out, inner, inner_size) == 0);
 }
 
 static void test_forward_rejection(void)
@@ -352,30 +350,30 @@ static void test_forward_rejection(void)
 
 	/* Self-forward: claimed sender == our slot. */
 	c = ctx(in.session_id, -1, (s32)in.player, 1);
-	EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, &src,
+	SMASH_EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, &src,
 								   &inner_out, &inner_size)
 		   == NB_NETPACKET_SELF_FORWARD);
 
 	c = ctx(in.session_id + 1, -1, 0, 1);
-	EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, NULL, NULL, NULL)
+	SMASH_EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, NULL, NULL, NULL)
 		   == NB_NETPACKET_BAD_SESSION);
 
 	wrap[0] ^= 0xFF;
 	c = ctx(in.session_id, -1, 0, 1);
-	EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, NULL, NULL, NULL)
+	SMASH_EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, NULL, NULL, NULL)
 		   == NB_NETPACKET_BAD_MAGIC);
 
 	nbNetPacketBuildForward(wrap, sizeof(wrap), inner, sizeof(inner),
 							(u8)in.player, in.session_id);
 	wrap[NB_NETPACKET_FORWARD_HEADER_BYTES] ^= 0xFF; /* corrupt inner body */
-	EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, NULL, NULL, NULL)
+	SMASH_EXPECT(nbNetPacketParseForward(wrap, (s32)wrap_size, &c, NULL, NULL, NULL)
 		   == NB_NETPACKET_BAD_CHECKSUM);
 
 	/* Truncated envelope and oversized inner are both refused. */
-	EXPECT(nbNetPacketParseForward(wrap, NB_NETPACKET_FORWARD_HEADER_BYTES, &c,
+	SMASH_EXPECT(nbNetPacketParseForward(wrap, NB_NETPACKET_FORWARD_HEADER_BYTES, &c,
 								   NULL, NULL, NULL) == NB_NETPACKET_SHORT);
-	EXPECT(nbNetPacketBuildForward(wrap, 8, inner, sizeof(inner), 1, 1) == 0);
-	EXPECT(nbNetPacketBuildForward(wrap, sizeof(wrap), inner, 0, 1, 1) == 0);
+	SMASH_EXPECT(nbNetPacketBuildForward(wrap, 8, inner, sizeof(inner), 1, 1) == 0);
+	SMASH_EXPECT(nbNetPacketBuildForward(wrap, sizeof(wrap), inner, 0, 1, 1) == 0);
 }
 
 /* ── BOOTSTRAP prefix (RT-001, MATCH_CONFIG-shaped) ─────────────────── */
@@ -401,21 +399,21 @@ static void test_bootstrap_prefix(void)
 	w += 64;
 	sum = nbNetPacketChecksumBytes(buf, (u32)(w - buf));
 	nbNetPacketWriteU32(&w, sum);
-	EXPECT((u32)(w - buf) == sizeof(buf));
+	SMASH_EXPECT((u32)(w - buf) == sizeof(buf));
 
-	EXPECT(nbNetPacketParsePrefix(buf, (s32)sizeof(buf), &type, &session,
+	SMASH_EXPECT(nbNetPacketParsePrefix(buf, (s32)sizeof(buf), &type, &session,
 								  &payload) == NB_NETPACKET_OK);
-	EXPECT(type == NB_NETPACKET_PACKET_MATCH_CONFIG);
-	EXPECT(session == 0x5E55);
-	EXPECT(payload == buf + 12);
+	SMASH_EXPECT(type == NB_NETPACKET_PACKET_MATCH_CONFIG);
+	SMASH_EXPECT(session == 0x5E55);
+	SMASH_EXPECT(payload == buf + 12);
 	for (i = 0; i < 64; i++)
 	{
-		EXPECT(payload[i] == (u8)(i * 7 + 1));
+		SMASH_EXPECT(payload[i] == (u8)(i * 7 + 1));
 	}
 
-	EXPECT(nbNetPacketParsePrefix(buf, 11, NULL, NULL, NULL) == NB_NETPACKET_SHORT);
+	SMASH_EXPECT(nbNetPacketParsePrefix(buf, 11, NULL, NULL, NULL) == NB_NETPACKET_SHORT);
 	buf[0] ^= 0xFF;
-	EXPECT(nbNetPacketParsePrefix(buf, (s32)sizeof(buf), NULL, NULL, NULL)
+	SMASH_EXPECT(nbNetPacketParsePrefix(buf, (s32)sizeof(buf), NULL, NULL, NULL)
 		   == NB_NETPACKET_BAD_MAGIC);
 }
 
@@ -432,9 +430,9 @@ static void test_type_enumeration(void)
 	for (t = 0; t <= 255; t++)
 	{
 		nbNetPacketBuildControl(buf, (u16)t, 0xABCD);
-		EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD) == t);
+		SMASH_EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD) == t);
 		buf[3] ^= 0x01;
-		EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD)
+		SMASH_EXPECT(nbNetPacketParseControl(buf, sizeof(buf), 0xABCD)
 			   == -NB_NETPACKET_BAD_CHECKSUM);
 	}
 	/* IsForward only fires on the real FORWARD type: mutate the type
@@ -452,7 +450,7 @@ static void test_type_enumeration(void)
 		{
 			wrap[6] = (u8)(t >> 8);
 			wrap[7] = (u8)(t & 0xFF);
-			EXPECT(nbNetPacketIsForward(wrap, (s32)wrap_size)
+			SMASH_EXPECT(nbNetPacketIsForward(wrap, (s32)wrap_size)
 				   == (t == NB_NETPACKET_PACKET_FORWARD ? 1 : 0));
 		}
 	}
@@ -465,7 +463,7 @@ static void test_type_enumeration(void)
 
 		in.remote_advantage = NB_NETPACKET_PACKET_FORWARD;
 		nbNetPacketBuildInput(buf, &in);
-		EXPECT(nbNetPacketIsForward(buf, (s32)sizeof(buf)) == 0);
+		SMASH_EXPECT(nbNetPacketIsForward(buf, (s32)sizeof(buf)) == 0);
 	}
 }
 
@@ -491,28 +489,28 @@ static void test_corpus(void)
 	for (i = 0; i < sizeof(k_control_types) / sizeof(k_control_types[0]); i++)
 	{
 		nbNetPacketBuildControl(buf, k_control_types[i], in.session_id);
-		EXPECT(nbNetPacketParseControl(buf, NB_NETPACKET_CONTROL_PACKET_BYTES,
+		SMASH_EXPECT(nbNetPacketParseControl(buf, NB_NETPACKET_CONTROL_PACKET_BYTES,
 									   in.session_id)
 			   == (s32)k_control_types[i]);
 	}
 	nbNetPacketBuildInput(inner, &in);
 	c = ctx(in.session_id, 1, 0, 0);
-	EXPECT(nbNetPacketParseInput(inner, sizeof(inner), &c, NULL) == NB_NETPACKET_OK);
+	SMASH_EXPECT(nbNetPacketParseInput(inner, sizeof(inner), &c, NULL) == NB_NETPACKET_OK);
 
 	/* Invalid siblings of the valid INPUT: magic, version, session,
 	 * checksum — each rejected with its dedicated status. */
 	memcpy(buf, inner, sizeof(inner));
 	buf[0] ^= 0xFF;
-	EXPECT(nbNetPacketParseInput(buf, sizeof(inner), &c, NULL) == NB_NETPACKET_BAD_MAGIC);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(inner), &c, NULL) == NB_NETPACKET_BAD_MAGIC);
 	memcpy(buf, inner, sizeof(inner));
 	buf[5] = 0;
-	EXPECT(nbNetPacketParseInput(buf, sizeof(inner), &c, NULL) == NB_NETPACKET_BAD_VERSION);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(inner), &c, NULL) == NB_NETPACKET_BAD_VERSION);
 	memcpy(buf, inner, sizeof(inner));
 	buf[8] ^= 0xFF;
-	EXPECT(nbNetPacketParseInput(buf, sizeof(inner), &c, NULL) == NB_NETPACKET_BAD_SESSION);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(inner), &c, NULL) == NB_NETPACKET_BAD_SESSION);
 	memcpy(buf, inner, sizeof(inner));
 	buf[sizeof(inner) - 1] ^= 0xFF;
-	EXPECT(nbNetPacketParseInput(buf, sizeof(inner), &c, NULL) == NB_NETPACKET_BAD_CHECKSUM);
+	SMASH_EXPECT(nbNetPacketParseInput(buf, sizeof(inner), &c, NULL) == NB_NETPACKET_BAD_CHECKSUM);
 }
 
 /* ── FUZZ-001: seeded arbitrary datagrams — no crash, clean rejects ─── */
@@ -559,7 +557,7 @@ static void test_fuzz_arbitrary(void)
 	}
 	/* Random garbage almost never survives magic+version+checksum; a
 	 * non-zero accept count isn't a bug, but a huge one would be. */
-	EXPECT(accepted < 1000);
+	SMASH_EXPECT(accepted < 1000);
 
 	/* Pass 2: 10k mutants of valid datagrams — 1..8 random byte edits at
 	 * random offsets. Parse must terminate with a status, never crash. */
@@ -608,6 +606,5 @@ int main(void)
 	test_corpus();
 	test_fuzz_arbitrary();
 
-	puts("PASS netpacket_test");
-	return 0;
+	return smash_test_report("netpacket_test");
 }

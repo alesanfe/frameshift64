@@ -33,6 +33,7 @@ PATTERNS = [
     re.compile(r"\bTR\(\s*" + STR),
     re.compile(r"\bAddWidget\([^,]+,\s*" + STR),
     re.compile(r"\.Tooltip\(\s*" + STR),
+    re.compile(r"\.PlaceholderText\(\s*" + STR),
     re.compile(r"\bAddMenuEntry\(\s*" + STR),
     # AddSidebarEntry(section, displayedName, cols) — the visible label is 2nd
     re.compile(r"\bAddSidebarEntry\(\s*" + STR + r"\s*,\s*" + STR),
@@ -44,7 +45,7 @@ PATTERNS = [
 ]
 COMBO_PAIR = re.compile(r"\{\s*[-\w.:+*() ]+,\s*" + STR + r"\s*\}")
 # which capture group holds the literal per pattern (AddSidebarEntry → 2)
-GROUP_IDX = [1, 1, 1, 1, 2, 1, 1, 1, 1]
+GROUP_IDX = [1, 1, 1, 1, 1, 2, 1, 1, 1, 1]
 
 ID_ONLY = re.compile(r"^#")
 NO_LETTERS = re.compile(r"[A-Za-z]")
@@ -84,7 +85,13 @@ def extract(path: Path) -> set[str]:
                     break
                 joined += nxt.group(1)
                 rest = rest[nxt.end() :].lstrip()
-            if wrappable(joined):
+            # TR() is always an intentional wrap — skip the INTERNAL-ID
+            # heuristic for it (genuine UI words like "direct"/"relayed"
+            # match the lowercase-identifier rule but must be catalogued).
+            if pat is PATTERNS[0]:
+                if joined and not ID_ONLY.match(joined) and NO_LETTERS.search(joined):
+                    keys.add(unescape(joined))
+            elif wrappable(joined):
                 keys.add(unescape(joined))
     for m in COMBO_PAIR.finditer(text):
         if wrappable(m.group(1)):

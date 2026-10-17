@@ -15,5 +15,9 @@ Invariants every implementation must keep:
   cosmetic mods (`"simulation": false`) are excluded from the hash.
 - `SSB64_LAN_KEY` authenticates LAN HELLO adoption; unauthenticated
   LAN adopts are rate-limited.
+- Ready-check (v2 only): a player socket may send `{"type":"ready","ready":0|1}`;
+  the flag is broadcast on every roster entry (`"ready": true|false`, both the
+  full and the spectator-redacted forms) and dies with the socket. v1 rooms
+  ignore it — their PICK handshake stays the readiness signal.
 
 Narrative protocol docs: `docs/netplay/protocol/`.

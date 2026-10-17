@@ -55,6 +55,11 @@ void port_diag_write_crash_marker(const char *reason, uintptr_t fault_addr);
 void port_diag_set_safe_mode(int active);
 int port_diag_safe_mode_active(void);
 
+/* One-shot: write safemode.request beside crash.marker so the NEXT launch
+ * boots in safe mode (consumed at startup — the user asked for it, so a
+ * crash bundle isn't required). */
+void port_diag_request_safe_mode(void);
+
 #ifdef __cplusplus
 }
 #endif

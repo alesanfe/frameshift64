@@ -1,6 +1,6 @@
 #include "enhancements.h"
 #include <libultraship/bridge/consolevariablebridge.h>
-#include "networking/netplay/domain/netrules.h"
+#include "netrules.h"
 
 namespace ssb64 {
     namespace enhancements {

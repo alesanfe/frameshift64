@@ -11,6 +11,15 @@ function(ssb64_apply_sanitizers _iface)
     if(SSB64_ENABLE_ASAN)
         if(MSVC)
             list(APPEND _copts /fsanitize=address)
+            # MSVC STL "annotated" containers ship extra members only when
+            # EVERY TU agrees — vendored deps (spirv-cross, prism, ...) are
+            # compiled without /fsanitize=address and stay un-annotated, so
+            # first-party TUs must disable the annotation too or the link
+            # dies with LNK2038 annotate_string/annotate_vector mismatches.
+            # Raw-address poisoning (out-of-bounds, use-after-free) still
+            # works; only container-internal poisoning is lost.
+            target_compile_definitions(${_iface} INTERFACE
+                _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
         else()
             list(APPEND _copts -fsanitize=address -fno-omit-frame-pointer)
             list(APPEND _lopts -fsanitize=address)

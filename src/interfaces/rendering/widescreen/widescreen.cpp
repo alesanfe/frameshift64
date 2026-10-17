@@ -1,6 +1,6 @@
 #include "widescreen.h"
 
-#include "game/gameplay/enhancements.h"
+#include "enhancements.h"
 
 #include <libultraship/bridge/consolevariablebridge.h>
 #include <libultraship/bridge/gfxbridge.h>

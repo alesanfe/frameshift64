@@ -23,8 +23,8 @@
 // Defines: kArrowLeftRGBA16[], kArrowLeftWidth, kArrowLeftHeight
 #include "arrow_left_data.h"
 
-#include "game/engine/decomp/lbreloc_byteswap.h"
-#include "resources/relocation/RelocPointerTable.h"
+#include "lbreloc_byteswap.h"
+#include "RelocPointerTable.h"
 #include "port_log.h"
 
 #include <cstdint>

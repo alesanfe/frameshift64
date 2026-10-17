@@ -6,7 +6,7 @@
 // Licensed under the MIT License; see LICENSE at repository root.
 
 #include "UIWidgets.hpp"
-#include "core/i18n/Locale.h"
+#include "PortI18n.h"
 #include "Compat.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
@@ -1220,7 +1220,7 @@ bool BtnSelector(const char* label, int32_t* value, const BtnSelectorOptions& op
             ImGui::SameLine();
         }
     }
-    if (UIWidgets::Button("+", UIWidgets::ButtonOptions({ { .tooltip = "Add a button to the combination" } })
+    if (UIWidgets::Button("+", UIWidgets::ButtonOptions({ { .tooltip = TR("Add a button to the combination") } })
                                    .Size(UIWidgets::Sizes::Inline)
                                    .Color(options.color))) {
         ImGui::OpenPopup("Add Button");

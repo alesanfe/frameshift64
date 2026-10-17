@@ -44,6 +44,12 @@ void port_netlobby_spectate(const char *server, const char *code);
 void port_netlobby_cancel(void);
 void port_netlobby_start_match(void);
 void port_netlobby_set_fkind(int fkind);
+/* Ready-check (v2 rooms; no-op on v1/LAN/spectate). "all_ready" ignores
+ * spectators and peers still punching - it reflects connected players only. */
+void port_netlobby_set_ready(int ready);
+int port_netlobby_is_ready(void);
+int port_netlobby_peer_ready_at(int index);
+int port_netlobby_all_ready(void);
 
 int port_netlobby_state(void);
 const char *port_netlobby_status(void);
@@ -67,7 +73,8 @@ int port_netlobby_peer_ping_at(int index);       /* -1 unknown */
 /* Per-peer wire stats during a match (packet sequence gaps/duplicates/
  * out-of-order counts + the remote's declared advantage, i.e. our rollback
  * depth for its inputs). Returns 0 when the peer has no live netpeer stats. */
-int port_netlobby_peer_stats_at(int index, unsigned *gaps, unsigned *dups, unsigned *ooo, int *advantage);
+int port_netlobby_peer_stats_at(int index, unsigned *gaps, unsigned *dups, unsigned *ooo, int *advantage,
+                                unsigned *recv_highwater);
 
 /* 1 after an online match has ended while the players are still connected
  * (each is back in their own local menus; the host can start a rematch). */

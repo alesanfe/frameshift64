@@ -58,14 +58,22 @@ add_custom_target(DeblobRegen
 # port layer. As add_custom_command OUTPUTs they now only re-run when an
 # input is newer; the same-named custom targets wrap them so the
 # documented entry points (`--target GenerateRelocArtifacts`) keep working.
+# ROM-free generated code lives in the build tree, never the source root.
+# (ssb64_reloc_rebuild.<v>.cpp is the exception: generate_fighter_slices.py
+# needs a real baserom, so that TU stays versioned under generated/src/.)
+set(SSB64_GENERATED_DIR ${CMAKE_BINARY_DIR}/generated)
 set(SSB64_RELOC_GENERATED_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/${SSB64_VERSION}/reloc_data.${SSB64_VERSION}.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/${SSB64_VERSION}/RelocFileTable.${SSB64_VERSION}.cpp
+    ${SSB64_GENERATED_DIR}/include/${SSB64_VERSION}/reloc_data.${SSB64_VERSION}.h
+    ${SSB64_GENERATED_DIR}/src/${SSB64_VERSION}/RelocFileTable.${SSB64_VERSION}.cpp
 )
 add_custom_command(
     OUTPUT ${SSB64_RELOC_GENERATED_FILES}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/code-generation/generate_reloc_stubs.py --version ${SSB64_VERSION}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/code-generation/generate_reloc_table.py --version ${SSB64_VERSION}
+    BYPRODUCT ${SSB64_GENERATED_DIR}/src/${SSB64_VERSION}/RelocFileTable.${SSB64_VERSION}.h
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        ${SSB64_GENERATED_DIR}/include/${SSB64_VERSION}
+        ${SSB64_GENERATED_DIR}/src/${SSB64_VERSION}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/code-generation/generate_reloc_stubs.py --version ${SSB64_VERSION} --out-dir ${SSB64_GENERATED_DIR}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/code-generation/generate_reloc_table.py --version ${SSB64_VERSION} --out-dir ${SSB64_GENERATED_DIR}
     DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/code-generation/generate_reloc_stubs.py
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/code-generation/generate_reloc_table.py

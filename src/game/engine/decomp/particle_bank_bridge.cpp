@@ -35,7 +35,7 @@
 #include <vector>
 
 extern "C" {
-#include "game/engine/decomp/particle_bank_bridge.h"
+#include "particle_bank_bridge.h"
 extern void port_log(const char *fmt, ...);
 
 /* Stub symbols from src/platform/compatibility/segment_symbols.c. Their addresses are the

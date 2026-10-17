@@ -34,6 +34,13 @@ void PortPushFrame(void);
 void PortGameShutdown(void);
 
 /**
+ * Test-hook: run the SSB64_SCREENSHOT_FRAMES/DIR capture check for a frame
+ * rendered outside PortPushFrame (the first-run wizard drives its own
+ * DrawWizardFrame loop — without this the capture never ticks there).
+ */
+void PortScreenshotMaybeCaptureFrame(int frame);
+
+/**
  * Resume all registered service thread coroutines that are waiting.
  * Called internally by PortPushFrame. Defined in n64_stubs.c.
  */

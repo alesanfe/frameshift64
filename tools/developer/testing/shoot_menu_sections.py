@@ -27,11 +27,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # (header entry, sidebar cvar suffix, sidebar, output filename)
 SECTIONS = [
-    ("Play", "PlaySidebarSection", "Quick Match", "play-quick-match"),
+    ("Play", "PlaySidebarSection", "Jump to Screen", "play-jump-to-screen"),
     ("Play", "PlaySidebarSection", "Records", "play-records"),
     ("Play", "PlaySidebarSection", "Replays", "play-replays"),
     ("Online", "OnlineSidebarSection", "Netplay", "online-netplay"),
     ("Settings", "SettingsSidebarSection", "General", "settings-general"),
+    ("Settings", "SettingsSidebarSection", "Modified", "settings-modified"),
     ("Settings", "SettingsSidebarSection", "Display", "settings-display"),
     ("Settings", "SettingsSidebarSection", "Image Quality", "settings-image-quality"),
     ("Settings", "SettingsSidebarSection", "Advanced", "settings-advanced"),
@@ -118,6 +119,7 @@ def del_cvar(cfg: dict, dotted: str) -> None:
 EXTRA_KEYS = [k for entry in WINDOWS for k in entry["cvars"]]
 EXTRA_KEYS.append("gOnlineStatus.Visible")  # removed from auto-capture; clear stale state
 EXTRA_KEYS.append("gSettings.UIScale")      # --ui-scale must not leak between shots
+EXTRA_KEYS.append("gSettings.Language")     # a prior non-EN run must not leak into the canonical gallery
 
 
 def write_cfg(cfg_path: Path, header: str, sidebar_cvar: str, sidebar: str,

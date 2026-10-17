@@ -1,6 +1,6 @@
 /* http_download.cpp — per-platform backends behind the common
  * HttpDownloadToFile contract declared in http_download.h. */
-#include "platform/http/http_download.h"
+#include "http_download.h"
 
 #include <cstdio>
 #include <cstdlib>

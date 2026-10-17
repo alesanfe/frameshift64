@@ -74,9 +74,11 @@ jobs:
           key: build-linux
           max-size: 2G
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DNON_PORTABLE=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DNON_PORTABLE=ON -DSSB64_BUILD_TESTING=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build build -j"$(nproc)"
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
 
   macos:
     name: macOS (arm64)

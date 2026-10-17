@@ -40,6 +40,15 @@ function(ssb64_stage_asset_recipes source destination version)
     # catalog.json is a dev-time extraction artifact, not a runtime table.
     list(FILTER langs EXCLUDE REGEX "catalog\\.json$")
     file(MAKE_DIRECTORY "${destination}/lang")
+    # Drop stale staged tables too (renamed/removed languages, catalog.json
+    # left behind by builds from before the exclusion above).
+    file(GLOB staged_langs RELATIVE "${destination}/lang" "${destination}/lang/*.json")
+    foreach(lang_name IN LISTS staged_langs)
+        if(NOT EXISTS "${source}/assets/lang/${lang_name}"
+           OR lang_name STREQUAL "catalog.json")
+            file(REMOVE "${destination}/lang/${lang_name}")
+        endif()
+    endforeach()
     foreach(path IN LISTS langs)
         get_filename_component(lang_name "${path}" NAME)
         configure_file("${path}" "${destination}/lang/${lang_name}" COPYONLY)

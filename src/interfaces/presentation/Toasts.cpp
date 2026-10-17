@@ -11,7 +11,7 @@
 #include <cstdlib>
 #include <deque>
 #include <utility>
-#include "core/i18n/Locale.h"
+#include "PortI18n.h"
 
 namespace ssb64 {
 

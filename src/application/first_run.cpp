@@ -1,6 +1,8 @@
 #include "first_run.h"
+#include "gameloop.h"
 #include "app_paths.h"
-#include "core/i18n/Locale.h"
+#include "gameloop.h"
+#include "core/i18n/PortI18n.h"
 #include "native_dialog.h"
 #include "port_log.h"
 
@@ -733,6 +735,12 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
                 ImGui::EndPopup();
             }
         });
+
+#ifdef SSB64_TEST_HOOKS
+        /* The wizard drives its own frame loop — PortPushFrame's screenshot
+         * hook never ticks here, so capture the presented frame directly. */
+        PortScreenshotMaybeCaptureFrame(frameCount);
+#endif
 
         // Poll the background extraction. wait_for(0) returns ready
         // immediately if the thread finished since last frame.

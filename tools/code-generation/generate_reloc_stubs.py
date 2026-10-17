@@ -49,10 +49,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-# Decomp source lives in the `components/decomp/` submodule (port-patches branch). The
-# pre-submodule path was ROOT/src; it's still on disk during the submodule
-# migration but slated for deletion. Prefer the submodule path when present.
-SRC_DIR = (ROOT / "decomp" / "src") if (ROOT / "decomp" / "src").is_dir() else (ROOT / "src")
+# Decomp source lives in the `components/decomp/` submodule.
+SRC_DIR = ROOT / "components" / "decomp" / "src"
 
 # Per-version inputs/outputs. US keeps the legacy flat header name so its
 # generated output path AND contents are byte-for-byte unchanged from before
@@ -62,8 +60,13 @@ VERSIONS = {
     "jp": {"symbols": "reloc_data_symbols.jp.txt", "header": "reloc_data.jp.h"},
 }
 
+# Output root: generated code is a build artifact, so the default is the
+# repo's generated/ dir only when the tool is run by hand; the build passes
+# --out-dir <binary-dir>/generated so outputs land in the build tree.
+OUT_DIR = ROOT / "generated"
+
 # Defaults (US) so the module is importable without selecting a version.
-HEADER_OUT = ROOT / "generated" / "include" / "us" / VERSIONS["us"]["header"]
+HEADER_OUT = OUT_DIR / "include" / "us" / VERSIONS["us"]["header"]
 SYMBOLS_TXT = ROOT / "tools" / "code-generation" / VERSIONS["us"]["symbols"]
 
 
@@ -72,7 +75,7 @@ def select_version(version):
     global HEADER_OUT, SYMBOLS_TXT
     cfg = VERSIONS[version]
     SYMBOLS_TXT = ROOT / "tools" / "code-generation" / cfg["symbols"]
-    HEADER_OUT = ROOT / "generated" / "include" / version / cfg["header"]
+    HEADER_OUT = OUT_DIR / "include" / version / cfg["header"]
 
 SYMBOL_RE = re.compile(r"\bll[A-Z_][A-Za-z0-9_]*\b")
 ASSIGN_RE = re.compile(r"^\s*(ll[A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+?)\s*;\s*$")
@@ -189,6 +192,7 @@ def write_header(values: dict[str, str], extra_stubs: set[str]) -> None:
                 return
         except OSError:
             pass
+    HEADER_OUT.parent.mkdir(parents=True, exist_ok=True)
     HEADER_OUT.write_text(new_content, encoding="utf-8")
 
 
@@ -196,19 +200,29 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", choices=sorted(VERSIONS), default="us",
                         help="ROM version (default: us)")
-    select_version(parser.parse_args().version)
+    parser.add_argument("--out-dir", type=Path, default=None,
+                        help="Generated-output root (default: <repo>/generated)")
+    args = parser.parse_args()
+    global OUT_DIR
+    if args.out_dir is not None:
+        OUT_DIR = args.out_dir.resolve()
+    select_version(args.version)
 
     values = parse_symbol_values()
     src_symbols = collect_src_symbols()
     extra_stubs = src_symbols - set(values.keys())
 
     print(f"Loaded {len(values)} symbols from {SYMBOLS_TXT.relative_to(ROOT)}")
-    print(f"Scanned src/ and found {len(src_symbols)} ll* references")
+    print(f"Scanned components/decomp/src and found {len(src_symbols)} ll* references")
     print(f"  {len(src_symbols & set(values.keys()))} referenced symbols resolve from the table")
     print(f"  {len(extra_stubs)} referenced symbols stub to ((intptr_t)0)")
 
     write_header(values, extra_stubs)
-    print(f"Wrote {HEADER_OUT.relative_to(ROOT)} "
+    try:
+        shown = HEADER_OUT.relative_to(ROOT)
+    except ValueError:
+        shown = HEADER_OUT
+    print(f"Wrote {shown} "
           f"({len(values) + len(extra_stubs)} total #defines)")
 
 

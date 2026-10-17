@@ -1,4 +1,4 @@
-#include "networking/netplay/domain/netrules.h"
+#include "netrules.h"
 #include "enhancements.h"
 
 #include <libultraship/bridge/consolevariablebridge.h>

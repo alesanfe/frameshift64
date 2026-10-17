@@ -16,9 +16,9 @@
  * Called from lbRelocLoadAndRelocFile() between memcpy and the reloc chain walk.
  */
 
-#include "game/engine/decomp/lbreloc_byteswap.h"
-#include "resources/relocation/RelocPointerTable.h"
-#include "resources/relocation/RelocFileTable.h"
+#include "lbreloc_byteswap.h"
+#include "RelocPointerTable.h"
+#include "RelocFileTable.h"
 
 #include <ship/utils/binarytools/endianness.h>
 #include <spdlog/spdlog.h>

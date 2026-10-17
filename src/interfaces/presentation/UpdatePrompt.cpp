@@ -1,11 +1,11 @@
 #include "UpdatePrompt.h"
 
-#include "game/gameplay/enhancements.h"
+#include "enhancements.h"
 
 #include <imgui.h>
 
 #include <string>
-#include "core/i18n/Locale.h"
+#include "PortI18n.h"
 
 namespace ssb64 {
 

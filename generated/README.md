@@ -1,18 +1,42 @@
-# generated/ — versioned build outputs
+# generated/ — versioned generated sources
 
-Everything under this tree is **AUTO-GENERATED — DO NOT EDIT**.
+Only files that **cannot be regenerated without a baserom** live here.
+Everything ROM-free is emitted into the build tree at
+`<build>/generated/` instead and is never committed.
 
-| Path | Producer | Regenerate |
-|------|----------|------------|
-| `include/<region>/reloc_data.h` | `tools/code-generation/` reloc stub generator | `cmake --build <build> --target GenerateRelocArtifacts` |
-| `src/<region>/reloc_file_table.cpp` | `tools/code-generation/` | same |
-| `src/<region>/reloc_rebuild.cpp` | `tools/code-generation/` | same |
+## What is versioned, and why
 
-Generated sources currently still live inline next to hand-written
-code (`include/reloc_data.*.h`, `src/resources/RelocFileTable.*`,
-`src/game/engine/decomp/ssb64_reloc_rebuild.*`) and are marked
-`linguist-generated` in `.gitattributes`. This directory is the target
-home; the physical migration is tracked as a pending restructure step.
+| Path | Producer | Inputs | Regenerate |
+|------|----------|--------|------------|
+| `src/<region>/ssb64_reloc_rebuild.<region>.cpp` | `tools/code-generation/generate_fighter_slices.py` | `roms/baserom.<region>.z64` + `assets/game/<region>/reloc_*.yml` + `assets/game/<region>/manifests/*.json` | `python tools/code-generation/generate_fighter_slices.py --version <region>` |
+
+`generate_fighter_slices.py` reads the ROM to collect incoming extern
+targets, so this file cannot be produced by a ROM-free build or CI. It is
+committed so the project compiles without a ROM. Its content is pure
+metadata (file_id → slice/slot tables); it contains no ROM bytes.
+
+## What is NOT versioned
+
+| Output | Producer | Emitted to |
+|--------|----------|------------|
+| `reloc_data.<region>.h` | `tools/code-generation/generate_reloc_stubs.py` | `<build>/generated/include/<region>/` |
+| `RelocFileTable.<region>.{cpp,h}` | `tools/code-generation/generate_reloc_table.py` | `<build>/generated/src/<region>/` |
+
+Both regenerate from committed inputs (`reloc_data_symbols.<ver>.txt`,
+`assets/game/<ver>/reloc_*.yml`) via:
+
+    cmake --build <build> --target GenerateRelocArtifacts
+
+The stale locations `generated/include/` and
+`generated/src/*/RelocFileTable.*` are gitignored; running the tools by
+hand defaults to this directory, so use `--out-dir <build>/generated` if
+you want the same layout the build uses.
+
+## Freshness check
+
+`tools/analysis/lint/check_generated_headers.py` verifies the committed
+file carries the generated banner and that the ROM-free generators
+reproduce their outputs into a scratch dir.
 
 Every generated file must carry the uniform header:
 

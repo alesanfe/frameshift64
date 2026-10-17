@@ -4,9 +4,9 @@
 // UpdatePrompt.cpp and other menu code still reference these symbols, so
 // the link needs *something*; every entry point here is an inert stub.
 
-#include "game/gameplay/enhancements.h"
+#include "enhancements.h"
 
-#if defined(BATTLESHIP_UWP) || defined(__ANDROID__)
+#if defined(BATTLESHIP_UWP) || defined(__ANDROID__) || defined(__SWITCH__)
 
 namespace ssb64 {
 namespace enhancements {
@@ -31,4 +31,4 @@ void TickUpdater() {}
 } // namespace enhancements
 } // namespace ssb64
 
-#endif // BATTLESHIP_UWP || __ANDROID__
+#endif // BATTLESHIP_UWP || __ANDROID__ || __SWITCH__

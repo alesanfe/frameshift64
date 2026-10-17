@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PACKAGE_MOD = REPO_ROOT / "tools" / "modding" / "package_mod.py"
+PACKAGE_MOD = REPO_ROOT / "tools" / "developer" / "modding" / "package_mod.py"
 
 
 def make_fixture_mod(mod_dir: Path) -> None:

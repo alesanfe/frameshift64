@@ -12,14 +12,14 @@
 #include "UIWidgets.hpp"
 #include "Compat.h"
 #include "app_paths.h"
-#include "core/i18n/Locale.h"
-#include "game/gameplay/enhancements.h"
+#include "PortI18n.h"
+#include "enhancements.h"
 #ifdef PORT_HIRES_ENABLED
-#include "resources/loading/textures/hires/HiResPack.h"
+#include "HiResPack.h"
 #endif
 #ifndef DISABLE_SCRIPTING
 #include "app_mods.h"
-#include "core/config/schema.h"
+#include "schema.h"
 #endif
 
 #include <fast/backends/gfx_rendering_api.h>
@@ -95,7 +95,7 @@ void RenderPostProcessShaderPicker(WidgetInfo& /*widget*/) {
     const char* currentRaw = CVarGetString("gPostProcessShader", "");
     const std::string current = currentRaw ? currentRaw : std::string();
 
-    std::string preview = "Off";
+    std::string preview = TR("Off");
     if (enabled && !current.empty()) {
         if (const char* friendly = PostProcessShaderLabel(current)) {
             preview = friendly;
@@ -301,7 +301,8 @@ void RenderPostProcessDiagnostics(WidgetInfo& /*widget*/) {
 // can't fetch/replace content this way). On Android the downloader now
 // runs through HttpURLConnection + in-process libzip, and
 // src/application/update/downloads/ShaderDownloader.cpp is compiled into libmain.so.
-#if !defined(BATTLESHIP_UWP)
+// Switch is off too: no download service exists there.
+#if !defined(BATTLESHIP_UWP) && !defined(__SWITCH__)
 
 // State scoped to the shader-pack modal, mirroring the Low-Res-warn
 // pattern. We keep a "needs to open this frame" flag so the
@@ -369,7 +370,7 @@ void RenderShaderPackDownloader(WidgetInfo& /*widget*/) {
     }
 }
 
-#if defined(PORT_HIRES_ENABLED) && !defined(BATTLESHIP_UWP)
+#if defined(PORT_HIRES_ENABLED) && !defined(BATTLESHIP_UWP) && !defined(__SWITCH__)
 // Featured texture packs (SSB Reloaded & co): one-click download into
 // mods/ with a pinned SHA-256, then enable + rescan so textures go live
 // without a restart. Android goes through the same path — the download
@@ -752,7 +753,11 @@ void RenderShaderPackModal() {
 
     ImGui::EndPopup();
 }
-#endif // !BATTLESHIP_UWP (shader-pack downloader)
+#else
+// Switch keeps a no-op so the unconditional per-frame call in
+// RenderMenuTopLevel links without a platform guard there.
+void RenderShaderPackModal() {}
+#endif // !BATTLESHIP_UWP && !__SWITCH__ (shader-pack downloader)
 
 // Modal companion to RenderPostProcessShaderPicker. Drawn from
 // RenderMenuTopLevel each frame so the popup survives the picker's
@@ -924,9 +929,13 @@ void PortMenu::AddMenuCustomization() {
         .RaceDisable(false)
         .CustomFunction(RenderPostProcessShaderPicker);
 
+#if !defined(__SWITCH__)
+    // Switch has no download service (no curl/JNI bridge) — the picker and
+    // runtime diagnostics still apply to pre-installed shaders.
     AddWidget(path, "Shader Pack Downloader", WIDGET_CUSTOM)
         .RaceDisable(false)
         .CustomFunction(RenderShaderPackDownloader);
+#endif
 
     AddWidget(path, "Shader Runtime Diagnostics", WIDGET_CUSTOM)
         .RaceDisable(false)
@@ -943,10 +952,10 @@ void PortMenu::AddMenuCustomization() {
               "Files are matched by decoded-RGBA8 CRC32 — no per-PNG configuration needed. "
               "Toggle takes effect on the next texture cache miss.",
               WIDGET_TEXT);
-#if !defined(BATTLESHIP_UWP)
+#if !defined(BATTLESHIP_UWP) && !defined(__SWITCH__)
     // One-click installs for curated packs (SSB Reloaded). Downloads via
     // ModPackDownloader on a worker thread with pinned SHA-256 + zip audit —
-    // Android goes through the JNI download service; UWP keeps it out.
+    // Android goes through the JNI download service; UWP/Switch keep it out.
     AddWidget(path, "Featured packs", WIDGET_CUSTOM)
         .RaceDisable(false)
         .CustomFunction(RenderCuratedTexturePacks);
@@ -1055,7 +1064,7 @@ void PortMenu::AddMenuCustomization() {
 #ifndef DISABLE_SCRIPTING
     path.sidebarName = "Script Mods";
     AddSidebarEntry("Customization", "Script Mods", 1);
-    AddWidget(path, "mods_panel", WIDGET_CUSTOM)
+    AddWidget(path, "Mods Panel", WIDGET_CUSTOM)
         .CustomFunction([](WidgetInfo&) {
             // --- Action bar -------------------------------------------------
             if (ImGui::Button(TR("Hot Reload"))) {

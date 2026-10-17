@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Determinism checker: replay the same .ssr N times and compare the
-confirmed-state traces produced by SSB64_NETPLAY_CONFIRMED_TRACE.
+per-tick state-hash traces produced by SSB64_SYNC_TRACE (the oracle —
+SSB64_NETPLAY_CONFIRMED_TRACE only fires in netplay/rollback sessions,
+so single-player playback produced empty traces here).
 
 Detects the first divergent tick between runs, reports per-run trace
 hashes and writes a JSON report to --output/determinism.json.
@@ -32,6 +34,22 @@ def first_divergence(a: list, b: list) -> "int | None":
     return len(a) if len(a) != len(b) else None
 
 
+def replay_frame_count(path: Path) -> int:
+    """frame_count of an .ssr (SYNetReplayFileHeader: 6 u32s, count is 5th)."""
+    import struct
+    with path.open("rb") as f:
+        hdr = f.read(24)
+    return struct.unpack("<I", hdr[16:20])[0] if len(hdr) >= 20 else 0
+
+
+def trim_trace(lines: list, ticks: int) -> list:
+    """Header + exactly `ticks` tick lines — kill timing decides how far a
+    run gets past the verify marker, so the tail length is harness noise,
+    not gameplay state."""
+    return [ln for ln in lines if ln.startswith("#")] + \
+        [ln for ln in lines if not ln.startswith("#")][:ticks]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--binary", type=Path, required=True)
@@ -54,7 +72,8 @@ def main() -> int:
         return 2
 
     out = sr.clean_out(a.output.resolve())
-    print(f"determinism: {a.runs} runs of {replay.name}")
+    nframes = replay_frame_count(replay)
+    print(f"determinism: {a.runs} runs of {replay.name} ({nframes} frames)")
 
     runs = []
     for i in range(a.runs):
@@ -63,7 +82,7 @@ def main() -> int:
         log = out / f"{name}.log"
         env = {
             "SSB64_REPLAY_PLAY": str(replay),
-            "SSB64_NETPLAY_CONFIRMED_TRACE": str(trace),
+            "SSB64_SYNC_TRACE": str(trace),
             "SSB64_LOG_PATH": str(log),
             "SSB64_SAVE_PATH": str(out / f"{name}.sav"),
             "SSB64_MUTE": "1",
@@ -81,6 +100,11 @@ def main() -> int:
             return 2
         lines = trace.read_text(errors="replace").splitlines() \
             if trace.exists() else []
+        lines = trim_trace(lines, nframes)
+        if len([ln for ln in lines if not ln.startswith("#")]) < nframes:
+            print(f"{name}: only {len(lines) - 1} of {nframes} ticks traced — "
+                  f"killed too early, see {log}")
+            return 2
         digest = hashlib.sha256("\n".join(lines).encode()).hexdigest()[:16]
         runs.append({"run": name, "ticks": len(lines), "sha256": digest,
                      "lines": lines})

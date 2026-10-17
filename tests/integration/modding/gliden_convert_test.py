@@ -17,8 +17,8 @@ import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-CONVERT = REPO_ROOT / "tools" / "modding" / "convert_gliden64_pack.py"
-MAPPING = REPO_ROOT / "tools" / "modding" / "vendor" / "battleship.json"
+CONVERT = REPO_ROOT / "tools" / "developer" / "modding" / "convert_gliden64_pack.py"
+MAPPING = REPO_ROOT / "tools" / "developer" / "modding" / "vendor" / "battleship.json"
 
 
 def run_convert(pack: Path, out: Path) -> subprocess.CompletedProcess:

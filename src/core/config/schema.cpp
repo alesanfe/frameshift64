@@ -99,11 +99,14 @@ constexpr SchemaEntry kSchema[] = {
 
     /* ── netplay ──────────────────────────────────────────────────────── */
     { "gNetplay.Delay",   KeyType::Int,    1, 15,  true  },
+    { "gNetplay.AutoDelay", KeyType::Bool, 0, 1,   true  },
     { "gNetplay.Fighter", KeyType::Int,    0, 11,  true  },
     { "gNetplay.Items",   KeyType::Bool,   0, 1,   true  },
     { "gNetplay.Stage",   KeyType::Int,    0, 8,   true  },
     { "gNetplay.Stocks",  KeyType::Int,    1, 99,  true  },
     { "gNetplay.Server",  KeyType::String, 0, 0,   false },
+    { "gProfiles.Name",   KeyType::String, 0, 0,   false },
+    { "gProfiles.Selected",KeyType::Int, -100, 1000, false },
 
     /* ── audio ────────────────────────────────────────────────────────── */
     { "gSettings.Audio.MasterVolume", KeyType::Float, 0.0, 1.0, false },
@@ -146,12 +149,16 @@ constexpr SchemaEntry kSchema[] = {
     /* UI language — index into PortI18n::kLangCodes (src/core/i18n) and the
      * PortMenu language combo; English (0) is the identity table. */
     { "gSettings.Language",                   KeyType::Int,  0, 4, false },
+    /* Progressive disclosure: 0 = Simple (advanced widgets/sidebars hidden
+     * outside search), 1 = Advanced (everything visible, legacy default). */
+    { "gSettings.MenuMode",                   KeyType::Int,  0, 1, false },
     { "gSettings.Menu.EnableDRP",             KeyType::Bool, 0, 1, false },
     { "gSettings.FocusControl.MuteOnFocusLoss", KeyType::Bool, 0, 1, false },
     /* Accessibility/UI toggles added with the menu help bar — Menu.cpp
      * clamps UIScale itself; the schema bounds mirror that clamp. */
     { "gSettings.UIScale",               KeyType::Float, 0.75, 2.5,  false },
     { "gSettings.PersistentDescriptions",KeyType::Bool,  0, 1,  false },
+    { "gSettings.Narration",           KeyType::Bool,  0, 1,  false },
     { "gSettings.HighContrastFocus",     KeyType::Bool,  0, 1,  false },
     { "gSettings.ReducedMotion",         KeyType::Bool,  0, 1,  false },
     { "gSettings.EnableDevTools",        KeyType::Bool,  0, 1,  false },

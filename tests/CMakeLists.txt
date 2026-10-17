@@ -51,6 +51,12 @@ function(smash_add_test)
         RUN_SERIAL ${TEST_SERIAL})
 endfunction()
 
+# smash_test_support — shared helpers for native suites (tests/support/):
+#   smash_test/check.h  counted + fatal assertions with a final report
+#   smash_test/env.h    portable setenv/unsetenv for SSB64_* hook tests
+add_library(smash_test_support STATIC support/src/env.c)
+target_include_directories(smash_test_support PUBLIC support/include)
+
 # Test registrations land here per domain. Example:
 #   smash_add_test(NAME netplay_protocol_test TYPE unit TIMEOUT 15
 #       SOURCES unit/netplay/protocol/message_codec_test.cpp
@@ -65,8 +71,20 @@ smash_add_test(NAME netpacket_test TYPE unit TIMEOUT 15
     SOURCES
         unit/netplay/protocol/netpacket_test.c
         ${CMAKE_SOURCE_DIR}/src/networking/netplay/protocol/netpacket.c
+    LIBRARIES smash_test_support
     LABELS netplay protocol deterministic)
 target_include_directories(netpacket_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# ── unit/presentation ──────────────────────────────────────────────────
+# Static structural check over the PortMenu widget registry (§52/§53):
+# no empty sidebars, no ImGui label collisions, every interactive widget
+# self-documents via tooltip, buttons always wire a callback, widgets
+# never bind to undeclared columns. Pure Python — no ROM/GPU needed.
+add_test(NAME menu_structure_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/unit/presentation/menu_structure_test.py)
+set_tests_properties(menu_structure_test PROPERTIES
+    LABELS "unit;presentation;usability;deterministic" TIMEOUT 30)
 
 # ── tests/fuzz (libFuzzer) ─────────────────────────────────────────────
 # Coverage-guided parser fuzzing (TD-010). Opt-in: requires clang's

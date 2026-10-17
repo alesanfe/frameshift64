@@ -14,10 +14,27 @@
 - The executable target is `ssb64`, but the produced binary is `BattleShip`.
 - The port layer is compiled as per-module OBJECT libraries — one
   `smash_<module>` target per `src/<module>/` subtree — sharing the
-  `ssb64_port_options` INTERFACE (compile defs, include paths, dep usage
-  requirements). Objects still link into the single binary; the split
-  gives each module its own compile surface (TD-002). Inter-module
-  include rules stay enforced by `tools/analysis/lint/check_module_deps.py`.
+  `ssb64_port_options` INTERFACE (compile defs, external/public include
+  paths, dep usage requirements). Objects still link into the single
+  binary; the split gives each module its own compile surface (TD-002).
+- **Two-layer dependency enforcement**:
+  - *Compiler (coarse)*: every module except `application` gets a
+    `SSB64_MODULE_SCOPE_<mod>` PRIVATE include list (see the module
+    block in `CMakeLists.txt`) containing only its own subtree plus the
+    directories it legitimately depends on. A `#include` of a header
+    outside the scope fails with C1083 at compile time — no lint pass
+    needed. Scoped-module sources use basename includes; qualified
+    `module/dir/x.h` includes deliberately fail because the `src/`
+    root is not in scope. `application` (the composition root) keeps
+    the legacy flat set via `ssb64_src_flat_includes`, as do any
+    sources not yet carved into a module target.
+  - *Lint (fine-grained)*: `tools/analysis/lint/check_module_deps.py`
+    enforces the per-file architectural matrix (which module pairs may
+    depend). The CMake scope list mirrors that matrix at directory
+    granularity — every dir in a scope is a dependency the matrix
+    permits (some scopes are deliberately narrower than the matrix:
+    e.g. `engine` sees only `resources/relocation`, the decomp ABI it
+    consumes, not all of `resources/`).
 
 ### ROM version (US / JP)
 

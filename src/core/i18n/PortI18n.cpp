@@ -1,9 +1,9 @@
 /*
  * Locale.cpp — implementation of the gettext-style string table.
- * See Locale.h for the contract.
+ * See PortI18n.h for the contract.
  */
 
-#include "core/i18n/Locale.h"
+#include "PortI18n.h"
 #include "app_paths.h"
 #include "port_log.h"
 

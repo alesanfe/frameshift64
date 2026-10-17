@@ -1,6 +1,6 @@
 /* download_service.cpp — backends behind the Download API declared in
  * download_service.h. See the header for the contract. */
-#include "platform/http/download_service.h"
+#include "download_service.h"
 
 #include <cstdio>
 #include <cstdlib>

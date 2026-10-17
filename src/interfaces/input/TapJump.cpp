@@ -1,7 +1,7 @@
 #include "enhancements.h"
 
 #include <libultraship/bridge/consolevariablebridge.h>
-#include "networking/netplay/domain/netrules.h"
+#include "netrules.h"
 
 namespace {
 

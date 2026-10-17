@@ -1,4 +1,4 @@
-#include "networking/netplay/protocol/netpacket.h"
+#include "netpacket.h"
 
 #include <string.h>
 

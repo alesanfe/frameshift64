@@ -1,6 +1,6 @@
 #include "app_paths.h"
 
-#include "platform/filesystem/exe_dir.h"
+#include "exe_dir.h"
 
 #include <libultraship/libultraship.h>
 

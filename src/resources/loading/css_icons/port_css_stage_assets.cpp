@@ -59,10 +59,10 @@
 #include "port_css_stage_assets.h"
 
 #include "app_paths.h"
-#include "game/engine/decomp/lbreloc_byteswap.h"
-#include "resources/relocation/RelocFile.h"
-#include "resources/relocation/RelocFileTable.h"
-#include "resources/relocation/RelocPointerTable.h"
+#include "lbreloc_byteswap.h"
+#include "RelocFile.h"
+#include "RelocFileTable.h"
+#include "RelocPointerTable.h"
 #include "port_log.h"
 
 #include <ship/resource/ResourceManager.h>

@@ -80,8 +80,9 @@ scripts/
 generated/
   .gitattributes
   README.md
-  include
-  src
+  src/us|jp/ssb64_reloc_rebuild.*.cpp   # only versioned generated source
+                                       # (ROM-derived); all other codegen
+                                       # lands in <build>/generated/
 
 specs/
   README.md

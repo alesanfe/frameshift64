@@ -1,0 +1,2 @@
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
+cl /nologo /EHsc /Fe:"C:\Users\alex0\PycharmProjects\smash-classic\tools\debugging\rva2sym.exe" "C:\Users\alex0\PycharmProjects\smash-classic\tools\debugging\rva2sym.cpp" /I "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\DIA SDK\include" /link /LIBPATH:"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\DIA SDK\lib\amd64" diaguids.lib ole32.lib oleaut32.lib advapi32.lib

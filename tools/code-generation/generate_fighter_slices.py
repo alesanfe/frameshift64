@@ -833,6 +833,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--version", choices=sorted(rl.VERSIONS), default="us")
     ap.add_argument("--rom", default=None)
+    ap.add_argument("--out-dir", default=None,
+                    help="Generated-output root (default: <repo>/generated). "
+                         "This spec stays versioned — see generated/README.md.")
     ap.add_argument("--only", default=None, metavar="SYMBOL")
     ap.add_argument("--check", action="store_true",
                     help="validate only, write nothing")
@@ -883,7 +886,8 @@ def main():
         return 1
 
     if not args.check and not args.only:
-        spec_path = repo / "generated" / "src" / args.version / f"ssb64_reloc_rebuild.{args.version}.cpp"
+        out_dir = Path(args.out_dir).resolve() if args.out_dir else repo / "generated"
+        spec_path = out_dir / "src" / args.version / f"ssb64_reloc_rebuild.{args.version}.cpp"
         emit_spec_cpp(spec_path, prov, all_manifests)
         print(f"\nWrote {spec_path} ({len(all_manifests)} specs)")
     elif not args.check and args.only:

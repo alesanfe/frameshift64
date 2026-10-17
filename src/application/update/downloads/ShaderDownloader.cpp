@@ -23,8 +23,8 @@
 // downloader earns a tree-preserving extraction layout.
 #include "enhancements.h"
 #include "port_log.h"
-#include "platform/http/http_download.h"
-#include "platform/filesystem/zip_extract.h"
+#include "http_download.h"
+#include "zip_extract.h"
 
 #include <algorithm>
 #include <atomic>

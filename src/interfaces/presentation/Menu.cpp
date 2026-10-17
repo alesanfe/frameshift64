@@ -9,10 +9,13 @@
 #include "UIWidgets.hpp"
 #include "Compat.h"
 #include "app_paths.h"
-#include "networking/netplay/session/netlobby.h"
-#include "core/i18n/Locale.h"
+#include "netlobby.h"
+#include "narration.h"
+#include "PortI18n.h"
 #include "Toasts.h"
+#include "PortMenuShared.h"
 #include <ship/Context.h>
+#include <ship/window/gui/ConsoleWindow.h>
 #include <ship/window/Window.h>
 #include <ship/window/gui/Gui.h>
 #include <ship/window/gui/GuiMenuBar.h>
@@ -24,6 +27,7 @@
 #include <cmath>
 #include <filesystem>
 #include <variant>
+#include <SDL2/SDL.h>
 #include <spdlog/fmt/fmt.h>
 #include <tuple>
 std::vector<ImVec2> windowTypeSizes = { {} };
@@ -33,6 +37,37 @@ extern "C" int port_diag_safe_mode_active(void);
 
 namespace Ship {
 namespace {
+/* §5 — pad hints follow the connected controller's family, since button
+ * letters sit at different physical positions (FaceDown = accept is A on
+ * Xbox, B on Nintendo pads, Cross on PlayStation). SDL's name for the first
+ * recognized controller is enough — hot-plug changes apply next frame. */
+enum class PadFamily { Xbox, PlayStation, Nintendo };
+static PadFamily DetectPadFamily() {
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        if (!SDL_IsGameController(i)) {
+            continue;
+        }
+        const char* raw = SDL_GameControllerNameForIndex(i);
+        if (raw == nullptr) {
+            continue;
+        }
+        std::string name = raw;
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (name.find("ps4") != std::string::npos || name.find("ps5") != std::string::npos ||
+            name.find("dualshock") != std::string::npos || name.find("dualsense") != std::string::npos ||
+            name.find("playstation") != std::string::npos) {
+            return PadFamily::PlayStation;
+        }
+        if (name.find("switch") != std::string::npos || name.find("pro controller") != std::string::npos ||
+            name.find("joy-con") != std::string::npos || name.find("joycon") != std::string::npos) {
+            return PadFamily::Nintendo;
+        }
+        return PadFamily::Xbox;
+    }
+    return PadFamily::Xbox;
+}
+
 std::unordered_map<std::string, ImFont*> gMenuFonts;
 bool gMenuFontsLoaded = false;
 
@@ -231,6 +266,87 @@ static ImVec4 MenuTextDisabledColor(MenuBaseTheme theme) {
  * can hide on sections that have none; with apply=true it writes each
  * widget's declared defaultValue back through CVarSet* and re-runs its
  * ShipInit hook — the same path a manual edit takes. */
+
+/* Undo slot for the last section restore — single-entry (a second restore
+ * overwrites the first snapshot). Values are captured pre-reset through the
+ * same CVarGet* types the reset writes with CVarSet*. */
+struct SectionUndoEntry {
+    std::string cvar;
+    WidgetType type;
+    int32_t i = 0;
+    float f = 0.0f;
+    std::string s;
+    Color_RGBA8 c = { 255, 255, 255, 255 };
+};
+struct SectionUndo {
+    std::string sidebar;
+    std::vector<SectionUndoEntry> entries;
+};
+static SectionUndo sSectionUndo;
+
+static void SnapshotSectionCvars(const SidebarEntry& section, SectionUndo& undo) {
+    undo.entries.clear();
+    for (const auto& column : section.columnWidgets) {
+        for (const auto& widget : column) {
+            if (widget.cVar == nullptr || *widget.cVar == '\0' || widget.options == nullptr) {
+                continue;
+            }
+            SectionUndoEntry e;
+            e.cvar = widget.cVar;
+            e.type = widget.type;
+            switch (widget.type) {
+                case WIDGET_CVAR_CHECKBOX:
+                case WIDGET_CVAR_COMBOBOX:
+                case WIDGET_AUDIO_BACKEND:
+                case WIDGET_VIDEO_BACKEND:
+                case WIDGET_CVAR_SLIDER_INT:
+                case WIDGET_CVAR_BTN_SELECTOR:
+                    e.i = CVarGetInteger(widget.cVar, 0);
+                    break;
+                case WIDGET_CVAR_SLIDER_FLOAT:
+                    e.f = CVarGetFloat(widget.cVar, 0.0f);
+                    break;
+                case WIDGET_CVAR_INPUT:
+                    e.s = CVarGetString(widget.cVar, "");
+                    break;
+                case WIDGET_CVAR_COLOR_PICKER:
+                    e.c = CVarGetColor(widget.cVar, e.c);
+                    break;
+                default:
+                    continue;
+            }
+            undo.entries.push_back(std::move(e));
+        }
+    }
+}
+
+static void ApplySectionUndo(SectionUndo& undo) {
+    for (const auto& e : undo.entries) {
+        switch (e.type) {
+            case WIDGET_CVAR_CHECKBOX:
+            case WIDGET_CVAR_COMBOBOX:
+            case WIDGET_AUDIO_BACKEND:
+            case WIDGET_VIDEO_BACKEND:
+            case WIDGET_CVAR_SLIDER_INT:
+            case WIDGET_CVAR_BTN_SELECTOR:
+                CVarSetInteger(e.cvar.c_str(), e.i);
+                break;
+            case WIDGET_CVAR_SLIDER_FLOAT:
+                CVarSetFloat(e.cvar.c_str(), e.f);
+                break;
+            case WIDGET_CVAR_INPUT:
+                CVarSetString(e.cvar.c_str(), e.s.c_str());
+                break;
+            case WIDGET_CVAR_COLOR_PICKER:
+                CVarSetColor(e.cvar.c_str(), e.c);
+                break;
+            default:
+                break;
+        }
+        ShipInit::Init(e.cvar.c_str());
+    }
+    undo.entries.clear();
+}
 static size_t ResetSectionCvars(const SidebarEntry& section, bool apply) {
     size_t touched = 0;
     for (const auto& column : section.columnWidgets) {
@@ -317,10 +433,11 @@ const char* disabledTooltip;
 bool disabledValue = false;
 
 bool navigateToWidget = false;
-const char* navigateMainEntry = "";
-const char* navigateSidebar = "";
+std::string navigateMainEntry = "";
+std::string navigateSidebar = "";
 std::string navigateWidgetName = "";
 bool highlightWidget = false;
+static int sHighlightTtl = 0; /* frames left to find the navigation target */
 
 bool operator==(Color_RGB8 const& l, Color_RGB8 const& r) noexcept {
     return l.r == r.r && l.g == r.g && l.b == r.b;
@@ -490,6 +607,8 @@ bool ModernMenuHeaderEntry(std::string label) {
     return pressed;
 }
 
+static bool SimpleMode();
+
 uint32_t Menu::DrawSearchResults(std::string& menuSearchText) {
     int searchCount = 0;
     std::transform(menuSearchText.begin(), menuSearchText.end(), menuSearchText.begin(), ::tolower);
@@ -512,7 +631,10 @@ uint32_t Menu::DrawSearchResults(std::string& menuSearchText) {
                         const char* tooltip = info.options->tooltip;
                         std::string widgetStr = std::string(info.name) + TR(info.name.c_str()) +
                             std::string(tooltip != NULL ? tooltip : "") +
-                            (tooltip != NULL ? TR(tooltip) : "");
+                            (tooltip != NULL ? TR(tooltip) : "") + info.stableId;
+                        for (const auto& term : info.searchTerms) {
+                            widgetStr += term;
+                        }
                         std::transform(widgetStr.begin(), widgetStr.end(), widgetStr.begin(), ::tolower);
                         widgetStr.erase(std::remove(widgetStr.begin(), widgetStr.end(), ' '), widgetStr.end());
                         if (widgetStr.find(menuSearchText) != std::string::npos) {
@@ -531,9 +653,21 @@ uint32_t Menu::DrawSearchResults(std::string& menuSearchText) {
                             MenuDrawItem(info, 400, menuThemeIndex);
                             ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
                             std::string origin =
-                                fmt::format(fmt::runtime(TR("  ({} -> {}, Col {})")), menuEntry.label, sidebarLabel, i + 1);
+                                fmt::format("  ({} -> {})", menuEntry.label, sidebarLabel);
+                            if (info.advanced && SimpleMode()) {
+                                origin += TR(" - hidden in Simple mode");
+                            }
                             ImGui::Text(TR("%s"), origin.c_str());
                             ImGui::PopStyleColor();
+                            ImGui::SameLine();
+                            ImGui::PushID(info.stableId.empty() ? info.name.c_str() : info.stableId.c_str());
+                            if (ImGui::SmallButton(TR("Go to"))) {
+                                navigateToWidget = true;
+                                navigateMainEntry = menuEntry.label;
+                                navigateSidebar = sidebarLabel;
+                                navigateWidgetName = info.name;
+                            }
+                            ImGui::PopID();
                             searchCount++;
                             if (info.type == WIDGET_COMBOBOX || info.type == WIDGET_CVAR_COMBOBOX) {
                                 std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options)->alignment =
@@ -562,10 +696,62 @@ uint32_t Menu::DrawSearchResults(std::string& menuSearchText) {
                 MenuDrawItem(entry.info, 400, menuThemeIndex);
                 ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
                 std::string origin = fmt::format("  ({} -> {}, {})", entry.menuName, entry.sidebarName, entry.location);
+                if (entry.info.advanced && SimpleMode()) {
+                    origin += TR(" - hidden in Simple mode");
+                }
                 ImGui::Text(TR("%s"), origin.c_str());
                 ImGui::PopStyleColor();
+                ImGui::SameLine();
+                ImGui::PushID(entry.info.stableId.empty() ? entry.info.name.c_str() : entry.info.stableId.c_str());
+                if (ImGui::SmallButton(TR("Go to"))) {
+                    navigateToWidget = true;
+                    navigateMainEntry = entry.menuName;
+                    navigateSidebar = entry.sidebarName;
+                    navigateWidgetName = entry.info.name;
+                }
+                ImGui::PopID();
                 searchCount++;
             }
+        }
+        /* Action entries — the search box doubles as a command palette for
+         * the few global actions players hunt for most. */
+        struct SearchAction {
+            const char* name;
+            const char* terms;
+            std::function<void()> run;
+        };
+        const SearchAction kSearchActions[] = {
+            { "Close Menu", "close exit hide back game", [this]() { ToggleVisibility(); } },
+            { "Restart Game", "reset reload reboot soft", []() {
+                std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
+                    Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
+                    ->Dispatch("reset");
+            } },
+#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
+            { "Restart in Safe Mode", "safe mode clean boot no mods crash", []() {
+                ssb64::RequestSafeModeRestart();
+            } },
+            { "Quit BattleShip", "quit exit shutdown close app", []() {
+                Ship::Context::GetInstance()->GetWindow()->Close();
+            } },
+#endif
+        };
+        for (const auto& action : kSearchActions) {
+            std::string hay = std::string(action.name) + action.terms;
+            std::transform(hay.begin(), hay.end(), hay.begin(), ::tolower);
+            hay.erase(std::remove(hay.begin(), hay.end(), ' '), hay.end());
+            if (hay.find(menuSearchText) == std::string::npos) {
+                continue;
+            }
+            ImGui::PushID(action.name);
+            if (UIWidgets::Button(TR(action.name), UIWidgets::ButtonOptions().Size(UIWidgets::Sizes::Inline))) {
+                action.run();
+            }
+            ImGui::PopID();
+            ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
+            ImGui::Text("%s", TR("  (action)"));
+            ImGui::PopStyleColor();
+            searchCount++;
         }
         ImGui::EndChild();
     }
@@ -873,6 +1059,16 @@ void Menu::MenuDrawItem(WidgetInfo& widget, uint32_t width, UIWidgets::Colors th
             }
             mFocusHelpText = tip != nullptr ? tip : "";
         }
+        /* §9 narration: announce the focused/hovered widget once per change,
+         * independent of the help bar — Speak() purges pending utterances so
+         * rapid moves only voice the latest. */
+        if (ImGui::IsItemFocused() || ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            static std::string sLastNarrated;
+            if (sLastNarrated != widget.name) {
+                sLastNarrated = widget.name;
+                port_narrate(TR(widget.name.c_str()));
+            }
+        }
         if (widget.tag != nullptr) {
             ImGui::SameLine();
             ImGui::TextDisabled(TR("[%s]"), widget.tag);
@@ -922,6 +1118,35 @@ void Menu::Draw() {
 }
 
 static bool freshOpen = true;
+/* §34 pending-changes: RequiresRestart widgets write their CVar at once but
+ * only take effect on reset. Snapshot each such CVar on menu open and diff
+ * per frame - the footer chip shows the pending count + a restart action. */
+struct PendingRestart { int32_t baseline; std::string name; };
+static std::unordered_map<std::string, PendingRestart> sRestartBaseline;
+static int sPendingRestart = 0;
+
+/* §34 progressive disclosure: Simple mode (gSettings.MenuMode=0) hides
+ * advanced widgets and whole-advanced sidebars in normal browsing; search
+ * still surfaces them so nothing becomes unreachable. */
+static bool SimpleMode() {
+    return CVarGetInteger("gSettings.MenuMode", 1) == 0;
+}
+static bool SidebarAdvancedOnly(const SidebarEntry& sb) {
+    bool any = false;
+    for (const auto& col : sb.columnWidgets) {
+        for (const auto& w : col) {
+            if (!w.advanced) {
+                return false;
+            }
+            any = true;
+        }
+    }
+    return any;
+}
+static bool SidebarHiddenInSimple(const SidebarEntry& sb) {
+    return SimpleMode() && SidebarAdvancedOnly(sb);
+}
+
 /* SetScrollHere* can't resolve on the first frame: the child window's
  * ScrollMax isn't known until the frame ends, so the snap lands halfway.
  * Keep requesting the active entry's position for a few frames after open. */
@@ -944,12 +1169,16 @@ void Menu::DrawElement() {
         if (menuEntries.contains(navigateMainEntry) &&
             menuEntries.at(navigateMainEntry).sidebars.contains(navigateSidebar)) {
             menuSearch.Clear();
-            CVarSetString(headerCvar, navigateMainEntry);
+            CVarSetString(headerCvar, navigateMainEntry.c_str());
             const char* sidebarCvar = menuEntries.at(navigateMainEntry).sidebarCvar;
-            CVarSetString(sidebarCvar, navigateSidebar);
+            CVarSetString(sidebarCvar, navigateSidebar.c_str());
             highlightWidget = true;
+            sHighlightTtl = 90; /* ~1.5s at 60fps to find the widget */
         }
         navigateToWidget = false;
+    }
+    if (highlightWidget && --sHighlightTtl <= 0) {
+        highlightWidget = false; /* target hidden or gone — stop looking */
     }
 
     raceDisableActive = CVarGetInteger(CVAR_SETTING("DisableChanges"), 0);
@@ -1065,9 +1294,6 @@ void Menu::DrawElement() {
     std::vector<ImVec2> headerSizes;
     float headerWidth = 0.0f;
     bool headerSearch = !CVarGetInteger(CVAR_SETTING("Menu.SidebarSearch"), 0);
-    if (headerSearch) {
-        headerWidth += 200.0f;
-    }
     for (auto& label : menuOrder) {
         ImVec2 size = ImGui::CalcTextSize(label.c_str());
         headerSizes.push_back(size);
@@ -1095,12 +1321,18 @@ void Menu::DrawElement() {
     std::unordered_map<std::string, SidebarEntry>* sidebar = nullptr;
     float headerHeight = headerSizes.at(0).y + style.FramePadding.y * 2;
     ImVec2 buttonSize = ImGui::CalcTextSize(ICON_FA_TIMES_CIRCLE) + style.FramePadding * 2;
+    /* Reserve the pinned search field and trailing buttons: the search lives
+     * outside the scrolling tab strip, so its width is a fixed affordance the
+     * strip must leave room for — longer translated labels overflow into the
+     * child's scrollbar instead of clipping the input. */
+    const float searchW = headerSearch ? 200.0f : 0.0f;
+    const float headerReserved = buttonSize.x * 3 + searchW + style.ItemSpacing.x * 4;
     bool scrollbar = false;
-    if (headerWidth > menuSize.x - buttonSize.x * 3 - style.ItemSpacing.x * 3) {
+    if (headerWidth > menuSize.x - headerReserved) {
         headerHeight += style.ScrollbarSize;
         scrollbar = true;
     }
-    ImVec2 headerSelSize = { menuSize.x - buttonSize.x * 3 - style.ItemSpacing.x * 3, headerHeight };
+    ImVec2 headerSelSize = { menuSize.x - headerReserved, headerHeight };
     /* The child used to be constrained to the CONTENT width (headerWidth), so
      * on narrow windows AlwaysAutoResize grew it past the menu edge and the
      * Close/Reset/Quit buttons painted on top of the tab strip. Clamp it to
@@ -1112,8 +1344,12 @@ void Menu::DrawElement() {
         headerSelSize.y += style.ScrollbarSize;
     }
     bool autoFocus = CVarGetInteger(CVAR_SETTING("Menu.SearchAutofocus"), 0);
+    /* No AutoResizeX: it resizes the frame to the CONTENT width in EndChild,
+     * ignoring the constraint above, so tabs wider than the reserved space
+     * would grow the child past the pinned search field and buttons. A fixed
+     * width keeps overflow inside the child's horizontal scrollbar. */
     ImGui::BeginChild("Header Selection", headerSelSize,
-                      ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
+                      ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
                       ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_HorizontalScrollbar);
     uint8_t curIndex = 0;
     for (auto& label : menuOrder) {
@@ -1150,6 +1386,10 @@ void Menu::DrawElement() {
         }
         curIndex++;
     }
+    ImGui::EndChild();
+    /* Pinned search field — sits between the scrolling tab strip and the
+     * trailing buttons so longer translated labels can never push it out
+     * of view or under the last tab. */
     std::string menuSearchText = "";
     if (headerSearch) {
         ImGui::SameLine();
@@ -1164,13 +1404,17 @@ void Menu::DrawElement() {
         menuSearchText = menuSearch.InputBuf;
         menuSearchText.erase(std::remove(menuSearchText.begin(), menuSearchText.end(), ' '), menuSearchText.end());
         if (menuSearchText.length() < 1) {
-            ImGui::SameLine(headerWidth - 200.0f + style.ItemSpacing.x);
-            ImGui::TextColored(UIWidgets::SemanticColors::Placeholder, "%s", TR("Search..."));
+            /* Draw the placeholder straight into the draw list — a
+             * cursor-seeking SameLine() here would disturb the absolute
+             * positioning the trailing buttons rely on below. */
+            const ImVec2 rmin = ImGui::GetItemRectMin();
+            ImGui::GetWindowDrawList()->AddText(
+                ImVec2(rmin.x + style.FramePadding.x, rmin.y + style.FramePadding.y),
+                ImGui::GetColorU32(UIWidgets::SemanticColors::Placeholder), TR("Search..."));
         }
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
     }
-    ImGui::EndChild();
     /* Trailing header actions. Quit/Reset are optional — subclasses that move
      * them into regular menu entries (e.g. a Support sidebar) keep only the
      * Close button here, so "leave the menu" and "quit the app" can't be
@@ -1280,8 +1524,17 @@ void Menu::DrawElement() {
     const char* sidebarCvar = menuEntries.at(headerIndex).sidebarCvar;
 
     std::string sectionIndex = CVarGetString(sidebarCvar, "");
-    if (!sidebar->contains(sectionIndex)) {
-        sectionIndex = menuEntries.at(headerIndex).sidebarOrder.at(0);
+    if (!sidebar->contains(sectionIndex) || SidebarHiddenInSimple(sidebar->at(sectionIndex))) {
+        sectionIndex = "";
+        for (auto& l : menuEntries.at(headerIndex).sidebarOrder) {
+            if (!SidebarHiddenInSimple(sidebar->at(l))) {
+                sectionIndex = l;
+                break;
+            }
+        }
+        if (sectionIndex.empty()) {
+            sectionIndex = menuEntries.at(headerIndex).sidebarOrder.at(0);
+        }
     }
     const float sidebarStripH =
         compactLayout ? (headerSizes.at(0).y + style.FramePadding.y * 2 + style.ScrollbarSize) : 0.0f;
@@ -1300,6 +1553,9 @@ void Menu::DrawElement() {
                               ImGuiWindowFlags_AlwaysHorizontalScrollbar);
         bool firstEntry = true;
         for (auto& sidebarLabel : menuEntries.at(headerIndex).sidebarOrder) {
+            if (SidebarHiddenInSimple(sidebar->at(sidebarLabel))) {
+                continue;
+            }
             if (!firstEntry) {
                 ImGui::SameLine();
             }
@@ -1345,6 +1601,9 @@ void Menu::DrawElement() {
                           ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
                           ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysVerticalScrollbar);
         for (auto& sidebarLabel : menuEntries.at(headerIndex).sidebarOrder) {
+            if (SidebarHiddenInSimple(sidebar->at(sidebarLabel))) {
+                continue;
+            }
             std::string nextIndex = "";
             UIWidgets::PushStyleButton(menuThemeIndex);
             if (sectionIndex != sidebarLabel) {
@@ -1442,7 +1701,26 @@ void Menu::DrawElement() {
             }
             // for (auto& entryName : sidebar->at(sectionIndex).sidebarOrder) {
             for (auto& entry : sidebar->at(sectionIndex).columnWidgets.at(i)) {
+                if (entry.advanced && SimpleMode()) {
+                    continue;
+                }
+                const bool isNavTarget = highlightWidget && entry.name == navigateWidgetName;
+                if (isNavTarget) {
+                    ImGui::SetScrollHereY(0.35f);
+                }
                 MenuDrawItem(entry, 90 / sidebar->at(sectionIndex).columnCount, menuThemeIndex);
+                if (isNavTarget) {
+                    /* Accent outline so the jumped-to widget is findable at
+                     * a glance (GetItemRect covers whatever the item drew). */
+                    const ImVec2 mn = ImGui::GetItemRectMin();
+                    const ImVec2 mx = ImGui::GetItemRectMax();
+                    ImGui::GetWindowDrawList()->AddRect(
+                        ImVec2(mn.x - 4.0f, mn.y - 4.0f), ImVec2(mx.x + 4.0f, mx.y + 4.0f),
+                        IM_COL32(102, 155, 245, 255), 4.0f, 0, 2.0f);
+                    highlightWidget = false;
+                    sHighlightTtl = 0;
+                    navigateWidgetName.clear();
+                }
             }
             //}
             if (useColumns) {
@@ -1456,12 +1734,26 @@ void Menu::DrawElement() {
             ImGui::Spacing();
             if (UIWidgets::Button(TR("Restore section defaults"),
                     UIWidgets::ButtonOptions()
-                        .Tooltip("Reset every option in this section to its default value.")
+                        .Tooltip("Reset every option in this section to its default value. "
+                                 "Undo is available until you restore another section.")
                         .Size(UIWidgets::Sizes::Inline))) {
+                SnapshotSectionCvars(sidebar->at(sectionIndex), sSectionUndo);
+                sSectionUndo.sidebar = sectionIndex;
                 const size_t restored = ResetSectionCvars(sidebar->at(sectionIndex), true);
                 Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
                 ssb64::ToastInfo(
                     fmt::format(fmt::runtime(TR("Restored {} option{} to defaults")), restored, restored == 1 ? "" : "s"));
+            }
+            if (!sSectionUndo.entries.empty() && sSectionUndo.sidebar == sectionIndex) {
+                ImGui::SameLine();
+                if (UIWidgets::Button(TR("Undo restore"),
+                        UIWidgets::ButtonOptions()
+                            .Tooltip("Bring back the values this section had before the last restore.")
+                            .Size(UIWidgets::Sizes::Inline))) {
+                    ApplySectionUndo(sSectionUndo);
+                    Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+                    ssb64::ToastInfo(TR("Section restore undone"));
+                }
             }
         }
     }
@@ -1472,6 +1764,15 @@ void Menu::DrawElement() {
     // types into a 2-column section's sidebar search.
     if (!useColumns || (headerSearch && menuSearchText.length() > 0)) {
         ImGui::EndChild();
+    }
+
+    /* §34: diff RequiresRestart CVars against the menu-open snapshot -
+     * reverting a widget back to its baseline drops it from the count. */
+    sPendingRestart = 0;
+    for (const auto& [cvar, pe] : sRestartBaseline) {
+        if (CVarGetInteger(cvar.c_str(), pe.baseline) != pe.baseline) {
+            sPendingRestart++;
+        }
     }
 
     /* Footer: pinned to the bottom of the menu block regardless of how tall
@@ -1499,12 +1800,24 @@ void Menu::DrawElement() {
         if (mShowActionBar) {
             const bool padNav = CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) != 0;
             const char* hints;
-            if (compactLayout) {
-                hints = padNav ? TR("[A] Select   [B] Back   [X] Search   [Esc] Close")
-                               : TR("Enter Select   Esc Close menu");
+            if (padNav) {
+                switch (DetectPadFamily()) {
+                case PadFamily::PlayStation:
+                    hints = compactLayout ? TR("[Cross] Select   [Circle] Back   [Square] Search   [Esc] Close")
+                                          : TR("[Cross] Select    [Circle] Back    [Square] Search    [Esc] Close menu");
+                    break;
+                case PadFamily::Nintendo:
+                    hints = compactLayout ? TR("[B] Select   [A] Back   [Y] Search   [Esc] Close")
+                                          : TR("[B] Select    [A] Back    [Y] Search    [Esc] Close menu");
+                    break;
+                default:
+                    hints = compactLayout ? TR("[A] Select   [B] Back   [X] Search   [Esc] Close")
+                                          : TR("[A] Select    [B] Back    [X] Search    [Esc] Close menu");
+                    break;
+                }
             } else {
-                hints = padNav ? TR("[A] Select    [B] Back    [X] Search    [Esc] Close menu")
-                               : TR("Enter Select    Esc Close menu    Type in Search box to find settings");
+                hints = compactLayout ? TR("Enter Select   Esc Close menu")
+                                      : TR("Enter Select    Esc Close menu    Type in Search box to find settings");
             }
             if (!compactLayout) {
                 ImGui::Separator();
@@ -1517,6 +1830,50 @@ void Menu::DrawElement() {
             if (!compactLayout && port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
                 ImGui::SetCursorScreenPos(ImVec2(menuBlockPos.x + style.ItemSpacing.x * 2, hintLineY));
                 ImGui::TextColored(UIWidgets::SemanticColors::Warning, "%s", TR("Match in progress - the game continues while this menu is open"));
+            }
+            /* §34 pending-changes chip: left-aligned, after the match banner
+             * when both are up (compact mode keeps the single hint line). */
+            if (!compactLayout && sPendingRestart > 0) {
+                float chipX = menuBlockPos.x + style.ItemSpacing.x * 2;
+                if (port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
+                    chipX += ImGui::CalcTextSize(TR("Match in progress - the game continues while this menu is open")).x +
+                             style.ItemSpacing.x * 2;
+                }
+                char pendingText[96];
+                std::snprintf(pendingText, sizeof(pendingText), TR("%d change(s) pending restart"), sPendingRestart);
+                ImGui::SetCursorScreenPos(ImVec2(chipX, hintLineY));
+                ImGui::TextColored(UIWidgets::SemanticColors::Warning, "%s", pendingText);
+                float chipNextX = chipX + ImGui::CalcTextSize(pendingText).x + style.ItemSpacing.x * 2;
+                ImGui::SetCursorScreenPos(ImVec2(chipNextX, hintLineY));
+                if (ImGui::SmallButton(TR("Details"))) {
+                    ImGui::OpenPopup("##pending_restart_details");
+                }
+                chipNextX += ImGui::GetItemRectSize().x + style.ItemSpacing.x * 2;
+                if (ImGui::BeginPopup("##pending_restart_details")) {
+                    ImGui::Text("%s", TR("Changed options requiring restart:"));
+                    ImGui::Separator();
+                    for (const auto& [cvar, pe] : sRestartBaseline) {
+                        const int32_t cur = CVarGetInteger(cvar.c_str(), pe.baseline);
+                        if (cur == pe.baseline) {
+                            continue;
+                        }
+                        ImGui::PushID(cvar.c_str());
+                        ImGui::Text("%s: %d -> %d", TR(pe.name.c_str()), pe.baseline, cur);
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton(TR("Revert"))) {
+                            CVarSetInteger(cvar.c_str(), pe.baseline);
+                            CVarSave();
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndPopup();
+                }
+                ImGui::SetCursorScreenPos(ImVec2(chipNextX, hintLineY));
+                if (ImGui::SmallButton(TR("Restart now"))) {
+                    std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
+                        Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
+                        ->Dispatch("reset");
+                }
             }
             const float hintX =
                 menuBlockPos.x + menuSize.x - ImGui::CalcTextSize(hints).x - style.ItemSpacing.x * 2;
@@ -1541,6 +1898,21 @@ void Menu::DrawElement() {
     if (freshOpen) {
         freshOpen = false;
         scrollToActiveFrames = 4;
+        /* §34 baseline: RequiresRestart CVars as they stood when the menu
+         * opened - the footer diff counts how many are still pending. */
+        sRestartBaseline.clear();
+        sPendingRestart = 0;
+        for (auto& [mainName, entry] : menuEntries) {
+            for (auto& [sbName, sb] : entry.sidebars) {
+                for (auto& col : sb.columnWidgets) {
+                    for (auto& w : col) {
+                        if (w.applyPolicy == ApplyPolicy::RequiresRestart && w.cVar != nullptr) {
+                            sRestartBaseline[w.cVar] = { CVarGetInteger(w.cVar, 0), w.name };
+                        }
+                    }
+                }
+            }
+        }
         if (port_diag_safe_mode_active()) {
             ssb64::ToastWarning(
                 TR("Safe mode is on: mods and hi-res texture packs were skipped after a crash. Your settings were not changed."));

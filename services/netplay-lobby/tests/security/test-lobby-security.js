@@ -100,6 +100,25 @@ async function main() {
   ok("host->relayed-client routed", c1.bins.length === 1 && c1.bins[0][0] === 0);
   ok("host->non-relayed client dropped", c2.bins.length === 0);
 
+  // --- ready-check: {type:"ready"} rides the roster to players and specs ---
+  const specReady = await connect("room=ABCDEF&role=spec&v=2");
+  await jmsgWait(specReady, "welcome");
+  host.msgs.length = 0;   // discard stale rosters; find() returns the oldest
+  specReady.msgs.length = 0;
+  c1.ws.send(JSON.stringify({ type: "ready", ready: 1 }));
+  const roster = await jmsgWait(host, "peers");
+  ok("ready flag reaches the host's roster",
+     roster && roster.players.some((p) => p.slot === 1 && p.ready === true));
+  const specRoster = await jmsgWait(specReady, "peers");
+  const specSlot1 = specRoster && specRoster.players.find((p) => p.slot === 1);
+  ok("spec's redacted roster still hides endpoints but shows ready",
+     specSlot1 && specSlot1.ready === true && specSlot1.public === "-");
+  c1.ws.send(JSON.stringify({ type: "ready", ready: 0 }));
+  host.msgs.length = 0;
+  const unready = await jmsgWait(host, "peers");
+  ok("unready propagates",
+     unready && unready.players.some((p) => p.slot === 1 && p.ready === false));
+
   // --- SEC-4: rate limits ---
   const joinWait = closed((await connect("room=ABCDEF&role=join&v=2")).ws);
   // room now has host+2 clients; one more join fits (slot 3)…

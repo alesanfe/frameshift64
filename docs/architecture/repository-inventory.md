@@ -28,6 +28,12 @@ Full tree dump: [`current-tree.txt`](./current-tree.txt).
 | `components/libultraship/` | LUS runtime (windowing, gfx, resources, ImGui) | Branch `ssb64` on `JRickey/libultraship` |
 | `components/game-runtime/` | Asset pipeline / o2r tooling | Branch `ssb64` on `JRickey/Torch` |
 
+`components/*/.github/workflows/` is upstream-owned: each component is an
+independent clone with its own remote and branch. Those workflows never
+run in this repo (GitHub only reads the top-level `.github/workflows/`),
+and deleting them would fork-dirty the checkouts and break upstream sync.
+They stay — recorded decision, not an oversight.
+
 Moving these breaks `scripts/development/new-worktree.*` and the documented
 submodule flow — treat any relocation as a coordinated change, not a rename.
 
@@ -35,7 +41,7 @@ submodule flow — treat any relocation as a coordinated change, not a rename.
 
 | Path | Notes |
 |------|-------|
-| `generated/` | `include/` + `src/` — reloc tables, asset headers. Banners enforced by `check_generated_headers`; CI gate = `codegen-check` |
+| `generated/` | `src/<ver>/ssb64_reloc_rebuild.<ver>.cpp` — the only versioned generated source (its generator needs a baserom; see `generated/README.md`). ROM-free outputs are emitted to `<build>/generated/`. Banners enforced by `check_generated_headers`; CI gate = `codegen-check` |
 | `assets/game/` | Torch extraction recipes per region (`us/` `jp/`); golden-hashed by `extraction_recipes_test.py` (TD-006). Regenerate via `make generate-yamls` |
 
 ## Source assets (versioned)

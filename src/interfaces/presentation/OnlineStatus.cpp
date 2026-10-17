@@ -2,10 +2,10 @@
 
 #include "UIWidgets.hpp"
 
-#include "networking/netplay/session/netlobby.h"
+#include "netlobby.h"
 
 #include <imgui.h>
-#include "core/i18n/Locale.h"
+#include "PortI18n.h"
 
 extern "C" int syNetRollbackIsDesynced(void);
 
@@ -82,7 +82,7 @@ void OnlineStatusWindow::DrawElement() {
         return;
     }
 
-    ImGui::TextWrapped(TR("%s"), port_netlobby_status());
+    ImGui::TextWrapped("%s", TR(port_netlobby_status()));
     ImGui::TextDisabled("%s", TR("Match complete - everyone is back in their own menus."));
     ImGui::Spacing();
 

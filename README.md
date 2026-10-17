@@ -129,7 +129,7 @@ Work in progress.
 
 | | |
 |---|---|
-| ![Play → Quick Match](docs/screenshots/menu/play-quick-match.png) | ![Settings → General](docs/screenshots/menu/settings-general.png) |
+| ![Play → Jump to Screen](docs/screenshots/menu/play-jump-to-screen.png) | ![Settings → General](docs/screenshots/menu/settings-general.png) |
 | ![Settings → Image Quality](docs/screenshots/menu/settings-image-quality.png) | ![Customization → Shaders](docs/screenshots/menu/customization-shaders.png) |
 | ![Settings → Match Rules](docs/screenshots/menu/settings-match-rules.png) | ![Settings → Accessibility](docs/screenshots/menu/settings-accessibility.png) |
 | ![Online → Netplay](docs/screenshots/menu/online-netplay.png) | ![Game Files → Extraction](docs/screenshots/menu/gamefiles-extraction.png) |
@@ -246,11 +246,12 @@ The relocatable-data files (fighter tables, item tables, effects, sprites) are S
 
 ### Build-time codegen
 
-A small amount of generated code lives outside the source tree (gitignored) and is regenerated on every build from `tools/code-generation/reloc_data_symbols.us.txt`:
+A small amount of generated code lives outside the source tree (in the build dir, gitignored) and is regenerated on every build from `tools/code-generation/reloc_data_symbols.us.txt` + the committed `assets/game/us/reloc_*.yml` extraction configs:
 
-- `generated/include/us/reloc_data.us.h` — extern declarations for every relocatable symbol
-- `assets/game/us/reloc_*.yml` — Torch extraction configs
-- `generated/src/us/RelocFileTable.us.cpp` — the runtime symbol table
+- `<build>/generated/include/us/reloc_data.us.h` — extern declarations for every relocatable symbol
+- `<build>/generated/src/us/RelocFileTable.us.cpp` — the runtime symbol table
+
+The only versioned generated source is `generated/src/us/ssb64_reloc_rebuild.us.cpp` — its generator needs a baserom, so it is committed to keep ROM-free builds working (see `generated/README.md`).
 
 If you ever see "undefined reference to `dFooBarReloc`" you regenerated the table without rebuilding, or vice versa.
 

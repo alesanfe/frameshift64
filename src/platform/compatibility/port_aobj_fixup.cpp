@@ -9,7 +9,7 @@
 
 #include "port_aobj_fixup.h"
 #include "port_log.h"
-#include "resources/relocation/RelocPointerTable.h"
+#include "RelocPointerTable.h"
 
 #include <cstdint>
 #include <cstring>

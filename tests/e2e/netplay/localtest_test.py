@@ -80,7 +80,14 @@ def main() -> int:
         }
         if is_host:
             if a.replay_frames > 0:
+                # RECORD_FRAMES is only the frame LIMIT — recording itself
+                # needs arming: SSB64_REPLAY_RECORD gives the explicit
+                # output path (bootstrap sessions don't take the
+                # StartOnlineMatch auto-save path).
                 env["SSB64_REPLAY_RECORD_FRAMES"] = str(a.replay_frames)
+                replay_dir = out / "replays"
+                replay_dir.mkdir(parents=True, exist_ok=True)
+                env["SSB64_REPLAY_RECORD"] = str(replay_dir / "replay-host.ssr")
             if a.sync_trace:
                 env["SSB64_SYNC_TRACE"] = str(out / "host.sync.trace")
         return sr.spawn_game(build, name, env, out)

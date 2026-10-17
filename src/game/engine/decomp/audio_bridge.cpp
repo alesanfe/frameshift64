@@ -27,7 +27,7 @@
 
 // We include the port bridge header with C linkage
 extern "C" {
-#include "game/engine/decomp/audio_bridge.h"
+#include "audio_bridge.h"
 }
 
 // Forward-declare decomp types and functions we need.

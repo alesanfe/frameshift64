@@ -51,8 +51,8 @@
 
 #include "FileHash.h"
 #include "port_log.h"
-#include "platform/filesystem/exe_dir.h"
-#include "platform/http/download_service.h"
+#include "exe_dir.h"
+#include "download_service.h"
 
 #include <ship/Context.h>
 #include <ship/window/FileDropMgr.h>

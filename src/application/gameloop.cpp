@@ -754,6 +754,12 @@ static void port_screenshot_maybe_capture(int frame)
 	}
 }
 
+void PortScreenshotMaybeCaptureFrame(int frame)
+{
+	port_screenshot_init_once();
+	port_screenshot_maybe_capture(frame);
+}
+
 void PortPushFrame(void)
 {
 	// Process cheats safely before the frame updates
@@ -818,11 +824,9 @@ void PortPushFrame(void)
 	port_enhancement_stage_hazards_tick();
 	port_widescreen_tick();
 
-#if !defined(__ANDROID__)
-#if !defined(BATTLESHIP_UWP)
+#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP) && !defined(__SWITCH__)
 	ssb64::enhancements::TickDiscordPresence(); // DRP
 	ssb64::enhancements::TickUpdater();         // closes the game once an update installer is running
-#endif
 #endif
 
 #if defined(__ANDROID__)

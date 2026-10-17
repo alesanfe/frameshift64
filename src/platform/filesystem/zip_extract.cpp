@@ -1,7 +1,7 @@
 /* zip_extract.cpp — see header for the contract. libzip is pulled in
  * by libultraship on every platform; linking `zip` here adds no new
  * dependency, it just stops relying on `unzip`/`tar` being on PATH. */
-#include "platform/filesystem/zip_extract.h"
+#include "zip_extract.h"
 
 #include <zip.h>
 
