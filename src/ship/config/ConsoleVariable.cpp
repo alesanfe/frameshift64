@@ -48,7 +48,7 @@ float ConsoleVariable::GetFloat(const char* name, float defaultValue) {
 const char* ConsoleVariable::GetString(const char* name, const char* defaultValue) {
     auto variable = Get(name);
 
-    if (variable != nullptr && variable->Type == ConsoleVariableType::String) {
+    if (variable != nullptr && variable->Type == ConsoleVariableType::String && variable->String != nullptr) {
         return variable->String;
     }
 

@@ -547,7 +547,10 @@ std::string Context::GetAppDirectoryPath(std::string appName) {
     }
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
+    // SHIP_HOME overrides the app-data dir. On Windows this also bypasses
+    // SDL_GetPrefPath's SHGetKnownFolderPath (which ignores %APPDATA%) —
+    // required for e2e tests to run with an isolated profile.
     char* fpath = std::getenv("SHIP_HOME");
     if (fpath != NULL) {
         return std::string(fpath);

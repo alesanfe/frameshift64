@@ -29,30 +29,66 @@ static bool O2rSharedHeapCheck(const char* tag, const zip_t* za) {
     if (std::getenv("SSB64_HEAP_CHECK") == nullptr) {
         return true;
     }
+    // Write the ENTER line before touching the heap: if the debug-heap list is
+    // already damaged, _CrtCheckMemory itself faults — the ENTER record proves
+    // the probe ran and the absence of a DONE line marks the heap as corrupt.
+    FILE* f = std::fopen("heap_probe.log", "a");
+    if (f != nullptr) {
+        std::fprintf(f, "heap-check %s: ENTER archive=%p\n", tag, static_cast<const void*>(za));
+        std::fflush(f);
+    }
     HMODULE ucrt = GetModuleHandleW(L"ucrtbased.dll");
     int ptrOk = -1, heapOk = -1;
     if (ucrt != nullptr) {
         using IsValidPtrFn = int (*)(const void*);
-        using CheckMemFn = int (*)();
         auto isValidPtr = reinterpret_cast<IsValidPtrFn>(GetProcAddress(ucrt, "_CrtIsValidHeapPointer"));
-        auto checkMem = reinterpret_cast<CheckMemFn>(GetProcAddress(ucrt, "_CrtCheckMemory"));
-        ptrOk = isValidPtr ? isValidPtr(za) : -1;
-        heapOk = checkMem ? checkMem() : -1;
+        if (isValidPtr) {
+            ptrOk = isValidPtr(za);
+            if (f != nullptr) { std::fprintf(f, "heap-check %s: block_ok=%d\n", tag, ptrOk); std::fflush(f); }
+        }
     }
-    // Direct fflush'd write — spdlog output is lost when the process dies in
-    // the very call we are instrumenting.
-    if (FILE* f = std::fopen("heap_probe.log", "a")) {
-        std::fprintf(f, "heap-check %s: archive=%p heap_ok=%d block_ok=%d\n", tag,
-                     static_cast<const void*>(za), heapOk, ptrOk);
-        std::fclose(f);
+    // Route the full-heap check through the exe's autopsy walker: it prints
+    // victim headers numerically instead of going through ucrtbased's damage
+    // reporter, which faults formatting a stomped _file_name.
+    using ValidateFn = int (*)(const char*);
+    auto validate = reinterpret_cast<ValidateFn>(
+        GetProcAddress(GetModuleHandleW(nullptr), "portSharedCrtHeapValidate"));
+    if (validate != nullptr) {
+        heapOk = (validate(tag) == 0) ? 1 : 0;
+    } else {
+        using CheckMemFn = int (*)();
+        if (ucrt != nullptr) {
+            if (auto checkMem = reinterpret_cast<CheckMemFn>(
+                    GetProcAddress(ucrt, "_CrtCheckMemory"))) {
+                heapOk = checkMem();
+            }
+        }
     }
-    SPDLOG_INFO("heap-check {}: archive={} heap_ok={} block_ok={}", tag, static_cast<const void*>(za), heapOk,
-                ptrOk);
+    if (f != nullptr) { std::fprintf(f, "heap-check %s: heap_ok=%d\n", tag, heapOk); std::fflush(f); }
+    if (f != nullptr) { std::fprintf(f, "heap-check %s: DONE\n", tag); std::fclose(f); }
     return ptrOk != 0;
 }
 #else
 static bool O2rSharedHeapCheck(const char*, const zip_t*) {
     return true;
+}
+#endif
+
+// While nonzero, the exe's ucrtbased alloc hook logs every free (pointer +
+// header fields). Set around zip_close so the last logged free before an
+// unlink crash identifies the victim block. Resolved at runtime — no link
+// dependency and zero effect outside the instrumented Debug exe.
+#if defined(_MSC_VER) && defined(_DEBUG)
+static void O2rFreeTrace(int on) {
+    using FlagPtr = volatile int*;
+    static FlagPtr flag = reinterpret_cast<FlagPtr>(
+        GetProcAddress(GetModuleHandleW(nullptr), "gHeapHookFreeTrace"));
+    if (flag != nullptr) {
+        *flag = on;
+    }
+}
+#else
+static void O2rFreeTrace(int) {
 }
 #endif
 
@@ -108,6 +144,8 @@ std::shared_ptr<File> O2rArchive::LoadFile(const std::string& filePath) {
         SPDLOG_TRACE("Error closing file {} in zip archive  {}.", filePath, GetPath());
     }
 
+    O2rSharedHeapCheck("post-loadfile", mZipArchive);
+
     fileToLoad->IsLoaded = true;
 
     return fileToLoad;
@@ -120,6 +158,8 @@ bool O2rArchive::Open() {
         SPDLOG_ERROR("Failed to load zip file \"{}\"", GetPath());
         return false;
     }
+
+    O2rSharedHeapCheck("post-zip_open", mZipArchive);
 
     auto zipNumEntries = zip_get_num_entries(mZipArchive, 0);
     for (auto i = 0; i < zipNumEntries; i++) {
@@ -146,7 +186,10 @@ bool O2rArchive::Close() {
 
     O2rSharedHeapCheck("pre-zip_close", mZipArchive);
 
-    if (zip_close(mZipArchive) == -1) {
+    O2rFreeTrace(1);
+    const int closeResult = zip_close(mZipArchive);
+    O2rFreeTrace(0);
+    if (closeResult == -1) {
         SPDLOG_ERROR("Failed to close zip file \"{}\"", GetPath());
         return false;
     }
