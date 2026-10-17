@@ -8,16 +8,23 @@ test boots the first listed AVD headless and uses it.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 import zipfile
 from pathlib import Path
 
 import pytest
-
 from smash_test.artifacts import (
-    REPO_ROOT, adb, adb_devices, adb_out, emulator_bin, png_is_rendered,
-    start_avd, wait_for_boot)
+    REPO_ROOT,
+    adb,
+    adb_devices,
+    adb_out,
+    emulator_bin,
+    png_is_rendered,
+    start_avd,
+    wait_for_boot,
+)
 
 pytestmark = [pytest.mark.e2e, pytest.mark.serial]
 
@@ -111,7 +118,7 @@ def device(pytestconfig) -> str:
         avds = [ln.strip() for ln in
                 subprocess.run([emu, "-list-avds"],
                                capture_output=True, text=True,
-                               timeout=15).stdout.splitlines()
+                               timeout=15, check=False).stdout.splitlines()
                 if ln.strip()]
         if not avds:
             pytest.skip("no device online and no AVDs configured")
@@ -142,6 +149,12 @@ def test_apk_installs_on_device(apk: Path, device: str, artifacts_dir: Path):
     if "arm64-v8a" not in abilist:
         pytest.skip(f"device ABI list {abilist.strip()!r} lacks arm64-v8a "
                     "(no ARM translation)")
+    # A leftover install (older APK, abandoned staged session, residue in
+    # /data/app) makes `adb install` die with
+    # INSTALL_FAILED_INSUFFICIENT_STORAGE / "Failed to override installation
+    # location" on emulator images — wipe first; uninstall of a missing
+    # package just returns Failure on stderr.
+    adb_out(adb_bin, "-s", device, "uninstall", PKG, timeout=120)
     out = adb_out(adb_bin, "-s", device, "install", "-r", "-g", str(apk),
                   timeout=300)
     assert "Success" in out.stdout, f"adb install failed: {out.stdout[-400:]}"
@@ -171,13 +184,7 @@ def test_app_boots_and_renders(apk: Path, device: str, artifacts_dir: Path):
                       log)
     assert fatal is None, f"crash in logcat: {fatal.group(0)}"
     shot = artifacts_dir / "device.png"
-    remote = "/sdcard/_battleship_e2e.png"
-    adb_out(adb_bin, "-s", device, "shell", "screencap", "-p", remote,
-            timeout=30)
-    pull = adb_out(adb_bin, "-s", device, "pull", remote, str(shot),
-                   timeout=30)
-    adb_out(adb_bin, "-s", device, "shell", "rm", "-f", remote)
-    assert shot.is_file(), f"screencap pull failed: {pull.stdout}"
+    _screencap(adb_bin, device, shot)
     assert png_is_rendered(shot, min_bytes=20_000), \
         "screen capture is blank — app did not render"
     top = adb_out(adb_bin, "-s", device, "shell",
@@ -186,3 +193,146 @@ def test_app_boots_and_renders(apk: Path, device: str, artifacts_dir: Path):
     assert "battleship" in top.lower() or "battleship" in log.lower(), \
         "BattleShip activity not in foreground"
     adb_out(adb_bin, "-s", device, "shell", "am", "force-stop", PKG)
+
+
+# ── on-device UI captures ──────────────────────────────────────────────
+# These run after test_app_boots_and_renders in the same module (serial),
+# reusing the module-scoped `device` fixture so the AVD boots at most once.
+
+_FILES_DIR = f"/sdcard/Android/data/{PKG}/files"
+
+
+def _screencap(adb_bin: str, device: str, out_png: Path) -> Path:
+    remote = "/sdcard/_battleship_e2e.png"
+    adb_out(adb_bin, "-s", device, "shell", "screencap", "-p", remote,
+            timeout=30)
+    pull = adb_out(adb_bin, "-s", device, "pull", remote, str(out_png),
+                   timeout=30)
+    adb_out(adb_bin, "-s", device, "shell", "rm", "-f", remote)
+    assert out_png.is_file(), f"screencap pull failed: {pull.stdout}"
+    return out_png
+
+
+def _push_game_cfg(adb_bin: str, device: str, tmp_dir: Path,
+                   cvars: dict) -> None:
+    """Seed BattleShip.cfg.json in the app's external files dir — the same
+    location Context::GetPathRelativeToAppDirectory resolves on Android and
+    where test_app_boots_and_renders already pushes the .o2r."""
+    cfg = {"CVars": cvars,
+           "Window": {"Width": 960, "Height": 540,
+                      "Fullscreen": {"Enabled": False}}}
+    local = tmp_dir / "BattleShip.cfg.json"
+    local.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    adb_out(adb_bin, "-s", device, "shell", "mkdir", "-p", _FILES_DIR)
+    out = adb_out(adb_bin, "-s", device, "push", str(local),
+                  f"{_FILES_DIR}/BattleShip.cfg.json", timeout=60)
+    assert out.returncode == 0, f"cfg push failed: {out.stdout} {out.stderr}"
+
+
+def _launch_and_settle(adb_bin: str, device: str, settle_s: int = 30):
+    adb_out(adb_bin, "-s", device, "shell", "am", "force-stop", PKG)
+    adb_out(adb_bin, "-s", device, "shell", "am", "start", "-n",
+            BOOT_ACTIVITY, timeout=30)
+    time.sleep(settle_s)
+
+
+def _ensure_o2r(adb_bin: str, device: str) -> None:
+    """Stage BattleShip.o2r if absent — tests must not rely on
+    test_app_boots_and_renders having pushed it (pytest-randomly reorders,
+    and -k filters can deselect it entirely)."""
+    if O2R_SRC is None or not O2R_SRC.is_file():
+        return
+    have = adb_out(adb_bin, "-s", device, "shell",
+                   f"ls {_FILES_DIR}/BattleShip.o2r 2>/dev/null && echo Exists",
+                   timeout=15).stdout
+    if "Exists" in have:
+        return
+    adb_out(adb_bin, "-s", device, "shell", "mkdir", "-p", _FILES_DIR)
+    out = adb_out(adb_bin, "-s", device, "push", str(O2R_SRC),
+                  f"{_FILES_DIR}/BattleShip.o2r", timeout=300)
+    assert out.returncode == 0, f"o2r push failed: {out.stdout} {out.stderr}"
+
+
+@pytest.mark.timeout(600)
+def test_android_ui_menu_overlay(apk: Path, device: str,
+                                 artifacts_dir: Path):
+    """Boot once with a clean cfg (baseline gameplay/attract frame) and once
+    with gOpenPortMenu=1 seeded — the menu capture must render AND differ
+    meaningfully from the baseline, proving the overlay is on screen."""
+    adb_bin = adb()
+    if O2R_SRC is None or not O2R_SRC.is_file():
+        pytest.skip("no BattleShip.o2r to boot into the game with")
+    _ensure_o2r(adb_bin, device)
+
+    # Baseline: no cfg seed — whatever the game normally shows.
+    adb_out(adb_bin, "-s", device, "shell", "rm", "-f",
+            f"{_FILES_DIR}/BattleShip.cfg.json")
+    _launch_and_settle(adb_bin, device)
+    baseline = _screencap(adb_bin, device,
+                          artifacts_dir / "ui-baseline.png")
+
+    _push_game_cfg(adb_bin, device, artifacts_dir, {"gOpenPortMenu": 1})
+    _launch_and_settle(adb_bin, device)
+    try:
+        shot = _screencap(adb_bin, device, artifacts_dir / "ui-menu.png")
+        assert png_is_rendered(shot, min_bytes=20_000), \
+            "menu capture is blank — ImGui overlay did not render"
+        try:
+            from PIL import Image, ImageChops
+            with Image.open(baseline) as a, Image.open(shot) as b:
+                a = a.convert("L").resize((160, 90))
+                b = b.convert("L").resize((160, 90))
+                diff = ImageChops.difference(a, b)
+                changed = sum(1 for v in diff.getdata() if v > 24)
+            ratio = changed / (160 * 90)
+            assert ratio > 0.02, \
+                f"menu frame identical to baseline ({ratio:.3%} px differ) " \
+                "— overlay never appeared"
+        except ImportError:
+            pass  # pixel-diff needs PIL; artifacts are still saved either way
+        log = adb_out(adb_bin, "-s", device, "logcat", "-d", "-t", "300",
+                      timeout=30).stdout
+        fatal = re.search(r"FATAL EXCEPTION|SIGSEGV|SIGABRT", log)
+        assert fatal is None, f"crash while showing menu: {fatal.group(0)}"
+    finally:
+        adb_out(adb_bin, "-s", device, "shell", "rm", "-f",
+                f"{_FILES_DIR}/BattleShip.cfg.json")
+        adb_out(adb_bin, "-s", device, "shell", "am", "force-stop", PKG)
+
+
+@pytest.mark.timeout(400)
+def test_android_ui_rom_picker(apk: Path, device: str,
+                               artifacts_dir: Path):
+    """Boot without BattleShip.o2r → BootActivity parks on the ROM-picker UI.
+    That first-run surface is part of the shipped UX — capture it."""
+    adb_bin = adb()
+    files_dir = _FILES_DIR
+    had_o2r = "Exists" in adb_out(
+        adb_bin, "-s", device, "shell",
+        f"ls {files_dir}/BattleShip.o2r 2>/dev/null && echo Exists",
+        timeout=15).stdout
+    if had_o2r:
+        adb_out(adb_bin, "-s", device, "shell", "mv", "-f",
+                f"{files_dir}/BattleShip.o2r",
+                f"{files_dir}/BattleShip.o2r.e2e_bak")
+    _launch_and_settle(adb_bin, device, settle_s=20)
+    try:
+        shot = _screencap(adb_bin, device,
+                          artifacts_dir / "ui-rom-picker.png")
+        assert png_is_rendered(shot, min_bytes=8_000), \
+            "ROM-picker capture is blank — first-run UI did not render"
+        top = adb_out(adb_bin, "-s", device, "shell",
+                      "dumpsys activity activities | grep -i battleship",
+                      timeout=30).stdout
+        assert "battleship" in top.lower(), \
+            "BattleShip not in foreground for ROM-picker capture"
+    finally:
+        adb_out(adb_bin, "-s", device, "shell", "am", "force-stop", PKG)
+        if had_o2r:
+            adb_out(adb_bin, "-s", device, "shell", "mv", "-f",
+                    f"{files_dir}/BattleShip.o2r.e2e_bak",
+                    f"{files_dir}/BattleShip.o2r")
+        if had_o2r:
+            adb_out(adb_bin, "-s", device, "shell", "mv", "-f",
+                    f"{files_dir}/BattleShip.o2r.e2e_bak",
+                    f"{files_dir}/BattleShip.o2r")
