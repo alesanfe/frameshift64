@@ -6,7 +6,7 @@
 /* PORT: Replace standard N64 ABI macros (aSetBuffer, aLoadBuffer, etc.)
  * with CPU function calls.  Must come AFTER abi.h (via mbi.h → n_libaudio.h)
  * so the original macros exist to be #undef'd. */
-#include "interfaces/audio/n64/mixer.h"
+#include "audio/n64/mixer.h"
 #include <stddef.h>
 #include <assert.h>
 #endif
