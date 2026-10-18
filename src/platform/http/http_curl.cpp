@@ -194,15 +194,15 @@ std::string HttpBaseFromWsServer(const char* server) {
         const bool secure = s.compare(0, scheme, "wss") == 0 ||
                             s.compare(0, scheme, "https") == 0;
         s = s.substr(scheme + 3);
-        const size_t slash = s.find('/');
-        if (slash != std::string::npos) {
-            s.resize(slash);
+        const size_t tail = s.find_first_of("/?#");
+        if (tail != std::string::npos) {
+            s.resize(tail);
         }
         return (secure ? "https://" : "http://") + s;
     }
-    const size_t slash = s.find('/');
-    if (slash != std::string::npos) {
-        s.resize(slash);
+    const size_t tail = s.find_first_of("/?#");
+    if (tail != std::string::npos) {
+        s.resize(tail);
     }
     return s.empty() ? s : "https://" + s;
 }

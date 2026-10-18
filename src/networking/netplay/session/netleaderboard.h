@@ -39,7 +39,7 @@ void port_netleaderboard_report_result(const char *server, const char *code,
  * index exists; name is NUL-truncated to `capacity`. */
 int port_netleaderboard_count(void);
 int port_netleaderboard_at(int index, char *out_name, int capacity,
-                           int *rating, int *wins, int *losses);
+                           int *rating, int *wins, int *losses, int *suspicious);
 /* My current rank (1-based) if my claimed name is on the board, else 0. */
 int port_netleaderboard_my_rank(void);
 

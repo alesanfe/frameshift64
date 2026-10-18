@@ -23,6 +23,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      golden_runs:
+        description: "Repeat count for the golden-scale run (default: GOLDEN_SCALE_RUNS repo var, else 10)"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -120,7 +126,7 @@ jobs:
         if: env.BASEROM_B64 != ''
         run: ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60
         shell: pwsh
-      - name: Netplay local test — degraded net matrix (P1–P4)
+      - name: Netplay local test — degraded net matrix (P1–P8)
         if: env.BASEROM_B64 != ''
         run: |
           ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
@@ -135,11 +141,26 @@ jobs:
           ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
             -LatencyMs 250 -JitterMs 75 -LossPct 20 -DupPct 5 -ReorderPct 20 -CorruptPct 3 `
             -OutDir out/logs/netplay-matrix/p4
+          # Extreme profiles — beyond playable, these bound the envelope:
+          # satellite-class latency, quarter/half packet loss, and WAN-grade
+          # jitter. Not "is it fun" but "does it stay correct".
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 500 -JitterMs 100 -LossPct 10 -DupPct 5 -ReorderPct 25 `
+            -OutDir out/logs/netplay-matrix/p5
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 1000 -JitterMs 100 -LossPct 15 -DupPct 5 -ReorderPct 25 `
+            -OutDir out/logs/netplay-matrix/p6
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 100 -JitterMs 100 -LossPct 25 -DupPct 10 -ReorderPct 30 `
+            -OutDir out/logs/netplay-matrix/p7
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 100 -JitterMs 50 -LossPct 50 -DupPct 10 -ReorderPct 30 -CorruptPct 5 `
+            -OutDir out/logs/netplay-matrix/p8
         shell: pwsh
       - name: Desync/rollback metrics per profile
         if: env.BASEROM_B64 != ''
         run: |
-          foreach ($p in @('p1','p2','p3','p4')) {
+          foreach ($p in @('p1','p2','p3','p4','p5','p6','p7','p8')) {
             python tools/analysis/netplay_metrics.py --dir "out/logs/netplay-matrix/$p" `
               --out "out/logs/netplay-matrix/$p/metrics.json" `
               --history out/logs/metrics-history.jsonl --label $p
@@ -156,6 +177,29 @@ jobs:
       - name: Golden gameplay cases
         if: env.BASEROM_B64 != ''
         run: python tests/e2e/golden/golden_gameplay_test.py --build-dir build/Release --timeout 300
+        shell: pwsh
+
+      # ── Mass validation (nightly/dispatch only) ───────────────────────
+      # Re-verify every golden case N times. The replay is fixed, so a pass
+      # per run proves the sim is insensitive to process-level nondeterminism
+      # (ASLR, thread scheduling, allocator layout). Skipped on PRs to keep
+      # the gated run bounded; scale = dispatch input > repo var > 10.
+      - name: Golden gameplay scale run (nightly)
+        if: env.BASEROM_B64 != '' && github.event_name != 'pull_request'
+        run: |
+          $runs = "${{ github.event.inputs.golden_runs }}"
+          if (-not $runs) { $runs = "${{ vars.GOLDEN_SCALE_RUNS }}" }
+          if (-not $runs) { $runs = "10" }
+          Write-Output "golden scale: --repeat $runs"
+          python tests/e2e/golden/golden_gameplay_test.py --build-dir build/Release `
+            --timeout 300 --repeat $runs --output out/test-results/golden-scale
+          if ($LASTEXITCODE -ne 0) { Write-Error "golden scale run failed"; exit 1 }
+        shell: pwsh
+      - name: Golden scale metrics
+        if: env.BASEROM_B64 != '' && github.event_name != 'pull_request'
+        run: |
+          python tools/analysis/netplay_metrics.py --dir out/test-results/golden-scale `
+            --history out/logs/metrics-history.jsonl --label golden-scale
         shell: pwsh
 
       # ── §11: packet parser fuzz — must not crash; desync is expected ───

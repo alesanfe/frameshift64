@@ -29,6 +29,7 @@ struct LbRow {
     int rating = 0;
     int wins = 0;
     int losses = 0;
+    int suspicious = 0;      /* server smurf-heuristic flag */
 };
 
 /* Intentionally leaked: submit/fetch run on detached fire-and-forget
@@ -92,6 +93,8 @@ void parse_lb_entries(const nlohmann::json &entries, std::vector<LbRow> &rows)
         r.rating = num("rating");
         r.wins = num("wins");
         r.losses = num("losses");
+        const auto susp = e.find("suspicious");
+        r.suspicious = (susp != e.end() && susp->is_boolean() && susp->get<bool>()) ? 1 : 0;
         rows.push_back(std::move(r));
     }
 }
@@ -257,7 +260,8 @@ extern "C" int port_netleaderboard_count(void)
 }
 
 extern "C" int port_netleaderboard_at(int index, char *out_name, int capacity,
-                                      int *rating, int *wins, int *losses)
+                                      int *rating, int *wins, int *losses,
+                                      int *suspicious)
 {
     std::lock_guard<std::mutex> lk(sLbLock);
     if (index < 0 || index >= static_cast<int>(sRows.size())) {
@@ -270,6 +274,7 @@ extern "C" int port_netleaderboard_at(int index, char *out_name, int capacity,
     if (rating) *rating = r.rating;
     if (wins) *wins = r.wins;
     if (losses) *losses = r.losses;
+    if (suspicious) *suspicious = r.suspicious;
     return 1;
 }
 

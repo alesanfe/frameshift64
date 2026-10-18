@@ -31,6 +31,7 @@
 #include <spdlog/fmt/fmt.h>
 
 #include <filesystem>
+#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -142,6 +143,65 @@ static void RenderDiagnostics(WidgetInfo&) {
         fs::create_directories(appPath, ec);
         SDL_OpenURL(std::string("file:///" + fs::absolute(appPath).string()).c_str());
     }
+
+    /* One-click support bundle: a folder a user can attach to a bug report
+     * — report.txt (the same summary above + platform/build), a copy of
+     * ssb64.log, and the config file. Mirrors the crash-bundle layout so
+     * triage tooling reads both paths the same way. */
+    if (ImGui::Button(TR("Write diagnostics bundle"))) {
+        std::error_code ec;
+        const fs::path logDir = fs::path(Ship::Context::GetPathRelativeToAppDirectory("logs"));
+        char stamp[24] = {};
+        {
+            const std::time_t now = std::time(nullptr);
+            std::tm tmv{};
+#ifdef _WIN32
+            localtime_s(&tmv, &now);
+#else
+            localtime_r(&now, &tmv);
+#endif
+            std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tmv);
+        }
+        const fs::path dir = logDir / ("report-" + std::string(stamp));
+        fs::create_directories(dir, ec);
+        if (!ec) {
+            {
+                std::ofstream info(dir / "report.txt", std::ios::binary);
+                info << "version=" << BATTLESHIP_CURRENT_VERSION << "\n"
+                     << "build_sha=" << BATTLESHIP_BUILD_SHA << "\n"
+                     << "platform="
+#if defined(_WIN32)
+                     << "windows"
+#elif defined(__APPLE__)
+                     << "macos"
+#elif defined(__linux__)
+                     << "linux"
+#else
+                     << "other"
+#endif
+                     << "\nrenderer=" << backend << "\naudio=" << audio
+                     << "\nsafe_mode=" << (port_diag_safe_mode_active() ? "on" : "off")
+                     << "\nmods=" << mountedMods << " mounted, " << loadedMods
+                     << " loaded, " << badMods << " problems\n"
+                     << "netplay=" << port_netlobby_status() << "\n";
+            }
+            std::error_code cec;
+            const fs::path log = Ship::Context::GetPathRelativeToAppDirectory("logs/ssb64.log");
+            if (fs::exists(log, cec)) {
+                fs::copy_file(log, dir / "ssb64.log", fs::copy_options::overwrite_existing, cec);
+            }
+            const fs::path cfg = Ship::Context::GetPathRelativeToAppDirectory("BattleShip.cfg.json");
+            if (fs::exists(cfg, cec)) {
+                fs::copy_file(cfg, dir / "BattleShip.cfg.json", fs::copy_options::overwrite_existing, cec);
+            }
+            ToastSuccess(fmt::format(fmt::runtime(TR("Bundle written: {}")), dir.string()).c_str());
+            SDL_OpenURL(std::string("file:///" + fs::absolute(dir, ec).string()).c_str());
+        } else {
+            ssb64::ToastInfo(TR("Could not write the diagnostics bundle"));
+        }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", TR("report.txt + ssb64.log + config → attach to a bug report"));
     ImGui::TextDisabled("%s", TR("The summary excludes your ROM path, room codes, and any local paths."));
 }
 

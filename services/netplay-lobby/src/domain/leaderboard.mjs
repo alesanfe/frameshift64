@@ -57,9 +57,15 @@ export class Leaderboard {
     if (prev && prev.key !== key) {
       return { kind: "reject", reason: "name-taken" };
     }
+    /* Preserve firstSeen/disputes across re-submits: resetting firstSeen
+     * would flag veterans as "new" (false-positive suspicious), and
+     * dropping disputes would let a flagged player clear the flag by
+     * re-submitting. */
     this.byName.set(name, {
       name, key, rating, wins, losses,
       updated: new Date().toISOString(),
+      firstSeen: (prev && prev.firstSeen) || new Date().toISOString(),
+      disputes: (prev && prev.disputes) || 0,
     });
     // Evict the tail when the board overflows — a new entry that lands
     // below the cutoff is accepted then immediately evicted, which is
@@ -160,7 +166,7 @@ export class Leaderboard {
       let e = this.byName.get(n);
       if (!e) {
         e = { name: n, key: k, rating: 1200, wins: 0, losses: 0, disputes: 0,
-              updated: new Date().toISOString() };
+              updated: new Date().toISOString(), firstSeen: new Date().toISOString() };
         this.byName.set(n, e);
       }
       return e;
@@ -186,15 +192,32 @@ export class Leaderboard {
   }
 
   list() {
+    const now = Date.now();
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    /* Smurf/sandbag heuristic — surfaced as a flag, never a ban (account-
+     * less verification can't distinguish a smurf from a genuinely good
+     * new player; the flag tells viewers to weight the row accordingly):
+     *   - account < 7 days old with >= 10 games and a winrate over 80%
+     *   - or >= 2 contradictory result reports (disputes) */
     return [...this.byName.values()]
       .sort((a, b) => b.rating - a.rating || b.wins - a.wins)
-      .map(({ name, rating, wins, losses, updated, disputes }) =>
-        ({ name, rating, wins, losses, updated, disputes: disputes || 0 }));
+      .map(({ name, rating, wins, losses, updated, disputes, firstSeen }) => {
+        const games = wins + losses;
+        const ageMs = firstSeen ? now - Date.parse(firstSeen) : Infinity;
+        const suspicious =
+          (ageMs < weekMs && games >= 10 && wins / games > 0.80) ||
+          (disputes || 0) >= 2;
+        return { name, rating, wins, losses, updated,
+                 disputes: disputes || 0, suspicious };
+      });
   }
 
   toJSON() {
+    /* Persist the raw entries — going through list() would drop
+     * firstSeen (killing the smurf heuristic across DO hibernation)
+     * and recompute disputes fine but leak the computed flag. */
     return {
-      entries: this.list().map((e) => ({ ...e, key: this.byName.get(e.name).key })),
+      entries: [...this.byName.values()],
       pending: Object.fromEntries(this.pending),
       settled: [...this.settled],
     };

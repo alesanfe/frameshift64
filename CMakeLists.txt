@@ -1444,7 +1444,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         -sMODULARIZE=1 -sEXPORT_ES6=0       # script tag loader; no bundler required
         -sEXPORTED_RUNTIME_METHODS=callMain,FS   # shell.html defers main() until the o2r is staged
         -sEXIT_RUNTIME=0                    # the game never returns from main
+        -sSTACK_SIZE=4194304                # PortInitImpl alone blows the 64KB
+                                            # default; decomp+ImGui call chains
+                                            # are deep. 4MB on the main thread.
+        -sDEFAULT_PTHREAD_STACK_SIZE=1048576
         -sASSERTIONS=1                      # bringup: real abort messages instead of RuntimeError
+        -sSAFE_HEAP=1                       # instrument loads/stores: catch the
+                                            # OOB write corrupting the heap
+        # NOTE: no STACK_OVERFLOW_CHECK — it validates SP against the main
+        # stack limits only, so every emscripten_fiber_swap (whose C stacks
+        # are malloc'd in the heap) trips a false "stack overflow" abort
+        # inside _emscripten_stack_restore during finishContextSwitch.
         --profiling-funcs                   # keep wasm name section so crash
                                             # stacks resolve to function names
     )

@@ -52,6 +52,10 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
+/* Everything rendered through innerHTML here is remote-controlled
+ * (leaderboard names, status strings, the ?base= param) — escape it. */
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const params = new URLSearchParams(location.search);
 const base = (params.get("base") || "http://127.0.0.1:8799").replace(/\/$/, "");
 $("#base").value = base;
@@ -89,7 +93,7 @@ async function poll() {
       fetch(`${base}/leaderboard`).then((r) => r.json()).catch(() => null),
     ]);
 
-    $("#status").innerHTML = `<span class="ok">live</span> — ${base} · ` +
+    $("#status").innerHTML = `<span class="ok">live</span> — ${esc(base)} · ` +
       `updated ${new Date().toLocaleTimeString()}`;
 
     const m = metrics ? parseMetrics(metrics) : {};
@@ -107,15 +111,15 @@ async function poll() {
 
     const rows = (lb && lb.entries) || [];
     $("#lb tbody").innerHTML = rows.map((e, i) =>
-      `<tr><td class="n">${i + 1}</td><td>${e.name}</td>` +
-      `<td class="n">${e.rating}</td><td class="n">${e.wins}</td>` +
-      `<td class="n">${e.losses}</td>` +
-      `<td class="n ${e.disputes ? "disputes" : ""}">${e.disputes || 0}</td>` +
-      `<td>${(e.updated || "").slice(0, 19).replace("T", " ")}</td></tr>`)
+      `<tr><td class="n">${i + 1}</td><td>${esc(e.name)}</td>` +
+      `<td class="n">${esc(e.rating)}</td><td class="n">${esc(e.wins)}</td>` +
+      `<td class="n">${esc(e.losses)}</td>` +
+      `<td class="n ${e.disputes ? "disputes" : ""}">${esc(e.disputes || 0)}</td>` +
+      `<td>${esc((e.updated || "").slice(0, 19).replace("T", " "))}</td></tr>`)
       .join("") ||
       `<tr><td colspan="7" style="color:#8b93a3">no entries yet</td></tr>`;
   } catch (e) {
-    $("#status").innerHTML = `<span class="err">unreachable</span> — ${base}`;
+    $("#status").innerHTML = `<span class="err">unreachable</span> — ${esc(base)}`;
   }
 }
 poll();

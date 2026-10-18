@@ -493,8 +493,8 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                 }
                 for (int i = 0; i < total; i++) {
                     char name[32] = {};
-                    int r = 0, w = 0, l = 0;
-                    if (!port_netleaderboard_at(i, name, sizeof(name), &r, &w, &l)) {
+                    int r = 0, w = 0, l = 0, suspicious = 0;
+                    if (!port_netleaderboard_at(i, name, sizeof(name), &r, &w, &l, &suspicious)) {
                         continue;
                     }
                     const bool mine = (myRank == i + 1);
@@ -503,6 +503,14 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                         ImGui::TextColored(SemanticColors::Success, "#%d %s", i + 1, name);
                     } else {
                         ImGui::Text("#%d %s", i + 1, name);
+                    }
+                    if (suspicious) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(SemanticColors::Warning, "[?]");
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("%s", TR("New account with an unusual record — "
+                                                       "treat this rating as provisional."));
+                        }
                     }
                     ImGui::SameLine();
                     ImGui::TextDisabled("%d  ·  %d-%d", r, w, l);
