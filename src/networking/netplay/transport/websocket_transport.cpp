@@ -317,8 +317,11 @@ int uplink_send(const void *data, DWORD size, WINHTTP_WEB_SOCKET_BUFFER_TYPE typ
         std::lock_guard<std::mutex> lock(sUpMutex);
         if (sUpState == PORT_WS_OPEN && sUpConn.socket != nullptr) {
             socket = sUpConn.socket;
-        } else if (!sUpUrl.empty() && GetTickCount64() >= sUpRetryAfterTick) {
-            /* Claim this redial window — only one sender dials per period. */
+        } else if (sUpState == PORT_WS_FAILED && !sUpUrl.empty() &&
+                   GetTickCount64() >= sUpRetryAfterTick) {
+            /* Claim this redial window — only one sender dials per period.
+             * CONNECTING is excluded so we never overlap an explicit
+             * port_ws_uplink_connect dial. */
             sUpRetryAfterTick = GetTickCount64() + kUpRedialMs;
             dial = true;
         } else {
@@ -784,7 +787,9 @@ int uplink_send_curl(const void *data, size_t size, unsigned int flags)
     std::lock_guard<std::mutex> lock(sUpMutex);
     if (sUpState != PORT_WS_OPEN || sUpCurl == nullptr) {
         const auto now = std::chrono::steady_clock::now();
-        if (sUpUrl.empty() || now < sUpRetryAfter) {
+        /* CONNECTING is excluded so we never overlap an explicit
+         * port_ws_uplink_connect dial. */
+        if (sUpState != PORT_WS_FAILED || sUpUrl.empty() || now < sUpRetryAfter) {
             return -1;
         }
         /* Claim this redial window — only one sender dials per period. */
@@ -1451,9 +1456,11 @@ int uplink_send(const void *data, int size, unsigned char opcode)
         std::lock_guard<std::mutex> lock(sUpMutex);
         if (sUpState == PORT_WS_OPEN && sUpSock != WS_SOCK_BAD) {
             s = sUpSock;
-        } else if (!sUpUrl.empty() &&
+        } else if (sUpState == PORT_WS_FAILED && !sUpUrl.empty() &&
                    std::chrono::steady_clock::now() >= sUpRetryAfter) {
-            /* Claim this redial window — only one sender dials per period. */
+            /* Claim this redial window — only one sender dials per period.
+             * CONNECTING is excluded so we never overlap an explicit
+             * port_ws_uplink_connect dial. */
             sUpRetryAfter = std::chrono::steady_clock::now() + kUpRedialMs;
             dial = true;
         } else {

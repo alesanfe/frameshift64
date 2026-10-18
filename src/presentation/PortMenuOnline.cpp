@@ -459,9 +459,9 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
         if (ImGui::CollapsingHeader(TR("Leaderboard"))) {
             /* Self-reported board on the lobby server — refreshed on
              * demand, rows cached between draws. */
-            int submitStats = CVarGetInteger("gNetplay.SubmitStats", 0);
+            bool submitStats = CVarGetInteger("gNetplay.SubmitStats", 0) != 0;
             if (ImGui::Checkbox(TR("Publish my rating after matches"), &submitStats)) {
-                CVarSetInteger("gNetplay.SubmitStats", submitStats);
+                CVarSetInteger("gNetplay.SubmitStats", submitStats ? 1 : 0);
                 save();
             }
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));

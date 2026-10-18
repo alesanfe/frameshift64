@@ -47,7 +47,7 @@
 
 #include <nlohmann/json.hpp>
 
-#if defined(__linux__) || defined(__APPLE__)
+#if !defined(_WIN32)
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -186,17 +186,33 @@ try {
 #endif
 
 #if !defined(_WIN32)
-std::string ShellSingleQuote(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) {
-        if (c == '\'') {
-            out += "'\\''";
-        } else {
-            out += c;
+/* fork+execvp a helper with no shell in the middle — argv entries reach
+ * the child verbatim, so nothing needs quoting. stdio is redirected to
+ * /dev/null and a detached reaper thread collects the exit status so the
+ * helper can't leave a zombie behind. strip_ld_env drops the AppImage
+ * loader paths in the child so system tools see the distro libraries. */
+void SpawnDetached(const char* const argv[], bool strip_ld_env) {
+    const pid_t pid = fork();
+    if (pid < 0) return;
+    if (pid == 0) {
+        const int devnull = open("/dev/null", O_RDWR);
+        if (devnull >= 0) {
+            dup2(devnull, STDIN_FILENO);
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
         }
+        if (strip_ld_env) {
+            unsetenv("LD_LIBRARY_PATH");
+            unsetenv("LD_PRELOAD");
+        }
+        execvp(argv[0], const_cast<char* const*>(argv));
+        _exit(127);
     }
-    out += "'";
-    return out;
+    std::thread([pid] {
+        int status = 0;
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+        }
+    }).detach();
 }
 #endif
 
@@ -644,8 +660,8 @@ void StartGameUpdate() {
         }
         SetDownloadStatus("Download complete! Opening DMG...");
         s_downloadComplete.store(true);
-        std::string openCmd = "open \"" + tempDmg + "\"";
-        system(openCmd.c_str());
+        const char* argv[] = { "open", tempDmg.c_str(), nullptr };
+        SpawnDetached(argv, /*strip_ld_env=*/false);
 #endif
         s_isDownloading.store(false);
     }).detach();
@@ -683,11 +699,11 @@ void OpenReleasePage() {
 #if defined(_WIN32)
     ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(__APPLE__)
-    std::string cmd = std::string("open ") + url;
-    system(cmd.c_str());
+    const char* argv[] = { "open", url, nullptr };
+    SpawnDetached(argv, /*strip_ld_env=*/false);
 #else
-    std::string cmd = std::string("env -u LD_LIBRARY_PATH -u LD_PRELOAD xdg-open ") + ShellSingleQuote(url) + " &";
-    system(cmd.c_str());
+    const char* argv[] = { "xdg-open", url, nullptr };
+    SpawnDetached(argv, /*strip_ld_env=*/true);
 #endif
 #endif
 }

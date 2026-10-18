@@ -451,6 +451,8 @@
   "Profile '{}' saved": "Perfil '{}' guardado",
   "Profiles": "Perfiles",
   "Progress and records live on the cartridge save — these screens are the game's own.": "El progreso y los récords viven en el guardado del cartucho; esas pantallas son las del propio juego.",
+  "Publish my rating after matches": "Publicar mi rating tras las partidas",
+  "Shares your display name and rating with the lobby server. Off by default.": "Comparte tu nombre visible y tu rating con el servidor de lobby. Desactivado por defecto.",
   "Purple": "Morado",
   "Quality": "Calidad",
   "Queue %d full - trying the next one...": "Cola %d llena - probando la siguiente...",
