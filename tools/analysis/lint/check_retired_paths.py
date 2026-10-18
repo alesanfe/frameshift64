@@ -87,10 +87,10 @@ RETIRED_REF = re.compile(
     r'|"netplay/(?:netlobby|netrules)\.h"'
     r'|src/platform/(?:coroutine_|coroutine\.h|http_download'
     r'|download_service|zip_extract|exe_dir|port_window_icon|io/)'
-    # resources/ split (relocation + loading) and generated/ isolation:
-    r'|src/resources/(?:audio|css_icons|shaders|textures)/'
-    r'|src/resources/RelocFile[A-Za-z]*\.'
-    r'|"resources/(?:audio|css_icons|shaders|textures)/'
+    # resources/ module dissolved (relocation->game/engine, loading->owner
+    # modules) and generated/ isolation:
+    r'|src/resources/'
+    r'|"resources/(?:relocation|loading|interpolation|audio|css_icons|shaders|textures)/'
     r'|src/game/engine/decomp/ssb64_reloc_rebuild\.(?:us|jp)\.cpp'
     r'|include/reloc_data\.(?:us|jp)\.h'
     # platforms/ physical layout (per-platform cmake/packaging/resources):

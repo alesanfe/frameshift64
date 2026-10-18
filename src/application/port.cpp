@@ -27,9 +27,9 @@
 #include <unordered_set>
 
 #include "core/persistence/port_save.h"
-#include "resources/relocation/ResourceType.h"
-#include "resources/relocation/RelocFileFactory.h"
-#include "resources/relocation/SyntheticReloc.h"
+#include "game/engine/relocation/ResourceType.h"
+#include "game/engine/relocation/RelocFileFactory.h"
+#include "game/engine/relocation/SyntheticReloc.h"
 #include <ship/resource/factory/BlobFactory.h>
 #include <ship/resource/archive/Archive.h>
 #ifdef SSB64_TEST_HOOKS
@@ -56,8 +56,8 @@
 #include "interfaces/presentation/Toasts.h"
 #include "interfaces/presentation/PortMenu.h"
 #ifdef PORT_HIRES_ENABLED
-#include "resources/loading/textures/hires/HiResHook.h"
-#include "resources/loading/textures/hires/HiResPack.h"
+#include "interfaces/rendering/textures/hires/HiResHook.h"
+#include "interfaces/rendering/textures/hires/HiResPack.h"
 #endif
 #if !defined(__ANDROID__)
 #include "port_window_icon.h"
@@ -78,7 +78,7 @@
 #include "port_log.h"
 #include "fighter_registry.h"
 #include "focus.h"
-#include "resources/loading/shaders/fast3d_shader_manifest.h"
+#include "interfaces/rendering/shaders/fast3d_shader_manifest.h"
 
 #ifndef DISABLE_SCRIPTING
 #include <ship/scripting/ScriptLoader.h>

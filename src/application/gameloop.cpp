@@ -23,7 +23,7 @@
 #include "coroutine.h"
 #include "networking/netplay/session/netlobby.h"
 #include "game/gameplay/enhancements.h"
-#include "resources/interpolation/frame_interpolation.h"
+#include "interfaces/rendering/interpolation/frame_interpolation.h"
 #include "interfaces/rendering/widescreen/widescreen.h"
 #include "port.h"
 #include "port_watchdog.h"

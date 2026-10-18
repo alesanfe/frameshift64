@@ -10,7 +10,7 @@ embedded 5x7 pixel font below (pure 1-bit alpha by construction), matching
 the ROM's IA4 nameplate sprite dimensions. This is PURE TEXT RENDERING — no ROM data is involved — so the
 output is legal to bake into shipped binaries (see the CMake nameplate
 custom commands, which pipe these PNGs through png_to_c_array.py into
-headers used by src/resources/css_icons/port_css_stage_assets.cpp as the release
+headers used by src/game/engine/css_icons/port_css_stage_assets.cpp as the release
 fallback for port-introduced stages).
 
 tools/derive_stage_assets.py imports render_name_png from here so the dev

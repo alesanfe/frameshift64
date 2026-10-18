@@ -45,8 +45,9 @@ src/              — Modern C++ port layer, by responsibility:
   distribution/   updater, pack downloads (shader/mod), ReleaseSig, FileHash —
                   delivery machinery, not features
   presentation/   imgui menu, UI widgets, dialogs, online status
-  resources/      audio (mixer, dma), RelocFileTable/Factory, interpolation,
-                  shaders manifest, css_icons, textures/hires
+                  (asset/relocation glue lives with its owner:
+                  game/engine/relocation + css_icons, interfaces/audio/n64,
+                  interfaces/rendering interpolation+shaders+textures/hires)
   platform/       coroutine/ (fibers .cpp+.S), io/ (http, download_service,
                   zip), window icon, android/, switch/
   observability/  port_log (locked, JSONL mirror, sinks)

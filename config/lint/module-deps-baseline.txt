@@ -1,7 +1,3 @@
-# Known module-dependency violations (tracked debt — shrink, never grow).
+# Known module-dependency violations (tracked debt - shrink, never grow).
 # Regenerate: python tools/analysis/lint/check_module_deps.py --rebaseline
-#
-# Baseline is empty: all historical violations were resolved by relocating
-# headers to their correct layer (port_watchdog.h -> src/platform,
-# app_paths.{h,cpp} -> src/platform/filesystem) and by routing presentation's
-# mod-panel calls through the src/application/app_mods facade.
+src/platform/compatibility/port_aobj_fixup.cpp -> RelocPointerTable.h

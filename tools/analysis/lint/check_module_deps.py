@@ -9,7 +9,6 @@ Layer contract (docs/architecture/overview.md, proposal §13):
   distribution  → leaf modules / platform / integration (downloads, updater,
                   signing)                    — never application/presentation
   netplay       → leaf modules / platform / integration — never presentation/features
-  resources     → leaf modules / integration  — never application/presentation
   platform      → observability only          — never application/gameplay/...
   compatibility → decomp / observability      — the N64 shim layer, no product
   integration   → decomp / libultraship / leaf modules — the adapter layer
@@ -57,7 +56,6 @@ INCLUDE_PREFIX_MODULE = {
     "social": "src/networking/social",
     "platform": "src/platform",
     "compatibility": "src/platform/compatibility",
-    "resources": "src/resources",
 }
 GROUP_PREFIXES = ("core/", "game/", "interfaces/", "networking/")
 
@@ -67,7 +65,8 @@ ALL_PRODUCT = {"src/application", "src/application/update",
                "src/interfaces/audio", "src/networking/social",
                "src/interfaces/input", "src/networking/netplay",
                "src/platform", "src/platform/compatibility",
-               "src/resources", "src/game/engine", "src/game/modding"}
+               "src/game/engine", "src/game/modding",
+               "src/game/engine/relocation"}
 
 # module -> set of src modules it may NOT include. 'decomp' handled separately.
 FORBIDDEN = {
@@ -86,29 +85,31 @@ FORBIDDEN = {
     # rendering/cosmetics + widescreen are gameplay features that live in the
     # rendering module — they may pull the gameplay facade (enhancements.h).
     "src/interfaces/rendering": ALL_PRODUCT - {"src/game/gameplay"}
-                          | {"src/core/persistence", "src/core/observability",
-                             "src/core/config"},
+                          | {"src/core/persistence", "src/core/config"},
     "src/platform/compatibility": {"src/application", "src/interfaces/presentation",
                           "src/game/gameplay", "src/interfaces/audio",
                           "src/networking/social", "src/interfaces/input",
                           "src/application/update", "src/networking/netplay",
-                          "src/game/engine", "src/game/modding"},
+                          "src/game/engine", "src/game/modding",
+               "src/game/engine/relocation"},
     "src/platform":      {"src/application", "src/interfaces/presentation",
                           "src/game/gameplay", "src/interfaces/audio",
                           "src/networking/social", "src/interfaces/input",
                           "src/application/update", "src/networking/netplay",
                           "src/game/engine", "src/game/modding",
-                          "src/resources", "src/interfaces/rendering",
+                          "src/game/engine/relocation",
+                          "src/interfaces/rendering",
                           "src/core/persistence", "src/core/config",
                           "src/core/i18n"},
-    "src/resources":     {"src/application", "src/interfaces/presentation",
-                          "src/game/gameplay", "src/interfaces/audio",
-                          "src/networking/social", "src/interfaces/input",
-                          "src/application/update", "src/networking/netplay"},
     # game/engine (facade + components/decomp/hooks adapter layer) and game/modding:
-    # allowed to see platform/resources/components/decomp/libultraship — never the
+    # allowed to see platform/components/decomp/libultraship — never the
     # product top layers.
     "src/game/engine":   {"src/application", "src/application/update",
+                          "src/interfaces/presentation"},
+    # relocation is the shared asset-reloc ABI — engine peers plus the
+    # consumers granted in SSB64_MODULE_SCOPE_* (compatibility/resources/
+    # decomp). Same product restrictions as engine itself.
+    "src/game/engine/relocation": {"src/application", "src/application/update",
                           "src/interfaces/presentation"},
     "src/game/modding":  {"src/application", "src/interfaces/presentation"},
     "src/application/update":  {"src/application", "src/interfaces/presentation"},
@@ -119,7 +120,8 @@ FORBIDDEN = {
     "src/networking/netplay":       {"src/application", "src/interfaces/presentation",
                           "src/game/gameplay", "src/interfaces/audio",
                           "src/networking/social", "src/interfaces/input",
-                          "src/application/update", "src/resources"},
+                          "src/game/engine/relocation",
+                          "src/application/update"},
     "src/interfaces/presentation":  {"src/game/engine", "src/game/modding",
                           "decomp"},
     # application: top of the stack — everything allowed.
@@ -166,6 +168,11 @@ def build_index() -> dict[str, list[str]]:
 def module_of(rel: str) -> str:
     parts = rel.split('/')
     if parts[0] == 'src' and len(parts) > 2:
+        # engine/relocation is its own module — shared ABI consumed by
+        # compatibility/resources/decomp per CMake SSB64_MODULE_SCOPE_*.
+        if parts[1] == 'game' and parts[2] == 'engine' and \
+                len(parts) > 3 and parts[3] == 'relocation':
+            return 'src/game/engine/relocation'
         # Group dirs hold leaf modules one level deeper.
         if parts[1] in ('core', 'game', 'interfaces', 'networking'):
             return f"src/{parts[1]}/{parts[2]}"

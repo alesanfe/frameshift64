@@ -5,7 +5,7 @@ PCM, emitted as int16 literals in a .pcm.inc.c file.
 
 The PC port's audio output stream feeds libultraship via
 AudioPlayerPlayFrame(buf, len) at 32 kHz, interleaved stereo S16
-(see src/resources/audio/audio_playback.cpp). PokemonEngine's voice mixer hooks
+(see src/interfaces/audio/n64/audio_playback.cpp). PokemonEngine's voice mixer hooks
 that function and mixes registered PCM blobs into the buffer; the format
 must match exactly or playback comes out the wrong rate / aliased.
 

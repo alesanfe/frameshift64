@@ -43,7 +43,7 @@ DEFAULT_MAPPING = Path(__file__).resolve().parent / 'vendor' / 'battleship.json'
 
 def out_filename(our_hash: str, fmt: int, siz: int) -> str:
     """Filename layout the port's runtime parser accepts
-    (src/resources/textures/hires/HiResPack.cpp)."""
+    (src/interfaces/rendering/textures/hires/HiResPack.cpp)."""
     return f'#{our_hash.upper()}#{fmt:X}#{siz:X}.png'
 
 

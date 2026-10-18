@@ -20,7 +20,7 @@ etc. — and the game looks those files up by file_id at runtime even
 though the `ll*` symbol names never appear in src/. Filtering to
 src/-referenced symbols silently drops entries from the name table and
 causes Torch to extract the files under their fallback `file_NNNN`
-names, which then don't match `src/resources/RelocFileTable.<ver>.cpp`.
+names, which then don't match `src/game/engine/relocation/RelocFileTable.<ver>.cpp`.
 
 Any `ll*` identifier that src/ references but that is missing from the
 symbols table (e.g. a brand-new symbol added to the decomp sources) is
