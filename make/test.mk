@@ -5,7 +5,7 @@ test: ## Run the quick suite (unit+smoke, no rom/net/gpu)
 	@$(call heading,pytest suite: quick)
 	@$(PYTHON) "$(TEST_RUNNER)" --suite quick $(TEST_ARGS)
 
-test-suite: ## Run TEST_SUITE from tests/config/test-suites.yml
+test-suite: ## Run TEST_SUITE from tests/support/config/test-suites.yml
 	@$(call heading,pytest suite: $(TEST_SUITE))
 	@args=""; \
 	if [[ -n "$(EXE_DIR)" ]]; then args="--build-dir $$(dirname '$(EXE_DIR)')"; fi; \

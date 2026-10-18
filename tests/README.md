@@ -44,7 +44,7 @@ Regressions: `issue_<num>_<desc>_test.<ext>` when a stable issue id exists.
 ## Running
 
 pytest is the unified orchestrator (config: `pyproject.toml`, fixtures:
-`conftest.py`, marker conventions in `tests/config/test-suites.yml`).
+`conftest.py`, marker conventions in `tests/support/config/test-suites.yml`).
 It collects the `test_*.py` wrappers, which drive the standalone
 `*_test.py` scripts, ctest binaries, and game processes underneath.
 

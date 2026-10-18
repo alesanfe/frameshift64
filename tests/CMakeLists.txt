@@ -4,7 +4,7 @@
 #   ctest --test-dir <build> --label-regex unit
 #   ctest --test-dir <build> --label-regex "unit.*netplay"
 #   ctest --test-dir <build> --label-exclude "slow|requires-rom|requires-network"
-# Suite presets that translate to label sets live in config/test-suites.yml.
+# Suite presets that translate to label sets live in support/config/test-suites.yml.
 
 enable_testing()
 
