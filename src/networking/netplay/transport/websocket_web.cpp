@@ -21,6 +21,7 @@
 
 #include "websocket_transport.h"
 
+#include <emscripten.h>
 #include <emscripten/websocket.h>
 
 #include <cstring>
@@ -43,6 +44,12 @@ std::string sError;
 EMSCRIPTEN_WEBSOCKET_T sUplink = 0;
 PortWsState sUplinkState = PORT_WS_CLOSED;
 std::string sUplinkError;
+/* Lazy-reconnect state — same contract as the desktop backends: the
+ * uplink is send-only so a dead link only surfaces on send; re-dial the
+ * remembered URL at a bounded cadence instead of going mute. */
+std::string sUplinkUrl;
+double sUplinkRetryAt = 0.0;
+constexpr double kUpRedialMs = 2000.0;
 
 EM_BOOL on_open(int /*type*/, const EmscriptenWebSocketOpenEvent */*ev*/, void *user)
 {
@@ -121,6 +128,8 @@ int ws_send(EMSCRIPTEN_WEBSOCKET_T ws, const void *data, int size, bool text)
 	return (rc == EMSCRIPTEN_RESULT_SUCCESS) ? 1 : 0;
 }
 
+int uplink_send(const void *data, int size, bool text);   /* fwd — defined below */
+
 template <typename T>
 int poll_queue(std::deque<T> &q, void *out, int capacity)
 {
@@ -184,11 +193,11 @@ extern "C" int port_ws_send_text(const char *text)
 extern "C" int port_ws_send_binary(const void *data, int size)
 {
 	/* Prefer the uplink once it is open — mirrors the desktop behaviour the
-	 * lobby relies on (relay traffic never queues behind a control recv). */
-	if (sUplinkState == PORT_WS_OPEN) {
-		return ws_send(sUplink, data, size, false);
-	}
-	return ws_send(sWs, data, size, false);
+	 * lobby relies on (relay traffic never queues behind a control recv).
+	 * uplink_send re-dials a dead uplink and falls back to the control
+	 * socket so the frame is not dropped. */
+	return uplink_send(data, size, false) > 0 ? 1
+	                                          : ws_send(sWs, data, size, false);
 }
 
 extern "C" int port_ws_poll_text(char *out, int capacity)
@@ -204,6 +213,8 @@ extern "C" int port_ws_poll_binary(void *out, int capacity)
 extern "C" int port_ws_uplink_connect(const char *url)
 {
 	port_ws_uplink_close();
+	sUplinkUrl = (url != nullptr) ? url : "";
+	sUplinkRetryAt = 0.0;
 	sUplinkError.clear();
 	sUplink = ws_open(url, &sUplinkState, /*with_recv=*/false);
 	return (sUplink > 0) ? 1 : 0;
@@ -211,6 +222,7 @@ extern "C" int port_ws_uplink_connect(const char *url)
 
 extern "C" void port_ws_uplink_close(void)
 {
+	sUplinkUrl.clear();    /* explicit close — never resurrect */
 	if (sUplink > 0) {
 		emscripten_websocket_close(sUplink, 1000, "");
 		emscripten_websocket_delete(sUplink);
@@ -221,9 +233,45 @@ extern "C" void port_ws_uplink_close(void)
 
 extern "C" int port_ws_uplink_state(void) { return sUplinkState; }
 
+namespace {
+
+/* Send via the uplink when it is open; when the link died, re-dial the
+ * remembered URL at a bounded cadence. Returns 1 when the frame went out
+ * on the uplink, -1 when the uplink is unusable and the caller should
+ * fall back to the control socket — a frame is never dropped just
+ * because the uplink died. */
+int uplink_send(const void *data, int size, bool text)
+{
+	if (sUplinkState == PORT_WS_OPEN && sUplink > 0) {
+		if (ws_send(sUplink, data, size, text)) {
+			return 1;
+		}
+		/* Dead handle — the browser will fire on_close; mark it so the
+		 * next send re-dials. */
+		sUplinkState = PORT_WS_FAILED;
+	}
+	if ((sUplinkState != PORT_WS_FAILED && sUplinkState != PORT_WS_CLOSED) ||
+	    sUplinkUrl.empty() || emscripten_get_now() < sUplinkRetryAt) {
+		return -1;
+	}
+	sUplinkRetryAt = emscripten_get_now() + kUpRedialMs;
+	if (sUplink > 0) {
+		/* Terminal-state handle — no further callbacks fire on it. */
+		emscripten_websocket_delete(sUplink);
+		sUplink = 0;
+	}
+	sUplink = ws_open(sUplinkUrl.c_str(), &sUplinkState, /*with_recv=*/false);
+	/* ws_open is async — on_open flips the state for the next send; this
+	 * send reports -1 so the caller uses the control socket meanwhile. */
+	return -1;
+}
+
+} // namespace
+
 extern "C" int port_ws_uplink_send(const void *data, int size)
 {
-	return ws_send(sUplink, data, size, false);
+	/* Uplink-only API — no control-socket fallback here. */
+	return uplink_send(data, size, false) > 0 ? 1 : 0;
 }
 
 #endif /* __EMSCRIPTEN__ */

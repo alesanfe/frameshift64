@@ -20,8 +20,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# contents:write is required only for the baseline auto-pin step, which
+# commits config/coverage-baseline.txt back on the first green main run.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: coverage-${{ github.ref }}
@@ -91,6 +93,29 @@ jobs:
               echo "::error::coverage ${PCT}% dropped below baseline ${BASE}%"
               exit 1; }
           echo "coverage_total_pct=$PCT" >> "$GITHUB_ENV"
+      - name: Pin baseline on first green run
+        # Baseline 0 means "never measured". A green run on main commits
+        # the real number back, so the gate starts biting automatically —
+        # no manual PR needed to seed it. Only runs on the default branch
+        # (pushes, not PRs, which can't push here).
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          BASE=$(cat config/coverage-baseline.txt)
+          if awk -v b="$BASE" 'BEGIN{exit (b > 0) ? 0 : 1}'; then
+            echo "baseline already pinned at ${BASE}% — leaving it"
+            exit 0
+          fi
+          PCT=$(awk '/^LF:/{f+=$2} /^LH:/{h+=$2} END{print (f?100*h/f:0)}' \
+                out/coverage/native/lcov.info)
+          echo "$PCT" > config/coverage-baseline.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/coverage-baseline.txt
+          git commit -m "ci: pin coverage baseline at ${PCT}% [skip ci]"
+          # checkout uses persist-credentials:false — push via token URL.
+          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:main
+        env:
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
