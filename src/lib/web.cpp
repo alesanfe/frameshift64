@@ -4,10 +4,21 @@
 #include <emscripten/bind.h>
 using namespace emscripten;
 
-Companion* Companion::Instance;
+/* Companion::Instance is defined in Companion.cpp on this fork — only
+ * assign it here; defining it again is a duplicate symbol at link. */
 
 void Bind(Companion* instance) {
     Companion::Instance = instance;
+}
+
+/* Companion::Process takes a std::atomic<size_t>& progress counter that JS
+ * cannot produce — hide it behind a member-shaped free function. The
+ * counter is a plain progress cell (no cancellation semantics on this
+ * fork), so a per-call static is safe: extraction runs once per page load. */
+static void CompanionProcess(Companion* self) {
+    static std::atomic<size_t> sCount{0};
+    sCount = 0;
+    self->Process(sCount);
 }
 
 EMSCRIPTEN_BINDINGS(Torch) {
@@ -45,9 +56,9 @@ EMSCRIPTEN_BINDINGS(Torch) {
         .constructor<std::vector<uint8_t>, ArchiveType, bool, bool, std::string, std::string>()
         .constructor<std::vector<uint8_t>, ArchiveType, bool, bool, std::string>()
         .constructor<std::vector<uint8_t>, ArchiveType, bool, bool>()
-        .function("Init", &Companion::Init)
+        .function("Init", select_overload<void(ExportType)>(&Companion::Init))
         .function("GetCartridge", &Companion::GetCartridge, allow_raw_pointers())
-        .function("Process", &Companion::Process)
+        .function("Process", &CompanionProcess, allow_raw_pointer<arg<0>>())
         .function("GetRomData", &Companion::GetRomData, allow_raw_pointers());
 }
 #endif

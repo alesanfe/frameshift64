@@ -23,7 +23,9 @@ option(BUILD_NAUDIO "Build with NAudio support" ON)
 if(EMSCRIPTEN)
     set(BUILD_SM64 OFF) # TODO: This is broken for some reason
     add_definitions(-D__EMSCRIPTEN__)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --bind -lidbfs.js -s MODULARIZE=1 -s EXPORT_ES6=1 -s NO_DISABLE_EXCEPTION_CATCHING -s ALLOW_MEMORY_GROWTH=1 -s EXPORT_NAME=createModule -s EXPORTED_RUNTIME_METHODS='[\"FS\", \"IDBFS\"]'")
+    # Comma-separated, unquoted — the bracketed form breaks on Windows
+    # where the link runs through cmd.exe.
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --bind -lidbfs.js -s MODULARIZE=1 -s EXPORT_ES6=1 -s NO_DISABLE_EXCEPTION_CATCHING -s ALLOW_MEMORY_GROWTH=1 -s EXPORT_NAME=createModule -s EXPORTED_RUNTIME_METHODS=FS,IDBFS")
     if(EMSCRIPTEN_PRELOAD)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --preload-file ${EMSCRIPTEN_PRELOAD}")
     endif()
