@@ -69,7 +69,7 @@ services/netplay-lobby/ — Cloudflare worker + local node lobby:
 mods/             — mod SDK skeleton, examples, templates
 platforms/        — per-platform entry-point READMEs + android/, uwp/ wrappers;
                     platforms/<os>/cmake/*.cmake holds the CMake side
-specs/            — consumable contracts (lobby protocol, mod manifest,
+docs/specs/       — consumable contracts (lobby protocol, mod manifest,
                     save format, release manifest)
 tests/            — unit/, fixtures/, golden/, e2e via scripts/testing/
 scripts/          — build/ packaging/ development/ testing/

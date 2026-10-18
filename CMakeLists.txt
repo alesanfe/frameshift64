@@ -621,7 +621,7 @@ list(APPEND SSB64_SRC_PORT
 # Deblob rebuild specs are region-specific the same way: both
 # ssb64_reloc_rebuild.{us,jp}.cpp define the same synthesis entry points.
 # They stay versioned under generated/src/ because their generator needs a
-# real baserom (see generated/README.md).
+# real baserom (see docs/development/generated-dir.md).
 list(APPEND SSB64_SRC_PORT
     ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/${SSB64_VERSION}/ssb64_reloc_rebuild.${SSB64_VERSION}.cpp)
 # coroutine_test.cpp has its own main(); only built standalone when

@@ -8,5 +8,5 @@
 | Env/test scripts | `scripts/development/` |
 
 `libtorch_runner.so` extracts ROM on-device; downloads go through
-`src/platform/http/download_service` (JNI → HttpURLConnection tasks in
+`src/platform/http/download_service.cpp` (JNI → HttpURLConnection tasks in
 `BattleShipActivity`).

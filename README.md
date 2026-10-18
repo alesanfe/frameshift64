@@ -35,7 +35,7 @@ Download the high resolution texture pack from [GhostlyDark](https://github.com/
 
 You supply your own ROM. The decomp game code is region-compiled, so US
 and JP are separate builds — build the one matching your ROM
-(`-DSSB64_VERSION=us|jp`, see [BUILDING.md](BUILDING.md)). The canonical,
+(`-DSSB64_VERSION=us|jp`, see [docs/development/building.md](docs/development/building.md)). The canonical,
 supported dumps (internal name `SMASH BROTHERS`):
 
 | Version | Game code | SHA‑1 | MD5 |
@@ -166,7 +166,7 @@ I hope you enjoy the project.
 
 ## Building
 
-If you want to manually compile BattleShip, please consult the [building instructions](BUILDING.md).
+If you want to manually compile BattleShip, please consult the [building instructions](docs/development/building.md).
 
 ### Nintendo Switch
 
@@ -251,7 +251,7 @@ A small amount of generated code lives outside the source tree (in the build dir
 - `<build>/generated/include/us/reloc_data.us.h` — extern declarations for every relocatable symbol
 - `<build>/generated/src/us/RelocFileTable.us.cpp` — the runtime symbol table
 
-The only versioned generated source is `generated/src/us/ssb64_reloc_rebuild.us.cpp` — its generator needs a baserom, so it is committed to keep ROM-free builds working (see `generated/README.md`).
+The only versioned generated source is `generated/src/us/ssb64_reloc_rebuild.us.cpp` — its generator needs a baserom, so it is committed to keep ROM-free builds working (see `docs/development/generated-dir.md`).
 
 If you ever see "undefined reference to `dFooBarReloc`" you regenerated the table without rebuilding, or vice versa.
 

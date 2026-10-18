@@ -22,7 +22,7 @@ PATH_REF = re.compile(
     r"platforms|config|cmake|decomp|libultraship|torch)/[^`\s]+)`")
 
 SCAN_DIRS = ["docs"]
-SCAN_FILES = ["README.md", "BUILDING.md", "CONTRIBUTING.md", "CLAUDE.md",
+SCAN_FILES = ["README.md", "CONTRIBUTING.md", "CLAUDE.md",
               "SECURITY.md"]
 
 SKIP_SCHEMES = ("http://", "https://", "mailto:", "ftp://")

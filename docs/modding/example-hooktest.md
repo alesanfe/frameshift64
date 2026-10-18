@@ -72,7 +72,7 @@ MOD_EXIT() {
 }
 ```
 
-Available events live in `src/bridge/hooks/list/EngineEvent.h` (and any other `list/*.h` headers added later).
+Available events live in `src/game/engine/hooks/list/EngineEvent.h` (and any other `list/*.h` headers added later).
 
 ## Calling engine functions
 

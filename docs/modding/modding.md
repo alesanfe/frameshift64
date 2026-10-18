@@ -10,7 +10,7 @@ This page is the **map**. It tells you what the system can do, the three ways a
 mod hooks into the engine, and a complete reference of the events you can
 subscribe to. For the step-by-step authoring workflow (project layout, build,
 packaging to `.o2r`, hot reload), the canonical how-to is
-[`mods/templates/basic-mod/README.md`](../../README.md).
+[`docs/modding/template-basic-mod.md`](template-basic-mod.md).
 
 > **Scope:** the mod loader is **desktop-only** (Windows / Linux / macOS). It is
 > compiled out on Android and any build configured with `-DDISABLE_SCRIPTING`.
@@ -40,7 +40,7 @@ packaging to `.o2r`, hot reload), the canonical how-to is
 
 ## Start here
 
-1. Read [`mods/templates/basic-mod/README.md`](../../README.md) — the
+1. Read [`docs/modding/template-basic-mod.md`](template-basic-mod.md) — the
    authoring guide: folder layout, `manifest.json`, building, packaging, hot
    reload.
 2. Copy `mods/templates/basic-mod/` to start a new mod. It builds a heartbeat mod that

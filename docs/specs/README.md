@@ -1,8 +1,8 @@
 # specs — consumable contracts
 
 Machine-checkable and implementation-neutral contracts shared between
-the native client, the lobby service, and mods. Narrative docs stay in
-`docs/`; the *schema* lives here.
+the native client, the lobby service, and mods. The *schemas* live here
+under `docs/specs/`; narrative docs live in the neighbouring sections.
 
 | Dir | Contract |
 |-----|----------|

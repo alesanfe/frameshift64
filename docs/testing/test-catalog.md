@@ -41,7 +41,7 @@ Areas: `BOOT`, `CFG`, `SAVE`, `ASSET`, `INPUT`, `AUDIO`, `RENDER`,
 | Layer | Form | What exists today | Gap |
 |-------|------|-------------------|-----|
 | Static | clang-tidy, cppcheck, semgrep, check_docs, yamllint | Workflows exist; `check_docs` not in CI (F-004) | wire CI |
-| Unit | gtest (new) | `tests/unit/` (platform/, resources/) + `tests/integration/`; level-based layout — see tests/README.md, no gtest harness | everything |
+| Unit | gtest (new) | `tests/unit/` (platform/, relocation/, netplay/) + `tests/integration/`; level-based layout — see `docs/testing/README.md`, no gtest harness | everything |
 | Component | in-proc harnesses + fakes | netpeer parser reachable via PACKETFUZZ path; pure codec at `src/networking/netplay/protocol/` with `netpacket_test` | no gtest harness (minimal EXPECT harness for now) |
 | Integration | multi-process Python harness (`tests/support/harness/netplay/` + `tests/e2e/netplay/`; `scripts/testing/*.ps1` are thin wrappers) | `localtest/lobbytest/lobbytest_multi/spectate/lan/compat/soak/mutation/takeover` ✓ | config/save/updater none |
 | System/E2E | headless runs | `AUTOVS` + `MAX_FRAMES` + `RIG_EXIT` | not packaged as one target |
@@ -324,7 +324,7 @@ Golden Masters (versioned, reviewable diffs — never auto-blesed):
 | ID | Case |
 |----|------|
 | DOCS-001 | `check_docs.py` in CI (links, path refs) |
-| DOCS-002 | BUILDING.md command smoke: clean checkout → configure → build on a fresh runner quarterly |
+| DOCS-002 | docs/development/building.md command smoke: clean checkout → configure → build on a fresh runner quarterly |
 | DOCS-003 | every documented env var exists in code; every `SSB64_*` in code is cataloged (env-var doc check, F-010) |
 | DOCS-004 | protocol code changed but spec unchanged → CI warning (rule exists in strategy.md; needs impl) |
 

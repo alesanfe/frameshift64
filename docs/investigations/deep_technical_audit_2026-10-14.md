@@ -462,7 +462,7 @@ Resumen (evidencia completa en el análisis de build/CI):
 - **AUD-44** ver AUD-20 (rama muerta `none` + name@version sin contenido).
 - **AUD-45** deuda doc/comentarios: `.gitignore:39-45,95-98`, BUILDING.md
   (`build\<ver>` vs `out/build/<preset>`), usages en scripts,
-  `mods/examples/*/README.md` (`port/hooks/…`), `generate_*.py` headers,
+  `docs/modding/` (`port/hooks/…`), `generate_*.py` headers,
   `docs/architecture/overview.md:45` frase corrupta.
 - **AUD-46** `broadcastRoster` manda `public`/`local` endpoints de players
   a specs — specs son el rol menos confiable y no necesitan IPs.

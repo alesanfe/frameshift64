@@ -3,7 +3,7 @@
 #
 # Delegates to the Gradle project under platforms/android/ (the platform
 # wrapper owns the manifest, keystore config and CMake-in-Gradle wiring —
-# see platforms/android/README.md). Signing needs keystore.properties;
+# see docs/platforms/android.md). Signing needs keystore.properties;
 # copy keystore.properties.example and fill it in for release builds.
 #
 #   ./packaging/android/package-android.sh            # release APK

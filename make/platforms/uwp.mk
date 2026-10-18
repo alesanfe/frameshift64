@@ -4,7 +4,7 @@
 # -DBATTLESHIP_UWP=ON, then the packaging project under platforms/uwp/, and
 # drops a signed MSIX into -Output. Pass UWP_PACKAGE_VERSION / UWP_SIGNING_PFX /
 # UWP_SIGNING_PASSWORD to override the defaults (a disposable dev cert is used
-# when no PFX is given). See platforms/uwp/ci/README.md for the container flow.
+# when no PFX is given). See docs/platforms/uwp-ci.md for the container flow.
 # ------------------------------------------------------------------------------
 UWP_PACKAGE_VERSION  ?= 1.0.0.0
 UWP_SIGNING_PFX      ?=

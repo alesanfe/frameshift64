@@ -71,7 +71,7 @@ __pycache__/
 *.py[cod]
 bin/
 lib/
-# Anchored: specs/packages/ is a tracked spec dir, not a dist-package drop.
+# Anchored: docs/specs/package-format/ is a tracked spec dir, not a dist-package drop.
 /packages/
 # Hi-res texture pack drops — src/resources/textures HiResPack scans
 # CWD-relative `mods/` on Linux dev launches before falling back to
@@ -85,7 +85,6 @@ lib/
 !/mods/examples/
 !/mods/templates/
 !/mods/tests/
-!/mods/README.md
 relocAssets/
 undefined*
 ctx.c
@@ -104,7 +103,7 @@ components/decomp/tools/halAssetTool
 # (out/build/*/generated/) by GenerateRelocArtifacts and are never
 # committed. The only versioned generated file is
 # generated/src/<ver>/ssb64_reloc_rebuild.<ver>.cpp, whose generator
-# needs a real baserom — see generated/README.md. Guard the old
+# needs a real baserom — see docs/development/generated-dir.md. Guard the old
 # source-root locations so a stray manual regen can't re-add them:
 generated/include/
 generated/src/*/RelocFileTable.*

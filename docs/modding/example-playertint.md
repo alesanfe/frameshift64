@@ -3,7 +3,7 @@
 A small, complete BattleShip mod that gives each player a distinct fighter
 color: **P1 red, P2 blue, P3 green, P4 yellow**. Useful for telling players
 apart, and a worked example of the **Fighter query/override event** system
-documented in [`docs/modding.md`](../../../docs/modding/modding.md).
+documented in [`modding.md`](modding.md).
 
 Where the template (`mods/templates/basic-mod`) shows a per-frame engine listener
 and `mods/examples/hooktest` shows a function detour, this mod shows the third
@@ -48,10 +48,10 @@ torch pack output playertint.o2r o2r
 
 | File | Purpose |
 |------|---------|
-| `src/playertint.c` | The mod: registers the `FighterEnvColorQueryEvent` listener. |
-| `include/mod.h` | Author API (`MOD_INIT`/`MOD_EXIT`, `mod_log`, hooks). Same as the template. |
+| `mods/examples/playertint/src/playertint.c` | The mod: registers the `FighterEnvColorQueryEvent` listener. |
+| `mods/examples/playertint/include/mod.h` | Author API (`MOD_INIT`/`MOD_EXIT`, `mod_log`, hooks). Same as the template. |
 | `manifest.json` | Mod metadata the loader reads. |
 | `CMakeLists.txt` | Packaging-only build (amalgamation + copy). |
 
-See [`docs/modding.md`](../../../docs/modding/modding.md) for the full event catalog and
+See [`modding.md`](modding.md) for the full event catalog and
 the other two extension mechanisms.

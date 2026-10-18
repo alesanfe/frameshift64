@@ -4,7 +4,7 @@
 Two halves:
 
 1. Committed generated files (only those whose generator needs a baserom,
-   see generated/README.md) must self-mark in their first lines so nobody
+   see docs/development/generated-dir.md) must self-mark in their first lines so nobody
    hand-edits them. The authoritative mark for diff-hiding is
    `.gitattributes` (linguist-generated); this check covers the
    human-facing half: the DO-NOT-EDIT banner.

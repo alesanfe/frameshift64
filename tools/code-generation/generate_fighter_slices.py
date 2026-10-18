@@ -835,7 +835,7 @@ def main():
     ap.add_argument("--rom", default=None)
     ap.add_argument("--out-dir", default=None,
                     help="Generated-output root (default: <repo>/generated). "
-                         "This spec stays versioned — see generated/README.md.")
+                         "This spec stays versioned — see docs/development/generated-dir.md.")
     ap.add_argument("--only", default=None, metavar="SYMBOL")
     ap.add_argument("--check", action="store_true",
                     help="validate only, write nothing")

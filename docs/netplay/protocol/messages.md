@@ -49,9 +49,34 @@ Text messages ≤ 2048 B; binary ≤ 1024 B; rate limits 20 text/s and
 |--------|------|---------|
 | GET | `/health` | uptime probe `{"ok":true,...}` |
 | GET | `/metrics` | Prometheus exposition (node-lobby only) |
-| GET | `/leaderboard` | `{"entries":[{name,rating,wins,losses,updated}]}` top-100 by rating |
+| GET | `/leaderboard` | `{"entries":[{name,rating,wins,losses,updated,disputes}]}` top-100 by rating |
 | POST | `/submit` | upsert `{"name",key,rating,wins,losses}` — `key` is the client's persisted claim token (≥16 hex); `400 name-taken` on key mismatch, `400 bad-*` on out-of-range fields |
+| POST | `/result` | corroborated match report `{"name",opp_name,key,match_id,won:1|0|-1,duration}` — see below |
 
 Leaderboard state lives on the dedicated `leaderboard-global` DO (worker)
-or `leaderboard.json` (node-lobby). Ratings are self-reported — see
-observability.md for the threat model.
+or `leaderboard.json` (node-lobby).
+
+### Verified results (`POST /result`)
+
+`/submit` is the self-reported claim path — it binds a display name to a
+claim key and sets the entry's self-reported rating. `/result` is the
+**verified** path that moves ratings:
+
+1. Both clients of a 1v1 POST the same `match_id` (a deterministic hash
+   of `code|session|sorted-names|duration` each side derives locally).
+   `won` is from the reporter's perspective (1 win, 0 loss, -1 draw).
+2. The first report is stored as `{"kind":"pending"}`; pending reports
+   expire after 10 minutes.
+3. A second report for the same `match_id` from a *different* claim key
+   is verified if it mirrors the first (`A:"I beat B"` ⇔ `B:"I lost to
+   A"`, or draw/draw). On verification the server applies its own Elo
+   update (K=32, floor 100) to both entries and returns
+   `{"kind":"verified",winner,loser}`.
+4. A contradictory second report returns `{"kind":"mismatch"}` and
+   increments `disputes` on both names — the anti-grief signal. Either
+   way the `match_id` is settled: re-reporting it gets `400
+   already-settled`.
+
+A lone client cannot award itself wins — moving a rating takes two
+distinct claim keys agreeing. Two colluding clients can still farm wins;
+that is the ceiling of account-less verification.

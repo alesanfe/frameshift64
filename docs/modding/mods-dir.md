@@ -9,7 +9,7 @@ Mod SDK and content for the BattleShip mod system (TCC-compiled C hooks).
 | `templates/` | `basic-mod/` — copy this to start a new mod (was `workspace/template/`). |
 | `tests/` | Mod-loading checks. |
 
-The in-engine runtime (hook manager, registry, symbol resolver, mod bridge) lives in `src/bridge/modding/`; the event-dispatch hook list in `src/bridge/hooks/`.
+The in-engine runtime (hook manager, registry, symbol resolver, mod bridge) lives in `src/game/modding/`; the event-dispatch hook list in `src/game/engine/hooks/`.
 
 ## One-click installs (in-game Mods panel)
 

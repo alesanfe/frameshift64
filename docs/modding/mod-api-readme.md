@@ -18,4 +18,4 @@ Rules for mods:
   mods (they are exempt from the netplay compat hash);
 - pin `"apiVersion"` — the loader rejects unknown majors.
 
-See `mods/templates/basic-mod` and `specs/mod-api/`.
+See `mods/templates/basic-mod` and `docs/specs/mod-api/`.

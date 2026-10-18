@@ -9,8 +9,8 @@ logic there.
 | Dir | What runs | Examples |
 |-----|-----------|----------|
 | `unit/` | One component, no ROM, no network, no processes | `platform/coroutine_test.cpp`, `resources/vpk0_test.*` |
-| `integration/` | Components wired together; may run the real binary headless or the extraction pipeline | `assets/extraction_recipes_test.py`, `modding/mod_package_test.py` |
-| `contract/` | Cross-component wire/format contracts (`specs/` is the normative source) | netplay protocol, lobby API, mod manifest, save format |
+| `integration/` | Components wired together; may run the real binary headless or the extraction pipeline | `tests/integration/assets/extraction_recipes_test.py`, `modding/mod_package_test.py` |
+| `contract/` | Cross-component wire/format contracts (`docs/specs/` is the normative source) | netplay protocol, lobby API, mod manifest, save format |
 | `e2e/` | Full game sessions via `harness/` | netplay room codes, first-run, packaging |
 | `fuzz/` | Mutational drivers + `corpora/` seeds | `tools/analysis/fuzz/run_parser_fuzz.py` consumes `fuzz/corpora/<parser>/` |
 | `security/` | Hostile-input and abuse-model tests | path traversal, zip bombs, lobby abuse |
@@ -29,7 +29,7 @@ Unit tests of the adapter layer live in `unit/adapters/` (not `unit/integration/
 |-----|------|
 | `fixtures/` | Hand-built inputs that provoke a scenario (corrupt saves, bad packets, invalid mods) |
 | `golden/` | Canonical expected outputs (hashes, serialized packets, decoded frames) |
-| `support/` | Reusable test utilities — C++ `include/smash_test/` + `src/`, Python `python/` |
+| `support/` | Reusable test utilities — C++ `tests/support/include/smash_test/` + `src/`, Python `python/` |
 | `harness/` | Process/environment drivers — headless game runner, lobby spawner, netplay session runner |
 | `data/` | Static public data only; runtime artifacts go to `out/tests/`, never here |
 
@@ -63,7 +63,7 @@ pytest --collect-only -q                                # discovery
 
 # the underlying drivers still run standalone (and via scripts/testing/*.ps1)
 python tests/e2e/netplay/lobbytest_multi_test.py --players 4 --seconds 60
-python tests/integration/assets/extraction_recipes_test.py
+python tests/integration/tests/integration/assets/extraction_recipes_test.py
 python tools/analysis/fuzz/run_parser_fuzz.py --parser manifest --binary build/Release/BattleShip.exe --iters 300
 ```
 
@@ -101,6 +101,6 @@ pytest reaches those binaries through `test_ctest_unit`.
 
 ## Flaky policy
 
-No `flaky/` dir. Quarantined tests go in `config/known-failures.yml` with an
+No `flaky/` dir. Quarantined tests go in `tests/support/config/known-failures.yml` with an
 issue, affected platforms, and an expiry — CI keeps running them
 non-blocking and the entry expires loudly.

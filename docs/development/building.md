@@ -95,7 +95,7 @@ the same flow (`cmake --preset windows-release`).
   `config.yml`, `assets/game/<ver>`, `f3d.o2r`, `config/controllers/gamecontrollerdb.txt`, and the
   menu fonts next to the executable.
 - The checked-in reloc YAMLs (`assets/game/<ver>/reloc_*.yml`) and the
-  generated `src/resources/RelocFileTable.<ver>.cpp` are treated as
+  generated `<build>/generated/src/<ver>/RelocFileTable.<ver>.cpp` are treated as
   source inputs, not rebuilt on every compile.
 
 ### GameCube adapter (WUP-028) device access

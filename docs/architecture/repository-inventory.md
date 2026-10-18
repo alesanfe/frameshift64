@@ -15,7 +15,7 @@ Full tree dump: [`current-tree.txt`](./current-tree.txt).
 | `mods/` | Example/template mods shipped with the repo |
 | `platforms/` | Per-platform wrappers: `android` `linux` `macos` `switch` `uwp` `windows` (packaging scripts, manifests) |
 | `config/` | `lint/` (baselines) `project/` `semgrep/` `static-analysis/` |
-| `specs/` | Protocol/format specs: `mod-api` `netplay` `packages` `save-format` `updates` |
+| `docs/specs/` | Protocol/format specs: `mod-api` `netplay` `package-format` `save-format` `updates` |
 | `docs/` | All documentation (architecture, bugs, decisions, testing, screenshots) |
 | `cmake/` | CMake modules (Codegen, StageAssetRecipes, RuntimeAssets, ModO2R, per-platform helpers) |
 | `include/` | Small shared header area |

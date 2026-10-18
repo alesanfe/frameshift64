@@ -58,16 +58,23 @@ panel for desync rate, worst rollback depth, and resimulated-frames-per-tick.
 `--summarize <history.jsonl>` reduces the window to P50/P95/P99 per metric
 (the dashboard feed); `--days N` changes the window (default 30).
 
-## `/leaderboard` + `/submit` — self-reported rating board (both adapters)
+## `/leaderboard` + `/submit` + `/result` — rating board (both adapters)
 
-`GET /leaderboard` → `{"entries": [{name, rating, wins, losses, updated}]}`
-sorted by rating (top 100). `POST /submit` with
-`{"name", "key", "rating", "wins", "losses"}` upserts the caller's row.
+`GET /leaderboard` → `{"entries": [{name, rating, wins, losses, updated,
+disputes}]}` sorted by rating (top 100). Two write paths:
 
-- `key` is a random hex token the client persists in `netstats.json`; the
-  first submitter claims the name and later submits must present the same
-  key (`400 name-taken` otherwise). It stops casual hijacking only —
-  ratings are self-reported, so treat the board as a friends ladder.
+- `POST /submit` — self-reported upsert `{"name","key","rating","wins",
+  "losses"}`. `key` is a random hex token persisted in `netstats.json`;
+  first submitter claims the name, later submits must present the same
+  key (`400 name-taken`). Anti-hijack only.
+- `POST /result` — **verified** path (the one that moves server-side Elo).
+  Both clients report `{name,opp_name,key,match_id,won,duration}` for the
+  same match; the second report from a *different* key either verifies
+  (server applies Elo K=32 itself) or mismatches (`disputes++` on both
+  names). See `protocol/messages.md` § Verified results.
+
 - Worker adapter persists it in the dedicated `leaderboard-global` DO;
   node-lobby persists `leaderboard.json` next to the script.
-- Client: `gNetplay.SubmitStats=0` opts out of the post-match submit.
+- Client: `gNetplay.SubmitStats` (default **off** — sharing a name/rating
+  on a public board is opt-in, toggled from the Online menu) controls the
+  post-match submit + result report. LAN matches never report.
