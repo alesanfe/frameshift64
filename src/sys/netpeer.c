@@ -2932,6 +2932,32 @@ void syNetPeerStopVSSession(void)
 		/* Online match over: keep the lobby's socket (rematch), and drop back
 		 * to offline so the next local VS match isn't netplay. */
 		extern void port_netlobby_on_match_end(void);
+		extern void port_netlobby_set_match_result(s32 winner_slot, u32 duration_ticks);
+		s32 i, winner = -1, best = -1;
+
+		/* Winner = the game slot with the most remaining stocks while the
+		 * battle state is still readable (called before the scene switch).
+		 * A top tie (timeout with equal stocks) records a draw — sudden death
+		 * resolves those in the sim before this point anyway. */
+		for (i = 0; (gSCManagerBattleState != NULL) && (i < MAXCONTROLLERS); i++)
+		{
+			s32 stocks = (i < sSYNetPeerBootstrapMetadata.player_count)
+				? gSCManagerBattleState->players[i].stock_count : -1;
+			if (stocks > best)
+			{
+				best = stocks;
+				winner = i;
+			}
+			else if (stocks == best)
+			{
+				winner = -1;
+			}
+		}
+		/* the loop above already tolerates a NULL battle state (quit before
+		 * the scene fully came up) — keep the duration read behind the same
+		 * guard or this dereferences the pointer it just skipped */
+		port_netlobby_set_match_result(winner,
+			gSCManagerBattleState != NULL ? (u32)gSCManagerBattleState->time_passed : 0);
 
 		sSYNetPeerIsEnabled = FALSE;
 		sSYNetPeerIsConfigured = FALSE;
