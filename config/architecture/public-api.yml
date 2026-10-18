@@ -1,0 +1,25 @@
+# Public API surface — the only headers external consumers may rely on.
+# Enforced by tools/analysis/lint/check_public_api.py:
+#   - every listed header must exist;
+#   - a public header may only #include other public headers, siblings in
+#     its own directory, or system headers (<...>);
+#   - headers that stop being public are moved to `retired:` with a note —
+#     removing a public header silently is a semver break.
+#
+# Consumers: components/decomp (port_* ABI), script/native mods, tools
+# linking against smash_test_support, downstream packaging.
+
+public:
+  # decomp ↔ port C ABI — the only surface decomp may call
+  - src/game/engine/decomp/port_types.h
+  - src/game/engine/port.h
+  - src/core/observability/port_watchdog.h
+  - src/core/observability/port_log.h   # decomp logs through it directly
+  - src/core/persistence/port_save.h
+  # error taxonomy — part of the module contract (error-model.md)
+  - src/shared/result/error_code.h
+  - src/shared/result/result.h
+  # config schema — consumed by tooling + menu
+  - src/core/config/schema.h
+
+retired: {}

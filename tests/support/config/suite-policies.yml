@@ -1,0 +1,106 @@
+# Per-level test governance — the manifest each tests/<level>/ dir answers to.
+# Selection (which tests run together) lives in test-suites.yml; this file
+# declares *policy*: who owns the level, what resources it may consume,
+# whether CI may block on it. Enforced by tools/analysis/lint/check_test_policy.py.
+#
+# Fields:
+#   owner          — area that triages failures (maps to CODEOWNERS paths)
+#   type           — unit|integration|contract|e2e|fuzz|security|smoke|regression|performance
+#   timeout_s      — per-test ceiling; pytest-timeout enforces the outer bound
+#   requires_rom   — tests may look for a legally-supplied baserom
+#   requires_network — may hit real sockets/servers (incl. localhost lobby)
+#   requires_hw    — physical hardware beyond the dev machine (AVD counts as no)
+#   parallel_ok    — safe under pytest -n / concurrent CI jobs
+#   ci_blocking    — a failure here blocks merge/release
+#   artifacts      — named outputs preserved under out/test-results/artifacts/
+suites:
+  unit:
+    owner: platform
+    type: unit
+    timeout_s: 60
+    requires_rom: false
+    requires_network: false
+    requires_hw: false
+    parallel_ok: true
+    ci_blocking: true
+    artifacts: []
+  contract:
+    owner: architecture
+    type: contract
+    timeout_s: 120
+    requires_rom: false
+    requires_network: false
+    requires_hw: false
+    parallel_ok: true
+    ci_blocking: true
+    artifacts: [golden-diff]
+  integration:
+    owner: platform
+    type: integration
+    timeout_s: 300
+    requires_rom: false
+    requires_network: false
+    requires_hw: false
+    parallel_ok: true
+    ci_blocking: true
+    artifacts: [extracted-yamls, mod-packages]
+  regression:
+    owner: area-per-issue
+    type: regression
+    timeout_s: 180
+    requires_rom: true
+    requires_network: false
+    requires_hw: false
+    parallel_ok: true
+    ci_blocking: true
+    artifacts: [repro-dump]
+  security:
+    owner: security
+    type: security
+    timeout_s: 180
+    requires_rom: false
+    requires_network: true   # lobby abuse-model tests spawn a real worker
+    requires_hw: false
+    parallel_ok: true
+    ci_blocking: true
+    artifacts: [attack-log]
+  fuzz:
+    owner: security
+    type: fuzz
+    timeout_s: 600
+    requires_rom: false
+    requires_network: false
+    requires_hw: false
+    parallel_ok: false       # CPU-saturating; run serially in CI
+    ci_blocking: false       # nightly, not per-PR
+    artifacts: [corpus, crashers]
+  smoke:
+    owner: release
+    type: smoke
+    timeout_s: 300
+    requires_rom: false
+    requires_network: false
+    requires_hw: false
+    parallel_ok: false       # window/game-process tests serialize on SDL
+    ci_blocking: true
+    artifacts: [boot-log, screenshots]
+  e2e:
+    owner: release
+    type: e2e
+    timeout_s: 900
+    requires_rom: true
+    requires_network: true   # netplay e2e + lobby tests
+    requires_hw: false
+    parallel_ok: false
+    ci_blocking: true
+    artifacts: [session-logs, rollback-traces, desync-reports, screenshots]
+  performance:
+    owner: performance
+    type: performance
+    timeout_s: 600
+    requires_rom: true
+    requires_network: false
+    requires_hw: false
+    parallel_ok: false
+    ci_blocking: false       # reports trends; never gates merges
+    artifacts: [benchmark-json, baselines]

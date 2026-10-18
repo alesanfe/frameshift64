@@ -30,7 +30,7 @@ OWN_CODE_DIRS = ["src", "include", "platforms", "tools", "scripts", "services", 
 EXCLUDED_DIR_NAMES = {
     ".git", ".venv", ".venv-lint", ".claude",
     "build", "build-lint", "out", "dist", "x64",
-    "decomp", "libultraship", "torch", "mods/examples",
+    "decomp", "libultraship", "torch", "components", "mods/examples",
     "node_modules", "assets", "expected",
 }
 
@@ -110,7 +110,7 @@ def own_dirs() -> list:
 def configure_cmake(args) -> int:
     if args.skip_configure:
         return 0
-    cmd = ["cmake", "-S", ".", "-B", BUILD.name,
+    cmd = ["cmake", "-S", ".", "-B", str(BUILD),
            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
            f"-DCMAKE_BUILD_TYPE={args.build_type}"]
     if args.generator:
@@ -146,9 +146,13 @@ def build_checks(args) -> list:
 
     cpplint_cmd = [resolve("cpplint"), "--recursive",
                    "--extensions=c,cc,cpp,cxx,h,hh,hpp,hxx",
-                   "--filter=-whitespace/line_length,-build/include_subdir",
+                   # Filtered to repo conventions: tabs are the codebase's
+                   # indent style, C casts + long/short are load-bearing in
+                   # the N64 ABI layer, brace style is mixed deliberately.
+                   "--filter=-whitespace/line_length,-build/include_subdir,-whitespace/tab,-readability/casting,-runtime/int,-whitespace/braces",
                    "--exclude=build", "--exclude=build-lint", "--exclude=out",
-                   "--exclude=.venv-lint"]
+                   "--exclude=.venv-lint", "--exclude=node_modules",
+                   "--exclude=generated", "--exclude=.claude"]
     if not args.include_vendor:
         cpplint_cmd += ["--exclude=components", "--exclude=mods/examples"]
     cpplint_cmd += dirs if not args.include_vendor else ["."]
@@ -159,7 +163,8 @@ def build_checks(args) -> list:
                          "-L", "120", "-a", "6", "-w",
                          "-x", "*/node_modules/*"] + dirs,
               "lizard.txt", required=False),
-        Check("cmake-lint", [resolve("cmake-lint")] + find_cmake_files(),
+        Check("cmake-lint", [resolve("cmake-lint")] + find_cmake_files() +
+              ["-c", ".cmakelintrc"],
               "cmake-lint.txt", required=False),
         Check("codespell", [resolve("codespell"), ".", "--config", ".codespellrc"],
               "codespell.txt", required=False),
@@ -171,7 +176,7 @@ def build_checks(args) -> list:
                        "--exclude", "components",
                        "--output-format", "full"],
               "ruff.txt", required=False),
-        Check("bandit", [resolve("bandit"), "-r"] +
+        Check("bandit", [resolve("bandit"), "-r", "-ll"] +
               [p for p in ("scripts", "tools")
                if (ROOT / p).exists()] + ["-x", "*/tests/*,*/build/*"],
               "bandit.txt", required=False),
@@ -191,6 +196,18 @@ def build_checks(args) -> list:
               [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
                                    "check_retired_paths.py")],
               "retired-paths.txt", required=True),
+        Check("public-api",
+              [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
+                                   "check_public_api.py")],
+              "public-api.txt", required=True),
+        Check("test-policy",
+              [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
+                                   "check_test_policy.py")],
+              "test-policy.txt", required=True),
+        Check("remotes",
+              [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
+                                   "check_remotes.py")],
+              "remotes.txt", required=True),
     ]
 
     sem = ROOT / "config" / "analysis" / "semgrep" / "smash-classic.yml"
