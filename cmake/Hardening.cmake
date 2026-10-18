@@ -19,6 +19,11 @@ function(ssb64_apply_hardening _iface)
     elseif(APPLE)
         target_compile_options(${_iface} INTERFACE -fstack-protector-strong)
         target_link_options(${_iface} INTERFACE -Wl,-pie)
+    elseif(EMSCRIPTEN)
+        # wasm has no PIE/relro concept — the GNU link flags harden ELF
+        # binaries but here they make wasm-ld treat the decomp's K&R
+        # signature mismatches as fatal errors.
+        target_compile_options(${_iface} INTERFACE -fstack-protector-strong)
     else() # ELF (linux / switch homebrew devkitA64 ignores unknown -Wl)
         target_compile_options(${_iface} INTERFACE
             -fstack-protector-strong

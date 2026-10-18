@@ -456,8 +456,12 @@ std::vector<std::string> PortProfileNames() {
     char buf[8192];
     port_profile_list(buf, sizeof(buf));
     std::vector<std::string> out;
-    for (char* t = strtok(buf, "\n"); t != nullptr; t = strtok(nullptr, "\n")) {
-        out.emplace_back(t);
+    // strtok shares global state across the process; scan '\n' manually.
+    for (const char* line = buf; *line != '\0';) {
+        const char* eol = std::strchr(line, '\n');
+        out.emplace_back(line, eol ? eol - line : static_cast<ptrdiff_t>(std::strlen(line)));
+        if (eol == nullptr) break;
+        line = eol + 1;
     }
     return out;
 }

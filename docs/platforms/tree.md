@@ -9,4 +9,6 @@ Platform support is split across three places by design:
 | OS-abstracted runtime code | `src/platform/` |
 | Build/test/package entrypoints | `scripts/{build,testing,packaging}/` |
 
-Each `<name>/README.md` lists the pieces for that platform.
+Per-platform guides live beside this index: `android.md`, `linux.md`,
+`macos.md`, `switch-dir.md`/`switch_port.md`, `uwp.md`/`uwp-ci.md`,
+`web.md`, `windows.md`.

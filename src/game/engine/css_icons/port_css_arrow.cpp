@@ -25,6 +25,7 @@
 
 #include "lbreloc_byteswap.h"
 #include "RelocPointerTable.h"
+#include "css_le_put.h"
 #include "port_log.h"
 
 #include <cstdint>
@@ -65,22 +66,10 @@ static_assert(kArrowHeight    == kArrowLeftHeight,
 static_assert((kArrowWidth * 2) % 8 == 0,
               "arrow PNG width must be a multiple of 4 px (RGBA16 row stride alignment)");
 
-static inline void put_s16(uint8_t *b, unsigned off, int16_t v) {
-    uint16_t u; std::memcpy(&u, &v, 2);
-    b[off+0] = (uint8_t)(u & 0xFF); b[off+1] = (uint8_t)(u >> 8);
-}
-static inline void put_u16(uint8_t *b, unsigned off, uint16_t v) {
-    b[off+0] = (uint8_t)(v & 0xFF); b[off+1] = (uint8_t)(v >> 8);
-}
-static inline void put_u32(uint8_t *b, unsigned off, uint32_t v) {
-    b[off+0] = (uint8_t)(v & 0xFF);
-    b[off+1] = (uint8_t)((v >> 8) & 0xFF);
-    b[off+2] = (uint8_t)((v >> 16) & 0xFF);
-    b[off+3] = (uint8_t)(v >> 24);
-}
-static inline void put_f32(uint8_t *b, unsigned off, float v) {
-    uint32_t bits; std::memcpy(&bits, &v, 4); put_u32(b, off, bits);
-}
+using ssb64::css::put_s16;
+using ssb64::css::put_u16;
+using ssb64::css::put_u32;
+using ssb64::css::put_f32;
 
 /* One cache slot per variant: [0] = right, [1] = left.  Same Sprite layout. */
 enum ArrowVariant { kArrowRight = 0, kArrowLeft = 1, kArrowVariantCount = 2 };

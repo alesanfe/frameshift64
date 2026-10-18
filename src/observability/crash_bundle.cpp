@@ -15,7 +15,21 @@
 #include <iterator>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
+
+#include <libultraship/bridge/consolevariablebridge.h>
+#include "port_log.h"
+
+#ifdef SSB64_HAVE_CURL
+#include "http_curl.h"
+#include <nlohmann/json.hpp>
+#if defined(SSB64_NETPLAY_SERVER)
+#define PORT_NETLOBBY_DEFAULT_SERVER SSB64_NETPLAY_SERVER
+#else
+#define PORT_NETLOBBY_DEFAULT_SERVER "wss://smash-netplay.jumpcircuit.workers.dev"
+#endif
+#endif
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -323,6 +337,101 @@ std::string CollectPendingCrashBundle(const std::string &log_path) {
     } catch (...) {
         return ""; /* diagnostics must never break boot */
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* Opt-in crash telemetry — gCrashReports.Enabled (default OFF). The   */
+/* user opts in once; every later crash bundle uploads itself on the   */
+/* NEXT launch (a crash handler can't POST mid-fault).                 */
+/*                                                                    */
+/* What travels: build version/sha, platform, crash reason, fault     */
+/* address, scene id/name, and the last 8 KiB of the dead run's log    */
+/* (the backtrace). What never travels: minidumps (they may contain    */
+/* heap contents), save files, config, or any path outside the log.    */
+/* The POST goes to the configured netplay lobby — the same server the */
+/* leaderboard already uses; a self-hosted lobby collects its own      */
+/* crash data, nobody else's.                                          */
+/* ------------------------------------------------------------------ */
+
+namespace {
+
+std::string sPendingBundle;
+
+#ifdef SSB64_HAVE_CURL
+/* ws://host/... -> http://host, wss:// -> https://, path stripped. */
+std::string LobbyHttpBase() {
+    std::string s = CVarGetString("gNetplay.Server", "");
+    if (s.empty()) {
+        s = PORT_NETLOBBY_DEFAULT_SERVER;
+    }
+    bool secure = true;
+    if (s.rfind("ws://", 0) == 0)  { secure = false; s.erase(0, 5); }
+    else if (s.rfind("wss://", 0) == 0) { s.erase(0, 6); }
+    else if (s.rfind("http://", 0) == 0)  { secure = false; s.erase(0, 7); }
+    else if (s.rfind("https://", 0) == 0) { s.erase(0, 8); }
+    while (!s.empty() && (s.back() == '/' || s.back() == ' ')) {
+        s.pop_back();
+    }
+    return s.empty() ? s : std::string(secure ? "https://" : "http://") + s;
+}
+
+std::string ReadText(const std::filesystem::path &p, size_t max_bytes, bool tail) {
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(p, ec);
+    if (ec) return "";
+    std::ifstream in(p, std::ios::binary);
+    if (!in) return "";
+    std::string out;
+    if (tail && size > max_bytes) {
+        in.seekg(static_cast<std::streamoff>(size) - static_cast<std::streamoff>(max_bytes));
+        std::string discard;
+        std::getline(in, discard);          /* skip the torn first line */
+    }
+    out.assign(std::istreambuf_iterator<char>(in),
+               std::istreambuf_iterator<char>());
+    if (out.size() > max_bytes) out.resize(max_bytes);
+    return out;
+}
+
+void UploadThread(std::string bundle_dir) {
+    /* crash_info.txt is "k=v" lines; ship them verbatim (they're already
+     * sanitized build/crash fields). previous.log ships only its tail —
+     * the backtrace sits at the end. */
+    const std::string info = ReadText(std::filesystem::path(bundle_dir) / "crash_info.txt", 8192, false);
+    const std::string logtail = ReadText(std::filesystem::path(bundle_dir) / "previous.log", 8192, true);
+    if (info.empty() && logtail.empty()) {
+        return;
+    }
+    nlohmann::json doc;
+    doc["kind"] = "crash";
+    doc["info"] = info;
+    doc["log_tail"] = logtail;
+    std::string body, err;
+    if (ssb64::CurlPostToString(LobbyHttpBase() + "/crash", doc.dump(),
+                                "application/json", &body, &err, 15)) {
+        port_log("SSB64: crash report uploaded (thanks — it helps fix it)\n");
+    } else {
+        port_log("SSB64: crash report upload failed: %s\n", err.c_str());
+    }
+}
+
+#endif /* SSB64_HAVE_CURL */
+
+} // namespace
+
+void QueueCrashReport(const std::string &bundle_dir) {
+    sPendingBundle = bundle_dir;
+}
+
+void MaybeUploadCrashReport() {
+    if (sPendingBundle.empty() || CVarGetInteger("gCrashReports.Enabled", 0) == 0) {
+        return;
+    }
+#ifdef SSB64_HAVE_CURL
+    std::thread t(UploadThread, sPendingBundle);
+    t.detach();
+#endif
+    sPendingBundle.clear();
 }
 
 } // namespace ssb64::diag

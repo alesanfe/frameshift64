@@ -30,7 +30,18 @@ const allowIpJoin = makeJoinLimiter();  // cross-code scan throttle (AUD-25)
 
 /* Cumulative counters for /metrics — local mirror of what the deployed
  * worker reports through Analytics Engine (LOBBY_ANALYTICS binding). */
-const stats = { admits: 0, rejects: 0, byRole: { host: 0, join: 0, spec: 0, queue: 0 } };
+const stats = { admits: 0, rejects: 0, byRole: { host: 0, join: 0, spec: 0, queue: 0 },
+                crashes: 0,
+                /* lobby-path RTT histogram (ms) reported via ?ms= on role=queue */
+                rttBuckets: { lt50: 0, lt100: 0, lt150: 0, lt250: 0, rest: 0 } };
+
+function rttBucket(ms) {
+  if (ms < 50) return "lt50";
+  if (ms < 100) return "lt100";
+  if (ms < 150) return "lt150";
+  if (ms < 250) return "lt250";
+  return "rest";
+}
 
 const port = parseInt(process.argv[2] || "8799", 10);
 const server = http.createServer((req, res) => {
@@ -69,10 +80,43 @@ const server = http.createServer((req, res) => {
       "# HELP ssb64_lobby_rejects_total Rejected admissions",
       "# TYPE ssb64_lobby_rejects_total counter",
       `ssb64_lobby_rejects_total ${stats.rejects}`,
+      "# HELP ssb64_lobby_queue_rtt_ms Reported queue-join lobby RTT (ms) histogram",
+      "# TYPE ssb64_lobby_queue_rtt_ms counter",
+      `ssb64_lobby_queue_rtt_ms{bucket="lt50"} ${stats.rttBuckets.lt50}`,
+      `ssb64_lobby_queue_rtt_ms{bucket="lt100"} ${stats.rttBuckets.lt100}`,
+      `ssb64_lobby_queue_rtt_ms{bucket="lt150"} ${stats.rttBuckets.lt150}`,
+      `ssb64_lobby_queue_rtt_ms{bucket="lt250"} ${stats.rttBuckets.lt250}`,
+      `ssb64_lobby_queue_rtt_ms{bucket="rest"} ${stats.rttBuckets.rest}`,
+      "# HELP ssb64_lobby_crashes_total Opt-in crash reports received",
+      "# TYPE ssb64_lobby_crashes_total counter",
+      `ssb64_lobby_crashes_total ${stats.crashes}`,
       "",
     ];
     res.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
     res.end(lines.join("\n"));
+    return;
+  }
+  if (req.url === "/crash" && req.method === "POST") {
+    /* Opt-in crash telemetry (client gCrashReports.Enabled): append one
+     * JSONL record per report — build/crash fields + a capped log tail.
+     * No body limit is implied by the client beyond its own caps, so cap
+     * the intake here too (64 KiB). */
+    let raw = "";
+    req.on("data", (c) => { raw += c; if (raw.length > 65536) req.destroy(); });
+    req.on("end", () => {
+      try {
+        const doc = JSON.parse(raw);
+        if (doc && doc.kind === "crash" &&
+            typeof doc.info === "string" && doc.info.length <= 8192 &&
+            typeof doc.log_tail === "string" && doc.log_tail.length <= 8192) {
+          fs.appendFileSync("crashes.jsonl",
+            JSON.stringify({ at: new Date().toISOString(), ...doc }) + "\n");
+          stats.crashes++;
+        }
+      } catch { /* malformed report — drop silently */ }
+      res.writeHead(204);
+      res.end();
+    });
     return;
   }
   if (req.url === "/leaderboard" && req.method === "GET") {
@@ -211,6 +255,10 @@ wss.on("connection", (ws, req) => {
   attach(room, ws, action.info);
   stats.admits++;
   if (role in stats.byRole) stats.byRole[role]++;
+  if (role === "queue") {
+    const ms = parseInt(url.searchParams.get("ms") || "", 10);
+    if (Number.isFinite(ms) && ms > 0 && ms < 10000) stats.rttBuckets[rttBucket(ms)]++;
+  }
   send(action.welcome);
   if (action.after === "introduceV1") room.introduceV1();
   else if (action.after === "broadcastRoster") room.broadcastRoster();

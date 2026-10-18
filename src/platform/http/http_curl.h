@@ -43,4 +43,11 @@ bool CurlDownloadToFile(const std::string& url, const std::filesystem::path& des
                         std::string* error, const CurlProgressFn& progress = nullptr,
                         const std::atomic<bool>* cancel = nullptr);
 
+/* ws://host[:port]/path -> http://host[:port], wss:// -> https://; any
+ * path/query is stripped. A bare hostname gets https://. Empty or null
+ * input stays empty (callers gate on it). Single home for what used to
+ * be two near-identical helpers in netleaderboard.cpp and
+ * crash_bundle.cpp — one of which forgot to strip the path. */
+std::string HttpBaseFromWsServer(const char* server);
+
 } // namespace ssb64

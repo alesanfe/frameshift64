@@ -27,7 +27,8 @@ export default {
     // Self-reported rating board lives on a dedicated DO (HTTP only — no
     // ws). Same stub mechanism as rooms, fixed name.
     if (url.pathname === "/leaderboard" || url.pathname === "/submit" ||
-        url.pathname === "/result") {
+        url.pathname === "/result" || url.pathname === "/crash" ||
+        url.pathname === "/crashes") {
       const stub = env.ROOMS.get(env.ROOMS.idFromName("leaderboard-global"));
       return stub.fetch(request);
     }
@@ -135,6 +136,33 @@ export class NetplayRoom extends DurableObject {
       await this.ctx.storage.put("lb", lb.toJSON());
       return Response.json(result);
     }
+    /* Opt-in crash telemetry (gCrashReports.Enabled): {kind:"crash",
+     * info, log_tail} — ring of the last 50 in DO storage, counted via
+     * analytics for the Grafana board. */
+    if (url.pathname === "/crash" && request.method === "POST") {
+      let body = null;
+      try { body = await request.json(); } catch { /* bad json */ }
+      if (body && body.kind === "crash" &&
+          typeof body.info === "string" && body.info.length <= 8192 &&
+          typeof body.log_tail === "string" && body.log_tail.length <= 8192) {
+        const ring = (await this.ctx.storage.get("crashes")) || [];
+        ring.push({ at: Date.now(), info: body.info, log_tail: body.log_tail });
+        while (ring.length > 50) ring.shift();
+        await this.ctx.storage.put("crashes", ring);
+        try {
+          this.env.LOBBY_ANALYTICS?.writeDataPoint({
+            blobs: ["crash", "report"], doubles: [0, 0], indexes: [""],
+          });
+        } catch { /* telemetry never blocks */ }
+      }
+      return new Response(null, { status: 204 });
+    }
+    /* Recent crash reports (operator debugging; same trust level as the
+     * leaderboard — the reports are opt-in and carry no auth). */
+    if (url.pathname === "/crashes" && request.method === "GET") {
+      const ring = (await this.ctx.storage.get("crashes")) || [];
+      return Response.json({ crashes: ring });
+    }
     return new Response("not found", { status: 404 });
   }
 
@@ -163,11 +191,16 @@ export class NetplayRoom extends DurableObject {
 
     /* Optional Analytics Engine telemetry (LOBBY_ANALYTICS dataset binding):
      * one datapoint per admission — Grafana reads it via the Cloudflare
-     * datasource plugin. No binding = no-op; failure never blocks a join. */
+     * datasource plugin. No binding = no-op; failure never blocks a join.
+     * doubles: [protocol version, lobby RTT ms hint (queue only, -1 absent)]
+     * — the ms column is instrumentation for latency-aware matchmaking
+     * once population data justifies partitioning. */
     try {
+      const msHint = role === "queue"
+        ? parseInt(url.searchParams.get("ms") || "-1", 10) : -1;
       this.env.LOBBY_ANALYTICS?.writeDataPoint({
         blobs: [role, action.kind],
-        doubles: [version],
+        doubles: [version, Number.isFinite(msHint) ? msHint : -1],
         indexes: [action.kind === "reject" ? action.reason : ""],
       });
     } catch { /* telemetry must never break admission */ }

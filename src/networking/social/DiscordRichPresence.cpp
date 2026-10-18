@@ -110,8 +110,8 @@ long ConnReadable() {
 
 // Append up to `want` readable bytes to g_recv. `want`==0 drains all
 // currently available. Returns false on connection death.
-bool ConnReadSome(size_t want) {
 #ifdef _WIN32
+bool ConnReadSomeWin(size_t want) {
     DWORD avail = 0;
     if (!PeekNamedPipe(g_conn, NULL, 0, NULL, &avail, NULL)) return false;
     if (want == 0 || want > avail) want = avail;
@@ -125,13 +125,23 @@ bool ConnReadSome(size_t want) {
     }
     g_recv.resize(old + got);
     return true;
+}
 #else
+bool ConnReadSomePosix(size_t want) {
     char buf[4096];
     ssize_t n = recv(g_conn, buf, want ? (want < sizeof(buf) ? want : sizeof(buf)) : sizeof(buf),
                      MSG_DONTWAIT);
     if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) return false;
     if (n > 0) g_recv.append(buf, (size_t)n);
     return true;
+}
+#endif
+
+bool ConnReadSome(size_t want) {
+#ifdef _WIN32
+    return ConnReadSomeWin(want);
+#else
+    return ConnReadSomePosix(want);
 #endif
 }
 
@@ -241,6 +251,43 @@ bool OpenEndpoint() {
 // INTERNAL LIFECYCLE
 // ---------------------------------------------------------
 
+
+/* Parses the first handshake reply frame: returns true and logs the user
+ * when Discord answered READY/DISPATCH. A non-READY first frame (e.g. an
+ * error) returns false so the caller closes and retries later. */
+bool ReadHandshakeReply() {
+    uint32_t op;
+    std::string payload;
+    if (!PopFrame(op, payload)) {
+        return false;
+    }
+    const nlohmann::json resp =
+        nlohmann::json::parse(payload, nullptr, /*exceptions*/ false);
+    const auto evt = resp.find("evt");
+    const auto cmd = resp.find("cmd");
+    const bool ready =
+        (evt != resp.end() && evt->is_string() &&
+         evt->get_ref<const std::string&>() == "READY") ||
+        (cmd != resp.end() && cmd->is_string() &&
+         cmd->get_ref<const std::string&>() == "DISPATCH");
+    if (!ready) {
+        return false;
+    }
+    std::string name;
+    const auto data = resp.find("data");
+    if (data != resp.end() && data->is_object()) {
+        const auto user = data->find("user");
+        if (user != data->end() && user->is_object()) {
+            const auto un = user->find("username");
+            if (un != user->end() && un->is_string())
+                name = un->get_ref<const std::string&>();
+        }
+    }
+    port_log("SSB64 DRP: Connected to Discord%s%s\n",
+             name.empty() ? "" : " as ", name.c_str());
+    return true;
+}
+
 void DRP_Init() {
     if (g_drpInitialized) return;
     g_drpInitialized = true;
@@ -260,36 +307,9 @@ void DRP_Init() {
     }
     // Bounded wait for the READY event — if Discord stalls we stay
     // "initialized but disconnected" and the tick retries later.
-    if (WaitForData(kHandshakeTimeoutMs) && ConnReadSome(0)) {
-        uint32_t op;
-        std::string payload;
-        if (PopFrame(op, payload)) {
-            const nlohmann::json resp =
-                nlohmann::json::parse(payload, nullptr, /*exceptions*/ false);
-            const auto evt = resp.find("evt");
-            const auto cmd = resp.find("cmd");
-            const bool ready =
-                (evt != resp.end() && evt->is_string() &&
-                 evt->get_ref<const std::string&>() == "READY") ||
-                (cmd != resp.end() && cmd->is_string() &&
-                 cmd->get_ref<const std::string&>() == "DISPATCH");
-            if (ready) {
-                std::string name;
-                const auto data = resp.find("data");
-                if (data != resp.end() && data->is_object()) {
-                    const auto user = data->find("user");
-                    if (user != data->end() && user->is_object()) {
-                        const auto un = user->find("username");
-                        if (un != user->end() && un->is_string())
-                            name = un->get_ref<const std::string&>();
-                    }
-                }
-                port_log("SSB64 DRP: Connected to Discord%s%s\n",
-                         name.empty() ? "" : " as ", name.c_str());
-                return;
-            }
-            // A non-READY first frame (e.g. an error) — reconnect later.
-        }
+    if (WaitForData(kHandshakeTimeoutMs) && ConnReadSome(0) &&
+        ReadHandshakeReply()) {
+        return;
     }
     ConnClose();
 }
@@ -367,80 +387,48 @@ namespace ssb64 {
             if (!WriteFrame(kOpFrame, frame.dump())) ConnClose();
         }
 
+        /* Scene -> presence mapping. Single-player and intro scenes were
+         * verified against docs/architecture/overview.md scene ids; the
+         * N64-logo/opening-room range 27..46 is one cinematic block. */
+        struct ScenePresence { unsigned char scene; const char* state; const char* details; };
+        static constexpr ScenePresence kScenePresence[] = {
+            { 1,  "Title Screen",            "Press Start" },
+            { 7,  "In Menus",                "Choosing a Game Mode" },
+            { 8,  "In Menus",                "Choosing a Game Mode" },
+            { 9,  "In Menus",                "Choosing a Game Mode" },
+            { 10, "In Menus",                "Choosing a Game Mode" },
+            { 11, "In Menus",                "Choosing a Game Mode" },
+            { 15, "In Menus",                "Choosing a Game Mode" },
+            { 25, "In Menus",                "Looking at Stats" },
+            { 26, "In Menus",                "Looking at Stats" },
+            { 16, "CSS",                     "Choosing a Fighter" },
+            { 17, "CSS",                     "Choosing a Fighter" },
+            { 18, "Training Mode",           "Choosing a Fighter" },
+            { 19, "Break the Targets",       "Choosing a Fighter" },
+            { 20, "Board the Platforms",     "Choosing a Fighter" },
+            { 21, "Stage Select",            "Picking a Stage" },
+            { 14, "Versus Mode",             "Brawling" },
+            { 22, "Versus Mode",             "Brawling" },
+            { 23, "Single Player",           "In a Match" },
+            { 24, "Post-Match",              "Viewing Results" },
+            { 13, "Challenger Approaching!", "A New Foe Has Appeared" },
+        };
+
         static void UpdatePresenceForScene(unsigned char sceneId) {
-            switch (sceneId) {
-                // --- MENUS ---
-                case 1:  // Title
-                    UpdateDiscordPresence("Title Screen", "Press Start");
-                    break;
-                case 7:  // Main Menu
-                case 8:  // 1P Mode Menu
-                case 9:  // VS Mode Menu
-                case 10: // VS Options
-                case 11: // VS Item Switch
-                case 15: // Screen Adjust
-                    UpdateDiscordPresence("In Menus", "Choosing a Game Mode");
-                    break;
-                case 25: // Records Screen
-                case 26: // Character Data Screen
-                    UpdateDiscordPresence("In Menus", "Looking at Stats");
-                    break;
-
-                // --- CHARACTER SELECT (CSS) ---
-                case 16: // VS Character Select
-                    // --- 1P / TRAINING CHARACTER SELECT ---
-                case 17: // 1P Game Players
-                    UpdateDiscordPresence("CSS", "Choosing a Fighter");
-                    break;
-                case 18: // Training Mode Players
-                    UpdateDiscordPresence("Training Mode", "Choosing a Fighter");
-                    break;
-                case 19: // Bonus 1 Players
-                    UpdateDiscordPresence("Break the Targets", "Choosing a Fighter");
-                    break;
-                case 20: // Bonus 2 Players
-                    UpdateDiscordPresence("Board the Platforms", "Choosing a Fighter");
-                    break;
-
-                // --- STAGE SELECT ---
-                case 21: // Stage Select
-                    UpdateDiscordPresence("Stage Select", "Picking a Stage");
-                    break;
-
-                // --- IN-GAME & RESULTS ---
-                case 14: // 1P VS Screen (The "VS" splash before a fight)
-
-                // --- GAMEPLAY ---
-                case 22: // VS Battle In-Game
-                    UpdateDiscordPresence("Versus Mode", "Brawling");
-                    break;
-                case 23: // 1P Gameplay (Classic, Training, Bonus)
-                    UpdateDiscordPresence("Single Player", "In a Match");
-                    break;
-                case 24: // VS Results Screen
-                    UpdateDiscordPresence("Post-Match", "Viewing Results");
-                    break;
-                case 13: // Challenger Approaching Screen
-                    UpdateDiscordPresence("Challenger Approaching!", "A New Foe Has Appeared");
-                    break;
-
-                // --- INTRO & CUTSCENES ---
-                case 27: // N64 Logo / Startup
-                case 28: // Opening Room (Master Hand desk)
-                case 29: case 30: case 31: case 32: case 33: case 34:
-                case 35: case 36: case 37: case 38: case 39: case 40:
-                case 41: case 42: case 43: case 44: case 45: case 46:
-                    UpdateDiscordPresence("Watching the Intro", "Nostalgia Trip");
-                    break;
-
-                // --- FALLBACK (Including Debug Menus & Messages) ---
-                case 0:  // No Controller Screen
-                case 12: // Unlock Message
-                default:
-                    UpdateDiscordPresence("in the game", "Somewhere");
-                    break;
+            if (sceneId >= 27 && sceneId <= 46) {
+                UpdateDiscordPresence("Watching the Intro", "Nostalgia Trip");
+                return;
             }
+            for (const ScenePresence& p : kScenePresence) {
+                if (p.scene == sceneId) {
+                    UpdateDiscordPresence(p.state, p.details);
+                    return;
+                }
+            }
+            /* FALLBACK (debug menus, messages, no-controller screen). */
+            UpdateDiscordPresence("in the game", "Somewhere");
         }
+
 
         void TickDiscordPresence() {
             // 1. Read the menu toggle

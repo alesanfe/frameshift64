@@ -7,5 +7,6 @@
     "author": "Your Name",
     "license": "MIT",
     "code-version": 1,
-    "simulation": true
+    "simulation": true,
+    "capabilities": []
 }

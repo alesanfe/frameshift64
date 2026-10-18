@@ -37,6 +37,11 @@ OPTIONAL_REFS = {
     "services/netplay-lobby/node_modules/ws",
     # build-time generated CSS icon PNGs (tools/assets/pipeline output dir)
     "assets/source/",
+    # Emscripten builds of the Torch extractor — produced by the web
+    # packaging step and served next to platforms/web/shell.html, never
+    # committed to the repo.
+    "torch/torch.js",
+    "torch/torch.wasm",
 }
 
 

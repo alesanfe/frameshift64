@@ -61,6 +61,7 @@ void shutdown_net(void)
     sLobby.up_key.clear();
     sLobby.start_sent_ms = 0;
     sLobby.last_start_ms = 0;
+    sLobby.ping_sent_ms = 0;    /* per-session; lobby_rtt_ms itself survives */
     sLobby.my_ready = false;
 }
 
@@ -196,6 +197,13 @@ void connect_server(void)
     url += "/ws?room=" + code + "&role=" +
            (sLobby.quickplay ? "queue"
             : (sLobby.spectate ? "spec" : (sLobby.is_host ? "host" : "join"))) + "&v=2";
+    /* Matchmaking telemetry: report the lobby-path RTT we measured on a
+     * prior session (ping -> keepalive_ack). First-ever connects carry no
+     * hint; the server only logs it — population is too thin to partition
+     * by latency yet, so this is instrumentation-first. */
+    if (sLobby.quickplay && sLobby.lobby_rtt_ms > 0 && sLobby.lobby_rtt_ms < 10000) {
+        url += "&ms=" + std::to_string(sLobby.lobby_rtt_ms);
+    }
     sLobby.ws_welcomed = false;
     sLobby.endpoint_sent = false;
     port_ws_connect(url.c_str());

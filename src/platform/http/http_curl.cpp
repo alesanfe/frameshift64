@@ -187,4 +187,24 @@ bool CurlDownloadToFile(const std::string& url, const std::filesystem::path& des
     return true;
 }
 
+std::string HttpBaseFromWsServer(const char* server) {
+    std::string s = (server != nullptr) ? server : "";
+    const size_t scheme = s.find("://");
+    if (scheme != std::string::npos) {
+        const bool secure = s.compare(0, scheme, "wss") == 0 ||
+                            s.compare(0, scheme, "https") == 0;
+        s = s.substr(scheme + 3);
+        const size_t slash = s.find('/');
+        if (slash != std::string::npos) {
+            s.resize(slash);
+        }
+        return (secure ? "https://" : "http://") + s;
+    }
+    const size_t slash = s.find('/');
+    if (slash != std::string::npos) {
+        s.resize(slash);
+    }
+    return s.empty() ? s : "https://" + s;
+}
+
 } // namespace ssb64

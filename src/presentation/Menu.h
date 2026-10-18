@@ -61,6 +61,11 @@ class Menu : public GuiWindow {
     std::unordered_map<std::string, MainMenuEntry> menuEntries;
     std::vector<std::string> menuOrder;
     uint32_t DrawSearchResults(std::string& menuSearchText);
+    void DrawSearchHit(WidgetInfo& info, const std::string& origin,
+                       const std::string& entryName, const std::string& sidebarName);
+    uint32_t DrawSearchResultWidgets(const std::string& menuSearchText);
+    uint32_t DrawSearchResultExtras(const std::string& menuSearchText);
+    uint32_t DrawSearchActionEntries(const std::string& menuSearchText);
     ImGuiTextFilter menuSearch;
     uint8_t searchSidebarIndex;
     UIWidgets::Colors defaultThemeIndex;
@@ -87,6 +92,73 @@ class Menu : public GuiWindow {
     float windowWidth;
     float mLastUiScale = 1.0f;
     UIWidgets::Colors menuThemeIndex;
+
+    /* DrawElement phases — per-frame outputs handed from the setup half
+     * (BeginElement) to the render half. */
+    struct ElementFrame {
+        ImFont* fontLarge = nullptr;
+        ImFont* fontSmall = nullptr;
+        bool popout = false;
+        int pushedColors = 0;
+        ImGuiWindow* window = nullptr;
+        ImGuiStyle* style = nullptr;
+        std::string headerIndex;
+        ImVec2 pos{};
+        ImVec2 menuSize{};
+        ImVec2 menuBlockPos{};
+        float headerHeight = 0.0f;
+        float headerRowH = 0.0f;
+        ImVec2 buttonSize{};
+        bool headerSearch = false;
+        std::unordered_map<std::string, SidebarEntry>* sidebar = nullptr;
+        bool compactLayout = false;
+        float footerH = 0.0f;
+        float columnHeight = 0.0f;
+        float sectionHeight = 0.0f;
+        float sidebarWidth = 0.0f;
+        std::string sectionIndex;
+        std::string menuSearchText;
+        std::string sectionMenuId;
+        size_t columns = 0;
+        size_t columnFuncs = 0;
+        bool useColumns = false;
+        float sectionWidth = 0.0f;
+    };
+    /* Fonts, pending widget navigation, UI scale, popout geometry and the
+     * theme palette, ending at ImGui::Begin. Returns false when the frame
+     * ends early (window collapsed, or the popout toggle persisted and the
+     * window needs a rebuild) — pushed style state is balanced inside. */
+    void SyncFrameEnvironment();
+    void ApplyPopoutTransition(ElementFrame& f, bool canPopout, ImGuiWindowFlags& windowFlags);
+    bool BeginElement(ElementFrame& f);
+    void DrawElementHeader(ElementFrame& f);
+    void DrawHeaderActions(ElementFrame& f);
+    void DrawHeaderTabStrip(ElementFrame& f, const char* headerCvar);
+    void DrawHeaderSearchField(ElementFrame& f, bool autoFocus);
+    void DrawElementSections(ElementFrame& f);
+    std::string ResolveSectionIndex(ElementFrame& f);
+    void DrawCompactSidebarStrip(ElementFrame& f);
+    void DrawVerticalSidebarList(ElementFrame& f);
+    void DrawElementContent(ElementFrame& f);
+    void DrawSearchPane(ElementFrame& f);
+    void DrawSectionColumns(ElementFrame& f, float columnWidth);
+    void DrawSectionRestoreRow(ElementFrame& f);
+    void DrawElementFooter(ElementFrame& f);
+    float DrawPendingRestartChip(ElementFrame& f, float leftClusterEndX, float hintLineY);
+    const char* FooterHints(bool padNav, bool compactLayout, const char** compactOut);
+
+    /* MenuDrawItem phases. Bail aborts before the shared epilogue (the old
+     * bare `return` paths), NotMine forwards the dispatch to DrawWidgetBody. */
+    enum class WidgetDrawResult { NotMine, Done, Bail };
+    WidgetDrawResult DrawMiscWidget(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex);
+    bool DrawBackendSelector(WidgetInfo& widget, UIWidgets::Colors themeIndex);
+    void DrawWindowButtonWidget(WidgetInfo& widget, UIWidgets::Colors themeIndex);
+    bool DrawWidgetBody(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex);
+    WidgetDrawResult DrawPointerWidget(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex);
+    WidgetDrawResult DrawCVarWidget(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex);
+    void DrawDisabledRecoveryAction(WidgetInfo& widget);
+    void DrawItemEpilogue(WidgetInfo& widget);
+    bool DrawSearchWidget(UIWidgets::Colors themeIndex);
 };
 } // namespace Ship
 

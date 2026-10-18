@@ -134,6 +134,8 @@ struct Lobby {
     bool ws_welcomed = false;
     bool endpoint_sent = false;
     unsigned int last_keepalive_ms = 0;
+    unsigned int ping_sent_ms = 0;          /* last {"type":"ping"} send time */
+    unsigned int lobby_rtt_ms = 0;          /* ping -> keepalive_ack RTT; survives across sessions */
 
     bool after_match = false;
     bool my_ready = false;                /* our ready-check flag (v2 rooms) */

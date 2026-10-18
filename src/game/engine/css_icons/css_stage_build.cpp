@@ -15,6 +15,7 @@
 
 #include "port_css_stage_assets.h"
 #include "css_stage_assets_internal.h"
+#include "css_le_put.h"
 
 #include "app_paths.h"
 #include "lbreloc_byteswap.h"
@@ -43,27 +44,6 @@
 using namespace ssb64::css;
 
 namespace {
-
-// ---------------------------------------------------------------------------
-// Sprite builder helpers.
-// ---------------------------------------------------------------------------
-
-static inline void put_s16(uint8_t *b, unsigned off, int16_t v) {
-    uint16_t u; std::memcpy(&u, &v, 2);
-    b[off+0] = (uint8_t)(u & 0xFF); b[off+1] = (uint8_t)(u >> 8);
-}
-static inline void put_u16(uint8_t *b, unsigned off, uint16_t v) {
-    b[off+0] = (uint8_t)(v & 0xFF); b[off+1] = (uint8_t)(v >> 8);
-}
-static inline void put_u32(uint8_t *b, unsigned off, uint32_t v) {
-    b[off+0] = (uint8_t)(v & 0xFF);
-    b[off+1] = (uint8_t)((v >> 8) & 0xFF);
-    b[off+2] = (uint8_t)((v >> 16) & 0xFF);
-    b[off+3] = (uint8_t)(v >> 24);
-}
-static inline void put_f32(uint8_t *b, unsigned off, float v) {
-    uint32_t bits; std::memcpy(&bits, &v, 4); put_u32(b, off, bits);
-}
 
 // ---------------------------------------------------------------------------
 // RGBA8888 -> RGBA16 BE converter.

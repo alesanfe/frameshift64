@@ -83,6 +83,38 @@ Friend* Find(const char* name) {
 
 }  // namespace
 
+/* Parses one "friends" entry; tolerates added as string-or-number and
+ * blocked as bool-or-int (older files serialized them loosely). Returns
+ * false for non-object entries — the caller skips them. */
+bool ParseFriendEntry(const nlohmann::json& e, Friend& f)
+{
+    if (!e.is_object()) {
+        return false;
+    }
+    const auto name = e.find("name");
+    if (name != e.end() && name->is_string()) {
+        f.name = name->get_ref<const std::string&>();
+    }
+    const auto added = e.find("added");
+    if (added != e.end()) {
+        if (added->is_number()) {
+            f.added = added->get<std::int64_t>();
+        } else if (added->is_string()) {
+            f.added = std::strtoll(added->get_ref<const std::string&>().c_str(),
+                                   nullptr, 10);
+        }
+    }
+    const auto blocked = e.find("blocked");
+    if (blocked != e.end()) {
+        if (blocked->is_boolean()) {
+            f.blocked = blocked->get<bool>();
+        } else if (blocked->is_number()) {
+            f.blocked = blocked->get<int>() != 0;
+        }
+    }
+    return true;
+}
+
 void EnsureLoaded() {
     if (sLoaded) {
         return;
@@ -101,30 +133,12 @@ void EnsureLoaded() {
         return;
     }
     for (const nlohmann::json& e : *friends) {
-        if (!e.is_object() || sFriends.size() >= kMaxNetFriends) {
+        if (sFriends.size() >= kMaxNetFriends) {
             break;
         }
         Friend f;
-        const auto name = e.find("name");
-        if (name != e.end() && name->is_string()) {
-            f.name = name->get_ref<const std::string&>();
-        }
-        const auto added = e.find("added");
-        if (added != e.end()) {
-            if (added->is_number()) {
-                f.added = added->get<std::int64_t>();
-            } else if (added->is_string()) {
-                f.added = std::strtoll(added->get_ref<const std::string&>().c_str(),
-                                       nullptr, 10);
-            }
-        }
-        const auto blocked = e.find("blocked");
-        if (blocked != e.end()) {
-            if (blocked->is_boolean()) {
-                f.blocked = blocked->get<bool>();
-            } else if (blocked->is_number()) {
-                f.blocked = blocked->get<int>() != 0;
-            }
+        if (!ParseFriendEntry(e, f)) {
+            break;      /* malformed entry stops the load, as before */
         }
         if (!f.name.empty()) {
             sFriends.push_back(std::move(f));
@@ -240,18 +254,6 @@ bool port_netfriends_is_blocked(const char* name) {
     ssb64::netfriends::EnsureLoaded();
     const ssb64::netfriends::Friend* f = ssb64::netfriends::Find(name);
     return f && f->blocked;
-}
-
-bool port_netfriends_load(void) {
-    std::lock_guard<std::mutex> lock(ssb64::netfriends::sFriendsMutex);
-    ssb64::netfriends::EnsureLoaded();
-    return true;
-}
-
-bool port_netfriends_save(void) {
-    std::lock_guard<std::mutex> lock(ssb64::netfriends::sFriendsMutex);
-    ssb64::netfriends::EnsureLoaded();
-    return ssb64::netfriends::Save();
 }
 
 }

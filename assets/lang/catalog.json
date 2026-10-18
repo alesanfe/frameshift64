@@ -466,7 +466,7 @@
   "Randomizes the BGM after a stage is chosen. Useful when enabling the competitive ruleset.": "",
   "Rating: %d  ·  %d-%d-%d": "",
   "Rating: %d (provisional)  ·  %d-%d-%d": "",
-  "Ratings are self-reported by each client — treat the board as a friends ladder, not verified ranked.": "",
+  "Ratings update when both players report the same result — a casual ladder, not tournament-grade ranked.": "",
   "Re-download the pack (replaces the installed copy).": "",
   "Re-read the mods/ folder without reloading the mods.": "",
   "Recent matches": "",

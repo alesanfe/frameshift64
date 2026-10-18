@@ -1,0 +1,63 @@
+# Local observability stack for the netplay lobby — Prometheus + Grafana
+# + Loki. It scrapes a locally running node-lobby (host.docker.internal:
+# 8799 /metrics); against the deployed Cloudflare worker there is no
+# scrape endpoint — its telemetry goes to Analytics Engine and is read
+# via Grafana's Cloudflare datasource plugin instead (see
+# ../../docs/netplay/observability.md).
+#
+#   docker compose -f docker-compose.yml up -d
+#   grafana: http://localhost:3000  (admin/admin, change on first login)
+#   prometheus: http://localhost:9090
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      # reach the node-lobby running on the host
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:3.1.0
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+
+  # Ships the game's ssb64.log + the lobby's crashes.jsonl into Loki.
+  # Point SSB64_LOG_DIR at the app's logs directory (see README).
+  promtail:
+    image: grafana/promtail:3.1.0
+    volumes:
+      - ./promtail-config.yaml:/etc/promtail/config.yml:ro
+      - ${SSB64_LOG_DIR:-./logs}:/var/log/ssb64:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  loki-data:

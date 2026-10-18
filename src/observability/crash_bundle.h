@@ -33,6 +33,15 @@ namespace ssb64::diag {
  * Never throws. */
 std::string CollectPendingCrashBundle(const std::string &log_path);
 
+/* Opt-in crash telemetry (gCrashReports.Enabled, default off): queue a
+ * collected bundle for upload after config is readable, then actually
+ * send it on a detached thread — crash_info.txt fields plus the tail of
+ * previous.log, POSTed as JSON to <netplay server>/crash. The minidump
+ * never leaves the machine. Privacy note in crash_bundle.cpp covers
+ * what is and isn't shared. */
+void QueueCrashReport(const std::string &bundle_dir);
+void MaybeUploadCrashReport();
+
 } // namespace ssb64::diag
 
 #ifdef __cplusplus

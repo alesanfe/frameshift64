@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Local node-lobby: services/netplay-lobby local adapter exposes
+  # /metrics in Prometheus text format (see node-lobby.mjs).
+  - job_name: ssb64-lobby
+    static_configs:
+      - targets: ["host.docker.internal:8799"]
+        labels:
+          service: netplay-lobby
+          env: local

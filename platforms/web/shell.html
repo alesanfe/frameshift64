@@ -27,6 +27,7 @@
   <button id="romButton" class="hidden">Choose extracted assets (BattleShip.o2r)</button>
   <input id="picker" type="file" accept=".o2r">
 </div>
+{{{ SCRIPT }}}
 <script>
 /* Web loader for the Emscripten build.
  *
@@ -44,6 +45,9 @@ var statusEl = document.getElementById('status');
 var picker = document.getElementById('picker');
 var romButton = document.getElementById('romButton');
 var O2R = 'BattleShip.o2r';
+/* Companion files the runtime also looks up relative to cwd — small and
+ * fetchable; each failure just skips that file (game continues without). */
+var OPTIONAL_FILES = ['f3d.o2r', 'gamecontrollerdb.txt'];
 var PERSIST = '/persist';
 var started = false;
 
@@ -69,12 +73,14 @@ async function stageFsAndStart(Module) {
     console.warn('IDBFS unavailable (private mode?), saves stay in-memory', e);
   }
 
-  if (!FS.analyzePath(O2R).exists && FS.analyzePath(PERSIST + '/' + O2R).exists) {
+  const fsExists = p => { try { FS.stat(p); return true; } catch (e) { return false; } };
+
+  if (!fsExists(O2R) && fsExists(PERSIST + '/' + O2R)) {
     setStatus('Restoring assets from browser storage…');
     FS.writeFile(O2R, FS.readFile(PERSIST + '/' + O2R));
   }
 
-  if (!FS.analyzePath(O2R).exists) {
+  if (!fsExists(O2R)) {
     try {
       setStatus('Fetching ' + O2R + '…');
       const r = await fetch(O2R);
@@ -82,7 +88,7 @@ async function stageFsAndStart(Module) {
     } catch (e) { /* fall through to the picker */ }
   }
 
-  if (!FS.analyzePath(O2R).exists) {
+  if (!fsExists(O2R)) {
     setStatus('No extracted assets found.\n' +
               'Extract BattleShip.o2r on desktop (first-run wizard) once,\n' +
               'then pick it here — it is cached in this browser afterwards.');
@@ -113,6 +119,16 @@ async function stageFsAndStart(Module) {
     try { FS.syncfs(false, () => {}); } catch (e) {}
   });
 
+  /* Companion runtime files (shaders, controller DB) — fetched
+   * opportunistically; a miss just skips that file. */
+  for (const name of OPTIONAL_FILES) {
+    if (fsExists(name)) continue;
+    try {
+      const r = await fetch(name);
+      if (r.ok) FS.writeFile(name, new Uint8Array(await r.arrayBuffer()));
+    } catch (e) { /* optional */ }
+  }
+
   setStatus('Starting…');
   started = true;
   Module.callMain();
@@ -120,8 +136,8 @@ async function stageFsAndStart(Module) {
 
 BattleShipModule(Module).then(stageFsAndStart).catch(e => {
   setStatus('Failed to load wasm: ' + e);
+  console.error('wasm boot failure:', e && e.stack ? e.stack : e);
 });
 </script>
-{{{ SCRIPT }}}
 </body>
 </html>

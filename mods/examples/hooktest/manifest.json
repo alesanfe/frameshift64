@@ -6,5 +6,6 @@
     "description": "Exercises the funchook detour path: hooks osSpTaskStartGo and passes through.",
     "author": "ssb64-port",
     "license": "MIT",
-    "code-version": 1
+    "code-version": 1,
+    "capabilities": []
 }

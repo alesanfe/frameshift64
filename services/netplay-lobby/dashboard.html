@@ -1,0 +1,125 @@
+<!doctype html>
+<!-- BattleShip netplay lobby dashboard — zero-dependency, open in any
+     browser pointed at a node-lobby (or deployed worker) base URL.
+     Polls /health, /metrics (Prometheus exposition) and /leaderboard.
+     Usage: dashboard.html?base=http://127.0.0.1:8799  (default). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BattleShip lobby — dashboard</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 14px/1.45 ui-monospace, Consolas, monospace; background: #12141a;
+         color: #d7dce4; margin: 0; padding: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+       color: #8b93a3; margin: 28px 0 8px; }
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; }
+  .card { background: #1b1f2a; border: 1px solid #2a3040; border-radius: 8px;
+          padding: 12px 18px; min-width: 130px; }
+  .card .v { font-size: 26px; font-weight: 700; }
+  .card .k { color: #8b93a3; font-size: 11px; text-transform: uppercase; }
+  .ok { color: #4ade80; } .warn { color: #facc15; } .err { color: #f87171; }
+  table { border-collapse: collapse; width: 100%; max-width: 720px; }
+  th, td { text-align: left; padding: 5px 12px; border-bottom: 1px solid #262c3a; }
+  th { color: #8b93a3; font-weight: 400; font-size: 11px; text-transform: uppercase; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .disputes { color: #f87171; }
+  #status { color: #8b93a3; font-size: 12px; }
+  input { background: #1b1f2a; border: 1px solid #2a3040; color: inherit;
+          padding: 4px 8px; border-radius: 4px; font: inherit; width: 320px; }
+  .bar { height: 8px; background: #2a3040; border-radius: 4px; overflow: hidden; }
+  .bar > div { height: 100%; background: #4ade80; }
+</style>
+</head>
+<body>
+<h1>BattleShip netplay lobby</h1>
+<div>
+  <input id="base" size="40"> <span id="status">connecting…</span>
+</div>
+
+<h2>Health</h2>
+<div class="cards" id="health"></div>
+
+<h2>Admissions by role</h2>
+<div class="cards" id="roles"></div>
+
+<h2>Leaderboard (verified Elo)</h2>
+<table id="lb">
+  <thead><tr><th>#</th><th>name</th><th>rating</th><th>W</th><th>L</th><th>disputes</th><th>updated</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+const base = (params.get("base") || "http://127.0.0.1:8799").replace(/\/$/, "");
+$("#base").value = base;
+$("#base").addEventListener("change", () => {
+  params.set("base", $("#base").value.trim());
+  location.search = "?" + params;
+});
+
+const card = (k, v, cls = "") =>
+  `<div class="card"><div class="v ${cls}">${v}</div><div class="k">${k}</div></div>`;
+
+/* Prometheus exposition text -> {metric_name: number} (labels flattened
+   away — this lobby's metrics are either unlabelled or a small set of
+   per-role counters we aggregate by prefix). */
+function parseMetrics(text) {
+  const m = {};
+  for (const line of text.split("\n")) {
+    if (!line || line.startsWith("#")) continue;
+    const sp = line.lastIndexOf(" ");
+    const key = line.slice(0, sp), val = parseFloat(line.slice(sp + 1));
+    if (Number.isNaN(val)) continue;
+    const name = key.replace(/\{.*/, "");
+    m[name] = (m[name] || 0) + val;          // sum label series
+    const role = key.match(/role="(\w+)"/);
+    if (role) m[`${name}:${role[1]}`] = val;
+  }
+  return m;
+}
+
+async function poll() {
+  try {
+    const [health, metrics, lb] = await Promise.all([
+      fetch(`${base}/health`).then((r) => r.json()),
+      fetch(`${base}/metrics`).then((r) => r.ok ? r.text() : "").catch(() => ""),
+      fetch(`${base}/leaderboard`).then((r) => r.json()).catch(() => null),
+    ]);
+
+    $("#status").innerHTML = `<span class="ok">live</span> — ${base} · ` +
+      `updated ${new Date().toLocaleTimeString()}`;
+
+    const m = metrics ? parseMetrics(metrics) : {};
+    $("#health").innerHTML =
+      card("rooms", health.rooms ?? m.ssb64_lobby_rooms ?? "–") +
+      card("sockets", m.ssb64_lobby_sockets ?? "–") +
+      card("players", m.ssb64_lobby_players ?? "–") +
+      card("spectators", m.ssb64_lobby_spectators ?? "–") +
+      card("admits", m.ssb64_lobby_admits_total ?? "–") +
+      card("rejects", m.ssb64_lobby_rejects_total ?? "–",
+           (m.ssb64_lobby_rejects_total || 0) > 0 ? "warn" : "");
+
+    $("#roles").innerHTML = ["host", "join", "spec", "queue"]
+      .map((r) => card(r, m[`ssb64_lobby_admits_role_total:${r}`] ?? "–")).join("");
+
+    const rows = (lb && lb.entries) || [];
+    $("#lb tbody").innerHTML = rows.map((e, i) =>
+      `<tr><td class="n">${i + 1}</td><td>${e.name}</td>` +
+      `<td class="n">${e.rating}</td><td class="n">${e.wins}</td>` +
+      `<td class="n">${e.losses}</td>` +
+      `<td class="n ${e.disputes ? "disputes" : ""}">${e.disputes || 0}</td>` +
+      `<td>${(e.updated || "").slice(0, 19).replace("T", " ")}</td></tr>`)
+      .join("") ||
+      `<tr><td colspan="7" style="color:#8b93a3">no entries yet</td></tr>`;
+  } catch (e) {
+    $("#status").innerHTML = `<span class="err">unreachable</span> — ${base}`;
+  }
+}
+poll();
+setInterval(poll, 5000);
+</script>
+</body>
+</html>

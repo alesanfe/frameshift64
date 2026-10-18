@@ -300,12 +300,14 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
             if (n == 0) {
                 ImGui::TextDisabled("%s", TR("No online matches on record yet."));
             } else {
+                char tierBuf[16] = {};
+                port_netstats_rank_tier_name(tierBuf, sizeof(tierBuf));
                 std::string line = port_netstats_provisional()
                     ? fmt::format(fmt::runtime(TR("Rating: %d (provisional)  ·  %d-%d-%d")),
                                   rating, port_netstats_wins(), port_netstats_losses(),
                                   port_netstats_draws())
-                    : fmt::format(fmt::runtime(TR("Rating: %d  ·  %d-%d-%d")),
-                                  rating, port_netstats_wins(), port_netstats_losses(),
+                    : fmt::format(fmt::runtime(TR("Rating: %d [%s]  ·  %d-%d-%d")),
+                                  rating, tierBuf, port_netstats_wins(), port_netstats_losses(),
                                   port_netstats_draws());
                 ImGui::TextWrapped("%s", line.c_str());
                 if (ImGui::TreeNode(TR("Recent matches"))) {
@@ -509,8 +511,8 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                 ImGui::TextDisabled("%s", TR("Press Refresh to load the board."));
             }
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            ImGui::TextWrapped("%s", TR("Ratings are self-reported by each client — treat the board "
-                                       "as a friends ladder, not verified ranked."));
+            ImGui::TextWrapped("%s", TR("Ratings update when both players report the same result — "
+                                       "a casual ladder, not tournament-grade ranked."));
             ImGui::PopStyleColor();
         }
 

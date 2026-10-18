@@ -80,6 +80,8 @@ namespace ssb64 {
 namespace enhancements {
 
 namespace {
+namespace fs = std::filesystem;
+
 
 // ---------------------------------------------------------------------------
 // Catalog
@@ -668,321 +670,387 @@ bool CommitDir(const std::filesystem::path& staged, const std::filesystem::path&
     return true;
 }
 
-void InstallWorker(InstallJob job, uint64_t gen) {
-    namespace fs = std::filesystem;
-    auto cancelled = [gen]() { return s_generation.load() != gen; };
-    auto fail = [&](const std::string& why) {
+/* Shared state for one install job - the worker is a linear pipeline
+ * (prepare -> acquire -> verify -> classify -> install), each phase a
+ * function taking this context. Cleanup helpers centralize the recurring
+ * "close the zip / drop the .part staging file" tails. */
+struct InstallCtx {
+    InstallJob job;
+    uint64_t gen;
+    std::error_code ec;
+    std::string err;
+    fs::path modsDir;
+    std::string baseName;
+    fs::path srcFile;   // file payload (downloaded .part or local file)
+    fs::path partPath;  // mods/.<base>.part staging for URL payloads
+    fs::path localPath;
+    zip_t* z = nullptr;
+    bool isDir = false;
+    bool isPng = false;
+    bool isArchiveFile = false;
+    std::string srcBase;
+    std::string srcExt;
+
+    bool cancelled() const { return s_generation.load() != gen; }
+    void fail(const std::string& why) {
         SPDLOG_ERROR("Mod install of {} failed: {}", job.label, why);
         SetStatus("Error: " + why);
         SetPartPath({});
         s_phase.store(ModPackInstallPhase::Error);
-    };
-    auto done = [&](ModPackInstalledKind kind, const std::string& name) {
+    }
+    void done(ModPackInstalledKind kind, const std::string& name) {
         SetPartPath({});
         SetLastName(name);
         s_lastKind.store(kind);
         SetStatus("Installed " + name);
         SPDLOG_INFO("Mod install: {} -> {}", job.label, name);
         s_phase.store(ModPackInstallPhase::Done);
-    };
+    }
+    void dropPart() {
+        if (!partPath.empty()) {
+            fs::remove(partPath, ec);
+            ec.clear();
+        }
+    }
+    void closeZip() {
+        if (z != nullptr) {
+            zip_close(z);
+            z = nullptr;
+        }
+    }
+    /* Frequent tail: release transient artifacts then report the failure. */
+    void abort(const std::string& why) {
+        closeZip();
+        dropPart();
+        fail(why);
+    }
+    void abortSilent() { // cancelled: transient cleanup, no error
+        closeZip();
+        dropPart();
+    }
+};
 
-    fs::path modsDir;
+bool PrepareInstallDirs(InstallCtx& c) {
     try {
-        modsDir = ModsRoot();
+        c.modsDir = ModsRoot();
     } catch (...) {
-        fail("app directory unavailable");
-        return;
+        c.fail("app directory unavailable");
+        return false;
     }
-    std::error_code ec;
-    fs::create_directories(modsDir, ec);
-    if (ec) {
-        fail("could not create mods/ folder: " + ec.message());
-        return;
+    fs::create_directories(c.modsDir, c.ec);
+    if (c.ec) {
+        c.fail("could not create mods/ folder: " + c.ec.message());
+        return false;
     }
+    c.baseName = c.job.installName.empty()
+                     ? DeriveBaseName(c.job.url.empty() ? c.job.localPath : c.job.url)
+                     : SanitizeInstallName(c.job.installName);
+    return true;
+}
 
-    const std::string baseName = job.installName.empty()
-                                     ? DeriveBaseName(job.url.empty() ? job.localPath : job.url)
-                                     : SanitizeInstallName(job.installName);
-
-    // ---- Acquire the payload ------------------------------------------------
-    // For URL jobs: download into mods/.<base>.part. For local jobs the
-    // source path is used in place.
-    fs::path srcFile; // populated when the payload is a file
-    fs::path partPath;
-    if (!job.url.empty()) {
-        partPath = modsDir / ("." + baseName + ".part");
-        SetPartPath(partPath.string());
-        fs::remove(partPath, ec); ec.clear();
-
-        s_phase.store(ModPackInstallPhase::Downloading);
-        SetStatus("Downloading " + job.label + "...");
-        SPDLOG_INFO("Mod pack: downloading {} -> {}", job.url, partPath.string());
-
-        Download* dl = DownloadStart(job.url, partPath);
-        if (dl == nullptr) {
-            fail("could not start the download");
-            return;
-        }
-        {
-            std::lock_guard<std::mutex> lock(s_childMutex);
-            s_download = dl;
-        }
-        DownloadState dlState;
-        while ((dlState = DownloadPoll(dl)) == DownloadState::Running) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        }
-        {
-            std::lock_guard<std::mutex> lock(s_childMutex);
-            s_download = nullptr;
-        }
-        dlState = DownloadFinish(dl);
-        if (cancelled() || dlState == DownloadState::Cancelled) {
-            fs::remove(partPath, ec);
-            return;
-        }
-        if (dlState != DownloadState::Done) {
-            fs::remove(partPath, ec);
-            fail("download failed");
-            return;
-        }
-        srcFile = partPath;
-    } else {
-        srcFile = job.localPath;
+/* URL jobs download into mods/.<base>.part; local jobs read the source in
+ * place. Returns false on failure or cancellation (silent). */
+bool AcquirePayload(InstallCtx& c) {
+    if (c.job.url.empty()) {
+        c.srcFile = c.job.localPath;
+        return true;
     }
+    c.partPath = c.modsDir / ("." + c.baseName + ".part");
+    SetPartPath(c.partPath.string());
+    fs::remove(c.partPath, c.ec);
+    c.ec.clear();
 
-    // ---- Verifying ----------------------------------------------------------
-    if (!job.sha256.empty() || job.expectedSize > 0) {
+    s_phase.store(ModPackInstallPhase::Downloading);
+    SetStatus("Downloading " + c.job.label + "...");
+    SPDLOG_INFO("Mod pack: downloading {} -> {}", c.job.url, c.partPath.string());
+
+    Download* dl = DownloadStart(c.job.url, c.partPath);
+    if (dl == nullptr) {
+        c.fail("could not start the download");
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_childMutex);
+        s_download = dl;
+    }
+    DownloadState dlState;
+    while ((dlState = DownloadPoll(dl)) == DownloadState::Running) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_childMutex);
+        s_download = nullptr;
+    }
+    dlState = DownloadFinish(dl);
+    if (c.cancelled() || dlState == DownloadState::Cancelled) {
+        c.dropPart();
+        return false;
+    }
+    if (dlState != DownloadState::Done) {
+        c.dropPart();
+        c.fail("download failed");
+        return false;
+    }
+    c.srcFile = c.partPath;
+    return true;
+}
+
+/* Pinned size/sha256 verification when the manifest carries them; otherwise
+ * hash anyway so the user can check the digest against the link source. */
+bool VerifyPayload(InstallCtx& c) {
+    if (!c.job.sha256.empty() || c.job.expectedSize > 0) {
         s_phase.store(ModPackInstallPhase::Verifying);
         SetStatus("Verifying download...");
-        std::string err;
-        if (!DownloadedFileMatches(srcFile.string(), job.expectedSize,
-                                   job.sha256.empty() ? "" : std::string("sha256:") + job.sha256,
-                                   err)) {
-            if (!partPath.empty()) fs::remove(partPath, ec);
-            fail(err);
-            return;
+        if (!DownloadedFileMatches(c.srcFile.string(), c.job.expectedSize,
+                                   c.job.sha256.empty() ? "" : std::string("sha256:") + c.job.sha256,
+                                   c.err)) {
+            c.dropPart();
+            c.fail(c.err);
+            return false;
         }
-    } else if (!srcFile.empty()) {
-        // Unverified source — compute the digest anyway so the user can
+    } else if (!c.srcFile.empty()) {
+        // Unverified source - compute the digest anyway so the user can
         // check it against wherever they got the link.
         s_phase.store(ModPackInstallPhase::Verifying);
         SetStatus("Hashing download...");
-        const std::string hex = Sha256File(srcFile.string());
+        const std::string hex = Sha256File(c.srcFile.string());
         if (!hex.empty()) {
             SetStatus("sha256: " + hex);
         }
     }
-    if (cancelled()) {
-        if (!partPath.empty()) fs::remove(partPath, ec);
-        return;
+    if (c.cancelled()) {
+        c.dropPart();
+        return false;
     }
+    return true;
+}
 
-    // ---- Validating + classifying -------------------------------------------
+/* Directory scan used for folder payloads: counts PNG basenames matching
+ * the native grammar vs the GLideN64/Rice grammar. */
+PayloadKind ClassifyDir(const fs::path& dir, std::error_code& ec) {
+    if (fs::exists(dir / "manifest.json", ec)) {
+        return PayloadKind::ScriptMod;
+    }
+    int native = 0, gliden = 0;
+    for (auto it = fs::recursive_directory_iterator(dir, ec);
+         it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (ec) { ec.clear(); continue; }
+        if (!it->is_regular_file(ec)) continue;
+        const std::string base = it->path().filename().string();
+        if (LowerExt(base) != ".png") continue;
+        if (LooksLikePackPng(base)) ++native;
+        else { std::string k; if (ParseGlidenName(base, &k)) ++gliden; }
+    }
+    if (gliden > 0) return PayloadKind::GlidenPack;
+    if (native > 0) return PayloadKind::NativePack;
+    return PayloadKind::Unknown;
+}
+
+/* Determines payload shape (dir / png / archive) and pack kind. On a fatal
+ * validation error it reports via c.fail() and returns false. */
+bool ClassifyPayload(InstallCtx& c, PayloadKind* kind) {
     s_phase.store(ModPackInstallPhase::Validating);
     SetStatus("Checking contents...");
-    std::string err;
 
-    const fs::path localPath = job.localPath.empty() ? fs::path() : fs::path(job.localPath);
-    const bool isDir = !localPath.empty() && fs::is_directory(localPath, ec);
-    ec.clear();
-    // The payload's own extension comes from the source name (the URL's
-    // last segment or the local path), not the .part staging name.
-    const std::string srcBase = !localPath.empty()
-                                    ? localPath.filename().string()
-                                    : BasenameOf(job.url.substr(0, job.url.find_first_of("?#")));
-    const std::string srcExt = LowerExt(srcBase);
-    const bool isPng = srcExt == ".png";
-    const bool isArchiveFile = !srcFile.empty() && !isDir && !isPng;
-
-    zip_t* z = nullptr;
-    PayloadKind kind = PayloadKind::Unknown;
-    if (isDir) {
-        // Directory payload: manifest.json at root => script mod folder.
-        if (fs::exists(localPath / "manifest.json", ec)) {
-            kind = PayloadKind::ScriptMod;
-        } else {
-            // Scan PNG basenames for either grammar.
-            int native = 0, gliden = 0;
-            for (auto it = fs::recursive_directory_iterator(localPath, ec);
-                 it != fs::recursive_directory_iterator(); it.increment(ec)) {
-                if (ec) { ec.clear(); continue; }
-                if (!it->is_regular_file(ec)) continue;
-                const std::string base = it->path().filename().string();
-                if (LowerExt(base) != ".png") continue;
-                if (LooksLikePackPng(base)) ++native;
-                else { std::string k; if (ParseGlidenName(base, &k)) ++gliden; }
-            }
-            if (gliden > 0) kind = PayloadKind::GlidenPack;
-            else if (native > 0) kind = PayloadKind::NativePack;
+    *kind = PayloadKind::Unknown;
+    if (c.isDir) {
+        *kind = ClassifyDir(c.localPath, c.ec);
+    } else if (c.isPng) {
+        *kind = PayloadKind::NativePack; // single texture: grammar checked at convert time
+    } else if (c.isArchiveFile) {
+        c.z = OpenZipChecked(c.srcFile, c.err);
+        if (c.z == nullptr) {
+            c.dropPart();
+            c.fail(c.err);
+            return false;
         }
-    } else if (isPng) {
-        kind = PayloadKind::NativePack; // single texture: grammar checked at convert time
-    } else if (isArchiveFile) {
-        z = OpenZipChecked(srcFile, err);
-        if (z == nullptr) {
-            if (!partPath.empty()) fs::remove(partPath, ec);
-            fail(err);
-            return;
-        }
-        if (job.curated) {
+        if (c.job.curated) {
             // Pinned content still gets the strict member audit.
-            if (!ValidateCuratedPackZip(z, err)) {
-                zip_close(z);
-                fs::remove(partPath, ec);
-                fail(err);
-                return;
+            if (!ValidateCuratedPackZip(c.z, c.err)) {
+                c.abort(c.err);
+                return false;
             }
-            kind = PayloadKind::NativePack;
-        } else if (srcExt == ".o2r" || srcExt == ".otr") {
+            *kind = PayloadKind::NativePack;
+        } else if (c.srcExt == ".o2r" || c.srcExt == ".otr") {
             // An .o2r/.otr is mounted by MountModsDir whether or not it
             // carries a manifest (pure asset-swap archives exist).
-            kind = PayloadKind::ScriptMod;
+            *kind = PayloadKind::ScriptMod;
         } else {
-            kind = ClassifyZip(z, err);
+            *kind = ClassifyZip(c.z, c.err);
         }
     } else {
-        fail("unsupported input — expected a .zip, an image pack folder, or a PNG");
-        return;
+        c.fail("unsupported input - expected a .zip, an image pack folder, or a PNG");
+        return false;
     }
-    if (cancelled()) {
-        if (z) zip_close(z);
-        if (!partPath.empty()) fs::remove(partPath, ec);
-        return;
+    if (c.cancelled()) {
+        c.abortSilent();
+        return false;
     }
+    return true;
+}
 
-    // ---- Converting / installing ---------------------------------------------
+/* Stage a directory payload through mods/.<base>.tmp then atomically commit
+ * it into mods/<base>. */
+void InstallDirPayload(InstallCtx& c, ModPackInstalledKind result, const char* copyErr) {
+    const fs::path dst = c.modsDir / c.baseName;
+    const fs::path stage = c.modsDir / ("." + c.baseName + ".tmp");
+    fs::remove_all(stage, c.ec); c.ec.clear();
+    fs::copy(c.localPath, stage,
+             fs::copy_options::recursive | fs::copy_options::overwrite_existing, c.ec);
+    if (c.ec) {
+        fs::remove_all(stage, c.ec);
+        c.fail(std::string(copyErr) + c.ec.message());
+        return;
+    }
+    if (!CommitDir(stage, dst, c.err)) {
+        c.fail(c.err);
+        return;
+    }
+    c.done(result, c.baseName);
+}
+
+/* Zip payload committed as mods/<base>.zip. */
+void InstallZipPayload(InstallCtx& c, ModPackInstalledKind result) {
+    const fs::path dst = c.modsDir / (c.baseName + ".zip");
+    if (!CommitFile(c.srcFile, dst, c.err)) {
+        c.abort(c.err);
+        return;
+    }
+    c.done(result, c.baseName + ".zip");
+}
+
+/* Single loose PNG: must already carry the native grammar name, unless the
+ * GLideN64 map can rename it. */
+void InstallPngPayload(InstallCtx& c) {
+    std::string key;
+    if (!LooksLikePackPng(c.srcBase)) {
+        if (ParseGlidenName(c.srcBase, &key) && GlidenMapReady()) {
+            const auto it = s_glidenMap.find(key);
+            if (it != s_glidenMap.end()) {
+                const std::string outName = NativePackName(it->second, key);
+                const fs::path dst = c.modsDir / outName;
+                if (!CommitFile(c.srcFile, dst, c.err)) {
+                    c.fail(c.err);
+                    return;
+                }
+                c.done(ModPackInstalledKind::TexturePack, outName);
+                return;
+            }
+        }
+        c.fail("PNG is not in the pack grammar (\"#<hash>#<fmt>#<siz>.png\") "
+               "or the GLideN64/Rice grammar");
+        return;
+    }
+    const fs::path dst = c.modsDir / c.srcBase;
+    if (!CommitFile(c.srcFile, dst, c.err)) {
+        c.fail(c.err);
+        return;
+    }
+    c.done(ModPackInstalledKind::TexturePack, c.srcBase);
+}
+
+/* GLideN64/Rice pack: convert member names through the bundled map into a
+ * staging dir, then commit the converted tree. */
+void InstallGlidenPayload(InstallCtx& c) {
+    if (!GlidenMapReady()) {
+        c.abort("this build has no GLideN64 conversion table "
+                "(bundled-data/gliden64-map.json missing)");
+        return;
+    }
+    s_phase.store(ModPackInstallPhase::Converting);
+    SetStatus("Converting texture names...");
+    const fs::path stage = c.modsDir / ("." + c.baseName + ".tmp");
+    fs::remove_all(stage, c.ec); c.ec.clear();
+    fs::create_directories(stage, c.ec);
+    ConvertStats st;
+    const bool ok = c.z ? ConvertGlidenZip(c.z, stage, st, c.err)
+                        : ConvertGlidenDir(c.localPath, stage, st, c.err);
+    c.closeZip();
+    if (!ok) {
+        fs::remove_all(stage, c.ec);
+        c.dropPart();
+        c.fail(c.err);
+        return;
+    }
+    if (c.cancelled()) {
+        fs::remove_all(stage, c.ec);
+        c.dropPart();
+        return;
+    }
+    s_phase.store(ModPackInstallPhase::Installing);
+    SetStatus("Installing converted pack...");
+    const fs::path dst = c.modsDir / c.baseName;
+    if (!CommitDir(stage, dst, c.err)) {
+        c.dropPart();
+        c.fail(c.err);
+        return;
+    }
+    c.dropPart();
+    c.done(ModPackInstalledKind::TexturePack,
+           c.baseName + fmt::format(" ({} textures converted, {} skipped)",
+                                    st.matched, st.unmatched));
+}
+
+void InstallPayload(InstallCtx& c, PayloadKind kind) {
     switch (kind) {
-    case PayloadKind::ScriptMod: {
+    case PayloadKind::ScriptMod:
         s_phase.store(ModPackInstallPhase::Installing);
         SetStatus("Installing mod into mods/...");
-        if (isDir) {
-            const fs::path dst = modsDir / baseName;
-            const fs::path stage = modsDir / ("." + baseName + ".tmp");
-            fs::remove_all(stage, ec); ec.clear();
-            fs::copy(localPath, stage,
-                     fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-            if (ec) {
-                fs::remove_all(stage, ec);
-                fail("could not copy mod folder: " + ec.message());
-                return;
-            }
-            if (!CommitDir(stage, dst, err)) { fail(err); return; }
-            done(ModPackInstalledKind::ScriptMod, baseName);
+        if (c.isDir) {
+            InstallDirPayload(c, ModPackInstalledKind::ScriptMod,
+                              "could not copy mod folder: ");
         } else {
-            const fs::path dst = modsDir / (baseName + ".zip");
-            if (!CommitFile(srcFile, dst, err)) {
-                if (!partPath.empty()) fs::remove(partPath, ec);
-                fail(err);
-                return;
-            }
-            done(ModPackInstalledKind::ScriptMod, baseName + ".zip");
+            InstallZipPayload(c, ModPackInstalledKind::ScriptMod);
         }
         break;
-    }
-    case PayloadKind::NativePack: {
+    case PayloadKind::NativePack:
         s_phase.store(ModPackInstallPhase::Installing);
         SetStatus("Installing pack into mods/...");
-        if (isDir) {
-            const fs::path dst = modsDir / baseName;
-            const fs::path stage = modsDir / ("." + baseName + ".tmp");
-            fs::remove_all(stage, ec); ec.clear();
-            fs::copy(localPath, stage,
-                     fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-            if (ec) {
-                fs::remove_all(stage, ec);
-                fail("could not copy pack folder: " + ec.message());
-                return;
-            }
-            if (!CommitDir(stage, dst, err)) { fail(err); return; }
-            done(ModPackInstalledKind::TexturePack, baseName);
-        } else if (isPng) {
-            // Single loose texture: install under its own name (must
-            // already be in the native grammar to bind; GLideN64-named
-            // files get renamed through the map).
-            std::string key;
-            if (!LooksLikePackPng(srcBase)) {
-                if (ParseGlidenName(srcBase, &key) && GlidenMapReady()) {
-                    const auto it = s_glidenMap.find(key);
-                    if (it != s_glidenMap.end()) {
-                        const std::string outName = NativePackName(it->second, key);
-                        const fs::path dst = modsDir / outName;
-                        if (!CommitFile(srcFile, dst, err)) { fail(err); return; }
-                        done(ModPackInstalledKind::TexturePack, outName);
-                        return;
-                    }
-                }
-                fail("PNG is not in the pack grammar (\"#<hash>#<fmt>#<siz>.png\") "
-                     "or the GLideN64/Rice grammar");
-                return;
-            }
-            const fs::path dst = modsDir / srcBase;
-            if (!CommitFile(srcFile, dst, err)) { fail(err); return; }
-            done(ModPackInstalledKind::TexturePack, srcBase);
+        if (c.isDir) {
+            InstallDirPayload(c, ModPackInstalledKind::TexturePack,
+                              "could not copy pack folder: ");
+        } else if (c.isPng) {
+            InstallPngPayload(c);
         } else {
-            const fs::path dst = modsDir / (baseName + ".zip");
-            if (!CommitFile(srcFile, dst, err)) {
-                if (!partPath.empty()) fs::remove(partPath, ec);
-                fail(err);
-                return;
-            }
-            done(ModPackInstalledKind::TexturePack, baseName + ".zip");
+            InstallZipPayload(c, ModPackInstalledKind::TexturePack);
         }
         break;
-    }
-    case PayloadKind::GlidenPack: {
-        if (!GlidenMapReady()) {
-            if (z) zip_close(z);
-            if (!partPath.empty()) fs::remove(partPath, ec);
-            fail("this build has no GLideN64 conversion table "
-                 "(bundled-data/gliden64-map.json missing)");
-            return;
-        }
-        s_phase.store(ModPackInstallPhase::Converting);
-        SetStatus("Converting texture names...");
-        const fs::path stage = modsDir / ("." + baseName + ".tmp");
-        fs::remove_all(stage, ec); ec.clear();
-        fs::create_directories(stage, ec);
-        ConvertStats st;
-        const bool ok = z ? ConvertGlidenZip(z, stage, st, err)
-                          : ConvertGlidenDir(localPath, stage, st, err);
-        if (z) zip_close(z);
-        z = nullptr;
-        if (!ok) {
-            fs::remove_all(stage, ec);
-            if (!partPath.empty()) fs::remove(partPath, ec);
-            fail(err);
-            return;
-        }
-        if (cancelled()) {
-            fs::remove_all(stage, ec);
-            if (!partPath.empty()) fs::remove(partPath, ec);
-            return;
-        }
-        s_phase.store(ModPackInstallPhase::Installing);
-        SetStatus("Installing converted pack...");
-        const fs::path dst = modsDir / baseName;
-        if (!CommitDir(stage, dst, err)) {
-            if (!partPath.empty()) fs::remove(partPath, ec);
-            fail(err);
-            return;
-        }
-        if (!partPath.empty()) fs::remove(partPath, ec);
-        done(ModPackInstalledKind::TexturePack,
-             baseName + fmt::format(" ({} textures converted, {} skipped)",
-                                    st.matched, st.unmatched));
+    case PayloadKind::GlidenPack:
+        InstallGlidenPayload(c);
         break;
-    }
     case PayloadKind::Unknown:
-    default: {
-        if (z) zip_close(z);
-        if (!partPath.empty()) fs::remove(partPath, ec);
-        fail("unrecognized content — expected a mod (manifest.json), a "
-             "native texture pack, or a GLideN64/Rice pack");
+    default:
+        c.abort("unrecognized content - expected a mod (manifest.json), a "
+                "native texture pack, or a GLideN64/Rice pack");
         return;
     }
-    }
+}
 
-    if (z) zip_close(z);
+void InstallWorker(InstallJob job, uint64_t gen) {
+    namespace fs = std::filesystem;
+    InstallCtx c{ std::move(job), gen };
+
+    if (!PrepareInstallDirs(c)) return;
+    if (!AcquirePayload(c)) return;
+    if (!VerifyPayload(c)) return;
+
+    // Payload-shape facts shared by classification and install.
+    c.localPath = c.job.localPath.empty() ? fs::path() : fs::path(c.job.localPath);
+    c.isDir = !c.localPath.empty() && fs::is_directory(c.localPath, c.ec);
+    c.ec.clear();
+    // The payload's own extension comes from the source name (the URL's
+    // last segment or the local path), not the .part staging name.
+    c.srcBase = !c.localPath.empty()
+                    ? c.localPath.filename().string()
+                    : BasenameOf(c.job.url.substr(0, c.job.url.find_first_of("?#")));
+    c.srcExt = LowerExt(c.srcBase);
+    c.isPng = c.srcExt == ".png";
+    c.isArchiveFile = !c.srcFile.empty() && !c.isDir && !c.isPng;
+
+    PayloadKind kind;
+    if (!ClassifyPayload(c, &kind)) return;
+    InstallPayload(c, kind);
+    c.closeZip();
 }
 
 } // namespace

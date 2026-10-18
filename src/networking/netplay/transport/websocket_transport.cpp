@@ -309,57 +309,69 @@ constexpr ULONGLONG kUpRedialMs = 2000;
  * uplink, -1 when the uplink is unusable and the caller should fall back
  * to the control socket — the frame is never dropped just because the
  * uplink died. */
-int uplink_send(const void *data, DWORD size, WINHTTP_WEB_SOCKET_BUFFER_TYPE type)
+/* Returns a live uplink socket: the open one, or a fresh re-dial of the
+ * remembered URL when the previous socket failed. The FAILED->claim->dial
+ * path runs at a bounded cadence (sUpRetryAfterTick) with a single claimer
+ * per window; CONNECTING is excluded so we never overlap an explicit
+ * port_ws_uplink_connect dial. nullptr -> caller falls back to the control
+ * socket. */
+HINTERNET uplink_socket(void)
 {
-    HINTERNET socket = nullptr;
-    bool dial = false;
     {
         std::lock_guard<std::mutex> lock(sUpMutex);
         if (sUpState == PORT_WS_OPEN && sUpConn.socket != nullptr) {
-            socket = sUpConn.socket;
-        } else if (sUpState == PORT_WS_FAILED && !sUpUrl.empty() &&
-                   GetTickCount64() >= sUpRetryAfterTick) {
-            /* Claim this redial window — only one sender dials per period.
-             * CONNECTING is excluded so we never overlap an explicit
-             * port_ws_uplink_connect dial. */
-            sUpRetryAfterTick = GetTickCount64() + kUpRedialMs;
-            dial = true;
-        } else {
-            return -1;
+            return sUpConn.socket;
+        }
+        if (sUpState != PORT_WS_FAILED || sUpUrl.empty() ||
+            GetTickCount64() < sUpRetryAfterTick) {
+            return nullptr;
+        }
+        sUpRetryAfterTick = GetTickCount64() + kUpRedialMs;
+    }
+    std::lock_guard<std::mutex> io(sUpIoMutex);
+    {
+        std::lock_guard<std::mutex> lock(sUpMutex);
+        if (sUpState == PORT_WS_OPEN && sUpConn.socket != nullptr) {
+            return sUpConn.socket;    /* another sender re-dialed while we waited */
         }
     }
-    if (dial) {
-        std::lock_guard<std::mutex> io(sUpIoMutex);
-        {
-            std::lock_guard<std::mutex> lock(sUpMutex);
-            if (sUpState == PORT_WS_OPEN && sUpConn.socket != nullptr) {
-                socket = sUpConn.socket;    /* another sender re-dialed while we waited */
-            }
+    std::string url, err;
+    {
+        std::lock_guard<std::mutex> lock(sUpMutex);
+        url = sUpUrl;
+    }
+    /* ws_dial publishes intermediate handles into sUpConn under sUpMutex -
+     * a concurrent close can still abort the dial. */
+    HINTERNET socket = ws_dial(url, &sUpMutex, &sUpConn, &err);
+    std::lock_guard<std::mutex> lock(sUpMutex);
+    if (socket == nullptr) {
+        sUpState = PORT_WS_FAILED;
+        return nullptr;
+    }
+    if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
+        if (sUpUrl.empty()) {
+            sUpState = PORT_WS_CLOSED;
         }
-        if (socket == nullptr) {
-            std::string url, err;
-            {
-                std::lock_guard<std::mutex> lock(sUpMutex);
-                url = sUpUrl;
-            }
-            /* ws_dial publishes intermediate handles into sUpConn under
-             * sUpMutex — a concurrent close can still abort the dial. */
-            socket = ws_dial(url, &sUpMutex, &sUpConn, &err);
-            std::lock_guard<std::mutex> lock(sUpMutex);
-            if (socket == nullptr) {
-                sUpState = PORT_WS_FAILED;
-                return -1;
-            }
-            if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
-                close_conn_parts(sUpConn);
-                sUpState = PORT_WS_CLOSED;
-                WinHttpCloseHandle(socket);
-                return -1;
-            }
-            sUpConn.socket = socket;
-            sUpState = PORT_WS_OPEN;
-            port_log("SSB64 WS: uplink reconnected\n");
-        }
+        close_conn_parts(sUpConn);
+        WinHttpCloseHandle(socket);
+        return nullptr;
+    }
+    sUpConn.socket = socket;
+    sUpState = PORT_WS_OPEN;
+    port_log("SSB64 WS: uplink reconnected\n");
+    return socket;
+}
+
+/* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
+ * cadence when the previous socket died. Returns 1 on a successful uplink
+ * send, -1 when the uplink is unusable and the caller should fall back to
+ * the control socket - the frame is never dropped just because the
+ * uplink died. */
+int uplink_send(const void *data, DWORD size, WINHTTP_WEB_SOCKET_BUFFER_TYPE type)
+{
+    HINTERNET socket = uplink_socket();
+    if (socket == nullptr) {
+        return -1;
     }
     std::lock_guard<std::mutex> io(sUpIoMutex);
     {
@@ -782,39 +794,57 @@ void run(std::string url)
  * uplink died. sUpMutex is held across the whole dial+send: it bounds the
  * serialization to one uplink at a time and gives close() a single wait
  * point; the dial is bounded by CURLOPT_TIMEOUT_MS (10s). */
+/* Re-dial the remembered URL when the uplink is FAILED and the backoff
+ * window elapsed - a single claimer per window (sUpRetryAfter), and
+ * CONNECTING is excluded so we never overlap an explicit
+ * port_ws_uplink_connect dial. Caller holds sUpMutex. Returns true when
+ * sUpCurl is a live socket. */
+bool uplink_ensure_curl(void)
+{
+    if (sUpState == PORT_WS_OPEN && sUpCurl != nullptr) {
+        return true;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (sUpState != PORT_WS_FAILED || sUpUrl.empty() || now < sUpRetryAfter) {
+        return false;
+    }
+    sUpRetryAfter = now + kUpRedialMs;
+    std::string err;
+    std::string url = sUpUrl;
+    CURL* c = ws_dial(url, &err);
+    if (c == nullptr) {
+        sUpState = PORT_WS_FAILED;
+        return false;
+    }
+    if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
+        sUpState = PORT_WS_CLOSED;
+        curl_easy_cleanup(c);
+        return false;
+    }
+    sUpCurl = c;
+    sUpState = PORT_WS_OPEN;
+    port_log("SSB64 WS: uplink reconnected\n");
+    return true;
+}
+
+/* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
+ * cadence when the previous socket died. Returns 1 on a successful uplink
+ * send, -1 when the uplink is unusable and the caller should fall back to
+ * the control socket - the frame is never dropped just because the
+ * uplink died. sUpMutex is held across the whole dial+send: it bounds the
+ * serialization to one uplink at a time and gives close() a single wait
+ * point. */
 int uplink_send_curl(const void *data, size_t size, unsigned int flags)
 {
     std::lock_guard<std::mutex> lock(sUpMutex);
-    if (sUpState != PORT_WS_OPEN || sUpCurl == nullptr) {
-        const auto now = std::chrono::steady_clock::now();
-        /* CONNECTING is excluded so we never overlap an explicit
-         * port_ws_uplink_connect dial. */
-        if (sUpState != PORT_WS_FAILED || sUpUrl.empty() || now < sUpRetryAfter) {
-            return -1;
-        }
-        /* Claim this redial window — only one sender dials per period. */
-        sUpRetryAfter = now + kUpRedialMs;
-        std::string err;
-        std::string url = sUpUrl;
-        CURL* c = ws_dial(url, &err);
-        if (c == nullptr) {
-            sUpState = PORT_WS_FAILED;
-            return -1;
-        }
-        if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
-            sUpState = PORT_WS_CLOSED;
-            curl_easy_cleanup(c);
-            return -1;
-        }
-        sUpCurl = c;
-        sUpState = PORT_WS_OPEN;
-        port_log("SSB64 WS: uplink reconnected\n");
+    if (!uplink_ensure_curl()) {
+        return -1;
     }
     std::lock_guard<std::mutex> ioLock(sUpIoMutex);
     if (send_frame_curl(sUpCurl, data, size, flags)) {
         return 1;
     }
-    /* Dead socket — drop the handle so the next send takes the re-dial
+    /* Dead socket - drop the handle so the next send takes the re-dial
      * path. cleanup under the same io lock that serializes sends. */
     CURL* dead = sUpCurl;
     sUpCurl = nullptr;
@@ -1448,54 +1478,66 @@ void run(std::string url)
  * uplink, -1 when the uplink is unusable and the caller should fall back
  * to the control socket — the frame is never dropped just because the
  * uplink died. */
-int uplink_send(const void *data, int size, unsigned char opcode)
+/* Returns a live uplink socket: the open one, or a fresh re-dial of the
+ * remembered URL when the previous socket failed. The FAILED->claim->dial
+ * path runs at a bounded cadence (sUpRetryAfter) with a single claimer per
+ * window; CONNECTING is excluded so we never overlap an explicit
+ * port_ws_uplink_connect dial. WS_SOCK_BAD -> caller falls back to the
+ * control socket. */
+ws_sock_t uplink_socket(void)
 {
-    ws_sock_t s = WS_SOCK_BAD;
-    bool dial = false;
     {
         std::lock_guard<std::mutex> lock(sUpMutex);
         if (sUpState == PORT_WS_OPEN && sUpSock != WS_SOCK_BAD) {
-            s = sUpSock;
-        } else if (sUpState == PORT_WS_FAILED && !sUpUrl.empty() &&
-                   std::chrono::steady_clock::now() >= sUpRetryAfter) {
-            /* Claim this redial window — only one sender dials per period.
-             * CONNECTING is excluded so we never overlap an explicit
-             * port_ws_uplink_connect dial. */
-            sUpRetryAfter = std::chrono::steady_clock::now() + kUpRedialMs;
-            dial = true;
-        } else {
-            return -1;
+            return sUpSock;
+        }
+        if (sUpState != PORT_WS_FAILED || sUpUrl.empty() ||
+            std::chrono::steady_clock::now() < sUpRetryAfter) {
+            return WS_SOCK_BAD;
+        }
+        sUpRetryAfter = std::chrono::steady_clock::now() + kUpRedialMs;
+    }
+    std::lock_guard<std::mutex> io(sUpIoMutex);
+    {
+        std::lock_guard<std::mutex> lock(sUpMutex);
+        if (sUpState == PORT_WS_OPEN && sUpSock != WS_SOCK_BAD) {
+            return sUpSock;    /* another sender re-dialed while we waited */
         }
     }
-    if (dial) {
-        std::lock_guard<std::mutex> io(sUpIoMutex);
-        {
-            std::lock_guard<std::mutex> lock(sUpMutex);
-            if (sUpState == PORT_WS_OPEN && sUpSock != WS_SOCK_BAD) {
-                s = sUpSock;    /* another sender re-dialed while we waited */
-            }
+    std::string url, err;
+    {
+        std::lock_guard<std::mutex> lock(sUpMutex);
+        url = sUpUrl;
+    }
+    ws_sock_t s = ws_dial(url, &err, nullptr);
+    std::lock_guard<std::mutex> lock(sUpMutex);
+    if (s == WS_SOCK_BAD) {
+        sUpState = PORT_WS_FAILED;
+        return WS_SOCK_BAD;
+    }
+    if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
+        if (sUpUrl.empty()) {
+            sUpState = PORT_WS_CLOSED;
         }
-        if (s == WS_SOCK_BAD) {
-            std::string url, err;
-            {
-                std::lock_guard<std::mutex> lock(sUpMutex);
-                url = sUpUrl;
-            }
-            s = ws_dial(url, &err, nullptr);
-            std::lock_guard<std::mutex> lock(sUpMutex);
-            if (s == WS_SOCK_BAD) {
-                sUpState = PORT_WS_FAILED;
-                return -1;
-            }
-            if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
-                sUpState = PORT_WS_CLOSED;
-                ws_close_sock(s);
-                return -1;
-            }
-            sUpSock = s;
-            sUpState = PORT_WS_OPEN;
-            port_log("SSB64 WS: uplink reconnected\n");
-        }
+        ws_close_sock(s);
+        return WS_SOCK_BAD;
+    }
+    sUpSock = s;
+    sUpState = PORT_WS_OPEN;
+    port_log("SSB64 WS: uplink reconnected\n");
+    return s;
+}
+
+/* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
+ * cadence when the previous socket died. Returns 1 on a successful uplink
+ * send, -1 when the uplink is unusable and the caller should fall back to
+ * the control socket - the frame is never dropped just because the
+ * uplink died. */
+int uplink_send(const void *data, int size, unsigned char opcode)
+{
+    ws_sock_t s = uplink_socket();
+    if (s == WS_SOCK_BAD) {
+        return -1;
     }
     std::lock_guard<std::mutex> io(sUpIoMutex);
     {

@@ -39,6 +39,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <cstdlib>
@@ -943,8 +944,46 @@ void PortPushFrame(void)
 	/* Feed the interpolation auto-throttle the wall duration of this tick;
 	 * if the host cannot sustain 60 ticks/s at the configured subframe
 	 * count, it steps the render rate down to protect the game clock. */
-	portInterpNoteTicDuration(std::chrono::duration_cast<std::chrono::microseconds>(
-		std::chrono::steady_clock::now() - frameStart).count());
+	const long long frameUs = std::chrono::duration_cast<std::chrono::microseconds>(
+		std::chrono::steady_clock::now() - frameStart).count();
+	portInterpNoteTicDuration(frameUs);
+
+	/* Perf telemetry (opt-in via SSB64_PERF_LOG=1): ring-buffer the last
+	 * ~10s of frame costs and emit one structured "SSB64 Perf:" line per
+	 * window — tools/analysis/netplay_metrics.py parses it into the same
+	 * metrics.json pipeline as netplay counters, so a benchmark run leaves
+	 * P50/P95/P99 frame data next to rollback stats. */
+	{
+		static const bool sPerfLog = std::getenv("SSB64_PERF_LOG") != nullptr;
+		if (sPerfLog) {
+			constexpr int kRing = 600;                 /* 10 s at 60 fps */
+			static unsigned int sRing[kRing];
+			static int sRingPos = 0, sRingCount = 0;
+			static auto sWindowStart = std::chrono::steady_clock::now();
+			sRing[sRingPos] = static_cast<unsigned int>(frameUs > 0 ? frameUs : 0);
+			sRingPos = (sRingPos + 1) % kRing;
+			if (sRingCount < kRing) {
+				sRingCount++;
+			}
+			const double windowSec = std::chrono::duration<double>(
+				std::chrono::steady_clock::now() - sWindowStart).count();
+			if (windowSec >= 10.0 && sRingCount > 0) {
+				unsigned int sorted[kRing];
+				const int n = sRingCount;
+				std::memcpy(sorted, sRing, n * sizeof(unsigned int));
+				std::sort(sorted, sorted + n);
+				const unsigned int p50 = sorted[n / 2];
+				const unsigned int p95 = sorted[(n * 95) / 100];
+				const unsigned int p99 = sorted[(n * 99) / 100];
+				const unsigned int mx = sorted[n - 1];
+				port_log("SSB64 Perf: frames=%d window_s=%.1f "
+				         "frame_p50_us=%u frame_p95_us=%u frame_p99_us=%u frame_max_us=%u\n",
+				         n, windowSec, p50, p95, p99, mx);
+				sWindowStart = std::chrono::steady_clock::now();
+				sRingCount = 0;
+			}
+		}
+	}
 
 	/* Save-write failures surface here as an in-game overlay toast —
 	 * the decomp's syDmaWriteSram wrapper drops the return value, so the

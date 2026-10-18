@@ -99,6 +99,8 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_FUZZ_{PARSER,INPUT}` | parser fuzz entry (manifest/replay/json); parse file then exit — driven by `tools/analysis/fuzz/run_parser_fuzz.py` |
 | `SSB64_HEAP_{CHECK,CHECK_ALWAYS,HOOK,WATCH}` | ucrtbased debug-heap probes (MSVC Debug only): `CHECK` installs point-in-time integrity walks, `CHECK_ALWAYS` arms them unconditionally at boot, `HOOK` registers an `_CrtSetAllocHook` that walks the debug block list per allocation, `WATCH` arms a data-breakpoint watchpoint logging to `heap_watch.log` |
 | `SSB64_HEAP_{GWATCH,TRACE,XCHECK}` | heap-probe tuning (MSVC Debug only): `GWATCH` arms DR0/DR1 write-watchpoints on ucrtbased's `__acrt_first_block/__acrt_last_block` globals, `TRACE` enables the per-operation hook trace, `XCHECK` enables the O(heap) `HeapValidate` foreign-heap check per free (off by default — it stalls runs quadratically) |
+| `SSB64_HEAP_GWATCH_SYMPATH` | MSVC Debug only: extra `;`-separated symbol-search dirs appended to the DbgHelp path for `GWATCH` (e.g. a build tree with sibling `.pdb` files) |
+| `SSB64_PERF_LOG` | emit one `SSB64 Perf:` line per ~10 s window with frame-cost P50/P95/P99/max (µs) — parsed by `tools/analysis/netplay_metrics.py` into the same metrics pipeline as netplay counters |
 | `SSB64_HEAP_FRAMES` | MSVC Debug only: opt-in to per-frame debug-block-list walks. Off by default because walking the live list while resource workers mutate it faults on recycled nodes and each first-chance AV dumps ~50 MB via the vectored handler. |
 | `SSB64_I18N_DIAG` | log the first 8 `TR()` lookups per run (key, lang, table size, HIT/MISS) — translation-drift debugging |
 

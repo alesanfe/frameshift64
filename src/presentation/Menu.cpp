@@ -448,27 +448,19 @@ bool operator==(Color_RGBA8 const& l, Color_RGBA8 const& r) noexcept {
 }
 
 bool operator<(Color_RGB8 const& l, Color_RGB8 const& r) noexcept {
-    return (l.r < r.r && l.g <= r.g && l.b <= r.b) || (l.r <= r.r && l.g < r.g && l.b <= r.b) ||
-           (l.r <= r.r && l.g <= r.g && l.b < r.b);
+    return std::tie(l.r, l.g, l.b) < std::tie(r.r, r.g, r.b);
 }
 
 bool operator<(Color_RGBA8 const& l, Color_RGBA8 const& r) noexcept {
-    return (l.r < r.r && l.g <= r.g && l.b <= r.b && l.a <= r.a) ||
-           (l.r <= r.r && l.g < r.g && l.b <= r.b && l.a <= r.a) ||
-           (l.r <= r.r && l.g <= r.g && l.b < r.b && l.a <= r.a) ||
-           (l.r <= r.r && l.g <= r.g && l.b <= r.b && l.a < r.a);
+    return std::tie(l.r, l.g, l.b, l.a) < std::tie(r.r, r.g, r.b, r.a);
 }
 
 bool operator>(Color_RGB8 const& l, Color_RGB8 const& r) noexcept {
-    return (l.r > r.r && l.g >= r.g && l.b >= r.b) || (l.r >= r.r && l.g > r.g && l.b >= r.b) ||
-           (l.r >= r.r && l.g >= r.g && l.b > r.b);
+    return std::tie(l.r, l.g, l.b) > std::tie(r.r, r.g, r.b);
 }
 
 bool operator>(Color_RGBA8 const& l, Color_RGBA8 const& r) noexcept {
-    return (l.r > r.r && l.g >= r.g && l.b >= r.b && l.a >= r.a) ||
-           (l.r >= r.r && l.g > r.g && l.b >= r.b && l.a >= r.a) ||
-           (l.r >= r.r && l.g >= r.g && l.b > r.b && l.a >= r.a) ||
-           (l.r >= r.r && l.g >= r.g && l.b >= r.b && l.a > r.a);
+    return std::tie(l.r, l.g, l.b, l.a) > std::tie(r.r, r.g, r.b, r.a);
 }
 
 uint32_t GetVectorIndexOf(std::vector<std::string>& vector, std::string value) {
@@ -609,150 +601,162 @@ bool ModernMenuHeaderEntry(std::string label) {
 
 static bool SimpleMode();
 
-uint32_t Menu::DrawSearchResults(std::string& menuSearchText) {
-    int searchCount = 0;
-    std::transform(menuSearchText.begin(), menuSearchText.end(), menuSearchText.begin(), ::tolower);
-    menuSearchText.erase(std::remove(menuSearchText.begin(), menuSearchText.end(), ' '), menuSearchText.end());
-    ImGui::SetNextWindowSizeConstraints({ ImGui::GetContentRegionAvail().x / 2, 0 },
-                                        { ImGui::GetContentRegionAvail().x / 2, ImGui::GetContentRegionAvail().y });
-    if (ImGui::BeginChild("Search Results Col 1", { ImGui::GetContentRegionAvail().x / 2, 0 },
-                          ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_NoTitleBar)) {
-        for (auto& menuLabel : menuOrder) {
-            auto& menuEntry = menuEntries.at(menuLabel);
-            for (auto& sidebarLabel : menuEntry.sidebarOrder) {
-                auto& sidebar = menuEntry.sidebars[sidebarLabel];
-                for (size_t i = 0; i < sidebar.columnWidgets.size(); i++) {
-                    auto& column = sidebar.columnWidgets.at(i);
-                    for (auto& info : column) {
-                        if (info.type == WIDGET_SEARCH || info.type == WIDGET_SEPARATOR ||
-                            info.type == WIDGET_SEPARATOR_TEXT || info.isHidden || info.hideInSearch) {
-                            continue;
-                        }
-                        const char* tooltip = info.options->tooltip;
-                        std::string widgetStr = std::string(info.name) + TR(info.name.c_str()) +
-                            std::string(tooltip != NULL ? tooltip : "") +
-                            (tooltip != NULL ? TR(tooltip) : "") + info.stableId;
-                        for (const auto& term : info.searchTerms) {
-                            widgetStr += term;
-                        }
-                        std::transform(widgetStr.begin(), widgetStr.end(), widgetStr.begin(), ::tolower);
-                        widgetStr.erase(std::remove(widgetStr.begin(), widgetStr.end(), ' '), widgetStr.end());
-                        if (widgetStr.find(menuSearchText) != std::string::npos) {
-                            UIWidgets::ComponentAlignments backupAlignment{};
-                            UIWidgets::LabelPositions backupLabelPos{};
-                            if (info.type == WIDGET_COMBOBOX || info.type == WIDGET_CVAR_COMBOBOX) {
-                                backupAlignment =
-                                    std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options)->alignment;
-                                backupLabelPos =
-                                    std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options)->labelPosition;
-                                std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options)->alignment =
-                                    UIWidgets::ComponentAlignments::Left;
-                                std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options)->labelPosition =
-                                    UIWidgets::LabelPositions::Above;
-                            }
-                            MenuDrawItem(info, 400, menuThemeIndex);
-                            ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
-                            std::string origin =
-                                fmt::format("  ({} -> {})", menuEntry.label, sidebarLabel);
-                            if (info.advanced && SimpleMode()) {
-                                origin += TR(" - hidden in Simple mode");
-                            }
-                            ImGui::Text(TR("%s"), origin.c_str());
-                            ImGui::PopStyleColor();
-                            ImGui::SameLine();
-                            ImGui::PushID(info.stableId.empty() ? info.name.c_str() : info.stableId.c_str());
-                            if (ImGui::SmallButton(TR("Go to"))) {
-                                navigateToWidget = true;
-                                navigateMainEntry = menuEntry.label;
-                                navigateSidebar = sidebarLabel;
-                                navigateWidgetName = info.name;
-                            }
-                            ImGui::PopID();
-                            searchCount++;
-                            if (info.type == WIDGET_COMBOBOX || info.type == WIDGET_CVAR_COMBOBOX) {
-                                std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options)->alignment =
-                                    backupAlignment;
-                                std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options)->labelPosition =
-                                    backupLabelPos;
-                            }
-                        }
+/* Shared rendering for a single search hit: caption showing where the widget
+ * lives plus a "Go to" shortcut wired to the navigateToWidget machinery. */
+void Menu::DrawSearchHit(WidgetInfo& info, const std::string& origin,
+                         const std::string& entryName, const std::string& sidebarName) {
+    ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
+    std::string caption = origin;
+    if (info.advanced && SimpleMode()) {
+        caption += TR(" - hidden in Simple mode");
+    }
+    ImGui::Text(TR("%s"), caption.c_str());
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    ImGui::PushID(info.stableId.empty() ? info.name.c_str() : info.stableId.c_str());
+    if (ImGui::SmallButton(TR("Go to"))) {
+        navigateToWidget = true;
+        navigateMainEntry = entryName;
+        navigateSidebar = sidebarName;
+        navigateWidgetName = info.name;
+    }
+    ImGui::PopID();
+}
+
+/* Haystack matching shared by all search producers: lowercase, spaces
+ * stripped — the query is normalized the same way by DrawSearchResults. */
+static bool SearchMatches(std::string haystack, const std::string& needle) {
+    std::transform(haystack.begin(), haystack.end(), haystack.begin(), ::tolower);
+    haystack.erase(std::remove(haystack.begin(), haystack.end(), ' '), haystack.end());
+    return haystack.find(needle) != std::string::npos;
+}
+
+uint32_t Menu::DrawSearchResultWidgets(const std::string& menuSearchText) {
+    uint32_t count = 0;
+    for (auto& menuLabel : menuOrder) {
+        auto& menuEntry = menuEntries.at(menuLabel);
+        for (auto& sidebarLabel : menuEntry.sidebarOrder) {
+            auto& sidebar = menuEntry.sidebars[sidebarLabel];
+            for (size_t i = 0; i < sidebar.columnWidgets.size(); i++) {
+                for (auto& info : sidebar.columnWidgets.at(i)) {
+                    if (info.type == WIDGET_SEARCH || info.type == WIDGET_SEPARATOR ||
+                        info.type == WIDGET_SEPARATOR_TEXT || info.isHidden || info.hideInSearch) {
+                        continue;
+                    }
+                    const char* tooltip = info.options->tooltip;
+                    std::string widgetStr = std::string(info.name) + TR(info.name.c_str()) +
+                        std::string(tooltip != NULL ? tooltip : "") +
+                        (tooltip != NULL ? TR(tooltip) : "") + info.stableId;
+                    for (const auto& term : info.searchTerms) {
+                        widgetStr += term;
+                    }
+                    if (!SearchMatches(widgetStr, menuSearchText)) {
+                        continue;
+                    }
+                    UIWidgets::ComponentAlignments backupAlignment{};
+                    UIWidgets::LabelPositions backupLabelPos{};
+                    const bool isCombo =
+                        info.type == WIDGET_COMBOBOX || info.type == WIDGET_CVAR_COMBOBOX;
+                    if (isCombo) {
+                        auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+                        backupAlignment = options->alignment;
+                        backupLabelPos = options->labelPosition;
+                        options->alignment = UIWidgets::ComponentAlignments::Left;
+                        options->labelPosition = UIWidgets::LabelPositions::Above;
+                    }
+                    MenuDrawItem(info, 400, menuThemeIndex);
+                    DrawSearchHit(info, fmt::format("  ({} -> {})", menuEntry.label, sidebarLabel),
+                                  menuEntry.label, sidebarLabel);
+                    count++;
+                    if (isCombo) {
+                        auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+                        options->alignment = backupAlignment;
+                        options->labelPosition = backupLabelPos;
                     }
                 }
             }
         }
-        for (auto& entry : extraSearchWidgets) {
-            if (entry.info.type == WIDGET_SEARCH || entry.info.type == WIDGET_SEPARATOR ||
-                entry.info.type == WIDGET_SEPARATOR_TEXT || entry.info.isHidden || entry.info.hideInSearch) {
-                continue;
-            }
-            const char* extraTooltip = entry.info.options->tooltip;
-            std::string widgetStr = entry.info.name + TR(entry.info.name.c_str()) +
-                                    std::string(extraTooltip != NULL ? extraTooltip : "") +
-                                    (extraTooltip != NULL ? TR(extraTooltip) : "") +
-                                    entry.extraTerms + entry.sidebarName;
-            std::transform(widgetStr.begin(), widgetStr.end(), widgetStr.begin(), ::tolower);
-            widgetStr.erase(std::remove(widgetStr.begin(), widgetStr.end(), ' '), widgetStr.end());
-            if (widgetStr.find(menuSearchText) != std::string::npos) {
-                MenuDrawItem(entry.info, 400, menuThemeIndex);
-                ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
-                std::string origin = fmt::format("  ({} -> {}, {})", entry.menuName, entry.sidebarName, entry.location);
-                if (entry.info.advanced && SimpleMode()) {
-                    origin += TR(" - hidden in Simple mode");
-                }
-                ImGui::Text(TR("%s"), origin.c_str());
-                ImGui::PopStyleColor();
-                ImGui::SameLine();
-                ImGui::PushID(entry.info.stableId.empty() ? entry.info.name.c_str() : entry.info.stableId.c_str());
-                if (ImGui::SmallButton(TR("Go to"))) {
-                    navigateToWidget = true;
-                    navigateMainEntry = entry.menuName;
-                    navigateSidebar = entry.sidebarName;
-                    navigateWidgetName = entry.info.name;
-                }
-                ImGui::PopID();
-                searchCount++;
-            }
+    }
+    return count;
+}
+
+uint32_t Menu::DrawSearchResultExtras(const std::string& menuSearchText) {
+    uint32_t count = 0;
+    for (auto& entry : extraSearchWidgets) {
+        if (entry.info.type == WIDGET_SEARCH || entry.info.type == WIDGET_SEPARATOR ||
+            entry.info.type == WIDGET_SEPARATOR_TEXT || entry.info.isHidden || entry.info.hideInSearch) {
+            continue;
         }
-        /* Action entries — the search box doubles as a command palette for
-         * the few global actions players hunt for most. */
-        struct SearchAction {
-            const char* name;
-            const char* terms;
-            std::function<void()> run;
-        };
-        const SearchAction kSearchActions[] = {
-            { "Close Menu", "close exit hide back game", [this]() { ToggleVisibility(); } },
-            { "Restart Game", "reset reload reboot soft", []() {
-                std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
-                    Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
-                    ->Dispatch("reset");
-            } },
+        const char* extraTooltip = entry.info.options->tooltip;
+        std::string widgetStr = entry.info.name + TR(entry.info.name.c_str()) +
+                                std::string(extraTooltip != NULL ? extraTooltip : "") +
+                                (extraTooltip != NULL ? TR(extraTooltip) : "") +
+                                entry.extraTerms + entry.sidebarName;
+        if (!SearchMatches(widgetStr, menuSearchText)) {
+            continue;
+        }
+        MenuDrawItem(entry.info, 400, menuThemeIndex);
+        DrawSearchHit(entry.info,
+                      fmt::format("  ({} -> {}, {})", entry.menuName, entry.sidebarName, entry.location),
+                      entry.menuName, entry.sidebarName);
+        count++;
+    }
+    return count;
+}
+
+/* Action entries — the search box doubles as a command palette for
+ * the few global actions players hunt for most. */
+uint32_t Menu::DrawSearchActionEntries(const std::string& menuSearchText) {
+    struct SearchAction {
+        const char* name;
+        const char* terms;
+        std::function<void()> run;
+    };
+    const SearchAction kSearchActions[] = {
+        { "Close Menu", "close exit hide back game", [this]() { ToggleVisibility(); } },
+        { "Restart Game", "reset reload reboot soft", []() {
+            std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
+                Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
+                ->Dispatch("reset");
+        } },
 #if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
-            { "Restart in Safe Mode", "safe mode clean boot no mods crash", []() {
-                ssb64::RequestSafeModeRestart();
-            } },
-            { "Quit BattleShip", "quit exit shutdown close app", []() {
-                Ship::Context::GetInstance()->GetWindow()->Close();
-            } },
+        { "Restart in Safe Mode", "safe mode clean boot no mods crash", []() {
+            ssb64::RequestSafeModeRestart();
+        } },
+        { "Quit BattleShip", "quit exit shutdown close app", []() {
+            Ship::Context::GetInstance()->GetWindow()->Close();
+        } },
 #endif
-        };
-        for (const auto& action : kSearchActions) {
-            std::string hay = std::string(action.name) + action.terms;
-            std::transform(hay.begin(), hay.end(), hay.begin(), ::tolower);
-            hay.erase(std::remove(hay.begin(), hay.end(), ' '), hay.end());
-            if (hay.find(menuSearchText) == std::string::npos) {
-                continue;
-            }
-            ImGui::PushID(action.name);
-            if (UIWidgets::Button(TR(action.name), UIWidgets::ButtonOptions().Size(UIWidgets::Sizes::Inline))) {
-                action.run();
-            }
-            ImGui::PopID();
-            ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
-            ImGui::Text("%s", TR("  (action)"));
-            ImGui::PopStyleColor();
-            searchCount++;
+    };
+    uint32_t count = 0;
+    for (const auto& action : kSearchActions) {
+        if (!SearchMatches(std::string(action.name) + action.terms, menuSearchText)) {
+            continue;
         }
+        ImGui::PushID(action.name);
+        if (UIWidgets::Button(TR(action.name), UIWidgets::ButtonOptions().Size(UIWidgets::Sizes::Inline))) {
+            action.run();
+        }
+        ImGui::PopID();
+        ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
+        ImGui::Text("%s", TR("  (action)"));
+        ImGui::PopStyleColor();
+        count++;
+    }
+    return count;
+}
+
+uint32_t Menu::DrawSearchResults(std::string& menuSearchText) {
+    std::transform(menuSearchText.begin(), menuSearchText.end(), menuSearchText.begin(), ::tolower);
+    menuSearchText.erase(std::remove(menuSearchText.begin(), menuSearchText.end(), ' '), menuSearchText.end());
+    ImGui::SetNextWindowSizeConstraints({ ImGui::GetContentRegionAvail().x / 2, 0 },
+                                        { ImGui::GetContentRegionAvail().x / 2, ImGui::GetContentRegionAvail().y });
+    uint32_t searchCount = 0;
+    if (ImGui::BeginChild("Search Results Col 1", { ImGui::GetContentRegionAvail().x / 2, 0 },
+                          ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_NoTitleBar)) {
+        searchCount += DrawSearchResultWidgets(menuSearchText);
+        searchCount += DrawSearchResultExtras(menuSearchText);
+        searchCount += DrawSearchActionEntries(menuSearchText);
         ImGui::EndChild();
     }
     return searchCount;
@@ -776,6 +780,365 @@ void Menu::ClearAllEntries() {
 std::unordered_map<uint32_t, disabledInfo>& Menu::GetDisabledMap() {
     return disabledMap;
 }
+
+/* Non-value widget cases (backend pickers, separators, buttons,
+ * custom/search). Done = drawn (or the only path out of the case);
+ * Bail = abort MenuDrawItem before the shared epilogue (matches the
+ * old bare `return` paths); NotMine = dispatch on to the value
+ * widget switch. */
+/* WIDGET_SEARCH: clear button + autofocus handling + live results.
+ * Returns true while the query is non-empty. */
+bool Menu::DrawSearchWidget(UIWidgets::Colors themeIndex) {
+    UIWidgets::PushStyleButton(themeIndex);
+    if (ImGui::Button(TR("Clear"))) {
+        menuSearch.Clear();
+    }
+    ImGui::SameLine();
+    if (CVarGetInteger(CVAR_SETTING("Menu.SearchAutofocus"), 0) &&
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() &&
+        !ImGui::IsMouseClicked(0)) {
+        ImGui::SetKeyboardFocusHere(0);
+    }
+    UIWidgets::PushStyleCombobox(themeIndex);
+    ImGui::PushStyleColor(ImGuiCol_Border, UIWidgets::ColorValues.at(themeIndex));
+    menuSearch.Draw();
+    ImGui::PopStyleColor();
+    UIWidgets::PopStyleCombobox();
+    UIWidgets::PopStyleButton();
+    std::string menuSearchText(menuSearch.InputBuf);
+
+    if (menuSearchText == "") {
+        ImGui::Text(TR("%s"), TR("Start typing to see results."));
+        return false;
+    }
+    DrawSearchResults(menuSearchText);
+    return true;
+}
+
+
+/* Audio/video backend selectors — both comboboxes bound to live backend
+ * state rather than a widget value pointer. */
+/* Window-button widget: button toggles the target window; with embedWindow
+ * the window's contents render inline instead. Missing window names are a
+ * data error, logged rather than crashing the menu frame. */
+void Menu::DrawWindowButtonWidget(WidgetInfo& widget, UIWidgets::Colors themeIndex) {
+    if (widget.windowName == nullptr || widget.windowName[0] == '\0') {
+        std::string msg =
+            fmt::format(fmt::runtime(TR("Error drawing window contents for {}: windowName not defined")), widget.name);
+        SPDLOG_ERROR(msg.c_str());
+        return;
+    }
+    auto window = Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow(widget.windowName);
+    if (!window) {
+        std::string msg =
+            fmt::format(fmt::runtime(TR("Error drawing window contents: windowName {} does not exist")), widget.windowName);
+        SPDLOG_ERROR(msg.c_str());
+        return;
+    }
+    auto options = std::static_pointer_cast<UIWidgets::WindowButtonOptions>(widget.options);
+    options->color = themeIndex;
+    if (options->showButton) {
+        UIWidgets::WindowButton(TR(widget.name.c_str()), widget.cVar, window, *options);
+    }
+    if (!window->IsVisible() && options->embedWindow) {
+        window->DrawElement();
+    }
+}
+
+
+bool Menu::DrawBackendSelector(WidgetInfo& widget, UIWidgets::Colors themeIndex) {
+    if (widget.type == WIDGET_AUDIO_BACKEND) {
+        auto currentAudioBackend = Ship::Context::GetInstance()->GetAudio()->GetCurrentAudioBackend();
+        UIWidgets::ComboboxOptions options = {};
+        options.color = themeIndex;
+        options.tooltip = "Sets the audio API used by the game. Requires a relaunch to take effect.";
+        options.disabled = Ship::Context::GetInstance()->GetAudio()->GetAvailableAudioBackends()->size() <= 1;
+        options.disabledTooltip = "Only one audio API is available on this platform.";
+        if (UIWidgets::Combobox("Audio API", &currentAudioBackend, audioBackendsMap, options)) {
+            Ship::Context::GetInstance()->GetAudio()->SetCurrentAudioBackend(currentAudioBackend);
+        }
+        return true;
+    }
+    UIWidgets::ComboboxOptions options = {};
+    options.color = themeIndex;
+    options.tooltip = "Sets the renderer API used by the game.";
+    options.disabled = availableWindowBackends->size() <= 1;
+    options.disabledTooltip = "Only one renderer API is available on this platform.";
+    if (UIWidgets::Combobox("Renderer API", &configWindowBackend, availableWindowBackendsMap, options)) {
+        Ship::Context::GetInstance()->GetConfig()->SetInt("Window.Backend.Id", (int32_t)(configWindowBackend));
+        Ship::Context::GetInstance()->GetConfig()->SetString("Window.Backend.Name",
+                                                             windowBackendsMap.at(configWindowBackend));
+        Ship::Context::GetInstance()->GetConfig()->Save();
+        UpdateWindowBackendObjects();
+    }
+    return true;
+}
+
+/* Widgets fire their change-callback only when the widget reports a
+ * committed edit; keeping it as one-liner keeps each case body linear. */
+static inline void FireWidgetCallback(WidgetInfo& widget) {
+    if (widget.callback != nullptr) {
+        widget.callback(widget);
+    }
+}
+
+Menu::WidgetDrawResult Menu::DrawMiscWidget(WidgetInfo& widget, uint32_t /*width*/,
+                                                    UIWidgets::Colors themeIndex) {
+    switch (widget.type) {
+            case WIDGET_AUDIO_BACKEND:
+            case WIDGET_VIDEO_BACKEND: {
+                if (!DrawBackendSelector(widget, themeIndex)) {
+                    return WidgetDrawResult::NotMine;
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_SEPARATOR: {
+                ImGui::Separator();
+            } return WidgetDrawResult::Done;
+            case WIDGET_SEPARATOR_TEXT: {
+                auto options = std::static_pointer_cast<UIWidgets::TextOptions>(widget.options);
+                if (options->color != UIWidgets::Colors::NoColor) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(options->color));
+                }
+                ImGui::SeparatorText(TR(widget.name.c_str()));
+                if (options->color != UIWidgets::Colors::NoColor) {
+                    ImGui::PopStyleColor();
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_TEXT: {
+                auto options = std::static_pointer_cast<UIWidgets::TextOptions>(widget.options);
+                if (options->color != UIWidgets::Colors::NoColor) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(options->color));
+                }
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextWrapped(TR("%s"), TR(widget.name.c_str()));
+                if (options->color != UIWidgets::Colors::NoColor) {
+                    ImGui::PopStyleColor();
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_BUTTON: {
+                auto options = std::static_pointer_cast<UIWidgets::ButtonOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::Button(TR(widget.name.c_str()), *options)) {
+                    FireWidgetCallback(widget);
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_CUSTOM: {
+                if (widget.customFunction != nullptr) {
+                    widget.customFunction(widget);
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_WINDOW_BUTTON: {
+                DrawWindowButtonWidget(widget, themeIndex);
+            } return WidgetDrawResult::Done;
+            case WIDGET_SEARCH: {
+                if (!DrawSearchWidget(themeIndex)) {
+                    return WidgetDrawResult::Bail;
+                }
+            } return WidgetDrawResult::Done;
+        default:
+            return WidgetDrawResult::NotMine;
+    }
+}
+
+/* Value-pointer and CVar-bound widget cases. Returns false when the
+ * widget cannot be drawn (null value pointer) — the caller skips
+ * the shared epilogue, matching the old bare `return`. */
+/* Value-pointer widgets (the pointer may be null -> Bail, matching
+ * the old early-return). */
+Menu::WidgetDrawResult Menu::DrawPointerWidget(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex) {
+    switch (widget.type) {
+            case WIDGET_CHECKBOX: {
+                bool* pointer = std::get<bool*>(widget.valuePointer);
+                if (pointer == nullptr) {
+                    SPDLOG_ERROR("Checkbox Widget requires a value pointer, currently nullptr");
+                    assert(false);
+                    return WidgetDrawResult::Bail;
+                }
+                auto options = std::static_pointer_cast<UIWidgets::CheckboxOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::Checkbox(UIWidgets::WrappedText(TR(widget.name.c_str()), width).c_str(), pointer,
+                                        *options)) {
+                    FireWidgetCallback(widget);
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_COMBOBOX: {
+                int32_t* pointer = std::get<int32_t*>(widget.valuePointer);
+                if (pointer == nullptr) {
+                    SPDLOG_ERROR("Combobox Widget requires a value pointer, currently nullptr");
+                    assert(false);
+                    return WidgetDrawResult::Bail;
+                }
+                auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::Combobox(TR(widget.name.c_str()), pointer, options->comboMap, *options)) {
+                    FireWidgetCallback(widget);
+                };
+            } return WidgetDrawResult::Done;
+            case WIDGET_SLIDER_INT: {
+                int32_t* pointer = std::get<int32_t*>(widget.valuePointer);
+                if (pointer == nullptr) {
+                    SPDLOG_ERROR("int32 Slider Widget requires a value pointer, currently nullptr");
+                    assert(false);
+                    return WidgetDrawResult::Bail;
+                }
+                auto options = std::static_pointer_cast<UIWidgets::IntSliderOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::SliderInt(TR(widget.name.c_str()), pointer, *options)) {
+                    FireWidgetCallback(widget);
+                };
+            } return WidgetDrawResult::Done;
+            case WIDGET_SLIDER_FLOAT: {
+                float* pointer = std::get<float*>(widget.valuePointer);
+
+                if (pointer == nullptr) {
+                    SPDLOG_ERROR("float Slider Widget requires a value pointer, currently nullptr");
+                    assert(false);
+                    return WidgetDrawResult::Bail;
+                }
+                auto options = std::static_pointer_cast<UIWidgets::FloatSliderOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::SliderFloat(TR(widget.name.c_str()), pointer, *options)) {
+                    FireWidgetCallback(widget);
+                }
+            } return WidgetDrawResult::Done;
+        default:
+            return WidgetDrawResult::NotMine;
+    }
+}
+
+/* CVar-bound widgets - always draw; callback runs on change. */
+Menu::WidgetDrawResult Menu::DrawCVarWidget(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex) {
+    switch (widget.type) {
+            case WIDGET_CVAR_CHECKBOX: {
+                auto options = std::static_pointer_cast<UIWidgets::CheckboxOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::CVarCheckbox(UIWidgets::WrappedText(TR(widget.name.c_str()), width).c_str(), widget.cVar,
+                                            *options)) {
+                    FireWidgetCallback(widget);
+                };
+            } return WidgetDrawResult::Done;
+            case WIDGET_CVAR_COMBOBOX: {
+                auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::CVarCombobox(TR(widget.name.c_str()), widget.cVar, options->comboMap, *options)) {
+                    FireWidgetCallback(widget);
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_CVAR_SLIDER_INT: {
+                auto options = std::static_pointer_cast<UIWidgets::IntSliderOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::CVarSliderInt(TR(widget.name.c_str()), widget.cVar, *options)) {
+                    FireWidgetCallback(widget);
+                };
+            } return WidgetDrawResult::Done;
+            case WIDGET_CVAR_SLIDER_FLOAT: {
+                auto options = std::static_pointer_cast<UIWidgets::FloatSliderOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::CVarSliderFloat(TR(widget.name.c_str()), widget.cVar, *options)) {
+                    FireWidgetCallback(widget);
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_CVAR_BTN_SELECTOR: {
+                auto options = std::static_pointer_cast<UIWidgets::BtnSelectorOptions>(widget.options);
+                options->color = themeIndex;
+                if (UIWidgets::CVarBtnSelector(TR(widget.name.c_str()), widget.cVar, *options)) {
+                    FireWidgetCallback(widget);
+                }
+            } return WidgetDrawResult::Done;
+            case WIDGET_CVAR_COLOR_PICKER: {
+                auto options = std::static_pointer_cast<UIWidgets::ColorPickerOptions>(widget.options);
+                uint32_t modifiers = 0;
+                if (options->showLock)
+                    modifiers |= UIWidgets::ColorPickerLockCheck;
+                if (options->showRandom)
+                    modifiers |= UIWidgets::ColorPickerRandomButton;
+                if (options->showReset)
+                    modifiers |= UIWidgets::ColorPickerResetButton;
+                if (options->showRainbow)
+                    modifiers |= UIWidgets::ColorPickerRainbowCheck;
+                UIWidgets::CVarColorPicker(TR(widget.name.c_str()), widget.cVar, options->defaultValue, options->useAlpha,
+                                           static_cast<uint8_t>(modifiers), options->color);
+            } return WidgetDrawResult::Done;
+        default:
+            return WidgetDrawResult::NotMine;
+    }
+}
+
+bool Menu::DrawWidgetBody(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex) {
+    const auto r = DrawPointerWidget(widget, width, themeIndex);
+    if (r != WidgetDrawResult::NotMine) {
+        return r == WidgetDrawResult::Done;
+    }
+    return DrawCVarWidget(widget, width, themeIndex) != WidgetDrawResult::Bail;
+}
+
+/* Shared widget epilogue: focus-help capture, narration announce,
+ * trailing tag, disabled-recovery action, persistent description,
+ * postFunc hook. */
+/* Recovery action for a disabled control: the widget-level action wins,
+ * otherwise the first activeDisables reason that carries one. */
+void Menu::DrawDisabledRecoveryAction(WidgetInfo& widget) {
+    if (!widget.options->disabled) {
+        return;
+    }
+    const char* actionLabel = widget.disabledActionLabel;
+    std::function<void()> action = widget.disabledAction;
+    for (auto option : widget.activeDisables) {
+        if (actionLabel == nullptr && disabledMap.at(option).actionLabel != nullptr) {
+            actionLabel = disabledMap.at(option).actionLabel;
+            action = disabledMap.at(option).action;
+        }
+    }
+    if (actionLabel != nullptr && action != nullptr) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton(actionLabel)) {
+            action();
+        }
+    }
+}
+
+void Menu::DrawItemEpilogue(WidgetInfo& widget) {
+    /* Focus help capture — the widget just drawn is the "last item", so
+     * reading hover/focus here maps to this control. The focused widget's
+     * name + tooltip feed the persistent help bar at the bottom of the
+     * menu (gamepad/touch users never see hover tooltips). */
+    if (mShowHelpBar &&
+        (ImGui::IsItemFocused() || ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))) {
+        mFocusHelpName = widget.name;
+        const char* tip = TR(widget.options->tooltip);
+        if (widget.options->disabled && !Ship_IsCStringEmpty(widget.options->disabledTooltip)) {
+            tip = widget.options->disabledTooltip;
+        }
+        mFocusHelpText = tip != nullptr ? tip : "";
+    }
+    /* §9 narration: announce the focused/hovered widget once per change,
+     * independent of the help bar — Speak() purges pending utterances so
+     * rapid moves only voice the latest. */
+    if (ImGui::IsItemFocused() || ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        static std::string sLastNarrated;
+        if (sLastNarrated != widget.name) {
+            sLastNarrated = widget.name;
+            port_narrate(TR(widget.name.c_str()));
+        }
+    }
+    if (widget.tag != nullptr) {
+        ImGui::SameLine();
+        ImGui::TextDisabled(TR("[%s]"), widget.tag);
+    }
+    DrawDisabledRecoveryAction(widget);
+    /* Persistent-descriptions mode: print the tooltip inline under the
+     * control instead of requiring a hover. */
+    if (CVarGetInteger("gSettings.PersistentDescriptions", 0) &&
+        !Ship_IsCStringEmpty(widget.options->tooltip)) {
+        ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
+        ImGui::TextWrapped(TR("%s"), TR(widget.options->tooltip));
+        ImGui::PopStyleColor();
+    }
+    if (widget.postFunc != nullptr) {
+        widget.postFunc(widget);
+    }
+}
+
 
 void Menu::MenuDrawItem(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex) {
     disabledTempTooltip = "This setting is disabled because: \n";
@@ -807,301 +1170,14 @@ void Menu::MenuDrawItem(WidgetInfo& widget, uint32_t width, UIWidgets::Colors th
     }
 
     try {
-        switch (widget.type) {
-            case WIDGET_CHECKBOX: {
-                bool* pointer = std::get<bool*>(widget.valuePointer);
-                if (pointer == nullptr) {
-                    SPDLOG_ERROR("Checkbox Widget requires a value pointer, currently nullptr");
-                    assert(false);
-                    return;
-                }
-                auto options = std::static_pointer_cast<UIWidgets::CheckboxOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::Checkbox(UIWidgets::WrappedText(TR(widget.name.c_str()), width).c_str(), pointer,
-                                        *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                }
-            } break;
-            case WIDGET_CVAR_CHECKBOX: {
-                auto options = std::static_pointer_cast<UIWidgets::CheckboxOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarCheckbox(UIWidgets::WrappedText(TR(widget.name.c_str()), width).c_str(), widget.cVar,
-                                            *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                };
-            } break;
-            case WIDGET_AUDIO_BACKEND: {
-                auto currentAudioBackend = Ship::Context::GetInstance()->GetAudio()->GetCurrentAudioBackend();
-                UIWidgets::ComboboxOptions options = {};
-                options.color = themeIndex;
-                options.tooltip = "Sets the audio API used by the game. Requires a relaunch to take effect.";
-                options.disabled = Ship::Context::GetInstance()->GetAudio()->GetAvailableAudioBackends()->size() <= 1;
-                options.disabledTooltip = "Only one audio API is available on this platform.";
-                if (UIWidgets::Combobox("Audio API", &currentAudioBackend, audioBackendsMap, options)) {
-                    Ship::Context::GetInstance()->GetAudio()->SetCurrentAudioBackend(currentAudioBackend);
-                }
-            } break;
-            case WIDGET_VIDEO_BACKEND: {
-                UIWidgets::ComboboxOptions options = {};
-                options.color = themeIndex;
-                options.tooltip = "Sets the renderer API used by the game.";
-                options.disabled = availableWindowBackends->size() <= 1;
-                options.disabledTooltip = "Only one renderer API is available on this platform.";
-                if (UIWidgets::Combobox("Renderer API", &configWindowBackend, availableWindowBackendsMap,
-                                        options)) {
-                    Ship::Context::GetInstance()->GetConfig()->SetInt("Window.Backend.Id",
-                                                                      (int32_t)(configWindowBackend));
-                    Ship::Context::GetInstance()->GetConfig()->SetString("Window.Backend.Name",
-                                                                         windowBackendsMap.at(configWindowBackend));
-                    Ship::Context::GetInstance()->GetConfig()->Save();
-                    UpdateWindowBackendObjects();
-                }
-            } break;
-            case WIDGET_SEPARATOR: {
-                ImGui::Separator();
-            } break;
-            case WIDGET_SEPARATOR_TEXT: {
-                auto options = std::static_pointer_cast<UIWidgets::TextOptions>(widget.options);
-                if (options->color != UIWidgets::Colors::NoColor) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(options->color));
-                }
-                ImGui::SeparatorText(TR(widget.name.c_str()));
-                if (options->color != UIWidgets::Colors::NoColor) {
-                    ImGui::PopStyleColor();
-                }
-            } break;
-            case WIDGET_TEXT: {
-                auto options = std::static_pointer_cast<UIWidgets::TextOptions>(widget.options);
-                if (options->color != UIWidgets::Colors::NoColor) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(options->color));
-                }
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextWrapped(TR("%s"), TR(widget.name.c_str()));
-                if (options->color != UIWidgets::Colors::NoColor) {
-                    ImGui::PopStyleColor();
-                }
-            } break;
-            case WIDGET_COMBOBOX: {
-                int32_t* pointer = std::get<int32_t*>(widget.valuePointer);
-                if (pointer == nullptr) {
-                    SPDLOG_ERROR("Combobox Widget requires a value pointer, currently nullptr");
-                    assert(false);
-                    return;
-                }
-                auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::Combobox(TR(widget.name.c_str()), pointer, options->comboMap, *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                };
-            } break;
-            case WIDGET_CVAR_COMBOBOX: {
-                auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarCombobox(TR(widget.name.c_str()), widget.cVar, options->comboMap, *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                }
-            } break;
-            case WIDGET_SLIDER_INT: {
-                int32_t* pointer = std::get<int32_t*>(widget.valuePointer);
-                if (pointer == nullptr) {
-                    SPDLOG_ERROR("int32 Slider Widget requires a value pointer, currently nullptr");
-                    assert(false);
-                    return;
-                }
-                auto options = std::static_pointer_cast<UIWidgets::IntSliderOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::SliderInt(TR(widget.name.c_str()), pointer, *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                };
-            } break;
-            case WIDGET_CVAR_SLIDER_INT: {
-                auto options = std::static_pointer_cast<UIWidgets::IntSliderOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarSliderInt(TR(widget.name.c_str()), widget.cVar, *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                };
-            } break;
-            case WIDGET_SLIDER_FLOAT: {
-                float* pointer = std::get<float*>(widget.valuePointer);
-
-                if (pointer == nullptr) {
-                    SPDLOG_ERROR("float Slider Widget requires a value pointer, currently nullptr");
-                    assert(false);
-                    return;
-                }
-                auto options = std::static_pointer_cast<UIWidgets::FloatSliderOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::SliderFloat(TR(widget.name.c_str()), pointer, *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                }
-            } break;
-            case WIDGET_CVAR_SLIDER_FLOAT: {
-                auto options = std::static_pointer_cast<UIWidgets::FloatSliderOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarSliderFloat(TR(widget.name.c_str()), widget.cVar, *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                }
-            } break;
-            case WIDGET_CVAR_BTN_SELECTOR: {
-                auto options = std::static_pointer_cast<UIWidgets::BtnSelectorOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarBtnSelector(TR(widget.name.c_str()), widget.cVar, *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                }
-            } break;
-            case WIDGET_BUTTON: {
-                auto options = std::static_pointer_cast<UIWidgets::ButtonOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::Button(TR(widget.name.c_str()), *options)) {
-                    if (widget.callback != nullptr) {
-                        widget.callback(widget);
-                    }
-                }
-            } break;
-            case WIDGET_CUSTOM: {
-                if (widget.customFunction != nullptr) {
-                    widget.customFunction(widget);
-                }
-            } break;
-            case WIDGET_WINDOW_BUTTON: {
-                if (widget.windowName == nullptr || widget.windowName[0] == '\0') {
-                    std::string msg =
-                        fmt::format(fmt::runtime(TR("Error drawing window contents for {}: windowName not defined")), widget.name);
-                    SPDLOG_ERROR(msg.c_str());
-                    break;
-                }
-                auto window = Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow(widget.windowName);
-                if (!window) {
-                    std::string msg =
-                        fmt::format(fmt::runtime(TR("Error drawing window contents: windowName {} does not exist")), widget.windowName);
-                    SPDLOG_ERROR(msg.c_str());
-                    break;
-                }
-                auto options = std::static_pointer_cast<UIWidgets::WindowButtonOptions>(widget.options);
-                options->color = themeIndex;
-                if (options->showButton) {
-                    UIWidgets::WindowButton(TR(widget.name.c_str()), widget.cVar, window, *options);
-                }
-                if (!window->IsVisible() && options->embedWindow) {
-                    window->DrawElement();
-                }
-            } break;
-            case WIDGET_CVAR_COLOR_PICKER: {
-                auto options = std::static_pointer_cast<UIWidgets::ColorPickerOptions>(widget.options);
-                uint32_t modifiers = 0;
-                if (options->showLock)
-                    modifiers |= UIWidgets::ColorPickerLockCheck;
-                if (options->showRandom)
-                    modifiers |= UIWidgets::ColorPickerRandomButton;
-                if (options->showReset)
-                    modifiers |= UIWidgets::ColorPickerResetButton;
-                if (options->showRainbow)
-                    modifiers |= UIWidgets::ColorPickerRainbowCheck;
-                UIWidgets::CVarColorPicker(TR(widget.name.c_str()), widget.cVar, options->defaultValue, options->useAlpha,
-                                           static_cast<uint8_t>(modifiers), options->color);
-            } break;
-            case WIDGET_SEARCH: {
-                UIWidgets::PushStyleButton(themeIndex);
-                if (ImGui::Button(TR("Clear"))) {
-                    menuSearch.Clear();
-                }
-                ImGui::SameLine();
-                if (CVarGetInteger(CVAR_SETTING("Menu.SearchAutofocus"), 0) &&
-                    ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() &&
-                    !ImGui::IsMouseClicked(0)) {
-                    ImGui::SetKeyboardFocusHere(0);
-                }
-                UIWidgets::PushStyleCombobox(themeIndex);
-                ImGui::PushStyleColor(ImGuiCol_Border, UIWidgets::ColorValues.at(themeIndex));
-                menuSearch.Draw();
-                ImGui::PopStyleColor();
-                UIWidgets::PopStyleCombobox();
-                UIWidgets::PopStyleButton();
-                std::string menuSearchText(menuSearch.InputBuf);
-
-                if (menuSearchText == "") {
-                    ImGui::Text(TR("%s"), TR("Start typing to see results."));
-                    return;
-                }
-                DrawSearchResults(menuSearchText);
-            } break;
-            default:
-                break;
+        const auto misc = DrawMiscWidget(widget, width, themeIndex);
+        if (misc == WidgetDrawResult::Bail) {
+            return;
         }
-        /* Focus help capture — the widget just drawn is the "last item", so
-         * reading hover/focus here maps to this control. The focused widget's
-         * name + tooltip feed the persistent help bar at the bottom of the
-         * menu (gamepad/touch users never see hover tooltips). */
-        if (mShowHelpBar &&
-            (ImGui::IsItemFocused() || ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))) {
-            mFocusHelpName = widget.name;
-            const char* tip = TR(widget.options->tooltip);
-            if (widget.options->disabled && !Ship_IsCStringEmpty(widget.options->disabledTooltip)) {
-                tip = widget.options->disabledTooltip;
-            }
-            mFocusHelpText = tip != nullptr ? tip : "";
+        if (misc == WidgetDrawResult::NotMine && !DrawWidgetBody(widget, width, themeIndex)) {
+            return;
         }
-        /* §9 narration: announce the focused/hovered widget once per change,
-         * independent of the help bar — Speak() purges pending utterances so
-         * rapid moves only voice the latest. */
-        if (ImGui::IsItemFocused() || ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            static std::string sLastNarrated;
-            if (sLastNarrated != widget.name) {
-                sLastNarrated = widget.name;
-                port_narrate(TR(widget.name.c_str()));
-            }
-        }
-        if (widget.tag != nullptr) {
-            ImGui::SameLine();
-            ImGui::TextDisabled(TR("[%s]"), widget.tag);
-        }
-        /* Recovery action for a disabled control: the widget-level action
-         * wins, otherwise the first activeDisables reason that carries one. */
-        if (widget.options->disabled) {
-            const char* actionLabel = widget.disabledActionLabel;
-            std::function<void()> action = widget.disabledAction;
-            for (auto option : widget.activeDisables) {
-                if (actionLabel == nullptr && disabledMap.at(option).actionLabel != nullptr) {
-                    actionLabel = disabledMap.at(option).actionLabel;
-                    action = disabledMap.at(option).action;
-                }
-            }
-            if (actionLabel != nullptr && action != nullptr) {
-                ImGui::SameLine();
-                if (ImGui::SmallButton(actionLabel)) {
-                    action();
-                }
-            }
-        }
-        /* Persistent-descriptions mode: print the tooltip inline under the
-         * control instead of requiring a hover. */
-        if (CVarGetInteger("gSettings.PersistentDescriptions", 0) &&
-            !Ship_IsCStringEmpty(widget.options->tooltip)) {
-            ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::Gray));
-            ImGui::TextWrapped(TR("%s"), TR(widget.options->tooltip));
-            ImGui::PopStyleColor();
-        }
-        if (widget.postFunc != nullptr) {
-            widget.postFunc(widget);
-        }
+        DrawItemEpilogue(widget);
     } catch (const std::bad_variant_access& e) {
         SPDLOG_ERROR("Failed to draw menu item \"{}\" due to: {}", widget.name, e.what());
         assert(false);
@@ -1151,14 +1227,63 @@ static bool SidebarHiddenInSimple(const SidebarEntry& sb) {
  * ScrollMax isn't known until the frame ends, so the snap lands halfway.
  * Keep requesting the active entry's position for a few frames after open. */
 static int scrollToActiveFrames = 0;
-void Menu::DrawElement() {
-    ImFont* standardLargest = GetMenuFont("MenuStandard");
-    ImFont* standardSmall = GetMenuFont("MenuStandardSmall");
-    if (standardLargest == nullptr) {
-        standardLargest = ImGui::GetFont();
+/* Per-frame environment sync: race-condition disable flag, UI scale (style
+ * rescale is multiplicative so it only applies on change), reduced-motion
+ * cursor blink, and the focus-help capture buffers. */
+void Menu::SyncFrameEnvironment() {
+    raceDisableActive = CVarGetInteger(CVAR_SETTING("DisableChanges"), 0);
+
+    /* UI scale — ScaleAllSizes only on change (it multiplies), FontGlobalScale
+     * is absolute so it can be re-set every frame. Applied to the shared ImGui
+     * context, so the scale also covers the floating tool windows. */
+    float uiScale = CVarGetFloat("gSettings.UIScale", 1.0f);
+    uiScale = std::clamp(uiScale, 0.75f, 2.5f);
+    if (uiScale != mLastUiScale) {
+        ImGui::GetStyle().ScaleAllSizes(uiScale / mLastUiScale);
+        mLastUiScale = uiScale;
     }
-    if (standardSmall == nullptr) {
-        standardSmall = standardLargest;
+    ImGui::GetIO().FontGlobalScale = uiScale;
+
+    /* Reduced motion — this ImGui build has no widget animation system, so the
+     * only perpetual motion in the menu is the text-input cursor blink. */
+    ImGui::GetIO().ConfigInputTextCursorBlink = !CVarGetInteger("gSettings.ReducedMotion", 0);
+
+    mFocusHelpName.clear();
+    mFocusHelpText.clear();
+}
+
+/* Popout state + one-shot geometry: entering popout re-applies the saved
+ * size/pos; leaving persists it back to CVars. `popped` is the last-frame
+ * latch so the Set* calls only run on the transition frame. */
+void Menu::ApplyPopoutTransition(ElementFrame& f, bool canPopout, ImGuiWindowFlags& windowFlags) {
+    f.popout = CVarGetInteger(CVAR_SETTING("Menu.Popout"), 0) && canPopout;
+    if (f.popout) {
+        windowFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoDocking;
+    }
+    if (f.popout != popped) {
+        if (f.popout) {
+            windowHeight = poppedSize.y;
+            windowWidth = poppedSize.x;
+            ImGui::SetNextWindowSize({ static_cast<float>(windowWidth), static_cast<float>(windowHeight) },
+                                     ImGuiCond_Always);
+            ImGui::SetNextWindowPos(poppedPos, ImGuiCond_Always);
+        } else if (popped) {
+            CVarSetFloat(CVAR_SETTING("Menu.PoppedWidth"), poppedSize.x);
+            CVarSetFloat(CVAR_SETTING("Menu.PoppedHeight"), poppedSize.y);
+            CVarSave();
+        }
+    }
+    popped = f.popout;
+}
+
+bool Menu::BeginElement(ElementFrame& f) {
+    f.fontLarge = GetMenuFont("MenuStandard");
+    f.fontSmall = GetMenuFont("MenuStandardSmall");
+    if (f.fontLarge == nullptr) {
+        f.fontLarge = ImGui::GetFont();
+    }
+    if (f.fontSmall == nullptr) {
+        f.fontSmall = f.fontLarge;
     }
     for (auto& [reason, info] : disabledMap) {
         info.active = info.evaluation(info);
@@ -1181,49 +1306,14 @@ void Menu::DrawElement() {
         highlightWidget = false; /* target hidden or gone — stop looking */
     }
 
-    raceDisableActive = CVarGetInteger(CVAR_SETTING("DisableChanges"), 0);
-
-    /* UI scale — ScaleAllSizes only on change (it multiplies), FontGlobalScale
-     * is absolute so it can be re-set every frame. Applied to the shared ImGui
-     * context, so the scale also covers the floating tool windows. */
-    float uiScale = CVarGetFloat("gSettings.UIScale", 1.0f);
-    uiScale = std::clamp(uiScale, 0.75f, 2.5f);
-    if (uiScale != mLastUiScale) {
-        ImGui::GetStyle().ScaleAllSizes(uiScale / mLastUiScale);
-        mLastUiScale = uiScale;
-    }
-    ImGui::GetIO().FontGlobalScale = uiScale;
-
-    /* Reduced motion — this ImGui build has no widget animation system, so the
-     * only perpetual motion in the menu is the text-input cursor blink. */
-    ImGui::GetIO().ConfigInputTextCursorBlink = !CVarGetInteger("gSettings.ReducedMotion", 0);
-
-    mFocusHelpName.clear();
-    mFocusHelpText.clear();
+    SyncFrameEnvironment();
 
     windowHeight = ImGui::GetMainViewport()->WorkSize.y;
     windowWidth = ImGui::GetMainViewport()->WorkSize.x;
     auto windowFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-    bool popout = CVarGetInteger(CVAR_SETTING("Menu.Popout"), 0) && allowPopout;
-    if (popout) {
-        windowFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoDocking;
-    }
-    if (popout != popped) {
-        if (popout) {
-            windowHeight = poppedSize.y;
-            windowWidth = poppedSize.x;
-            ImGui::SetNextWindowSize({ static_cast<float>(windowWidth), static_cast<float>(windowHeight) },
-                                     ImGuiCond_Always);
-            ImGui::SetNextWindowPos(poppedPos, ImGuiCond_Always);
-        } else if (popped) {
-            CVarSetFloat(CVAR_SETTING("Menu.PoppedWidth"), poppedSize.x);
-            CVarSetFloat(CVAR_SETTING("Menu.PoppedHeight"), poppedSize.y);
-            CVarSave();
-        }
-    }
-    popped = popout;
+    ApplyPopoutTransition(f, allowPopout, windowFlags);
     auto windowCond = ImGuiCond_Always;
-    if (!popout) {
+    if (!f.popout) {
         ImGui::SetNextWindowSize({ static_cast<float>(windowWidth), static_cast<float>(windowHeight) }, windowCond);
         ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), windowCond, { 0.5f, 0.5f });
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -1233,7 +1323,7 @@ void Menu::DrawElement() {
      * then the per-theme surface/focus colors on top. */
     const auto baseTheme = static_cast<MenuBaseTheme>(
         std::clamp(CVarGetInteger(CVAR_SETTING("Menu.BaseTheme"), 0), 0, 2));
-    const int pushedColors = PushMenuBasePalette(baseTheme) + 3;
+    f.pushedColors = PushMenuBasePalette(baseTheme) + 3;
 
     ImGui::PushStyleColor(
         ImGuiCol_WindowBg,
@@ -1257,17 +1347,17 @@ void Menu::DrawElement() {
     ImGui::PushStyleColor(ImGuiCol_TextDisabled, MenuTextDisabledColor(baseTheme));
 
     if (!ImGui::Begin("Main Menu", NULL, windowFlags)) {
-        if (!popout) {
+        if (!f.popout) {
             ImGui::PopStyleVar();
         }
         freshOpen = true;
-        ImGui::PopStyleColor(pushedColors);
+        ImGui::PopStyleColor(f.pushedColors);
         ImGui::End();
-        return;
+        return false;
     }
 
-    if (popped != popout) {
-        if (!popout) {
+    if (popped != f.popout) {
+        if (!f.popout) {
             ImGui::PopStyleVar();
         }
         CVarSetInteger(CVAR_SETTING("Menu.Popout"), popped);
@@ -1277,71 +1367,207 @@ void Menu::DrawElement() {
         CVarSetFloat(CVAR_SETTING("Menu.PoppedPos.y"), poppedSize.y);
         CVarSave();
         ImGui::End();
-        ImGui::PopStyleColor(pushedColors);
+        ImGui::PopStyleColor(f.pushedColors);
+        return false;
+    }
+    return true;
+}
+
+/* Trailing header actions: Quit / Reset (optional per subclass) and
+ * the always-present Close button. */
+void Menu::DrawHeaderActions(ElementFrame& f) {
+bool headerQuit = mShowHeaderQuit;
+bool headerReset = mShowHeaderReset;
+#if defined(__ANDROID__)
+headerQuit = false;
+#endif
+const int trailingButtons = 1 + (headerReset ? 1 : 0) + (headerQuit ? 1 : 0);
+ImGui::SameLine(f.menuSize.x - (f.buttonSize.x * trailingButtons) - (f.style->ItemSpacing.x * (trailingButtons - 1)));
+ImGui::PopStyleVar();
+if (headerQuit) {
+    UIWidgets::ButtonOptions options3 = {};
+    options3.color = UIWidgets::Colors::Red;
+    options3.size = UIWidgets::Sizes::Inline;
+    options3.tooltip = "Quit BattleShip";
+    if (UIWidgets::Button(ICON_FA_POWER_OFF, options3)) {
+        std::shared_ptr<Menu> menu =
+            std::static_pointer_cast<Menu>(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetMenu());
+        if (!menu->IsMenuPopped()) {
+            menu->ToggleVisibility();
+        }
+        Ship::Context::GetInstance()->GetWindow()->Close();
+    }
+    ImGui::SameLine();
+}
+if (headerReset) {
+    UIWidgets::ButtonOptions options2 = {};
+    options2.color = UIWidgets::Colors::Red;
+    options2.size = UIWidgets::Sizes::Inline;
+    options2.tooltip = "Restart game"
+#ifdef __APPLE__
+                       " (Command-R)"
+#elif !defined(__SWITCH__) && !defined(__WIIU__)
+                       " (Ctrl+R)"
+#else
+                       ""
+#endif
+        ;
+    if (UIWidgets::Button(ICON_FA_UNDO, options2)) {
+        std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
+            ->Dispatch("reset");
+    }
+    ImGui::SameLine();
+}
+UIWidgets::ButtonOptions options = {};
+options.size = UIWidgets::Sizes::Inline;
+options.tooltip = "Close Menu (Esc)";
+if (UIWidgets::Button(ICON_FA_TIMES_CIRCLE, options)) {
+    ToggleVisibility();
+
+    // Update gamepad navigation after close based on if other menus are still visible
+    auto mImGuiIo = &ImGui::GetIO();
+    if (CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) &&
+        Ship::Context::GetInstance()->GetWindow()->GetGui()->GetMenuOrMenubarVisible()) {
+        mImGuiIo->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
+    } else {
+        mImGuiIo->ConfigFlags &= ~(ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard);
+    }
+}
+
+}
+
+
+/* Scrollable tab strip across the top of the menu — one header entry per
+ * registered top-level menu. Updates f.headerIndex / f.sidebar on click and
+ * scrolls the active tab into view on the first frame after opening. */
+void Menu::DrawHeaderTabStrip(ElementFrame& f, const char* headerCvar) {
+    uint8_t curIndex = 0;
+    for (auto& label : menuOrder) {
+        if (curIndex != 0) {
+            ImGui::SameLine();
+        }
+        auto& entry = menuEntries.at(label);
+        std::string nextIndex = label;
+        UIWidgets::PushStyleButton(menuThemeIndex);
+        if (f.headerIndex != label) {
+            ImGui::PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 });
+        }
+        if (f.headerIndex == label && freshOpen) {
+            // Keep the active tab visible when the strip is scrolled.
+            ImGui::SetScrollHereX(0.5f);
+        }
+        if (ModernMenuHeaderEntry(entry.label)) {
+            if (f.headerSearch) {
+                menuSearch.Clear();
+            }
+            CVarSetString(headerCvar, label.c_str());
+            CVarSave();
+            nextIndex = label;
+        }
+        if (f.headerIndex != label) {
+            ImGui::PopStyleColor();
+        }
+        UIWidgets::PopStyleButton();
+        if (f.headerIndex == label) {
+            f.sidebar = &entry.sidebars;
+        }
+        if (nextIndex != label) {
+            f.headerIndex = nextIndex;
+        }
+        curIndex++;
+    }
+}
+
+/* Pinned search field between the scrolling tab strip and the trailing
+ * buttons. The "Search..." placeholder is painted straight into the draw
+ * list — a cursor-seeking SameLine() would disturb the absolute positioning
+ * the trailing buttons rely on. */
+void Menu::DrawHeaderSearchField(ElementFrame& f, bool autoFocus) {
+    f.menuSearchText = "";
+    if (!f.headerSearch) {
         return;
     }
-    ImGuiContext& g = *GImGui;
-    ImGuiWindow* window = g.CurrentWindow;
-    ImGuiStyle& style = ImGui::GetStyle();
-    windowHeight = window->WorkRect.GetHeight();
-    windowWidth = window->WorkRect.GetWidth();
+    ImGui::SameLine();
+    if (autoFocus && freshOpen) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    auto color = UIWidgets::ColorValues.at(menuThemeIndex);
+    color.w = 0.6f;
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, color);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+    menuSearch.Draw("##search", 200.0f);
+    f.menuSearchText = menuSearch.InputBuf;
+    f.menuSearchText.erase(std::remove(f.menuSearchText.begin(), f.menuSearchText.end(), ' '), f.menuSearchText.end());
+    if (f.menuSearchText.length() < 1) {
+        const ImVec2 rmin = ImGui::GetItemRectMin();
+        ImGui::GetWindowDrawList()->AddText(
+            ImVec2(rmin.x + f.style->FramePadding.x, rmin.y + f.style->FramePadding.y),
+            ImGui::GetColorU32(UIWidgets::SemanticColors::Placeholder), TR("Search..."));
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
 
-    ImGui::PushFont(standardLargest);
+void Menu::DrawElementHeader(ElementFrame& f) {
+    const char* headerCvar = CVAR_SETTING("Menu.ActiveHeader");
+    ImGui::PushFont(f.fontLarge);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 8.0f));
-    std::string headerIndex = CVarGetString(headerCvar, "Settings");
-    ImVec2 pos = window->DC.CursorPos;
-    float centerX = pos.x + windowWidth / 2 - (style.ItemSpacing.x * (menuEntries.size() + 1));
+    f.headerIndex = CVarGetString(headerCvar, "Settings");
+    f.pos = f.window->DC.CursorPos;
+    float centerX = f.pos.x + windowWidth / 2 - (f.style->ItemSpacing.x * (menuEntries.size() + 1));
     std::vector<ImVec2> headerSizes;
     float headerWidth = 0.0f;
-    bool headerSearch = !CVarGetInteger(CVAR_SETTING("Menu.SidebarSearch"), 0);
+    f.headerSearch = !CVarGetInteger(CVAR_SETTING("Menu.SidebarSearch"), 0);
     for (auto& label : menuOrder) {
         ImVec2 size = ImGui::CalcTextSize(label.c_str());
         headerSizes.push_back(size);
-        headerWidth += size.x + style.FramePadding.x * 2 + style.ItemSpacing.x;
+        headerWidth += size.x + f.style->FramePadding.x * 2 + f.style->ItemSpacing.x;
     }
 
     // Full screen menu with widths below 1280, heights below 800.
     // 5% of screen width/height padding on both sides above those resolutions.
     // Menu width will never exceed a 16:9 aspect ratio.
-    ImVec2 menuSize = { windowWidth, windowHeight };
+    f.menuSize = { windowWidth, windowHeight };
     if (windowWidth > 1280) {
-        menuSize.x = std::fminf(windowWidth * 0.9f, (windowHeight * 1.77f));
+        f.menuSize.x = std::fminf(windowWidth * 0.9f, (windowHeight * 1.77f));
     }
     if (windowHeight > 800) {
-        menuSize.y = windowHeight * 0.9f;
+        f.menuSize.y = windowHeight * 0.9f;
     }
 
-    pos += window->WorkRect.GetSize() / 2 - menuSize / 2;
-    ImGui::SetNextWindowPos(pos);
-    const ImVec2 menuBlockPos = pos;
-    ImGui::BeginChild("Menu Block", menuSize,
+    f.pos += f.window->WorkRect.GetSize() / 2 - f.menuSize / 2;
+    ImGui::SetNextWindowPos(f.pos);
+    f.menuBlockPos = f.pos;
+    ImGui::BeginChild("Menu Block", f.menuSize,
                       ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
                       ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
 
-    std::unordered_map<std::string, SidebarEntry>* sidebar = nullptr;
-    float headerHeight = headerSizes.at(0).y + style.FramePadding.y * 2;
-    ImVec2 buttonSize = ImGui::CalcTextSize(ICON_FA_TIMES_CIRCLE) + style.FramePadding * 2;
+    f.sidebar = nullptr;
+    f.headerHeight = headerSizes.at(0).y + f.style->FramePadding.y * 2;
+    f.headerRowH = f.headerHeight;
+    f.buttonSize = ImGui::CalcTextSize(ICON_FA_TIMES_CIRCLE) + f.style->FramePadding * 2;
     /* Reserve the pinned search field and trailing buttons: the search lives
      * outside the scrolling tab strip, so its width is a fixed affordance the
      * strip must leave room for — longer translated labels overflow into the
      * child's scrollbar instead of clipping the input. */
-    const float searchW = headerSearch ? 200.0f : 0.0f;
-    const float headerReserved = buttonSize.x * 3 + searchW + style.ItemSpacing.x * 4;
+    const float searchW = f.headerSearch ? 200.0f : 0.0f;
+    const float headerReserved = f.buttonSize.x * 3 + searchW + f.style->ItemSpacing.x * 4;
     bool scrollbar = false;
-    if (headerWidth > menuSize.x - headerReserved) {
-        headerHeight += style.ScrollbarSize;
+    if (headerWidth > f.menuSize.x - headerReserved) {
+        f.headerHeight += f.style->ScrollbarSize;
         scrollbar = true;
     }
-    ImVec2 headerSelSize = { menuSize.x - headerReserved, headerHeight };
+    ImVec2 headerSelSize = { f.menuSize.x - headerReserved, f.headerHeight };
     /* The child used to be constrained to the CONTENT width (headerWidth), so
      * on narrow windows AlwaysAutoResize grew it past the menu edge and the
      * Close/Reset/Quit buttons painted on top of the tab strip. Clamp it to
      * the space actually available — the HorizontalScrollbar flag inside
      * handles the overflow. */
     headerSelSize.x = ImMax(headerSelSize.x, 40.0f);
-    ImGui::SetNextWindowSizeConstraints({ 0, headerHeight }, { headerSelSize.x, headerSelSize.y });
+    ImGui::SetNextWindowSizeConstraints({ 0, f.headerHeight }, { headerSelSize.x, headerSelSize.y });
     if (scrollbar) {
-        headerSelSize.y += style.ScrollbarSize;
+        headerSelSize.y += f.style->ScrollbarSize;
     }
     bool autoFocus = CVarGetInteger(CVAR_SETTING("Menu.SearchAutofocus"), 0);
     /* No AutoResizeX: it resizes the frame to the CONTENT width in EndChild,
@@ -1351,418 +1577,339 @@ void Menu::DrawElement() {
     ImGui::BeginChild("Header Selection", headerSelSize,
                       ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
                       ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_HorizontalScrollbar);
-    uint8_t curIndex = 0;
-    for (auto& label : menuOrder) {
-        if (curIndex != 0) {
-            ImGui::SameLine();
-        }
-        auto& entry = menuEntries.at(label);
-        std::string nextIndex = label;
-        UIWidgets::PushStyleButton(menuThemeIndex);
-        if (headerIndex != label) {
-            ImGui::PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 });
-        }
-        if (headerIndex == label && freshOpen) {
-            // Keep the active tab visible when the strip is scrolled.
-            ImGui::SetScrollHereX(0.5f);
-        }
-        if (ModernMenuHeaderEntry(entry.label)) {
-            if (headerSearch) {
-                menuSearch.Clear();
-            }
-            CVarSetString(headerCvar, label.c_str());
-            CVarSave();
-            nextIndex = label;
-        }
-        if (headerIndex != label) {
-            ImGui::PopStyleColor();
-        }
-        UIWidgets::PopStyleButton();
-        if (headerIndex == label) {
-            sidebar = &entry.sidebars;
-        }
-        if (nextIndex != label) {
-            headerIndex = nextIndex;
-        }
-        curIndex++;
-    }
+    DrawHeaderTabStrip(f, headerCvar);
     ImGui::EndChild();
     /* Pinned search field — sits between the scrolling tab strip and the
      * trailing buttons so longer translated labels can never push it out
      * of view or under the last tab. */
-    std::string menuSearchText = "";
-    if (headerSearch) {
-        ImGui::SameLine();
-        if (autoFocus && freshOpen) {
-            ImGui::SetKeyboardFocusHere();
-        }
-        auto color = UIWidgets::ColorValues.at(menuThemeIndex);
-        color.w = 0.6f;
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, color);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
-        menuSearch.Draw("##search", 200.0f);
-        menuSearchText = menuSearch.InputBuf;
-        menuSearchText.erase(std::remove(menuSearchText.begin(), menuSearchText.end(), ' '), menuSearchText.end());
-        if (menuSearchText.length() < 1) {
-            /* Draw the placeholder straight into the draw list — a
-             * cursor-seeking SameLine() here would disturb the absolute
-             * positioning the trailing buttons rely on below. */
-            const ImVec2 rmin = ImGui::GetItemRectMin();
-            ImGui::GetWindowDrawList()->AddText(
-                ImVec2(rmin.x + style.FramePadding.x, rmin.y + style.FramePadding.y),
-                ImGui::GetColorU32(UIWidgets::SemanticColors::Placeholder), TR("Search..."));
-        }
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor();
-    }
+    DrawHeaderSearchField(f, autoFocus);
     /* Trailing header actions. Quit/Reset are optional — subclasses that move
-     * them into regular menu entries (e.g. a Support sidebar) keep only the
+     * them into regular menu entries (e.g. a Support f.sidebar) keep only the
      * Close button here, so "leave the menu" and "quit the app" can't be
      * fat-fingered into each other. Android never shows Quit: mobile users
      * dismiss the app by swiping it away. */
-    bool headerQuit = mShowHeaderQuit;
-    bool headerReset = mShowHeaderReset;
-#if defined(__ANDROID__)
-    headerQuit = false;
-#endif
-    const int trailingButtons = 1 + (headerReset ? 1 : 0) + (headerQuit ? 1 : 0);
-    ImGui::SameLine(menuSize.x - (buttonSize.x * trailingButtons) - (style.ItemSpacing.x * (trailingButtons - 1)));
-    ImGui::PopStyleVar();
-    if (headerQuit) {
-        UIWidgets::ButtonOptions options3 = {};
-        options3.color = UIWidgets::Colors::Red;
-        options3.size = UIWidgets::Sizes::Inline;
-        options3.tooltip = "Quit BattleShip";
-        if (UIWidgets::Button(ICON_FA_POWER_OFF, options3)) {
-            std::shared_ptr<Menu> menu =
-                std::static_pointer_cast<Menu>(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetMenu());
-            if (!menu->IsMenuPopped()) {
-                menu->ToggleVisibility();
-            }
-            Ship::Context::GetInstance()->GetWindow()->Close();
+    DrawHeaderActions(f);
+    f.pos.y += f.headerHeight + f.style->ItemSpacing.y;
+    f.pos.x = centerX - f.menuSize.x / 2 + (f.style->ItemSpacing.x * (menuEntries.size() + 1));
+    f.window->DrawList->AddRectFilled(f.pos, f.pos + ImVec2{ f.menuSize.x, 4 }, ImGui::GetColorU32({ 255, 255, 255, 255 }),
+                                    true, static_cast<ImDrawFlags>(f.style->WindowRounding));
+    f.pos.y += f.style->ItemSpacing.y;
+    f.sectionHeight = f.menuSize.y - f.headerHeight - 4 - f.style->ItemSpacing.y * 2;
+    f.columnHeight = f.sectionHeight - f.style->ItemSpacing.y * 4;
+}
+
+/* Effective section for this header: the persisted CVar value when it still
+ * points at a visible sidebar, else the first non-hidden entry, else the
+ * declared first (matches the previous fallback chain exactly). */
+std::string Menu::ResolveSectionIndex(ElementFrame& f) {
+    std::string sectionIndex = CVarGetString(menuEntries.at(f.headerIndex).sidebarCvar, "");
+    if (f.sidebar->contains(sectionIndex) && !SidebarHiddenInSimple(f.sidebar->at(sectionIndex))) {
+        return sectionIndex;
+    }
+    for (auto& l : menuEntries.at(f.headerIndex).sidebarOrder) {
+        if (!SidebarHiddenInSimple(f.sidebar->at(l))) {
+            return l;
         }
+    }
+    return menuEntries.at(f.headerIndex).sidebarOrder.at(0);
+}
+
+void Menu::DrawCompactSidebarStrip(ElementFrame& f) {
+    const char* sidebarCvar = menuEntries.at(f.headerIndex).sidebarCvar;
+    const float sidebarStripH = f.headerRowH + f.style->ScrollbarSize;
+    ImGui::SetNextWindowPos(f.pos + f.style->ItemSpacing * 2);
+ImGui::BeginChild((menuEntries.at(f.headerIndex).label + " Section").c_str(),
+                  { f.menuSize.x - f.style->ItemSpacing.x * 4, sidebarStripH }, ImGuiChildFlags_None,
+                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_HorizontalScrollbar |
+                      ImGuiWindowFlags_AlwaysHorizontalScrollbar);
+bool firstEntry = true;
+for (auto& sidebarLabel : menuEntries.at(f.headerIndex).sidebarOrder) {
+    if (SidebarHiddenInSimple(f.sidebar->at(sidebarLabel))) {
+        continue;
+    }
+    if (!firstEntry) {
         ImGui::SameLine();
     }
-    if (headerReset) {
-        UIWidgets::ButtonOptions options2 = {};
-        options2.color = UIWidgets::Colors::Red;
-        options2.size = UIWidgets::Sizes::Inline;
-        options2.tooltip = "Restart game"
-#ifdef __APPLE__
-                           " (Command-R)"
-#elif !defined(__SWITCH__) && !defined(__WIIU__)
-                           " (Ctrl+R)"
-#else
-                           ""
-#endif
-            ;
-        if (UIWidgets::Button(ICON_FA_UNDO, options2)) {
-            std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
-                Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
-                ->Dispatch("reset");
-        }
-        ImGui::SameLine();
+    firstEntry = false;
+    std::string nextIndex = "";
+    UIWidgets::PushStyleButton(menuThemeIndex);
+    if (f.sectionIndex != sidebarLabel) {
+        ImGui::PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 });
     }
-    UIWidgets::ButtonOptions options = {};
-    options.size = UIWidgets::Sizes::Inline;
-    options.tooltip = "Close Menu (Esc)";
-    if (UIWidgets::Button(ICON_FA_TIMES_CIRCLE, options)) {
-        ToggleVisibility();
-
-        // Update gamepad navigation after close based on if other menus are still visible
-        auto mImGuiIo = &ImGui::GetIO();
-        if (CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) &&
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->GetMenuOrMenubarVisible()) {
-            mImGuiIo->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
-        } else {
-            mImGuiIo->ConfigFlags &= ~(ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard);
+    /* Header-style entry: the f.sidebar variant centers itself on the
+     * f.window width, which breaks in a horizontal strip. */
+    if (ModernMenuHeaderEntry(sidebarLabel)) {
+        if (f.headerSearch) {
+            menuSearch.Clear();
+        }
+        CVarSetString(sidebarCvar, sidebarLabel.c_str());
+        CVarSave();
+        nextIndex = sidebarLabel;
+    }
+    if (f.sectionIndex != sidebarLabel) {
+        ImGui::PopStyleColor();
+    }
+    UIWidgets::PopStyleButton();
+    /* Scroll the active section into view once it exists —
+     * SetScrollHereX needs the item's real rect, so request it after
+     * ItemAdd, and force max scroll for the last entry whose centered
+     * target still clamps short of fully visible. */
+    if (f.sectionIndex == sidebarLabel && scrollToActiveFrames > 0) {
+        ImGui::SetScrollHereX(0.5f);
+        if (&sidebarLabel == &menuEntries.at(f.headerIndex).sidebarOrder.back()) {
+            ImGui::SetScrollX(ImGui::GetScrollMaxX());
         }
     }
+    if (nextIndex != "") {
+        f.sectionIndex = nextIndex;
+    }
+}
+ImGui::EndChild();
+}
 
-    pos.y += headerHeight + style.ItemSpacing.y;
-    pos.x = centerX - menuSize.x / 2 + (style.ItemSpacing.x * (menuEntries.size() + 1));
-    window->DrawList->AddRectFilled(pos, pos + ImVec2{ menuSize.x, 4 }, ImGui::GetColorU32({ 255, 255, 255, 255 }),
-                                    true, static_cast<ImDrawFlags>(style.WindowRounding));
-    pos.y += style.ItemSpacing.y;
-    float sectionHeight = menuSize.y - headerHeight - 4 - style.ItemSpacing.y * 2;
-    float columnHeight = sectionHeight - style.ItemSpacing.y * 4;
 
-    /* Compact layout: below ~560px of menu width a vertical 300px sidebar
+void Menu::DrawVerticalSidebarList(ElementFrame& f) {
+    const char* sidebarCvar = menuEntries.at(f.headerIndex).sidebarCvar;
+ImGui::SetNextWindowSizeConstraints({ f.sidebarWidth, 0 }, { f.sidebarWidth, f.columnHeight });
+ImGui::BeginChild((menuEntries.at(f.headerIndex).label + " Section").c_str(),
+                  { f.sidebarWidth, f.columnHeight * 3 },
+                  ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
+                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysVerticalScrollbar);
+for (auto& sidebarLabel : menuEntries.at(f.headerIndex).sidebarOrder) {
+    if (SidebarHiddenInSimple(f.sidebar->at(sidebarLabel))) {
+        continue;
+    }
+    std::string nextIndex = "";
+    UIWidgets::PushStyleButton(menuThemeIndex);
+    if (f.sectionIndex != sidebarLabel) {
+        ImGui::PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 });
+    }
+    if (f.sectionIndex == sidebarLabel && scrollToActiveFrames > 0) {
+        ImGui::SetScrollHereY(0.5f);
+    }
+    if (ModernMenuSidebarEntry(sidebarLabel)) {
+        if (f.headerSearch) {
+            menuSearch.Clear();
+        }
+        CVarSetString(sidebarCvar, sidebarLabel.c_str());
+        CVarSave();
+        nextIndex = sidebarLabel;
+    }
+    if (f.sectionIndex != sidebarLabel) {
+        ImGui::PopStyleColor();
+    }
+    UIWidgets::PopStyleButton();
+    if (nextIndex != "") {
+        f.sectionIndex = nextIndex;
+    }
+}
+ImGui::EndChild();
+}
+
+
+void Menu::DrawElementSections(ElementFrame& f) {
+    /* Compact layout: below ~560px of menu width a vertical 300px f.sidebar
      * leaves no room for content, so the section list collapses into a
      * horizontal scrolling strip above a full-width content area. */
-    const bool compactLayout = menuSize.x < 560.0f;
+    f.compactLayout = f.menuSize.x < 560.0f;
 
     /* Footer reservation: the help strip + action-hint bar sit at the bottom
      * of the menu block, pinned by absolute cursor position later. Always
      * reserve when enabled so the layout doesn't jump as the help text
      * appears and disappears. In compact mode only a single hint line is
-     * reserved — a 3-line help strip would eat half of a 240px window, and
+     * reserved — a 3-line help strip would eat half of a 240px f.window, and
      * persistent descriptions cover the same info inline. */
-    const float footerLineH = ImGui::GetFontSize() + style.FramePadding.y * 2;
-    float footerH = 0.0f;
-    if (compactLayout) {
+    const float footerLineH = ImGui::GetFontSize() + f.style->FramePadding.y * 2;
+    f.footerH = 0.0f;
+    if (f.compactLayout) {
         if (mShowHelpBar || mShowActionBar) {
-            footerH = footerLineH + style.ItemSpacing.y;
+            f.footerH = footerLineH + f.style->ItemSpacing.y;
         }
     } else {
         if (mShowHelpBar) {
-            footerH += footerLineH * 3 + style.ItemSpacing.y;
+            f.footerH += footerLineH * 3 + f.style->ItemSpacing.y;
         }
         if (mShowActionBar) {
-            footerH += footerLineH + style.ItemSpacing.y;
+            f.footerH += footerLineH + f.style->ItemSpacing.y;
         }
     }
-    columnHeight -= footerH;
-    ImGui::SetNextWindowPos(pos + style.ItemSpacing * 2);
+    f.columnHeight -= f.footerH;
+    ImGui::SetNextWindowPos(f.pos + f.style->ItemSpacing * 2);
 
-    // Increase sidebar width on larger screens to accommodate people scaling their menus.
-    float sidebarWidth = 300 - style.ItemSpacing.x;
-    if (menuSize.x > 1600) {
-        sidebarWidth = menuSize.x * 0.15f;
+    // Increase f.sidebar width on larger screens to accommodate people scaling their menus.
+    f.sidebarWidth = 300 - f.style->ItemSpacing.x;
+    if (f.menuSize.x > 1600) {
+        f.sidebarWidth = f.menuSize.x * 0.15f;
     }
 
-    const char* sidebarCvar = menuEntries.at(headerIndex).sidebarCvar;
-
-    std::string sectionIndex = CVarGetString(sidebarCvar, "");
-    if (!sidebar->contains(sectionIndex) || SidebarHiddenInSimple(sidebar->at(sectionIndex))) {
-        sectionIndex = "";
-        for (auto& l : menuEntries.at(headerIndex).sidebarOrder) {
-            if (!SidebarHiddenInSimple(sidebar->at(l))) {
-                sectionIndex = l;
-                break;
-            }
-        }
-        if (sectionIndex.empty()) {
-            sectionIndex = menuEntries.at(headerIndex).sidebarOrder.at(0);
-        }
-    }
+    f.sectionIndex = ResolveSectionIndex(f);
     const float sidebarStripH =
-        compactLayout ? (headerSizes.at(0).y + style.FramePadding.y * 2 + style.ScrollbarSize) : 0.0f;
-    if (compactLayout) {
-        columnHeight -= sidebarStripH + style.ItemSpacing.y * 2;
+        f.compactLayout ? (f.headerRowH + f.style->ScrollbarSize) : 0.0f;
+    if (f.compactLayout) {
+        f.columnHeight -= sidebarStripH + f.style->ItemSpacing.y * 2;
     }
-    columnHeight = ImMax(columnHeight, ImGui::GetFontSize() * 2.0f);
+    f.columnHeight = ImMax(f.columnHeight, ImGui::GetFontSize() * 2.0f);
 
-    float sectionCenterX = pos.x + (sidebarWidth / 2);
-    float topY = pos.y;
-    if (compactLayout) {
-        ImGui::SetNextWindowPos(pos + style.ItemSpacing * 2);
-        ImGui::BeginChild((menuEntries.at(headerIndex).label + " Section").c_str(),
-                          { menuSize.x - style.ItemSpacing.x * 4, sidebarStripH }, ImGuiChildFlags_None,
-                          ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_HorizontalScrollbar |
-                              ImGuiWindowFlags_AlwaysHorizontalScrollbar);
-        bool firstEntry = true;
-        for (auto& sidebarLabel : menuEntries.at(headerIndex).sidebarOrder) {
-            if (SidebarHiddenInSimple(sidebar->at(sidebarLabel))) {
-                continue;
-            }
-            if (!firstEntry) {
-                ImGui::SameLine();
-            }
-            firstEntry = false;
-            std::string nextIndex = "";
-            UIWidgets::PushStyleButton(menuThemeIndex);
-            if (sectionIndex != sidebarLabel) {
-                ImGui::PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 });
-            }
-            /* Header-style entry: the sidebar variant centers itself on the
-             * window width, which breaks in a horizontal strip. */
-            if (ModernMenuHeaderEntry(sidebarLabel)) {
-                if (headerSearch) {
-                    menuSearch.Clear();
-                }
-                CVarSetString(sidebarCvar, sidebarLabel.c_str());
-                CVarSave();
-                nextIndex = sidebarLabel;
-            }
-            if (sectionIndex != sidebarLabel) {
-                ImGui::PopStyleColor();
-            }
-            UIWidgets::PopStyleButton();
-            /* Scroll the active section into view once it exists —
-             * SetScrollHereX needs the item's real rect, so request it after
-             * ItemAdd, and force max scroll for the last entry whose centered
-             * target still clamps short of fully visible. */
-            if (sectionIndex == sidebarLabel && scrollToActiveFrames > 0) {
-                ImGui::SetScrollHereX(0.5f);
-                if (&sidebarLabel == &menuEntries.at(headerIndex).sidebarOrder.back()) {
-                    ImGui::SetScrollX(ImGui::GetScrollMaxX());
-                }
-            }
-            if (nextIndex != "") {
-                sectionIndex = nextIndex;
-            }
-        }
-        ImGui::EndChild();
+    float sectionCenterX = f.pos.x + (f.sidebarWidth / 2);
+    float topY = f.pos.y;
+    if (f.compactLayout) {
+        DrawCompactSidebarStrip(f);
     } else {
-        ImGui::SetNextWindowSizeConstraints({ sidebarWidth, 0 }, { sidebarWidth, columnHeight });
-        ImGui::BeginChild((menuEntries.at(headerIndex).label + " Section").c_str(),
-                          { sidebarWidth, columnHeight * 3 },
-                          ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
-                          ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysVerticalScrollbar);
-        for (auto& sidebarLabel : menuEntries.at(headerIndex).sidebarOrder) {
-            if (SidebarHiddenInSimple(sidebar->at(sidebarLabel))) {
-                continue;
-            }
-            std::string nextIndex = "";
-            UIWidgets::PushStyleButton(menuThemeIndex);
-            if (sectionIndex != sidebarLabel) {
-                ImGui::PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 });
-            }
-            if (sectionIndex == sidebarLabel && scrollToActiveFrames > 0) {
-                ImGui::SetScrollHereY(0.5f);
-            }
-            if (ModernMenuSidebarEntry(sidebarLabel)) {
-                if (headerSearch) {
-                    menuSearch.Clear();
-                }
-                CVarSetString(sidebarCvar, sidebarLabel.c_str());
-                CVarSave();
-                nextIndex = sidebarLabel;
-            }
-            if (sectionIndex != sidebarLabel) {
-                ImGui::PopStyleColor();
-            }
-            UIWidgets::PopStyleButton();
-            if (nextIndex != "") {
-                sectionIndex = nextIndex;
-            }
-        }
-        ImGui::EndChild();
+        DrawVerticalSidebarList(f);
     }
     ImGui::PopFont();
 
-    if (standardSmall != nullptr) {
-        ImGui::PushFont(standardSmall);
+    if (f.fontSmall != nullptr) {
+        ImGui::PushFont(f.fontSmall);
     }
 
-    float sectionWidth;
-    if (compactLayout) {
-        pos = ImVec2{ menuBlockPos.x + style.ItemSpacing.x * 2,
-                      topY + sidebarStripH + style.ItemSpacing.y * 3 };
-        ImGui::SetNextWindowPos(pos);
-        sectionWidth = menuSize.x - style.ItemSpacing.x * 4;
+    
+    if (f.compactLayout) {
+        f.pos = ImVec2{ f.menuBlockPos.x + f.style->ItemSpacing.x * 2,
+                      topY + sidebarStripH + f.style->ItemSpacing.y * 3 };
+        ImGui::SetNextWindowPos(f.pos);
+        f.sectionWidth = f.menuSize.x - f.style->ItemSpacing.x * 4;
     } else {
-        pos = ImVec2{ sectionCenterX + (sidebarWidth / 2), topY } + style.ItemSpacing * 2;
-        window->DrawList->AddRectFilled(pos, pos + ImVec2{ 4, sectionHeight - style.FramePadding.y * 2 },
-                                        ImGui::GetColorU32({ 255, 255, 255, 255 }), true, static_cast<ImDrawFlags>(style.WindowRounding));
-        pos.x += 4 + style.ItemSpacing.x;
-        ImGui::SetNextWindowPos(pos + style.ItemSpacing);
-        sectionWidth = menuSize.x - sidebarWidth - 4 - style.ItemSpacing.x * 4;
+        f.pos = ImVec2{ sectionCenterX + (f.sidebarWidth / 2), topY } + f.style->ItemSpacing * 2;
+        f.window->DrawList->AddRectFilled(f.pos, f.pos + ImVec2{ 4, f.sectionHeight - f.style->FramePadding.y * 2 },
+                                        ImGui::GetColorU32({ 255, 255, 255, 255 }), true, static_cast<ImDrawFlags>(f.style->WindowRounding));
+        f.pos.x += 4 + f.style->ItemSpacing.x;
+        ImGui::SetNextWindowPos(f.pos + f.style->ItemSpacing);
+        f.sectionWidth = f.menuSize.x - f.sidebarWidth - 4 - f.style->ItemSpacing.x * 4;
     }
-    std::string sectionMenuId = sectionIndex + " Settings";
-    size_t columns = sidebar->at(sectionIndex).columnCount;
-    size_t columnFuncs = sidebar->at(sectionIndex).columnWidgets.size();
+    f.sectionMenuId = f.sectionIndex + " Settings";
+    f.columns = f.sidebar->at(f.sectionIndex).columnCount;
+    f.columnFuncs = f.sidebar->at(f.sectionIndex).columnWidgets.size();
     if (windowWidth < 800) {
-        columns = 1;
+        f.columns = 1;
     }
-    float columnWidth = (sectionWidth - style.ItemSpacing.x * columns) / columns;
-    bool useColumns = columns > 1;
-    if (!useColumns || (headerSearch && menuSearchText.length() > 0)) {
+    f.useColumns = f.columns > 1;
+}
+
+/* Per-section widget columns. `highlightWidget` is the shared
+ * navigate-to-target state: when a search result's "Go to" lands here the
+ * target row scrolls into view and gets an accent outline for one frame. */
+/* Search-results pane: header row + separator + the three result producers
+ * (widgets, extras, action entries) + an empty-state placeholder. */
+void Menu::DrawSearchPane(ElementFrame& f) {
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", TR("Search Results"));
+    ImGui::SameLine();
+    UIWidgets::ButtonOptions clearBtnOpts = {};
+    clearBtnOpts.size = UIWidgets::Sizes::Inline;
+    if (UIWidgets::Button(TR("Clear Search"), clearBtnOpts)) {
+        menuSearch.Clear();
+    }
+    ImGui::BeginChild("searchSeparator", ImVec2(ImGui::GetContentRegionAvail().x / 2, 20),
+                      ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_AutoResizeY);
+    UIWidgets::Separator(true, true, 0, 10);
+    ImGui::EndChild();
+    if (DrawSearchResults(f.menuSearchText) == 0) {
+        ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("No results found").x) / 2);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
+        ImGui::TextColored(UIWidgets::SemanticColors::Placeholder, "%s", TR("No results found"));
+    }
+}
+
+void Menu::DrawSectionColumns(ElementFrame& f, float columnWidth) {
+    for (size_t i = 0; i < f.columnFuncs; i++) {
+        std::string sectionId = fmt::format(fmt::runtime(TR("{} Column {}")), f.sectionMenuId, i);
+        if (f.useColumns) {
+            ImGui::SetNextWindowSizeConstraints({ columnWidth, 0 }, { columnWidth, f.columnHeight });
+            ImGui::BeginChild(sectionId.c_str(), { columnWidth, windowHeight * 4 }, ImGuiChildFlags_AutoResizeY,
+                              ImGuiWindowFlags_NoTitleBar);
+        }
+        for (auto& entry : f.sidebar->at(f.sectionIndex).columnWidgets.at(i)) {
+            if (entry.advanced && SimpleMode()) {
+                continue;
+            }
+            const bool isNavTarget = highlightWidget && entry.name == navigateWidgetName;
+            if (isNavTarget) {
+                ImGui::SetScrollHereY(0.35f);
+            }
+            MenuDrawItem(entry, 90 / f.sidebar->at(f.sectionIndex).columnCount, menuThemeIndex);
+            if (isNavTarget) {
+                /* Accent outline so the jumped-to widget is findable at
+                 * a glance (GetItemRect covers whatever the item drew). */
+                const ImVec2 mn = ImGui::GetItemRectMin();
+                const ImVec2 mx = ImGui::GetItemRectMax();
+                ImGui::GetWindowDrawList()->AddRect(
+                    ImVec2(mn.x - 4.0f, mn.y - 4.0f), ImVec2(mx.x + 4.0f, mx.y + 4.0f),
+                    IM_COL32(102, 155, 245, 255), 4.0f, 0, 2.0f);
+                highlightWidget = false;
+                sHighlightTtl = 0;
+                navigateWidgetName.clear();
+            }
+        }
+        if (f.useColumns) {
+            ImGui::EndChild();
+        }
+        if (i < f.columns - 1) {
+            ImGui::SameLine();
+        }
+    }
+}
+
+/* "Restore section defaults" + one-shot undo — only rendered when the
+ * section actually overrides some CVar (probed by the dry-run reset). */
+void Menu::DrawSectionRestoreRow(ElementFrame& f) {
+    if (ResetSectionCvars(f.sidebar->at(f.sectionIndex), false) == 0) {
+        return;
+    }
+    ImGui::Spacing();
+    if (UIWidgets::Button(TR("Restore section defaults"),
+            UIWidgets::ButtonOptions()
+                .Tooltip("Reset every option in this section to its default value. "
+                         "Undo is available until you restore another section.")
+                .Size(UIWidgets::Sizes::Inline))) {
+        SnapshotSectionCvars(f.sidebar->at(f.sectionIndex), sSectionUndo);
+        sSectionUndo.sidebar = f.sectionIndex;
+        const size_t restored = ResetSectionCvars(f.sidebar->at(f.sectionIndex), true);
+        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        ssb64::ToastInfo(
+            fmt::format(fmt::runtime(TR("Restored {} option{} to defaults")), restored, restored == 1 ? "" : "s"));
+    }
+    if (!sSectionUndo.entries.empty() && sSectionUndo.sidebar == f.sectionIndex) {
         ImGui::SameLine();
-        ImGui::SetNextWindowSizeConstraints({ sectionWidth, 0 }, { sectionWidth, columnHeight });
-        ImGui::BeginChild(sectionMenuId.c_str(), { sectionWidth, windowHeight * 4 }, ImGuiChildFlags_AutoResizeY,
+        if (UIWidgets::Button(TR("Undo restore"),
+                UIWidgets::ButtonOptions()
+                    .Tooltip("Bring back the values this section had before the last restore.")
+                    .Size(UIWidgets::Sizes::Inline))) {
+            ApplySectionUndo(sSectionUndo);
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            ssb64::ToastInfo(TR("Section restore undone"));
+        }
+    }
+}
+
+void Menu::DrawElementContent(ElementFrame& f) {
+    const float columnWidth = (f.sectionWidth - f.style->ItemSpacing.x * f.columns) / f.columns;
+    if (!f.useColumns || (f.headerSearch && f.menuSearchText.length() > 0)) {
+        ImGui::SameLine();
+        ImGui::SetNextWindowSizeConstraints({ f.sectionWidth, 0 }, { f.sectionWidth, f.columnHeight });
+        ImGui::BeginChild(f.sectionMenuId.c_str(), { f.sectionWidth, windowHeight * 4 }, ImGuiChildFlags_AutoResizeY,
                           ImGuiWindowFlags_NoTitleBar);
     }
-    if (headerSearch && menuSearchText.length() > 0) {
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("%s", TR("Search Results"));
-        ImGui::SameLine();
-        UIWidgets::ButtonOptions clearBtnOpts = {};
-        clearBtnOpts.size = UIWidgets::Sizes::Inline;
-        if (UIWidgets::Button(TR("Clear Search"), clearBtnOpts)) {
-            menuSearch.Clear();
-        }
-        ImGui::BeginChild("searchSeparator", ImVec2(ImGui::GetContentRegionAvail().x / 2, 20),
-                          ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_AutoResizeY);
-        UIWidgets::Separator(true, true, 0, 10);
-        ImGui::EndChild();
-        uint32_t searchCount = DrawSearchResults(menuSearchText);
-        if (searchCount == 0) {
-            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("No results found").x) / 2);
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
-            ImGui::TextColored(UIWidgets::SemanticColors::Placeholder, "%s", TR("No results found"));
-        }
+    if (f.headerSearch && f.menuSearchText.length() > 0) {
+        DrawSearchPane(f);
     } else {
-        std::string menuLabel = menuEntries.at(headerIndex).label;
+        std::string menuLabel = menuEntries.at(f.headerIndex).label;
         if (MenuInit::GetUpdateFuncs().contains(menuLabel)) {
-            if (MenuInit::GetUpdateFuncs()[menuLabel].contains(sectionIndex)) {
-                for (auto& updateFunc : MenuInit::GetUpdateFuncs()[menuLabel][sectionIndex]) {
+            if (MenuInit::GetUpdateFuncs()[menuLabel].contains(f.sectionIndex)) {
+                for (auto& updateFunc : MenuInit::GetUpdateFuncs()[menuLabel][f.sectionIndex]) {
                     updateFunc();
                 }
             }
         }
-        for (size_t i = 0; i < columnFuncs; i++) {
-            std::string sectionId = fmt::format(fmt::runtime(TR("{} Column {}")), sectionMenuId, i);
-            if (useColumns) {
-                ImGui::SetNextWindowSizeConstraints({ columnWidth, 0 }, { columnWidth, columnHeight });
-                ImGui::BeginChild(sectionId.c_str(), { columnWidth, windowHeight * 4 }, ImGuiChildFlags_AutoResizeY,
-                                  ImGuiWindowFlags_NoTitleBar);
-            }
-            // for (auto& entryName : sidebar->at(sectionIndex).sidebarOrder) {
-            for (auto& entry : sidebar->at(sectionIndex).columnWidgets.at(i)) {
-                if (entry.advanced && SimpleMode()) {
-                    continue;
-                }
-                const bool isNavTarget = highlightWidget && entry.name == navigateWidgetName;
-                if (isNavTarget) {
-                    ImGui::SetScrollHereY(0.35f);
-                }
-                MenuDrawItem(entry, 90 / sidebar->at(sectionIndex).columnCount, menuThemeIndex);
-                if (isNavTarget) {
-                    /* Accent outline so the jumped-to widget is findable at
-                     * a glance (GetItemRect covers whatever the item drew). */
-                    const ImVec2 mn = ImGui::GetItemRectMin();
-                    const ImVec2 mx = ImGui::GetItemRectMax();
-                    ImGui::GetWindowDrawList()->AddRect(
-                        ImVec2(mn.x - 4.0f, mn.y - 4.0f), ImVec2(mx.x + 4.0f, mx.y + 4.0f),
-                        IM_COL32(102, 155, 245, 255), 4.0f, 0, 2.0f);
-                    highlightWidget = false;
-                    sHighlightTtl = 0;
-                    navigateWidgetName.clear();
-                }
-            }
-            //}
-            if (useColumns) {
-                ImGui::EndChild();
-            }
-            if (i < columns - 1) {
-                ImGui::SameLine();
-            }
-        }
-        if (ResetSectionCvars(sidebar->at(sectionIndex), false) > 0) {
-            ImGui::Spacing();
-            if (UIWidgets::Button(TR("Restore section defaults"),
-                    UIWidgets::ButtonOptions()
-                        .Tooltip("Reset every option in this section to its default value. "
-                                 "Undo is available until you restore another section.")
-                        .Size(UIWidgets::Sizes::Inline))) {
-                SnapshotSectionCvars(sidebar->at(sectionIndex), sSectionUndo);
-                sSectionUndo.sidebar = sectionIndex;
-                const size_t restored = ResetSectionCvars(sidebar->at(sectionIndex), true);
-                Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
-                ssb64::ToastInfo(
-                    fmt::format(fmt::runtime(TR("Restored {} option{} to defaults")), restored, restored == 1 ? "" : "s"));
-            }
-            if (!sSectionUndo.entries.empty() && sSectionUndo.sidebar == sectionIndex) {
-                ImGui::SameLine();
-                if (UIWidgets::Button(TR("Undo restore"),
-                        UIWidgets::ButtonOptions()
-                            .Tooltip("Bring back the values this section had before the last restore.")
-                            .Size(UIWidgets::Sizes::Inline))) {
-                    ApplySectionUndo(sSectionUndo);
-                    Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
-                    ssb64::ToastInfo(TR("Section restore undone"));
-                }
-            }
-        }
+        DrawSectionColumns(f, columnWidth);
+        DrawSectionRestoreRow(f);
     }
     // Mirror the open-guard at line ~954. Earlier versions of this code
-    // dropped the headerSearch qualifier here, which calls EndChild without
-    // a matching BeginChild when useColumns=true && headerSearch=false &&
+    // dropped the f.headerSearch qualifier here, which calls EndChild without
+    // a matching BeginChild when f.useColumns=true && f.headerSearch=false &&
     // search-active — fires when the user enables "Search In Sidebar" then
-    // types into a 2-column section's sidebar search.
-    if (!useColumns || (headerSearch && menuSearchText.length() > 0)) {
+    // types into a 2-column section's f.sidebar search.
+    if (!f.useColumns || (f.headerSearch && f.menuSearchText.length() > 0)) {
         ImGui::EndChild();
     }
 
@@ -1774,19 +1921,92 @@ void Menu::DrawElement() {
             sPendingRestart++;
         }
     }
+}
 
+/* §34 pending-changes chip: warning count + Details popup (per-CVar revert)
+ * + "Restart now". Returns the new right edge of the left footer cluster so
+ * the caller can clamp the hint text against it. */
+/* Action-bar hint strings, chosen by nav device: gamepad families get their
+ * own glyph labels, keyboard/mouse gets Enter/Esc hints. `compactOut`
+ * receives the short variant used when the long one won't fit. */
+const char* Menu::FooterHints(bool padNav, bool compactLayout, const char** compactOut) {
+    if (!padNav) {
+        *compactOut = TR("Enter Select   Esc Close menu");
+        return compactLayout ? *compactOut
+                             : TR("Enter Select    Esc Close menu    Type in Search box to find settings");
+    }
+    switch (DetectPadFamily()) {
+    case PadFamily::PlayStation:
+        *compactOut = TR("[Cross] Select   [Circle] Back   [Square] Search   [Esc] Close");
+        return compactLayout ? *compactOut
+                             : TR("[Cross] Select    [Circle] Back    [Square] Search    [Esc] Close menu");
+    case PadFamily::Nintendo:
+        *compactOut = TR("[B] Select   [A] Back   [Y] Search   [Esc] Close");
+        return compactLayout ? *compactOut
+                             : TR("[B] Select    [A] Back    [Y] Search    [Esc] Close menu");
+    default:
+        *compactOut = TR("[A] Select   [B] Back   [X] Search   [Esc] Close");
+        return compactLayout ? *compactOut
+                             : TR("[A] Select    [B] Back    [X] Search    [Esc] Close menu");
+    }
+}
+
+float Menu::DrawPendingRestartChip(ElementFrame& f, float leftClusterEndX, float hintLineY) {
+    float chipX = leftClusterEndX;
+    if (port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
+        chipX += f.style->ItemSpacing.x * 2;
+    }
+    char pendingText[96];
+    std::snprintf(pendingText, sizeof(pendingText), TR("%d change(s) pending restart"), sPendingRestart);
+    ImGui::SetCursorScreenPos(ImVec2(chipX, hintLineY));
+    ImGui::TextColored(UIWidgets::SemanticColors::Warning, "%s", pendingText);
+    float chipNextX = chipX + ImGui::CalcTextSize(pendingText).x + f.style->ItemSpacing.x * 2;
+    ImGui::SetCursorScreenPos(ImVec2(chipNextX, hintLineY));
+    if (ImGui::SmallButton(TR("Details"))) {
+        ImGui::OpenPopup("##pending_restart_details");
+    }
+    chipNextX += ImGui::GetItemRectSize().x + f.style->ItemSpacing.x * 2;
+    if (ImGui::BeginPopup("##pending_restart_details")) {
+        ImGui::Text("%s", TR("Changed options requiring restart:"));
+        ImGui::Separator();
+        for (const auto& [cvar, pe] : sRestartBaseline) {
+            const int32_t cur = CVarGetInteger(cvar.c_str(), pe.baseline);
+            if (cur == pe.baseline) {
+                continue;
+            }
+            ImGui::PushID(cvar.c_str());
+            ImGui::Text("%s: %d -> %d", TR(pe.name.c_str()), pe.baseline, cur);
+            ImGui::SameLine();
+            if (ImGui::SmallButton(TR("Revert"))) {
+                CVarSetInteger(cvar.c_str(), pe.baseline);
+                CVarSave();
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::SetCursorScreenPos(ImVec2(chipNextX, hintLineY));
+    if (ImGui::SmallButton(TR("Restart now"))) {
+        std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
+            ->Dispatch("reset");
+    }
+    return ImGui::GetItemRectMax().x;
+}
+
+void Menu::DrawElementFooter(ElementFrame& f) {
     /* Footer: pinned to the bottom of the menu block regardless of how tall
      * the section content ended up. Help strip first, action hints last. */
     if (mShowHelpBar || mShowActionBar) {
         // Opaque strip so the footer reads as its own bar instead of floating
-        // text that can collide with sidebar rows on small screens.
-        window->DrawList->AddRectFilled(
-            ImVec2(menuBlockPos.x, menuBlockPos.y + menuSize.y - footerH),
-            ImVec2(menuBlockPos.x + menuSize.x, menuBlockPos.y + menuSize.y),
-            ImGui::GetColorU32(ImGuiCol_WindowBg), style.WindowRounding);
+        // text that can collide with f.sidebar rows on small screens.
+        f.window->DrawList->AddRectFilled(
+            ImVec2(f.menuBlockPos.x, f.menuBlockPos.y + f.menuSize.y - f.footerH),
+            ImVec2(f.menuBlockPos.x + f.menuSize.x, f.menuBlockPos.y + f.menuSize.y),
+            ImGui::GetColorU32(ImGuiCol_WindowBg), f.style->WindowRounding);
         ImGui::SetCursorScreenPos(
-            ImVec2(menuBlockPos.x + style.ItemSpacing.x * 2, menuBlockPos.y + menuSize.y - footerH));
-        if (mShowHelpBar && !mFocusHelpName.empty() && !compactLayout) {
+            ImVec2(f.menuBlockPos.x + f.style->ItemSpacing.x * 2, f.menuBlockPos.y + f.menuSize.y - f.footerH));
+        if (mShowHelpBar && !mFocusHelpName.empty() && !f.compactLayout) {
             ImGui::Separator();
             ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(menuThemeIndex));
             ImGui::Text(TR("%s"), TR(mFocusHelpName.c_str()));
@@ -1799,32 +2019,9 @@ void Menu::DrawElement() {
         }
         if (mShowActionBar) {
             const bool padNav = CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) != 0;
-            const char* hints;
             const char* compactHints;
-            if (padNav) {
-                switch (DetectPadFamily()) {
-                case PadFamily::PlayStation:
-                    compactHints = TR("[Cross] Select   [Circle] Back   [Square] Search   [Esc] Close");
-                    hints = compactLayout ? compactHints
-                                          : TR("[Cross] Select    [Circle] Back    [Square] Search    [Esc] Close menu");
-                    break;
-                case PadFamily::Nintendo:
-                    compactHints = TR("[B] Select   [A] Back   [Y] Search   [Esc] Close");
-                    hints = compactLayout ? compactHints
-                                          : TR("[B] Select    [A] Back    [Y] Search    [Esc] Close menu");
-                    break;
-                default:
-                    compactHints = TR("[A] Select   [B] Back   [X] Search   [Esc] Close");
-                    hints = compactLayout ? compactHints
-                                          : TR("[A] Select    [B] Back    [X] Search    [Esc] Close menu");
-                    break;
-                }
-            } else {
-                compactHints = TR("Enter Select   Esc Close menu");
-                hints = compactLayout ? compactHints
-                                      : TR("Enter Select    Esc Close menu    Type in Search box to find settings");
-            }
-            if (!compactLayout) {
+            const char* hints = FooterHints(padNav, f.compactLayout, &compactHints);
+            if (!f.compactLayout) {
                 ImGui::Separator();
             }
             const float hintLineY = ImGui::GetCursorScreenPos().y;
@@ -1832,84 +2029,61 @@ void Menu::DrawElement() {
              * + pending chip). Long translations make `hints` wider than
              * the free strip and the old clamp would draw them over that
              * cluster — clamp against the real right edge instead. */
-            float leftClusterEndX = menuBlockPos.x + style.ItemSpacing.x * 2;
+            float leftClusterEndX = f.menuBlockPos.x + f.style->ItemSpacing.x * 2;
             /* Online-match context: the menu never pauses netplay, so make
              * that explicit instead of letting the player assume otherwise.
              * Skipped in compact mode — a single footer line can't hold both
              * texts; the Online section shows its own in-match banner. */
-            if (!compactLayout && port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
+            if (!f.compactLayout && port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
                 ImGui::SetCursorScreenPos(ImVec2(leftClusterEndX, hintLineY));
                 ImGui::TextColored(UIWidgets::SemanticColors::Warning, "%s", TR("Match in progress - the game continues while this menu is open"));
                 leftClusterEndX = ImGui::GetItemRectMax().x;
             }
             /* §34 pending-changes chip: left-aligned, after the match banner
              * when both are up (compact mode keeps the single hint line). */
-            if (!compactLayout && sPendingRestart > 0) {
-                float chipX = leftClusterEndX;
-                if (port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
-                    chipX += style.ItemSpacing.x * 2;
-                }
-                char pendingText[96];
-                std::snprintf(pendingText, sizeof(pendingText), TR("%d change(s) pending restart"), sPendingRestart);
-                ImGui::SetCursorScreenPos(ImVec2(chipX, hintLineY));
-                ImGui::TextColored(UIWidgets::SemanticColors::Warning, "%s", pendingText);
-                float chipNextX = chipX + ImGui::CalcTextSize(pendingText).x + style.ItemSpacing.x * 2;
-                ImGui::SetCursorScreenPos(ImVec2(chipNextX, hintLineY));
-                if (ImGui::SmallButton(TR("Details"))) {
-                    ImGui::OpenPopup("##pending_restart_details");
-                }
-                chipNextX += ImGui::GetItemRectSize().x + style.ItemSpacing.x * 2;
-                if (ImGui::BeginPopup("##pending_restart_details")) {
-                    ImGui::Text("%s", TR("Changed options requiring restart:"));
-                    ImGui::Separator();
-                    for (const auto& [cvar, pe] : sRestartBaseline) {
-                        const int32_t cur = CVarGetInteger(cvar.c_str(), pe.baseline);
-                        if (cur == pe.baseline) {
-                            continue;
-                        }
-                        ImGui::PushID(cvar.c_str());
-                        ImGui::Text("%s: %d -> %d", TR(pe.name.c_str()), pe.baseline, cur);
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton(TR("Revert"))) {
-                            CVarSetInteger(cvar.c_str(), pe.baseline);
-                            CVarSave();
-                        }
-                        ImGui::PopID();
-                    }
-                    ImGui::EndPopup();
-                }
-                ImGui::SetCursorScreenPos(ImVec2(chipNextX, hintLineY));
-                if (ImGui::SmallButton(TR("Restart now"))) {
-                    std::reinterpret_pointer_cast<Ship::ConsoleWindow>(
-                        Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
-                        ->Dispatch("reset");
-                }
-                leftClusterEndX = ImGui::GetItemRectMax().x;
+            if (!f.compactLayout && sPendingRestart > 0) {
+                leftClusterEndX = DrawPendingRestartChip(f, leftClusterEndX, hintLineY);
             }
             float hintX =
-                menuBlockPos.x + menuSize.x - ImGui::CalcTextSize(hints).x - style.ItemSpacing.x * 2;
-            if (hintX < leftClusterEndX + style.ItemSpacing.x && !compactLayout) {
+                f.menuBlockPos.x + f.menuSize.x - ImGui::CalcTextSize(hints).x - f.style->ItemSpacing.x * 2;
+            if (hintX < leftClusterEndX + f.style->ItemSpacing.x && !f.compactLayout) {
                 /* Long translation + occupied left cluster: switch to the
                  * compact wording before we'd collide. */
                 hints = compactHints;
-                hintX = menuBlockPos.x + menuSize.x - ImGui::CalcTextSize(hints).x -
-                        style.ItemSpacing.x * 2;
+                hintX = f.menuBlockPos.x + f.menuSize.x - ImGui::CalcTextSize(hints).x -
+                        f.style->ItemSpacing.x * 2;
             }
             ImGui::SetCursorScreenPos(
-                ImVec2(ImMax(hintX, leftClusterEndX + style.ItemSpacing.x), hintLineY));
+                ImVec2(ImMax(hintX, leftClusterEndX + f.style->ItemSpacing.x), hintLineY));
             ImGui::TextDisabled(TR("%s"), hints);
         }
     }
+}
 
-    if (standardSmall != nullptr) {
+void Menu::DrawElement() {
+    ElementFrame f;
+    if (!BeginElement(f)) {
+        return;
+    }
+    ImGuiContext& g = *GImGui;
+    f.window = g.CurrentWindow;
+    f.style = &ImGui::GetStyle();
+    windowHeight = f.window->WorkRect.GetHeight();
+    windowWidth = f.window->WorkRect.GetWidth();
+
+    DrawElementHeader(f);
+    DrawElementSections(f);
+    DrawElementContent(f);
+    DrawElementFooter(f);
+    if (f.fontSmall != nullptr) {
         ImGui::PopFont();
     }
 
-    if (!popout) {
+    if (!f.popout) {
         ImGui::PopStyleVar();
     }
     ImGui::EndChild();
-    if (popout) {
+    if (f.popout) {
         poppedSize = ImGui::GetWindowSize();
         poppedPos = ImGui::GetWindowPos();
     }
@@ -1940,6 +2114,6 @@ void Menu::DrawElement() {
         scrollToActiveFrames--;
     }
     ImGui::End();
-    ImGui::PopStyleColor(pushedColors);
+    ImGui::PopStyleColor(f.pushedColors);
 }
 } // namespace Ship

@@ -72,6 +72,7 @@
 #endif
 #ifndef DISABLE_SCRIPTING
 #include "game/modding/HookManager.h"
+#include "game/modding/ModCapabilities.h"
 #include "game/modding/SymbolResolver.h"
 #endif
 #include "renderdoc_trigger.h"
@@ -391,6 +392,9 @@ static int PortInitContext() {
 	if (!sContext->InitConfiguration()) { port_log("SSB64: InitConfiguration failed\n"); return 1; }
 	if (!sContext->InitConsoleVariables()) { port_log("SSB64: InitConsoleVariables failed\n"); return 1; }
 	port_log("SSB64: Config + CVars OK\n");
+	/* CVars are readable now - an opted-in crash bundle uploads on a
+	 * detached thread (gCrashReports.Enabled, default off). */
+	ssb64::diag::MaybeUploadCrashReport();
 	return 0;
 }
 
@@ -984,8 +988,10 @@ static int PortInitMods() {
 			scripting->LoadAll(
 				/*preInit=*/[](const std::string& mod) {
 					ssb64::mods::HookManager::SetCurrentOwner(mod.c_str());
+					ssb64::mods::ModCapabilities::BeginMod(mod.c_str());
 				},
 				/*postInit=*/[](const std::string&) {
+					ssb64::mods::ModCapabilities::EndMod();
 					ssb64::mods::HookManager::ClearCurrentOwner();
 				});
 			port_log("SSB64: TCC scripted mods compiled + loaded\n");
@@ -1127,6 +1133,7 @@ int main(int argc, char* argv[]) {
 		 * which holds the backtrace) into logs/crashes/ BEFORE
 		 * port_log_init truncates ssb64.log. */
 		const std::string bundle = ssb64::diag::CollectPendingCrashBundle(logPath);
+		ssb64::diag::QueueCrashReport(bundle);
 		port_log_init(logPath.c_str());
 		if (!bundle.empty()) {
 			port_log("SSB64: previous run crashed — bundle at %s\n", bundle.c_str());

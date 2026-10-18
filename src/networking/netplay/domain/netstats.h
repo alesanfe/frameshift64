@@ -52,6 +52,13 @@ int port_netstats_season_count(void);
 int port_netstats_season_at(int index, char *out_id, int capacity,
                             int *rating, int *wins, int *losses);
 
+/* Competitive tier from the local rating — display-only projection; the
+ * leaderboard stays Elo-pure. 0=Unranked(provisional) 1=Bronze 2=Silver
+ * 3=Gold 4=Platinum 5=Diamond 6=Master 7=Grandmaster. tier_name writes
+ * the label into `out`. */
+int port_netstats_rank_tier(void);
+int port_netstats_rank_tier_name(char *out, int capacity);
+
 #ifdef __cplusplus
 }
 #endif

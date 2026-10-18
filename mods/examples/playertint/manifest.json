@@ -7,5 +7,6 @@
     "author": "ssb64-port",
     "license": "MIT",
     "code-version": 1,
-    "simulation": false
+    "simulation": false,
+    "capabilities": []
 }

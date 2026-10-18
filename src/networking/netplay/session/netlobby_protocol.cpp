@@ -150,12 +150,16 @@ std::string build_start_payload(void)
         len = std::snprintf(buf, sizeof(buf), "SSBL STARTM %d %d %d %u %d %d %d %d %d %d",
                             sLobby.stage, sLobby.stocks, sLobby.items, sLobby.seed, sLobby.delay,
                             autoz, comp, neutral, hazards_off, n);
-        for (int i = 0; i < n && len > 0; i++) {
+        /* snprintf returns the length it *would* have written — on
+         * truncation len outgrows sizeof(buf), `sizeof(buf)-len`
+         * underflows and the next call overflows the buffer. Clamp len
+         * to the buffer capacity before each append. */
+        for (int i = 0; i < n && len > 0 && len < (int)sizeof(buf); i++) {
             len += std::snprintf(buf + len, sizeof(buf) - len, " %d %d %d %d",
                                  sLobby.start_wire[i], sLobby.start_fkinds[i],
                                  sLobby.start_costumes[i], sLobby.start_tjs[i]);
         }
-        if (len > 0) {
+        if (len > 0 && len < (int)sizeof(buf)) {
             len += std::snprintf(buf + len, sizeof(buf) - len, " %u", sLobby.session);
         }
     } else {
@@ -176,7 +180,12 @@ std::string build_start_payload(void)
                             autoz, comp, neutral, hazards_off,
                             sLobby.start_tjs[0], ctj, sLobby.session);
     }
-    return std::string(buf, len > 0 ? static_cast<size_t>(len) : 0);
+    /* A truncated build would hand std::string a len past buf's end —
+     * send the well-formed prefix rather than garbage bytes. */
+    if (len < 0) {
+        return {};
+    }
+    return std::string(buf, static_cast<size_t>(len) < sizeof(buf) ? len : sizeof(buf) - 1);
 }
 
 /* ---- incoming game-plane packets ---- */
@@ -701,6 +710,16 @@ void on_server_text(const char *text)
 {
     const nlohmann::json doc = json_parse(text);
     const std::string type = json_str(doc, "type");
+
+    if (type == "keepalive_ack") {
+        /* Lobby-path RTT — measured off the periodic {"type":"ping"} the
+         * session sends once the endpoint is published. The value feeds
+         * the ms= hint on subsequent queue connects (see connect_server). */
+        if (sLobby.ping_sent_ms != 0) {
+            sLobby.lobby_rtt_ms = port_udp_now_ms() - sLobby.ping_sent_ms;
+        }
+        return;
+    }
 
     if (type == "welcome") {
         sLobby.ws_welcomed = true;

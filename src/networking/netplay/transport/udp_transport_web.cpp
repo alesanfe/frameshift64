@@ -180,6 +180,48 @@ extern "C" int port_udp_link_send(int link, const void *data, int size)
 	return sRelaySend(framed, size + 1) ? size : -1;
 }
 
+namespace {
+
+/* Unframed relay: single-peer room — attribute the datagram to the first
+ * active relay link, matching the desktop fallback. Returns the delivered
+ * size, or -1 when nothing can take it (caller reports 0 and leaves the
+ * queue alone — the original drain loop exited rather than discarding). */
+int deliver_unframed(const uint8_t *bytes, int size, int *out_link,
+                     void *buffer, int capacity)
+{
+	for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
+		if (sLinks[i].active) {
+			if (size > capacity) {
+				return -1;
+			}
+			std::memcpy(buffer, bytes, size);
+			*out_link = i;
+			return size;
+		}
+	}
+	return -1;
+}
+
+/* Framed: [from] slot byte, only trusted if that link is active — same
+ * drop rule as link_of() in the socket backend. Returns the delivered
+ * payload size, or 0 when the datagram was stray/unrouteable (caller
+ * keeps draining). */
+int deliver_framed(const uint8_t *bytes, int size, int *out_link,
+                   void *buffer, int capacity)
+{
+	const int link = (size >= 1 && bytes[0] < PORT_UDP_LINK_MAX)
+		? bytes[0] : -1;
+	const int payload = size - 1;
+	if (link < 0 || !sLinks[link].active || payload <= 0 || payload > capacity) {
+		return 0;
+	}
+	std::memcpy(buffer, bytes + 1, payload);
+	*out_link = link;
+	return payload;
+}
+
+} // namespace
+
 extern "C" int port_udp_link_recv(int *out_link, void *buffer, int capacity)
 {
 	if (sRelayRecv == nullptr || out_link == nullptr ||
@@ -192,32 +234,15 @@ extern "C" int port_udp_link_recv(int *out_link, void *buffer, int capacity)
 		if (size <= 0) {
 			return size;
 		}
-		if (!sRelayFramed) {
-			/* Unframed relay: single-peer room — attribute to the first
-			 * active relay link, matching the desktop fallback. */
-			for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
-				if (sLinks[i].active) {
-					if (size > capacity) {
-						return 0;
-					}
-					std::memcpy(buffer, bytes, size);
-					*out_link = i;
-					return size;
-				}
-			}
-			return 0;
+		const int delivered = sRelayFramed
+			? deliver_framed(bytes, size, out_link, buffer, capacity)
+			: deliver_unframed(bytes, size, out_link, buffer, capacity);
+		if (delivered > 0) {
+			return delivered;
 		}
-		/* Framed: [from] slot byte, only trusted if that link is active —
-		 * same drop rule as link_of() in the socket backend. */
-		const int link = (size >= 1 && bytes[0] < PORT_UDP_LINK_MAX)
-			? bytes[0] : -1;
-		const int payload = size - 1;
-		if (link < 0 || !sLinks[link].active || payload <= 0 || payload > capacity) {
-			continue;                    /* stray/unrouteable: keep draining */
+		if (delivered < 0) {
+			return 0;    /* unrouteable unframed datagram — leave queue, report empty */
 		}
-		std::memcpy(buffer, bytes + 1, payload);
-		*out_link = link;
-		return payload;
 	}
 }
 

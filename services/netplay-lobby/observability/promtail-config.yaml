@@ -1,0 +1,26 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Game log (structured SSB64 *: lines — NetPeer/Rollback/Perf records
+  # land here when the game runs on the same host as this stack).
+  - job_name: ssb64-game
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: ssb64
+          __path__: /var/log/ssb64/*.log
+  # Opt-in crash reports received by the local lobby adapter.
+  - job_name: ssb64-lobby-crashes
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: crashes
+          __path__: /var/log/ssb64/crashes.jsonl

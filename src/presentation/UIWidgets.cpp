@@ -51,6 +51,19 @@ std::string WrappedText(const std::string& text, unsigned int charactersPerLine)
     return WrappedText(text.c_str(), charactersPerLine);
 }
 
+/* Shared widget epilogue: disabled reason wins over the normal tooltip. */
+static void ShowWidgetTooltip(bool disabled, const char* disabledTooltip, const char* tooltip) {
+    if (disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
+        !Ship_IsCStringEmpty(disabledTooltip)) {
+        ImGui::SetTooltip("%s", WrappedText(TR(disabledTooltip)).c_str());
+    } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(tooltip)) {
+        ImGui::SetTooltip("%s", WrappedText(TR(tooltip)).c_str());
+    }
+}
+
+/* Checkbox visual: square fill/outline, checkmark (or mixed fill) and the
+ * label text. Split from Checkbox() - it's pure rendering given the
+ * interaction result. */
 void PaddedSeparator(bool padTop, bool padBottom, float extraVerticalTopPadding, float extraVerticalBottomPadding) {
     if (padTop) {
         Spacer(extraVerticalTopPadding);
@@ -181,12 +194,7 @@ bool Button(const char* label, const ButtonOptions& options) {
     bool dirty = ImGui::Button(label, options.size);
     PopStyleButton();
     ImGui::EndDisabled();
-    if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-        !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
-    } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
-    }
+    ShowWidgetTooltip(options.disabled, options.disabledTooltip, options.tooltip);
     return dirty;
 }
 
@@ -287,6 +295,106 @@ void RenderText(ImVec2 pos, const char* text, const char* text_end, bool hide_te
     }
 }
 
+static void RenderCheckboxControl(ImGuiWindow* window, const ImVec2& pos, const ImRect& total_bb,
+                                  const ImGuiID id, const char* label, const ImVec2& label_size,
+                                  const float square_sz, const bool value, const bool hovered,
+                                  const bool held, const CheckboxOptions& options) {
+    ImGuiContext& g = *GImGui;
+    const ImGuiStyle& style = g.Style;
+    const bool above = options.labelPosition == LabelPositions::Above;
+    const bool lpFar = options.labelPosition == LabelPositions::Far;
+
+    ImVec2 checkPos = pos;
+    ImVec2 labelPos = pos;
+    if (above) {
+        checkPos.y += label_size.y + (style.ItemInnerSpacing.y * 2.0f);
+    } else {
+        // Center with checkbox automatically
+        labelPos.y += ImGui::GetStyle().FramePadding.y;
+    }
+    if (options.alignment == ComponentAlignments::Right) {
+        checkPos.x = total_bb.Max.x - square_sz;
+    } else {
+        float labelFarOffset = ImGui::GetContentRegionAvail().x - label_size.x;
+        float labelOffsetX = above ? 0 : (lpFar ? labelFarOffset : (style.ItemInnerSpacing.x * 2.0f) + square_sz);
+        labelPos.x += labelOffsetX;
+    }
+    const ImRect check_bb(checkPos, checkPos + ImVec2(square_sz, square_sz));
+    ImGui::RenderNavHighlight(total_bb, id);
+    ImU32 check_col = ImGui::GetColorU32(ImGuiCol_CheckMark);
+    bool mixed_value = (g.LastItemData.ItemFlags & ImGuiItemFlags_MixedValue) != 0;
+    /* Unchecked must not read as a solid accent block (it looked "on" in
+     * screenshots): dim fill + accent outline when off, solid fill when on. */
+    if (value || mixed_value) {
+        ImGui::RenderFrame(check_bb.Min, check_bb.Max,
+                           ImGui::GetColorU32((held && hovered) ? ImGuiCol_FrameBgActive
+                                              : hovered         ? ImGuiCol_FrameBgHovered
+                                                                : ImGuiCol_FrameBg),
+                           true, style.FrameRounding);
+    } else {
+        const ImVec4 accent = ColorValues.at(options.color);
+        ImGui::RenderFrame(check_bb.Min, check_bb.Max,
+                           ImGui::GetColorU32(ImVec4(accent.x, accent.y, accent.z, hovered ? 0.30f : 0.18f)),
+                           false, style.FrameRounding);
+        window->DrawList->AddRect(check_bb.Min, check_bb.Max,
+                                  ImGui::GetColorU32(ImVec4(accent.x, accent.y, accent.z, 0.6f)),
+                                  style.FrameRounding, 0, hovered ? 2.0f : 1.25f);
+    }
+    if (mixed_value) {
+        // Undocumented tristate/mixed/indeterminate checkbox (#2644)
+        // This may seem awkwardly designed because the aim is to make ImGuiItemFlags_MixedValue supported by all
+        // widgets (not just checkbox)
+        ImVec2 pad(ImMax(1.0f, IM_TRUNC(square_sz / 3.6f)), ImMax(1.0f, IM_TRUNC(square_sz / 3.6f)));
+        window->DrawList->AddRectFilled(check_bb.Min + pad, check_bb.Max - pad, check_col, style.FrameRounding);
+    } else if (value) {
+        const float pad = ImMax(1.0f, IM_TRUNC(square_sz / 6.0f));
+        ImGui::RenderCheckMark(window->DrawList, check_bb.Min + ImVec2(pad, pad), check_col, square_sz - pad * 2.0f);
+    }
+    RenderText(labelPos, label, ImGui::FindRenderedTextEnd(label), true);
+}
+
+/* Slider label placement before the scalar: emits the value text for
+ * Right/Above layouts and SameLine-positions the scalar for the rest.
+ * `labelSpacing` is subtracted from the width where the layout needs the
+ * label to share the row (0 for sliders whose label doesn't). */
+template<typename Opts, typename V>
+static void SliderLabelPrefix(const char* label, V value, float* width, const Opts& options,
+                              float labelSpacing) {
+    ImGui::AlignTextToFramePadding();
+    if (options.alignment == ComponentAlignments::Right) {
+        ImGui::Text(label, value);
+        if (options.labelPosition == LabelPositions::Above) {
+            ImGui::NewLine();
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - *width);
+        } else if (options.labelPosition == LabelPositions::Near) {
+            *width -= labelSpacing;
+            ImGui::SameLine();
+        } else if (options.labelPosition == LabelPositions::Far || options.labelPosition == LabelPositions::None) {
+            *width -= labelSpacing;
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - *width);
+        }
+    } else if (options.alignment == ComponentAlignments::Left) {
+        if (options.labelPosition == LabelPositions::Above) {
+            ImGui::Text(label, value);
+        }
+    }
+}
+
+/* Left-aligned slider label drawn after the scalar. */
+template<typename Opts, typename V>
+static void SliderLabelSuffix(const char* label, V value, const Opts& options, float labelSpacing) {
+    if (options.alignment != ComponentAlignments::Left) {
+        return;
+    }
+    if (options.labelPosition == LabelPositions::Near) {
+        ImGui::SameLine();
+        ImGui::Text(label, value);
+    } else if (options.labelPosition == LabelPositions::Far || options.labelPosition == LabelPositions::None) {
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - labelSpacing);
+        ImGui::Text(label, value);
+    }
+}
+
 bool Checkbox(const char* _label, bool* value, const CheckboxOptions& options) {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems)
@@ -335,61 +443,11 @@ bool Checkbox(const char* _label, bool* value, const CheckboxOptions& options) {
         *value = !(*value);
         ImGui::MarkItemEdited(id);
     }
-    ImVec2 checkPos = pos;
-    ImVec2 labelPos = pos;
-    if (options.labelPosition == LabelPositions::Above) {
-        checkPos.y += label_size.y + (style.ItemInnerSpacing.y * 2.0f);
-    } else {
-        // Center with checkbox automatically
-        labelPos.y += ImGui::GetStyle().FramePadding.y;
-    }
-    if (options.alignment == ComponentAlignments::Right) {
-        checkPos.x = total_bb.Max.x - square_sz;
-    } else {
-        float labelFarOffset = ImGui::GetContentRegionAvail().x - label_size.x;
-        float labelOffsetX = above ? 0 : (lpFar ? labelFarOffset : (style.ItemInnerSpacing.x * 2.0f) + square_sz);
-        labelPos.x += labelOffsetX;
-    }
-    const ImRect check_bb(checkPos, checkPos + ImVec2(square_sz, square_sz));
-    ImGui::RenderNavHighlight(total_bb, id);
-    ImU32 check_col = ImGui::GetColorU32(ImGuiCol_CheckMark);
-    bool mixed_value = (g.LastItemData.ItemFlags & ImGuiItemFlags_MixedValue) != 0;
-    /* Unchecked must not read as a solid accent block (it looked "on" in
-     * screenshots): dim fill + accent outline when off, solid fill when on. */
-    if (*value || mixed_value) {
-        ImGui::RenderFrame(check_bb.Min, check_bb.Max,
-                           ImGui::GetColorU32((held && hovered) ? ImGuiCol_FrameBgActive
-                                              : hovered         ? ImGuiCol_FrameBgHovered
-                                                                : ImGuiCol_FrameBg),
-                           true, style.FrameRounding);
-    } else {
-        const ImVec4 accent = ColorValues.at(options.color);
-        ImGui::RenderFrame(check_bb.Min, check_bb.Max,
-                           ImGui::GetColorU32(ImVec4(accent.x, accent.y, accent.z, hovered ? 0.30f : 0.18f)),
-                           false, style.FrameRounding);
-        window->DrawList->AddRect(check_bb.Min, check_bb.Max,
-                                  ImGui::GetColorU32(ImVec4(accent.x, accent.y, accent.z, 0.6f)),
-                                  style.FrameRounding, 0, hovered ? 2.0f : 1.25f);
-    }
-    if (mixed_value) {
-        // Undocumented tristate/mixed/indeterminate checkbox (#2644)
-        // This may seem awkwardly designed because the aim is to make ImGuiItemFlags_MixedValue supported by all
-        // widgets (not just checkbox)
-        ImVec2 pad(ImMax(1.0f, IM_TRUNC(square_sz / 3.6f)), ImMax(1.0f, IM_TRUNC(square_sz / 3.6f)));
-        window->DrawList->AddRectFilled(check_bb.Min + pad, check_bb.Max - pad, check_col, style.FrameRounding);
-    } else if (*value) {
-        const float pad = ImMax(1.0f, IM_TRUNC(square_sz / 6.0f));
-        ImGui::RenderCheckMark(window->DrawList, check_bb.Min + ImVec2(pad, pad), check_col, square_sz - pad * 2.0f);
-    }
-    RenderText(labelPos, label, ImGui::FindRenderedTextEnd(label), true);
+    RenderCheckboxControl(window, pos, total_bb, id, label, label_size, square_sz,
+                          *value, hovered, held, options);
     PopStyleCheckbox();
     ImGui::EndDisabled();
-    if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-        !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
-    } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
-    }
+    ShowWidgetTooltip(options.disabled, options.disabledTooltip, options.tooltip);
     return pressed;
 }
 
@@ -546,22 +604,7 @@ bool SliderInt(const char* label, int32_t* value, const IntSliderOptions& option
     if (options.labelPosition == LabelPositions::Near || options.labelPosition == LabelPositions::Far) {
         width = width - (ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x);
     }
-    ImGui::AlignTextToFramePadding();
-    if (options.alignment == ComponentAlignments::Right) {
-        ImGui::Text(label, *value);
-        if (options.labelPosition == LabelPositions::Above) {
-            ImGui::NewLine();
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - width);
-        } else if (options.labelPosition == LabelPositions::Near) {
-            ImGui::SameLine();
-        } else if (options.labelPosition == LabelPositions::Far || options.labelPosition == LabelPositions::None) {
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - width);
-        }
-    } else if (options.alignment == ComponentAlignments::Left) {
-        if (options.labelPosition == LabelPositions::Above) {
-            ImGui::Text(label, *value);
-        }
-    }
+    SliderLabelPrefix(label, *value, &width, options, 0.0f);
     if (options.showButtons) {
         if (Button("-", ButtonOptions{ .color = options.color }.Size(Sizes::Inline)) && *value > options.min) {
             *value -= options.step;
@@ -601,25 +644,12 @@ bool SliderInt(const char* label, int32_t* value, const IntSliderOptions& option
         }
     }
 
-    if (options.alignment == ComponentAlignments::Left) {
-        if (options.labelPosition == LabelPositions::Near) {
-            ImGui::SameLine();
-            ImGui::Text(label, *value);
-        } else if (options.labelPosition == LabelPositions::Far || options.labelPosition == LabelPositions::None) {
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(label).x +
-                            ImGui::GetStyle().ItemSpacing.x);
-            ImGui::Text(label, *value);
-        }
-    }
+    SliderLabelSuffix(label, *value, options,
+                      ImGui::CalcTextSize(label).x + ImGui::GetStyle().ItemSpacing.x);
     PopStyleSlider();
     ImGui::EndDisabled();
     ImGui::EndGroup();
-    if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-        !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
-    } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
-    }
+    ShowWidgetTooltip(options.disabled, options.disabledTooltip, options.tooltip);
     ImGui::PopID();
     return dirty;
 }
@@ -682,24 +712,7 @@ bool SliderFloat(const char* label, float* value, const FloatSliderOptions& opti
     if (options.labelPosition == LabelPositions::Near || options.labelPosition == LabelPositions::Far) {
         width = width - (ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x);
     }
-    ImGui::AlignTextToFramePadding();
-    if (options.alignment == ComponentAlignments::Right) {
-        ImGui::Text(label, *value);
-        if (options.labelPosition == LabelPositions::Above) {
-            ImGui::NewLine();
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - width);
-        } else if (options.labelPosition == LabelPositions::Near) {
-            width -= labelSpacing;
-            ImGui::SameLine();
-        } else if (options.labelPosition == LabelPositions::Far || options.labelPosition == LabelPositions::None) {
-            width -= labelSpacing;
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - width);
-        }
-    } else if (options.alignment == ComponentAlignments::Left) {
-        if (options.labelPosition == LabelPositions::Above) {
-            ImGui::Text(label, *value);
-        }
-    }
+    SliderLabelPrefix(label, *value, &width, options, labelSpacing);
     if (options.showButtons) {
         if (Button("-", ButtonOptions{ .color = options.color }.Size(Sizes::Inline)) && *value > options.min) {
             *value -= options.step;
@@ -733,24 +746,11 @@ bool SliderFloat(const char* label, float* value, const FloatSliderOptions& opti
         }
     }
 
-    if (options.alignment == ComponentAlignments::Left) {
-        if (options.labelPosition == LabelPositions::Near) {
-            ImGui::SameLine();
-            ImGui::Text(label, *value);
-        } else if (options.labelPosition == LabelPositions::Far || options.labelPosition == LabelPositions::None) {
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - labelSpacing);
-            ImGui::Text(label, *value);
-        }
-    }
+    SliderLabelSuffix(label, *value, options, labelSpacing);
     PopStyleSlider();
     ImGui::EndDisabled();
     ImGui::EndGroup();
-    if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-        !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
-    } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
-    }
+    ShowWidgetTooltip(options.disabled, options.disabledTooltip, options.tooltip);
     ImGui::PopID();
     return dirty;
 }
@@ -873,12 +873,7 @@ bool InputInt(const char* label, int32_t* value, const InputOptions& options) {
     PopStyleInput();
     ImGui::EndDisabled();
     ImGui::EndGroup();
-    if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-        !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
-    } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
-    }
+    ShowWidgetTooltip(options.disabled, options.disabledTooltip, options.tooltip);
     ImGui::PopID();
     return dirty;
 }

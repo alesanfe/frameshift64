@@ -1,0 +1,53 @@
+{
+  "uid": "ssb64-lobby",
+  "title": "SSB64 Netplay Lobby",
+  "tags": ["ssb64", "netplay"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Open rooms",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "ssb64_lobby_rooms", "refId": "A" }]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Players online",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "ssb64_lobby_players", "refId": "A" }]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Spectators",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "ssb64_lobby_spectators", "refId": "A" }]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Crash reports",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "ssb64_lobby_crashes_total", "refId": "A" }]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Admissions by role",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum by (role) (rate(ssb64_lobby_admits_role_total[5m]))", "refId": "A", "legendFormat": "{{role}}" }]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Rejects (rate)",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "rate(ssb64_lobby_rejects_total[5m])", "refId": "A" }]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Queue join lobby RTT (ms, reported)",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum by (bucket) (rate(ssb64_lobby_queue_rtt_ms[15m]))", "refId": "A", "legendFormat": "{{bucket}}" }]
+    },
+    {
+      "id": 8, "type": "logs", "title": "Crash reports (Loki)",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{ "expr": "{job=\"crashes\"}", "refId": "A" }]
+    }
+  ]
+}

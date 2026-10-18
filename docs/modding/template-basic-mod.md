@@ -104,6 +104,26 @@ Any function in BattleShip's export table is callable from your mod. The post-bu
   archive. Use `tools/developer/modding/package_mod.py --checksum --sign-key
   <key>` to generate them; the Mods menu shows a `[signed]` badge when
   verification succeeds.
+- `capabilities` (array, optional) — which gated subsystems the mod may
+  reach via `mod_resolve_symbol` / `mod_install_hook`:
+
+  | capability | unlocked symbol prefixes |
+  |---|---|
+  | `"network"` | `port_netlobby*`, `port_netstats*`, `port_netleaderboard*`, `port_netfriends*`, `port_netrollback*`, `port_ws_*`, `uplink_*`, `syNet*`, `netpeer*` |
+  | `"persist"` | `port_save*`, `port_profile*`, `port_persist*` |
+  | `"debug"`   | `port_diag*`, `port_watchdog*`, `port_crash*`, `port_symbolize*`, `port_heap*` |
+  | `"system"`  | `port_update*`, `port_download*`, `port_exit*`, `port_first_run*` |
+
+  Gameplay/engine prefixes (`ft*`, `it*`, `gm*`, `sc*`, `ef*`, `gr*`,
+  `wp*`, `mn*`, `mp*`, `os*`, `lb*`, rendering, audio) resolve for every
+  mod — that surface is what mods are for. Omitting `capabilities`
+  entirely keeps a legacy mod unrestricted (the engine logs a warning);
+  an explicit `"capabilities": []` gets no gated access at all.
+  Enforcement happens while the mod's `ModInit` runs — that's when mods
+  resolve and stash the symbols they'll use. This is resolution-boundary
+  isolation, not a memory sandbox: TCC mods run in-process and hostile
+  native code can still scribble. It stops *accidental* overreach and
+  makes a mod's blast radius visible to users and reviewers.
 
 ## Cross-mod calls
 

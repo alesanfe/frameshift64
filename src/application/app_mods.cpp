@@ -6,6 +6,7 @@
 #ifndef DISABLE_SCRIPTING
 
 #include "game/modding/HookManager.h"
+#include "game/modding/ModCapabilities.h"
 #include "game/modding/ModRegistry.h"
 
 #include <libultraship/libultraship.h>
@@ -85,8 +86,10 @@ bool HotReload() {
         scripting->LoadAll(
             /*preInit=*/[](const std::string& mod) {
                 mods::HookManager::SetCurrentOwner(mod.c_str());
+                mods::ModCapabilities::BeginMod(mod.c_str());
             },
             /*postInit=*/[](const std::string&) {
+                mods::ModCapabilities::EndMod();
                 mods::HookManager::ClearCurrentOwner();
             });
     } catch (const std::exception& e) {

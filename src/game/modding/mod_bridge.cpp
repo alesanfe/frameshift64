@@ -24,11 +24,21 @@
 
 #include "HookManager.h"
 #include "SymbolResolver.h"
+#include "ModCapabilities.h"
 
 MOD_BRIDGE_EXPORT int mod_install_hook(const char* symbol_name, void* replacement, void** original_out) {
+    if (!ssb64::mods::ModCapabilities::IsSymbolAllowed(symbol_name)) {
+        if (original_out != nullptr) {
+            *original_out = nullptr;
+        }
+        return 3; /* capability denied */
+    }
     return ssb64::mods::HookManager::InstallHook(symbol_name, replacement, original_out);
 }
 
 MOD_BRIDGE_EXPORT void* mod_resolve_symbol(const char* symbol_name) {
+    if (!ssb64::mods::ModCapabilities::IsSymbolAllowed(symbol_name)) {
+        return nullptr;
+    }
     return ssb64::mods::SymbolResolver::Resolve(symbol_name);
 }

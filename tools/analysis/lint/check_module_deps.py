@@ -70,7 +70,9 @@ ALL_PRODUCT = {"src/application", "src/application/update",
 
 # module -> set of src modules it may NOT include. 'decomp' handled separately.
 FORBIDDEN = {
-    # leaf modules — no product deps (external/decomp headers only)
+    # leaf modules — no product deps (external/decomp headers only).
+    # observability may additionally reach src/platform/http: the crash-
+    # bundle uploader posts via CurlPostToString (CMake scope grants it).
     "src/observability": ALL_PRODUCT | {"src/persistence",
                           "src/config", "src/i18n"},
     # leaf modules may log through observability — it's the shared sink.
@@ -93,6 +95,17 @@ FORBIDDEN = {
                           "src/game/engine", "src/game/modding",
                "src/game/engine/relocation"},
     "src/platform":      {"src/application", "src/presentation",
+                          "src/game/gameplay", "src/audio",
+                          "src/networking/social", "src/input",
+                          "src/application/update", "src/networking/netplay",
+                          "src/game/engine", "src/game/modding",
+                          "src/game/engine/relocation",
+                          "src/rendering",
+                          "src/persistence", "src/config",
+                          "src/i18n"},
+    # platform/http keeps platform's restrictions — it's a leaf inside
+    # the platform tree, reachable by modules whose CMake scope grants it.
+    "src/platform/http": {"src/application", "src/presentation",
                           "src/game/gameplay", "src/audio",
                           "src/networking/social", "src/input",
                           "src/application/update", "src/networking/netplay",
@@ -180,6 +193,11 @@ def module_of(rel: str) -> str:
             return 'src/application/update'
         if parts[1] == 'platform' and parts[2] == 'compatibility':
             return 'src/platform/compatibility'
+        # platform/http is its own includable unit (CMake
+        # SSB64_MODULE_SCOPE_* grants it separately — e.g. observability
+        # uses CurlPostToString for crash-bundle upload).
+        if parts[1] == 'platform' and parts[2] == 'http':
+            return 'src/platform/http'
         return 'src/' + parts[1]
     if parts[0] == 'decomp':
         return 'decomp'

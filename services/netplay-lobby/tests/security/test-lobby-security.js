@@ -1,6 +1,7 @@
 // Exercise the hardened lobby: host + 2 clients, uplink auth, star
 // enforcement and rate limiting. Run: node server/test-lobby-security.js
 const path = require("path");
+const fs = require("fs");
 const { spawn } = require("child_process");
 const WebSocket = require("ws");
 
@@ -35,6 +36,12 @@ const closed = (ws) => Promise.race([
 ]);
 
 async function main() {
+  // node-lobby persists the leaderboard to services/netplay-lobby/
+  // leaderboard.json — wipe it first so rating assertions aren't
+  // order-dependent across runs.
+  try {
+    fs.unlinkSync(path.join(__dirname, "..", "..", "leaderboard.json"));
+  } catch { /* first run or already clean */ }
   const srv = spawn("node", [path.join(__dirname, "..", "..", "src", "infrastructure", "local", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
   await sleep(700);
 
@@ -210,6 +217,50 @@ async function main() {
   const row = lb.entries.find((e) => e.name === "SecTest");
   ok("leaderboard lists claimed name at first rating",
      row && row.rating === 1500 && row.wins === 4);
+
+  // --- verified results: /result only moves rating when two distinct
+  // claim keys report the mirrored outcome for the same match_id ---
+  const KEY_C = "cccccccccccccccccccccccccccccccc";
+  const KEY_D = "dddddddddddddddddddddddddddddddd";
+  const postRes = (body) => fetch(`${lbBase}/result`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await post({ name: "AliceT", key: KEY_C, rating: 1500, wins: 0, losses: 0 });
+  await post({ name: "BobT", key: KEY_D, rating: 1500, wins: 0, losses: 0 });
+
+  const p1 = await (await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
+    match_id: "aa11bb22cc33dd44", won: 1, duration: 6000 })).json();
+  ok("first result report is pending", p1.kind === "pending");
+  const v1 = await (await postRes({ name: "BobT", opp_name: "AliceT", key: KEY_D,
+    match_id: "aa11bb22cc33dd44", won: 0, duration: 6000 })).json();
+  ok("mirrored report verifies", v1.kind === "verified" && v1.winner === "AliceT");
+  const lb2 = await (await fetch(`${lbBase}/leaderboard`)).json();
+  const aRow = lb2.entries.find((e) => e.name === "AliceT");
+  const bRow = lb2.entries.find((e) => e.name === "BobT");
+  ok("verified result applied server-side Elo",
+     aRow && bRow && aRow.rating === 1516 && bRow.rating === 1484 &&
+     aRow.wins === 1 && bRow.losses === 1);
+
+  const s1 = await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
+    match_id: "aa11bb22cc33dd44", won: 1, duration: 6000 });
+  ok("re-report of settled match rejected", s1.status === 400);
+
+  await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
+    match_id: "ee55ff66aa77bb88", won: 1, duration: 100 });
+  const m1 = await (await postRes({ name: "BobT", opp_name: "AliceT", key: KEY_D,
+    match_id: "ee55ff66aa77bb88", won: 1, duration: 100 })).json();
+  ok("contradictory reports are a mismatch", m1.kind === "mismatch");
+
+  const badId = await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
+    match_id: "nope!", won: 1, duration: 10 });
+  ok("hostile match_id rejected", badId.status === 400);
+  const badKey = await postRes({ name: "AliceT", opp_name: "BobT", key: "x",
+    match_id: "1122334455667788", won: 1, duration: 10 });
+  ok("weak claim key rejected", badKey.status === 400);
+  const badWon = await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
+    match_id: "1122334455667788", won: 7, duration: 10 });
+  ok("out-of-range result rejected", badWon.status === 400);
 
   host.ws.close(); c1.ws.close(); c2.ws.close(); up1.ws.close();
   host2.ws.close(); spec.ws.close(); cSpec.ws.close();

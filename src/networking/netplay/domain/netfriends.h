@@ -29,8 +29,8 @@ bool port_netfriends_add(const char* name);
 bool port_netfriends_remove(const char* name);
 bool port_netfriends_set_blocked(const char* name, bool blocked);
 bool port_netfriends_is_blocked(const char* name);                 // case-insensitive
-bool port_netfriends_load(void);
-bool port_netfriends_save(void);
+// (no load/save exports: load is lazy on first access and every mutating
+// call persists atomically — an explicit entry point would be a no-op)
 
 #ifdef __cplusplus
 }

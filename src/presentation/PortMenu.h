@@ -33,7 +33,26 @@ class PortMenu : public Ship::Menu {
     void AddMenuElements();
     void AddMenuPlay();
     void AddMenuSettings();
+    /* AddMenuSettings sections - split so the registration table stays
+     * readable; `path` threads the current WidgetPath between them. */
+    void AddSettingsGeneral(WidgetPath& path);
+    void AddSettingsModified(WidgetPath& path);
+    void AddSettingsImageQuality(WidgetPath& path);
+    void AddSettingsAdvanced(WidgetPath& path);
+    void AddSettingsInterface(WidgetPath& path);
+    void AddSettingsControls(WidgetPath& path);
+    void AddSettingsAccessibility(WidgetPath& path);
+    void AddSettingsCheats(WidgetPath& path);
+    void AddSettingsProfiles(WidgetPath& path);
+    void AddSettingsDrp(WidgetPath& path);
+    void AddSettingsGeneralInteraction(WidgetPath& path);
+    void AddSettingsDisplay(WidgetPath& path);
+    void AddSettingsGameplay(WidgetPath& path);
+    void AddSettingsInput(WidgetPath& path);
+    void AddSettingsAudio(WidgetPath& path);
     void AddMenuCustomization();
+    void AddCustomizationTexturePacks(WidgetPath& path);
+    void AddCustomizationPackTools(WidgetPath& path);
     void AddMenuAssets();
     void AddMenuSupport();
     void AddMenuAbout();

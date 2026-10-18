@@ -2,6 +2,19 @@
 
 The lobby service exposes three telemetry surfaces — pick per deployment.
 
+## Dashboard
+
+`services/netplay-lobby/dashboard.html` is a zero-dependency operator
+dashboard — open it in a browser pointed at any adapter:
+
+    dashboard.html?base=http://127.0.0.1:8799   (default)
+    dashboard.html?base=https://<your-worker>.workers.dev
+
+It polls `/health`, `/metrics` and `/leaderboard` every 5 s and renders
+room/socket/player counts, per-role admission counters, the reject
+counter, and the verified-Elo board including the `disputes` column
+(reports that contradicted their counterpart — the anti-grief signal).
+
 ## `/health` (both adapters)
 
 `GET /health` → `{"ok": true, "service": "smash-netplay", "rooms": N}`.
@@ -49,12 +62,15 @@ mix, spectator share.
 
 ## Match-level metrics (CI artifact, not live telemetry)
 
-`tools/analysis/netplay_metrics.py` parses the structured rollback logs the
-engine emits (`rollbacks=`, `resim_ticks=`, `max_rollback=`, `desync=`) and
-the confirmed-state trace diff into `metrics.json` + an append-only JSONL
-history (`--history`). `.github/workflows/determinism.yml` uploads
-`metrics-history.jsonl` as a 30-day artifact — that is the "last 30 days"
-panel for desync rate, worst rollback depth, and resimulated-frames-per-tick.
+`tools/analysis/netplay_metrics.py` parses the structured logs the engine
+emits — rollback (`rollbacks=`, `resim_ticks=`, `max_rollback=`, `desync=`)
+plus the NetPeer session counters (`late=`, `dropped=`, `stalls=`,
+`input delay ->`, `bumping delay to`) — and the confirmed-state trace
+diff into `metrics.json` + an append-only JSONL history (`--history`).
+`.github/workflows/determinism.yml` uploads `metrics-history.jsonl` as a
+30-day artifact — that is the "last 30 days" panel for desync rate,
+worst rollback depth, resimulated-frames-per-tick, **input delay** and
+**late inputs** (the latency surface).
 `--summarize <history.jsonl>` reduces the window to P50/P95/P99 per metric
 (the dashboard feed); `--days N` changes the window (default 30).
 

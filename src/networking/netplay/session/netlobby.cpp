@@ -87,6 +87,7 @@ extern "C" void port_netlobby_update(void)
     unsigned int now = port_udp_now_ms();
     if (sLobby.endpoint_sent && now - sLobby.last_keepalive_ms > kKeepaliveMs) {
         sLobby.last_keepalive_ms = now;
+        sLobby.ping_sent_ms = now;
         port_ws_send_text("{\"type\":\"ping\"}");
     }
     if (sLobby.state == PORT_NETLOBBY_IN_MATCH) {
@@ -310,38 +311,55 @@ extern "C" void port_netlobby_cancel(void)
     sLobby.status = TR("Pick Host or Join to play online.");
 }
 
-extern "C" void port_netlobby_start_match(void)
+/* Every connected player must have sent its pick; unconnected stragglers
+ * are left behind (they time out on their own). Spectators don't gate
+ * the start - they only need the STARTM. Returns the participant count
+ * (host included), or 0 when someone hasn't picked yet. */
+static int picked_player_count(void)
 {
-    if (!sLobby.is_host || sLobby.state != PORT_NETLOBBY_CONNECTED) {
-        return;
-    }
-    /* every connected player must have sent its pick; unconnected stragglers
-     * are left behind (they time out on their own). Spectators don't gate
-     * the start - they only need the STARTM. */
     int n = 1;
     for (Peer &p : sLobby.peers) {
         if (p.slot >= 0 && p.slot <= 3 && p.connected) {
             if (!p.got_pick || p.fkind < 0) {
-                return;
+                return 0;
             }
             n++;
         }
     }
+    return n;
+}
+
+/* Drops connected-lost stragglers and freezes the roster every
+ * participant will run on (order, fighter kinds, team joins, costumes). */
+static void freeze_start_roster(void)
+{
     for (Peer &p : sLobby.peers) {
         if (p.slot >= 0 && !p.connected) {
             peer_drop(p.slot);
         }
     }
+    sLobby.start_count = gather_roster(sLobby.start_wire, sLobby.start_fkinds, sLobby.start_tjs);
+    for (int i = 0; i < sLobby.start_count; i++) {
+        sLobby.start_costumes[i] = costume_for(i, sLobby.start_fkinds, sLobby.start_count);
+    }
+}
+
+
+extern "C" void port_netlobby_start_match(void)
+{
+    if (!sLobby.is_host || sLobby.state != PORT_NETLOBBY_CONNECTED) {
+        return;
+    }
+    const int n = picked_player_count();
+    if (n == 0) {
+        return;
+    }
+    freeze_start_roster();
     sLobby.player_count = n;
     sLobby.seed = sLobby.rng();
     /* the match's session id is a fresh random token, not the seed: the
      * seed is broadcast in STARTM and can't double as a replay guard */
     sLobby.session = sLobby.rng();
-    /* freeze the roster every participant will run on */
-    sLobby.start_count = gather_roster(sLobby.start_wire, sLobby.start_fkinds, sLobby.start_tjs);
-    for (int i = 0; i < sLobby.start_count; i++) {
-        sLobby.start_costumes[i] = costume_for(i, sLobby.start_fkinds, sLobby.start_count);
-    }
     for (Peer &p : sLobby.peers) {
         p.go = false;
     }
@@ -416,17 +434,42 @@ extern "C" void port_netlobby_set_match_result(int winner_slot, unsigned int dur
     sLobby.match_duration = duration_ticks;
 }
 
-extern "C" void port_netlobby_on_match_end(void)
+/* Folds the finished match into local stats and, with the SubmitStats
+ * opt-in, pushes rating + corroborated result to the lobby board.
+ * Spectators never had a game slot: their watch must not land in
+ * history as a loss. */
+/* Verified path: the server only moves ratings when both clients of a
+ * 1v1 report the mirrored outcome under distinct claim keys. Needs
+ * exactly one named playing opponent. */
+static void report_verified_result(void)
 {
-    /* the engine calls this when an online match finishes: back to the room
-     * so the host can start a rematch on the still-open links */
-    if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-        return;
+    std::string opp_name;
+    int opponents = 0;
+    for (const Peer &p : sLobby.peers) {
+        if (p.slot >= 0 && p.slot <= 3 && p.connected) {
+            opponents++;
+            if (!p.name.empty()) {
+                opp_name = p.name;
+            }
+        }
     }
-    /* record the result + fold it into the local rating — the mean of the
-     * opponents' declared ratings stands in for a per-opponent ladder.
-     * Spectators sit IN_MATCH but never had a game slot: their watch must
-     * not land in history as a loss. */
+    if (opponents == 1 && !opp_name.empty()) {
+        const int won = sLobby.match_winner < 0 ? -1
+            : (sLobby.my_game_slot == sLobby.match_winner ? 1 : 0);
+        port_netleaderboard_report_result(sLobby.server.c_str(),
+                                          sLobby.code.c_str(),
+                                          sLobby.session,
+                                          opp_name.c_str(), won,
+                                          sLobby.match_duration);
+    }
+}
+
+/* Folds the finished match into local stats and, with the SubmitStats
+ * opt-in, pushes rating + corroborated result to the lobby board.
+ * Spectators never had a game slot: their watch must not land in
+ * history as a loss. */
+static void record_match_result(void)
+{
     if (!sLobby.spectate && sLobby.my_game_slot >= 0) {
         int opp = -1, n = 0, sum = 0;
         for (const Peer &p : sLobby.peers) {
@@ -447,30 +490,26 @@ extern "C" void port_netlobby_on_match_end(void)
          * match is unaffected whether they land or not. */
         if (!sLobby.lan && CVarGetInteger("gNetplay.SubmitStats", 0) != 0) {
             port_netleaderboard_submit(sLobby.server.c_str());
-            /* Verified path: the server only moves ratings when both
-             * clients of a 1v1 report the mirrored outcome under distinct
-             * claim keys. Needs exactly one named playing opponent. */
-            std::string opp_name;
-            int opponents = 0;
-            for (const Peer &p : sLobby.peers) {
-                if (p.slot >= 0 && p.slot <= 3 && p.connected) {
-                    opponents++;
-                    if (!p.name.empty()) {
-                        opp_name = p.name;
-                    }
-                }
-            }
-            if (opponents == 1 && !opp_name.empty()) {
-                const int won = sLobby.match_winner < 0 ? -1
-                    : (sLobby.my_game_slot == sLobby.match_winner ? 1 : 0);
-                port_netleaderboard_report_result(sLobby.server.c_str(),
-                                                  sLobby.code.c_str(),
-                                                  sLobby.session,
-                                                  opp_name.c_str(), won,
-                                                  sLobby.match_duration);
-            }
+            report_verified_result();
         }
     }
+}
+
+
+
+extern "C" void port_netlobby_on_match_end(void)
+{
+    /* the engine calls this when an online match finishes: back to the room
+     * so the host can start a rematch on the still-open links */
+    if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
+        return;
+    }
+    /* record the result + fold it into the local rating — the mean of the
+     * opponents' declared ratings stands in for a per-opponent ladder.
+     * Spectators sit IN_MATCH but never had a game slot: their watch must
+     * not land in history as a loss. */
+    record_match_result();
+
     for (Peer &p : sLobby.peers) {
         p.go = false;
         p.ready = false;

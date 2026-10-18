@@ -1,4 +1,5 @@
 #include "enhancements.h"
+#include "stage_bgm_pool.h"
 #include <libultraship/bridge/consolevariablebridge.h>
 
 #include <cstdint>
@@ -9,12 +10,6 @@ constexpr const char* kMusicSelectionCVar = "gEnhancements.MusicSelection";
 namespace {
     // Tracks whether the player is currently picking a song
     bool sIsSelectingMusic = false;
-
-    // The same pool of playable stage tracks used in ShuffleMusic.cpp
-    const uint32_t kShufflePool[] = {
-        0, 1, 2, 4, 5, 6, 7, 8, 9, 36, 37, 25
-    };
-    constexpr size_t kShufflePoolSize = sizeof(kShufflePool) / sizeof(kShufflePool[0]);
 }
 
 extern "C" {
@@ -42,7 +37,7 @@ extern "C" {
         } else {
             // 0xFFFF is the flag sent by C if the player selects the "Random" stage slot
             if (bgm_id == 0xFFFF) {
-                bgm_id = kShufflePool[std::rand() % kShufflePoolSize];
+                bgm_id = ssb64::audio::RandomStageBgm();
             }
             gManualMusicSelection = bgm_id;
             sIsSelectingMusic = false;

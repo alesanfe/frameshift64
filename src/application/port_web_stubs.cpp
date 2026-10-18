@@ -10,6 +10,8 @@
 #include "first_run.h"
 #include "port_window_icon.h"
 #include "port_watchdog.h"
+#include "renderdoc_trigger.h"
+#include "ReleaseSig.h"
 #include "enhancements.h"
 
 #ifdef __EMSCRIPTEN__
@@ -107,10 +109,27 @@ ModPackInstalledKind GetLastInstalledPackKind() { return ModPackInstalledKind::N
 void RegisterModPackDropHandler() {}
 bool IsGliden64ConverterReady() { return false; }
 
+/* Discord rich presence — no Discord IPC from a browser tab. */
+void TickDiscordPresence() {}
+
+/* Release-manifest signature verify — no updater on web, so nothing ever
+ * calls this; failing closed is the only honest stub. */
+bool VerifyEd25519MinisigFields(const std::string&, const std::string&,
+                                const std::string&, std::string& outError) {
+    outError = "release signature verification is not available in the web build";
+    return false;
+}
+
 } // namespace enhancements
 } // namespace ssb64
 
 extern "C" {
+
+/* RenderDoc capture trigger — desktop GL debugging only. */
+void portRenderDocInit(void) {}
+void portRenderDocOnFrame(unsigned int /*frame_count*/) {}
+void portRenderDocShutdown(void) {}
+
 
 /* No hang watchdog on web: pthreads need SharedArrayBuffer + COOP/COEP
  * isolation, and a coroutine wedge in a cooperative browser loop is

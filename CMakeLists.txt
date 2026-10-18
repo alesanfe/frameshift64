@@ -715,6 +715,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # (no curl on web → its entry points compile to inert no-ops).
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/coroutine/coroutine_(posix|win32|android|switch)\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/android/.*\\.cpp$")
+    # The blanket update/ exclusion above also sweeps UpdaterStubs.cpp —
+    # the inert implementations the menus link against. Add it back (its
+    # internal guard compiles it only on stubbed platforms).
+    list(APPEND SSB64_SRC_PORT
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/updater/UpdaterStubs.cpp)
 endif()
 # Treat the generated icon header as a source so CMake schedules it ahead
 # of any port TU compilation (port_window_icon.cpp #includes it). The
@@ -833,7 +838,8 @@ set(SSB64_MODULE_ROOT_platform      src/platform)
 # qualified `src/<module>/...` includes resolve via the src/ root entry,
 # which scoped modules do not get (the lint still covers that channel).
 set(SSB64_MODULE_SCOPE_observability
-    src/observability)
+    src/observability
+    src/platform/http)             # CurlPostToString — crash-bundle upload
 set(SSB64_MODULE_SCOPE_config
     src/config
     src/observability)            # port_log.h — shared log sink
@@ -920,7 +926,6 @@ set(SSB64_MODULE_SCOPE_hooks
 set(SSB64_MODULE_SCOPE_update
     src/application/update src/application/update/updater
     src/application/update/downloads src/application/update/integrity
-    src/application/update/manifests
     src/game/gameplay                  # enhancements.h — update check entry
     src/platform/filesystem src/platform/http
     src/observability)
@@ -1267,7 +1272,6 @@ target_include_directories(ssb64_game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/updater
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/downloads
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/integrity
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/manifests
     ${CMAKE_CURRENT_SOURCE_DIR}/src/config
     ${CMAKE_CURRENT_SOURCE_DIR}/src/i18n
     ${CMAKE_CURRENT_SOURCE_DIR}/src/observability
@@ -1406,10 +1410,27 @@ ssb64_apply_static_analysis(${PROJECT_NAME})
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # Browser target flags. -sUSE_SDL=2 is both a compile flag (SDL2 include
     # paths) and a link flag (the SDL2 wasm port), so it goes on the shared
-    # options interface — every module lib links ssb64_port_options.
-    target_compile_options(ssb64_port_options INTERFACE -sUSE_SDL=2)
+    # options interface — every module lib links ssb64_port_options. -pthread
+    # likewise must reach every TU: without it libc++ is built in
+    # -fno-exceptions+no-threads mode and any std::thread construction
+    # (spdlog's async pool, ResourceManager futures) aborts at startup.
+    target_compile_options(ssb64_port_options INTERFACE -sUSE_SDL=2 -pthread)
     target_link_options(${PROJECT_NAME} PRIVATE
         -sUSE_SDL=2
+        -pthread
+        -sUSE_PTHREADS
+        -sPTHREAD_POOL_SIZE=12              # spdlog(1) + ResourceManager(≤3,
+                                            # capped in LUS) + watchdog +
+                                            # audio + headroom for async
+        # NOTE: no PROXY_TO_PTHREAD — main() runs on the browser thread.
+        # SDL's Emscripten driver proxies EGL calls to the browser thread
+        # unconditionally, so a worker-side context would never be
+        # current for raw gl* calls. The alternative (OFFSCREEN_FRAMEBUFFER)
+        # proxies every gl* call cross-thread — too slow for a renderer.
+        # A blocking main loop on the browser thread still stays
+        # responsive because SDL's Emscripten_GLES_SwapWindow calls
+        # emscripten_sleep(0) after each swap (an Asyncify yield point —
+        # SDL_HINT_EMSCRIPTEN_ASYNCIFY defaults to true).
         -sASYNCIFY                          # coroutine_emscripten.cpp fibers
         -sASYNCIFY_STACK_SIZE=262144        # deep scheduler frames at yield sites
         -sALLOW_MEMORY_GROWTH=1
@@ -1423,6 +1444,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         -sMODULARIZE=1 -sEXPORT_ES6=0       # script tag loader; no bundler required
         -sEXPORTED_RUNTIME_METHODS=callMain,FS   # shell.html defers main() until the o2r is staged
         -sEXIT_RUNTIME=0                    # the game never returns from main
+        -sASSERTIONS=1                      # bringup: real abort messages instead of RuntimeError
+        --profiling-funcs                   # keep wasm name section so crash
+                                            # stacks resolve to function names
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
 endif()
@@ -1535,7 +1559,6 @@ target_include_directories(ssb64_src_flat_includes INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/updater
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/downloads
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/integrity
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/manifests
     ${CMAKE_CURRENT_SOURCE_DIR}/src/config
     ${CMAKE_CURRENT_SOURCE_DIR}/src/i18n
     ${CMAKE_CURRENT_SOURCE_DIR}/src/observability
@@ -2241,7 +2264,7 @@ if (NOT DISABLE_SCRIPTING)
 endif()
 
 # GLideN64->BattleShip texture-name mapping (vendored from GhostlyDark's
-# SSB-Reloaded, MIT — see tools/developer/modding/vendor/README.md). The in-game
+# SSB-Reloaded, MIT — see docs/modding/vendor-notes.md). The in-game
 # converter (src/application/update/downloads/ModPackDownloader.cpp) renames
 # GLideN64/Rice-format PNG packs to the native "#hash#fmt#siz.png"
 # grammar using this table. Staged as bundled-data/gliden64-map.json;
@@ -2264,7 +2287,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/platforms/switch/cmake/Switch.cmake)
 
 ################################################################################
 # Test harness (tests/). Off by default — enables CTest + smash_add_test
-# registrations. See tests/README.md for the level/domain layout and
+# registrations. See docs/testing/README.md for the level/domain layout and
 # tests/support/config/test-suites.yml for suite presets.
 ################################################################################
 option(SSB64_BUILD_TESTING "Build the CTest-registered test harness (tests/)" OFF)

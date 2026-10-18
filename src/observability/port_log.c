@@ -346,8 +346,28 @@ void port_log_set_session(const char *session_id)
 	LOG_UNLOCK();
 }
 
+#ifdef _WIN32
+extern const char *port_symbolize(const void *addr, unsigned int *offset);
+#endif
+
 void port_exit_process(int code)
 {
+	/* Silent exits (a rig run dying mid-frame with no verdict line) are
+	 * undiagnosable otherwise — always record who pulled the plug. */
+	port_log("SSB64: port_exit_process code=%d\n", code);
+#ifdef _WIN32
+	{
+		void *frames[12];
+		WORD n = RtlCaptureStackBackTrace(0, 12, frames, NULL);
+		WORD i;
+		for (i = 0; i < n; i++) {
+			unsigned int off = 0;
+			const char *sym = port_symbolize(frames[i], &off);
+			port_log("  exit_bt[%2u] %p %s+0x%x\n", i, frames[i],
+			         (sym != NULL) ? sym : "(no sym)", off);
+		}
+	}
+#endif
 	LOG_LOCK();
 	if (sLogFile != NULL) fflush(sLogFile);
 	LOG_UNLOCK();

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -56,6 +57,41 @@ def gate(build_dir: Path) -> "str | None":
         return (f"missing archives next to {GAME_EXE}: {', '.join(missing)} "
                 f"(run the ExtractAssets target with baserom.us.z64 present)")
     return None
+
+
+# Files/dirs the game opens relative to its cwd — copied into the run
+# snapshot so cases are immune to a concurrent build relinking the tree.
+SNAPSHOT_DIRS = ("lang", "assets", "bundled-data", "bundled-mods", "config")
+
+
+def snapshot_binary(build_dir: Path, snap: Path) -> Path:
+    """Copy the exe + runtime deps into a private dir.
+
+    A golden run takes minutes and a concurrent ninja build relinking
+    BattleShip.exe/*.o2r mid-suite can tear a running process's image
+    (seen as silent exit=1 and fast-fail 0xC0000409 crashes that vanish
+    under reproduction). Running cases from a stable snapshot removes
+    that class of flake entirely.
+    """
+    if snap.exists():
+        shutil.rmtree(snap)
+    snap.mkdir(parents=True)
+    sources = [build_dir / GAME_EXE, *sorted(build_dir.glob("*.dll")),
+               *(build_dir / a for a in REQUIRED_ARCHIVES)]
+    for src in sources:
+        for attempt in range(5):
+            try:
+                shutil.copy2(src, snap / src.name)
+                break
+            except OSError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.5)
+    for d in SNAPSHOT_DIRS:
+        src = build_dir / d
+        if src.is_dir():
+            shutil.copytree(src, snap / d)
+    return snap
 
 
 def run_case(build_dir: Path, name: str, ssr: Path, out_dir: Path,
@@ -106,10 +142,12 @@ def main() -> int:
     ap.add_argument("--output", type=Path,
                     default=ROOT / "out" / "test-results" / "golden")
     ap.add_argument("--timeout", type=int, default=180)
+    ap.add_argument("--repeat", type=int, default=1,
+                    help="run each case N times (flake hunting)")
     a = ap.parse_args()
 
-    build_dir = a.build_dir.resolve()
-    reason = gate(build_dir)
+    src_dir = a.build_dir.resolve()
+    reason = gate(src_dir)
     if reason is not None:
         print(f"SKIP golden gameplay: {reason}")
         return SKIP
@@ -123,9 +161,10 @@ def main() -> int:
             return 2
 
     out = sr.clean_out(a.output.resolve())
+    build_dir = snapshot_binary(src_dir, out / "bin")
     mode = "capture" if a.capture else "verify"
     print(f"golden gameplay [{mode}]: {len(cases)} case(s), "
-          f"binary={build_dir / GAME_EXE}")
+          f"binary={build_dir / GAME_EXE} (snapshot of {src_dir})")
 
     failures = []
     for case in cases:
@@ -163,23 +202,32 @@ def main() -> int:
             failures.append(name)
             continue
 
-        rc, log = run_case(build_dir, name, ssr, out,
-                           verify_trace=golden, capture_trace=None,
-                           timeout=a.timeout)
-        if rc == 0:
-            print(f"{name}: PASS ({case['frames']} ticks vs {golden.name})")
-            continue
+        failed = False
+        for run in range(1, a.repeat + 1):
+            run_name = name if a.repeat == 1 else f"{name}-r{run}"
+            rc, log = run_case(build_dir, run_name, ssr, out,
+                               verify_trace=golden, capture_trace=None,
+                               timeout=a.timeout)
+            if rc == 0:
+                if a.repeat > 1:
+                    print(f"{name}: run {run}/{a.repeat} PASS")
+                else:
+                    print(f"{name}: PASS ({case['frames']} ticks vs {golden.name})")
+                continue
 
-        verdict = {-1: "TIMEOUT", 1: "INPUT-FAIL", 2: "INCOMPLETE",
-                   3: "TRACE-LOADFAIL", 4: "DESYNC"}.get(rc, f"rc={rc}")
-        print(f"{name}: FAIL {verdict} — {log}")
-        print("\n".join("  " + l for l in
-              sr.tail_log(Path(log),
-                          r"Replay|SyncTrace|DIVERGENCE|result=")))
-        failures.append(name)
+            verdict = {-1: "TIMEOUT", 1: "INPUT-FAIL", 2: "INCOMPLETE",
+                       3: "TRACE-LOADFAIL", 4: "DESYNC"}.get(rc, f"rc={rc}")
+            print(f"{name}: run {run}/{a.repeat} FAIL {verdict} — {log}")
+            print("\n".join("  " + l for l in
+                  sr.tail_log(Path(log),
+                              r"Replay|SyncTrace|DIVERGENCE|result=")))
+            failed = True
+            break
+        if failed:
+            failures.append(name)
 
     report = {"mode": mode, "build_dir": str(build_dir),
-              "cases": len(cases), "failures": failures}
+              "cases": len(cases), "repeat": a.repeat, "failures": failures}
     (out / "golden_report.json").write_text(json.dumps(report, indent=2))
     if failures:
         print(f"FAIL: {len(failures)}/{len(cases)} golden case(s): "
@@ -190,4 +238,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    sys.exit(main())
     sys.exit(main())

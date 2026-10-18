@@ -12,7 +12,11 @@ single metrics.json:
       "traces": { "ticks": N, "diverged": false, "first_divergence_line": null },
       "desync_rate": 0.0,          # diverged peers / compared peers
       "worst_max_rollback": N,     # deepest resim depth observed, any peer
-      "rollback_frames_per_tick": 0.0
+      "rollback_frames_per_tick": 0.0,
+      "input_delay": N,            # worst configured input-delay (auto-bump counts)
+      "late_inputs": N,            # inputs that arrived too late to pace
+      "dropped_datagrams": N,
+      "stalls": N
     }
 
 Usage:
@@ -49,14 +53,35 @@ SESSION_LINE = re.compile(
 )
 DESYNC_LINE = re.compile(r"DESYNC detected at tick=(\d+)")
 
+# Latency counters netpeer.c already emits per session:
+#   "SSB64 NetPeer: VS session stop sent=%u recv=%u dropped=%u staged=%u
+#    late=%u stalls=%u lockstep_stalls=%u timesync_stalls=%u checksum=..."
+NETPEER_STOP_LINE = re.compile(
+    r"VS session stop sent=(?P<sent>\d+) recv=(?P<recv>\d+) "
+    r"dropped=(?P<dropped>\d+) staged=(?P<staged>\d+) late=(?P<late>\d+) "
+    r"stalls=(?P<stalls>\d+)"
+)
+# "SSB64 NetPeer: input delay -> %u"   (configured input-delay frames)
+DELAY_LINE = re.compile(r"input delay -> (?P<delay>\d+)")
+# "SSB64 NetPeer: sustained late inputs (%u in %u frames) — bumping delay to %u"
+AUTO_DELAY_LINE = re.compile(r"bumping delay to (?P<delay>\d+)")
+# "SSB64 Perf: frames=600 window_s=10.0 frame_p50_us=1234 frame_p95_us=...
+#  frame_p99_us=... frame_max_us=..."   (SSB64_PERF_LOG=1, gameloop.cpp)
+PERF_LINE = re.compile(
+    r"SSB64 Perf: frames=(?P<frames>\d+) window_s=(?P<win>[\d.]+) "
+    r"frame_p50_us=(?P<p50>\d+) frame_p95_us=(?P<p95>\d+) "
+    r"frame_p99_us=(?P<p99>\d+) frame_max_us=(?P<max>\d+)"
+)
+
 
 def peer_metrics(log_path: Path) -> dict:
     """Latest counters win (periodic lines overwrite; session line is final)."""
     m: dict[str, Any] = {"ticks": 0, "rollbacks": 0, "resim_ticks": 0, "max_rollback": 0,
-                         "sync_failures": 0, "desync": 0, "desync_ticks": []}
+                         "sync_failures": 0, "desync": 0, "desync_ticks": [],
+                         "input_delay": 0, "late_inputs": 0, "dropped": 0, "stalls": 0,
+                         "frame_p50_us": 0, "frame_p95_us": 0, "frame_p99_us": 0,
+                         "frame_max_us": 0, "perf_windows": 0}
     for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if "SSB64 Rollback:" not in line:
-            continue
         mm = SESSION_LINE.search(line) or NETPLAY_LINE.search(line)
         if mm:
             m["ticks"] = int(mm["traced"] if "traced" in mm.groupdict() and mm["traced"]
@@ -66,10 +91,38 @@ def peer_metrics(log_path: Path) -> dict:
             m["max_rollback"] = max(m["max_rollback"], int(mm["maxrb"]))
             m["sync_failures"] = max(m["sync_failures"], int(mm["failed"]))
             m["desync"] = max(m["desync"], int(mm["desync"]))
+            continue
         dm = DESYNC_LINE.search(line)
         if dm:
             m["desync"] = 1
             m["desync_ticks"].append(int(dm.group(1)))
+            continue
+        pm = PERF_LINE.search(line)
+        if pm:
+            # perf windows are periodic — keep the worst window (the tail
+            # is what benchmarking gates on), plus a count so an absent
+            # SSB64_PERF_LOG run is distinguishable from a clean one.
+            m["perf_windows"] += 1
+            for field, group in (("frame_p50_us", "p50"), ("frame_p95_us", "p95"),
+                                 ("frame_p99_us", "p99"), ("frame_max_us", "max")):
+                m[field] = max(m[field], int(pm[group]))
+            continue
+        if "SSB64 NetPeer:" in line:
+            sm = NETPEER_STOP_LINE.search(line)
+            if sm:
+                # session-stop is terminal — overwrite (a log can hold
+                # several sessions; the last one's totals are the match)
+                m["late_inputs"] = int(sm["late"])
+                m["dropped"] = int(sm["dropped"])
+                m["stalls"] = int(sm["stalls"])
+                continue
+            am = AUTO_DELAY_LINE.search(line)
+            if am:
+                m["input_delay"] = max(m["input_delay"], int(am["delay"]))
+                continue
+            lm = DELAY_LINE.search(line)
+            if lm:
+                m["input_delay"] = max(m["input_delay"], int(lm["delay"]))
     return m
 
 
@@ -114,7 +167,8 @@ def summarize(history: Path, days: int) -> int:
                 records.append(rec)
         except (ValueError, KeyError):
             continue
-    keys = ["desync_rate", "worst_max_rollback", "rollback_frames_per_tick"]
+    keys = ["desync_rate", "worst_max_rollback", "rollback_frames_per_tick",
+            "input_delay", "late_inputs"]
     summary: dict[str, Any] = {
         "window_days": days,
         "runs": len(records),
@@ -171,6 +225,12 @@ def main() -> int:
         "desync_rate": (diverged_peers / compared) if compared else 0.0,
         "worst_max_rollback": max((p["max_rollback"] for p in peers.values()), default=0),
         "rollback_frames_per_tick": (total_resim / total_ticks) if total_ticks else 0.0,
+        # Latency surface: worst configured input-delay across peers +
+        # inputs that arrived too late to pace (rollback absorbed them).
+        "input_delay": max((p["input_delay"] for p in peers.values()), default=0),
+        "late_inputs": max((p["late_inputs"] for p in peers.values()), default=0),
+        "dropped_datagrams": max((p["dropped"] for p in peers.values()), default=0),
+        "stalls": max((p["stalls"] for p in peers.values()), default=0),
     }
 
     out = a.out or (a.dir / "metrics.json")
@@ -185,6 +245,8 @@ def main() -> int:
             "desync_rate": metrics["desync_rate"],
             "worst_max_rollback": metrics["worst_max_rollback"],
             "rollback_frames_per_tick": metrics["rollback_frames_per_tick"],
+            "input_delay": metrics["input_delay"],
+            "late_inputs": metrics["late_inputs"],
         }
         with a.history.open("a", encoding="utf-8") as hf:
             hf.write(json.dumps(record) + "\n")

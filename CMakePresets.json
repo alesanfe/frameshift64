@@ -146,7 +146,9 @@
    "cacheVariables": {
     "CMAKE_BUILD_TYPE": "Release",
     "SSB64_VERSION": "us",
-    "NON_PORTABLE": "OFF"
+    "NON_PORTABLE": "OFF",
+    "CMAKE_C_FLAGS": "-pthread",
+    "CMAKE_CXX_FLAGS": "-pthread"
    }
   }
  ],

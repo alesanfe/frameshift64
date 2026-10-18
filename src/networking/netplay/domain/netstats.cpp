@@ -544,3 +544,36 @@ extern "C" int port_netstats_season_at(int index, char *out_id, int capacity,
     if (losses) *losses = s.losses;
     return 1;
 }
+
+extern "C" int port_netstats_rank_tier(void)
+{
+    std::lock_guard<std::mutex> lk(sStatsLock);
+    ensure_loaded();
+    if (sStats.history.size() < kProvisionalMatches) {
+        return 0;                                    /* Unranked */
+    }
+    const int r = sStats.rating;
+    if (r >= 2200) return 7;                         /* Grandmaster */
+    if (r >= 2000) return 6;                         /* Master */
+    if (r >= 1800) return 5;                         /* Diamond */
+    if (r >= 1600) return 4;                         /* Platinum */
+    if (r >= 1400) return 3;                         /* Gold */
+    if (r >= 1200) return 2;                         /* Silver */
+    return 1;                                        /* Bronze */
+}
+
+extern "C" int port_netstats_rank_tier_name(char *out, int capacity)
+{
+    static const char *kNames[] = {
+        "Unranked", "Bronze", "Silver", "Gold",
+        "Platinum", "Diamond", "Master", "Grandmaster",
+    };
+    const int tier = port_netstats_rank_tier();
+    const char *name = kNames[tier];
+    if (out == nullptr || capacity <= 0) {
+        return 0;
+    }
+    const int len = static_cast<int>(std::strlen(name));
+    std::snprintf(out, static_cast<size_t>(capacity), "%s", name);
+    return len;
+}

@@ -31,4 +31,4 @@ void TickUpdater() {}
 } // namespace enhancements
 } // namespace ssb64
 
-#endif // BATTLESHIP_UWP || __ANDROID__ || __SWITCH__
+#endif // BATTLESHIP_UWP || __ANDROID__ || __SWITCH__ || __EMSCRIPTEN__

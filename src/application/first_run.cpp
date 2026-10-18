@@ -1,7 +1,6 @@
 #include "first_run.h"
 #include "gameloop.h"
 #include "app_paths.h"
-#include "gameloop.h"
 #include "i18n/PortI18n.h"
 #include "native_dialog.h"
 #include "port_log.h"
@@ -26,6 +25,12 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -139,9 +144,10 @@ ExtractionResult BuildFailure(const std::string& error, const std::string& logPa
     return { false, {}, error, logPath };
 }
 
-std::string QuoteCommandArg(const std::string& arg) {
 #ifdef _WIN32
-    /* CreateProcessA argv parsing: double quotes, escape embedded quotes. */
+/* CreateProcessA argv parsing: double quotes, escape embedded quotes.
+ * (POSIX runs argv through execv directly — no quoting layer exists.) */
+std::string QuoteCommandArg(const std::string& arg) {
     std::string quoted = "\"";
     for (char c : arg) {
         if (c == '"') {
@@ -152,21 +158,8 @@ std::string QuoteCommandArg(const std::string& arg) {
     }
     quoted += "\"";
     return quoted;
-#else
-    /* POSIX sh: single-quote — double quotes would still expand `$`,
-     * backticks, and backslashes in paths fed to std::system(). */
-    std::string quoted = "'";
-    for (char c : arg) {
-        if (c == '\'') {
-            quoted += "'\\''";
-        } else {
-            quoted += c;
-        }
-    }
-    quoted += "'";
-    return quoted;
-#endif
 }
+#endif
 
 std::string ResolveLogPath(const std::string& preferredLogPath, const std::string& sourceDir,
                            const std::string& destinationDir) {
@@ -212,11 +205,9 @@ std::string FindTorchExecutable() {
         return {};
     }
 
-    // Absolute-ize: RunTorchCommand on POSIX runs `cd workingDir &&
-    // <torch> ...`, so a relative torch path (e.g. "./torch" from
-    // candidate base=".") resolves against the new cwd after cd and
-    // sh aborts with exit 127 (32512 from std::system) before torch
-    // runs.
+    // Absolute-ize: RunTorchCommand on POSIX chdirs into workingDir before
+    // execv, so a relative torch path (e.g. "./torch" from candidate
+    // base=".") would resolve against the new cwd and fail with 127.
     std::error_code ec;
     fs::path absolute = fs::absolute(fs::path(found), ec);
     if (ec || absolute.empty()) {
@@ -225,75 +216,128 @@ std::string FindTorchExecutable() {
     return absolute.string();
 }
 
-bool RunTorchCommand(const std::string& commandLine, const std::string& workingDir,
+#ifdef _WIN32
+bool RunTorchCommandWin32(const std::vector<std::string>& args, const std::string& workingDir,
+                          const std::string& logPath, std::string& error) {
+if (logPath.empty()) {
+    error = "Could not resolve a writable extraction log path";
+    return false;
+}
+/* CreateProcess wants a single command line — QuoteCommandArg already
+ * produces correct argv quoting, so join is lossless. */
+std::string commandLine;
+for (size_t i = 0; i < args.size(); i++) {
+    if (i) commandLine += " ";
+    commandLine += QuoteCommandArg(args[i]);
+}
+
+SECURITY_ATTRIBUTES sa = {};
+sa.nLength = sizeof(sa);
+sa.bInheritHandle = TRUE;
+
+HANDLE logFile =
+    CreateFileA(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL, nullptr);
+if (logFile == INVALID_HANDLE_VALUE) {
+    error = "Could not open extraction log for writing";
+    return false;
+}
+
+SetFilePointer(logFile, 0, nullptr, FILE_END);
+
+STARTUPINFOA si = {};
+si.cb = sizeof(si);
+si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+si.wShowWindow = SW_HIDE;
+si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+si.hStdOutput = logFile;
+si.hStdError = logFile;
+
+PROCESS_INFORMATION pi = {};
+std::vector<char> mutableCmd(commandLine.begin(), commandLine.end());
+mutableCmd.push_back('\0');
+
+std::vector<char> mutableCwd(workingDir.begin(), workingDir.end());
+mutableCwd.push_back('\0');
+
+const BOOL started =
+    CreateProcessA(nullptr, mutableCmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
+                   mutableCwd.data(), &si, &pi);
+if (!started) {
+    const DWORD code = GetLastError();
+    CloseHandle(logFile);
+    error = "Failed to launch torch (CreateProcess error " + std::to_string(code) + ")";
+    return false;
+}
+
+CloseHandle(pi.hThread);
+WaitForSingleObject(pi.hProcess, INFINITE);
+
+DWORD exitCode = 1;
+GetExitCodeProcess(pi.hProcess, &exitCode);
+CloseHandle(pi.hProcess);
+CloseHandle(logFile);
+
+if (exitCode != 0) {
+    error = "Torch exited with code " + std::to_string(exitCode);
+    return false;
+}
+return true;
+}
+#else
+bool RunTorchCommandPosix(const std::vector<std::string>& args, const std::string& workingDir,
+                          const std::string& logPath, std::string& error) {
+/* fork+execv with no shell: argv reaches torch verbatim, so no quoting
+ * layer exists to get wrong. The child chdirs into workingDir and
+ * appends stdout+stderr to logPath before exec. */
+if (logPath.empty()) {
+    error = "Could not resolve a writable extraction log path";
+    return false;
+}
+const int logFd = open(logPath.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+if (logFd < 0) {
+    error = "Could not open extraction log for writing";
+    return false;
+}
+const pid_t pid = fork();
+if (pid < 0) {
+    close(logFd);
+    error = "Failed to launch torch (fork error)";
+    return false;
+}
+if (pid == 0) {
+    (void)!chdir(workingDir.c_str());   /* best-effort: relative args already absolutized */
+    dup2(logFd, STDOUT_FILENO);
+    dup2(logFd, STDERR_FILENO);
+    close(logFd);
+    std::vector<char*> cargv;
+    cargv.reserve(args.size() + 1);
+    for (const std::string& a : args) {
+        cargv.push_back(const_cast<char*>(a.c_str()));
+    }
+    cargv.push_back(nullptr);
+    execv(cargv[0], cargv.data());
+    _exit(127);
+}
+close(logFd);
+int status = 0;
+while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+}
+if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    error = "Torch exited with code " +
+            std::to_string(WIFEXITED(status) ? WEXITSTATUS(status) : status);
+    return false;
+}
+return true;
+}
+#endif
+
+bool RunTorchCommand(const std::vector<std::string>& args, const std::string& workingDir,
                      const std::string& logPath, std::string& error) {
 #ifdef _WIN32
-    if (logPath.empty()) {
-        error = "Could not resolve a writable extraction log path";
-        return false;
-    }
-
-    SECURITY_ATTRIBUTES sa = {};
-    sa.nLength = sizeof(sa);
-    sa.bInheritHandle = TRUE;
-
-    HANDLE logFile =
-        CreateFileA(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS,
-                    FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (logFile == INVALID_HANDLE_VALUE) {
-        error = "Could not open extraction log for writing";
-        return false;
-    }
-
-    SetFilePointer(logFile, 0, nullptr, FILE_END);
-
-    STARTUPINFOA si = {};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    si.hStdOutput = logFile;
-    si.hStdError = logFile;
-
-    PROCESS_INFORMATION pi = {};
-    std::vector<char> mutableCmd(commandLine.begin(), commandLine.end());
-    mutableCmd.push_back('\0');
-
-    std::vector<char> mutableCwd(workingDir.begin(), workingDir.end());
-    mutableCwd.push_back('\0');
-
-    const BOOL started =
-        CreateProcessA(nullptr, mutableCmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
-                       mutableCwd.data(), &si, &pi);
-    if (!started) {
-        const DWORD code = GetLastError();
-        CloseHandle(logFile);
-        error = "Failed to launch torch (CreateProcess error " + std::to_string(code) + ")";
-        return false;
-    }
-
-    CloseHandle(pi.hThread);
-    WaitForSingleObject(pi.hProcess, INFINITE);
-
-    DWORD exitCode = 1;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-    CloseHandle(pi.hProcess);
-    CloseHandle(logFile);
-
-    if (exitCode != 0) {
-        error = "Torch exited with code " + std::to_string(exitCode);
-        return false;
-    }
-    return true;
+    return RunTorchCommandWin32(args, workingDir, logPath, error);
 #else
-    const std::string shellCommand =
-        "cd " + QuoteCommandArg(workingDir) + " && " + commandLine + " > " + QuoteCommandArg(logPath) + " 2>&1";
-    const int exitCode = std::system(shellCommand.c_str());
-    if (exitCode != 0) {
-        error = "Torch exited with code " + std::to_string(exitCode);
-        return false;
-    }
-    return true;
+    return RunTorchCommandPosix(args, workingDir, logPath, error);
 #endif
 }
 
@@ -363,115 +407,59 @@ void DrawWizardFrame(const std::function<void()>& drawContents) {
 
 } // namespace
 
-ExtractionResult ExtractAssetsIfNeeded(const std::string& target_o2r_path, bool silent,
-                                       const std::string& romOverridePath) {
+/* Runs the staged torch extraction: fresh work dir, config + recipe
+ * staging, torch invocation, then install of the emitted archive
+ * (rename, copy fallback) and recipe sidecar. On torch failure a
+ * stale-but-existing archive keeps the game running. */
+/* Creates a clean torch-work dir next to the target and stages
+ * config.yml + yamls/ into it (torch resolves recipes relative to its
+ * cwd). Returns the work dir path, or an empty path with error set. */
+fs::path StageTorchWorkDir(const fs::path& targetPath,
+                           const std::string& cfgDir,
+                           std::string& error)
+{
     std::error_code ec;
-    const fs::path absoluteTargetPath = fs::absolute(fs::path(target_o2r_path), ec);
-    const fs::path targetPath = ec ? fs::path(target_o2r_path) : absoluteTargetPath;
-    bool staleRecipe = false;
-    if (fs::exists(targetPath)) {
-#if defined(__ANDROID__)
-        /* Android extraction goes through the Java RomImporter flow (which
-         * has its own asset sentinel) and the staged ROM is deleted after
-         * extraction, so a recipe re-extract could never succeed here. */
-        return { true, targetPath.string(), {}, {} };
-#else
-        const std::string have = ReadRecipeSidecar(targetPath);
-        if (have == SSB64_ASSET_RECIPE_HASH) {
-            return { true, targetPath.string(), {}, {} };
-        }
-        staleRecipe = true;
-        port_log("first_run: %s was extracted by a different asset pipeline "
-                 "(recipe '%s', this build wants '%s') — re-extracting\n",
-                 targetPath.string().c_str(),
-                 have.empty() ? "<none>" : have.c_str(), SSB64_ASSET_RECIPE_HASH);
-#endif
-    }
-
-#ifdef __SWITCH__
-    // On Switch, assets must be pre-extracted on a PC and placed alongside
-    // the .nro on the SD card. Torch cannot run on-device.
-    port_log("first_run: %s missing on Switch — place pre-extracted .o2r on SD card\n",
-             target_o2r_path.c_str());
-    return { false, {}, "Assets not found — pre-extract on PC with 'torch o2r baserom.us.z64' and copy .o2r to sdmc:/switch/BattleShip/", {} };
-#endif
-
-    if (!staleRecipe) {
-        port_log("first_run: %s missing — running asset extraction\n",
-                 target_o2r_path.c_str());
-    }
-
-    std::string rom = romOverridePath.empty() ? FindBaseRom() : romOverridePath;
-    if (rom.empty()) {
-        if (staleRecipe) {
-            /* No ROM to re-extract from. Keep running on the old archive —
-             * mostly-working assets beat blocking the user. The log line
-             * above is the breadcrumb if rendering misbehaves. */
-            port_log("first_run: no ROM available for recipe re-extraction; "
-                     "continuing with the existing (possibly stale) %s\n",
-                     SSB64_O2R_NAME);
-            return { true, targetPath.string(), {}, {} };
-        }
-        const std::string appData = Ship::Context::GetAppDirectoryPath();
-        port_log("first_run: ERROR no ROM found.\n"
-                 "  Drop a %s.{z64,n64,v64} into %s\n",
-                 kRomBase, appData.c_str());
-        const std::string msg =
-            "Asset extraction needs your " + std::string(kRomDesc) + ".\n\n"
-            "Place a " + std::string(kRomBase) + ".z64 (or .n64 / .v64) into:\n  " + appData +
-            "\n\nThen launch the game again.";
-        if (!silent) {
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                                     "ROM not found", msg.c_str(), nullptr);
-        }
-        return { false, {}, "ROM not found", {} };
-    }
-
-    ec.clear();
-    const fs::path absoluteRomPath = fs::absolute(fs::path(rom), ec);
-    if (!ec) {
-        rom = absoluteRomPath.string();
-    }
-    port_log("first_run: using ROM %s\n", rom.c_str());
-
-    const std::string cfgDir = FindAssetConfigDir();
-    if (cfgDir.empty()) {
-        port_log("first_run: ERROR could not locate config.yml + yamls/%s/\n", kRegion);
-        return { false, {}, std::string("Could not locate config.yml + yamls/") + kRegion, {} };
-    }
-    port_log("first_run: asset config dir -> %s\n", cfgDir.c_str());
-
-    const std::string torchExe = FindTorchExecutable();
-    if (torchExe.empty()) {
-        port_log("first_run: ERROR could not locate torch executable\n");
-        return { false, {}, "Could not locate torch executable", {} };
-    }
-    port_log("first_run: torch executable -> %s\n", torchExe.c_str());
-
     fs::create_directories(targetPath.parent_path());
     const fs::path workDir = fs::absolute(targetPath.parent_path() / "torch-work");
     fs::remove_all(workDir, ec);
     ec.clear();
     fs::create_directories(workDir, ec);
     if (ec) {
-        port_log("first_run: ERROR could not create %s: %s\n", workDir.string().c_str(), ec.message().c_str());
-        return { false, {}, "Could not create torch work directory: " + ec.message(), {} };
+        port_log("first_run: ERROR could not create %s: %s\n",
+                 workDir.string().c_str(), ec.message().c_str());
+        error = "Could not create torch work directory: " + ec.message();
+        return {};
     }
     fs::copy_file(fs::path(cfgDir) / "config.yml",
                   workDir / "config.yml",
                   fs::copy_options::overwrite_existing, ec);
     if (ec) {
         port_log("first_run: ERROR could not stage config.yml: %s\n", ec.message().c_str());
-        return { false, {}, "Could not stage config.yml: " + ec.message(), {} };
+        error = "Could not stage config.yml: " + ec.message();
+        return {};
     }
-
     fs::copy(fs::path(cfgDir) / "yamls", workDir / "yamls",
-             fs::copy_options::recursive |
-                 fs::copy_options::overwrite_existing,
-             ec);
+             fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
     if (ec) {
         port_log("first_run: ERROR could not stage yamls/: %s\n", ec.message().c_str());
-        return { false, {}, "Could not stage yamls/: " + ec.message(), {} };
+        error = "Could not stage yamls/: " + ec.message();
+        return {};
+    }
+    return workDir;
+}
+
+
+ExtractionResult RunExtraction(const fs::path& targetPath,
+                               const std::string& rom,
+                               const std::string& cfgDir,
+                               const std::string& torchExe,
+                               bool staleRecipe, bool silent)
+{
+    std::error_code ec;
+    std::string stageError;
+    const fs::path workDir = StageTorchWorkDir(targetPath, cfgDir, stageError);
+    if (workDir.empty()) {
+        return { false, {}, stageError, {} };
     }
     const std::string runDir = workDir.string();
     port_log("first_run: torch work dir -> %s\n", runDir.c_str());
@@ -482,13 +470,16 @@ ExtractionResult ExtractAssetsIfNeeded(const std::string& target_o2r_path, bool 
         std::ofstream truncate(logPath, std::ios::trunc);
     }
 
-    const std::string commandLine = QuoteCommandArg(torchExe) + " o2r " + QuoteCommandArg(rom) +
-                                    " -s " + QuoteCommandArg(runDir) + " -d " + QuoteCommandArg(runDir);
-    port_log("first_run: > %s\n", commandLine.c_str());
-    AppendLogLine(logPath, "Command: " + commandLine);
+    const std::vector<std::string> args = { torchExe, "o2r", rom, "-s", runDir, "-d", runDir };
+    std::string shown;
+    for (const std::string& a : args) {
+        shown += shown.empty() ? a : " " + a;
+    }
+    port_log("first_run: > %s\n", shown.c_str());
+    AppendLogLine(logPath, "Command: " + shown);
 
     std::string commandError;
-    if (!RunTorchCommand(commandLine, runDir, logPath, commandError)) {
+    if (!RunTorchCommand(args, runDir, logPath, commandError)) {
         port_log("first_run: ERROR extractor failed: %s\n", commandError.c_str());
         if (staleRecipe) {
             /* Re-extraction failed but the previous archive is untouched —
@@ -544,6 +535,298 @@ ExtractionResult ExtractAssetsIfNeeded(const std::string& target_o2r_path, bool 
     return { true, targetPath.string(), {}, logPath };
 }
 
+
+/* No ROM available and no usable previous archive — log, show the
+ * message box (unless silent), and fail. */
+ExtractionResult ReportMissingRom(bool silent)
+{
+const std::string appData = Ship::Context::GetAppDirectoryPath();
+port_log("first_run: ERROR no ROM found.\n"
+         "  Drop a %s.{z64,n64,v64} into %s\n",
+         kRomBase, appData.c_str());
+const std::string msg =
+    "Asset extraction needs your " + std::string(kRomDesc) + ".\n\n"
+    "Place a " + std::string(kRomBase) + ".z64 (or .n64 / .v64) into:\n  " + appData +
+    "\n\nThen launch the game again.";
+if (!silent) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                             "ROM not found", msg.c_str(), nullptr);
+}
+return { false, {}, "ROM not found", {} };
+}
+
+
+ExtractionResult ExtractAssetsIfNeeded(const std::string& target_o2r_path, bool silent,
+                                       const std::string& romOverridePath) {
+    std::error_code ec;
+    const fs::path absoluteTargetPath = fs::absolute(fs::path(target_o2r_path), ec);
+    const fs::path targetPath = ec ? fs::path(target_o2r_path) : absoluteTargetPath;
+    bool staleRecipe = false;
+    if (fs::exists(targetPath)) {
+#if defined(__ANDROID__)
+        /* Android extraction goes through the Java RomImporter flow (which
+         * has its own asset sentinel) and the staged ROM is deleted after
+         * extraction, so a recipe re-extract could never succeed here. */
+        return { true, targetPath.string(), {}, {} };
+#else
+        const std::string have = ReadRecipeSidecar(targetPath);
+        if (have == SSB64_ASSET_RECIPE_HASH) {
+            return { true, targetPath.string(), {}, {} };
+        }
+        staleRecipe = true;
+        port_log("first_run: %s was extracted by a different asset pipeline "
+                 "(recipe '%s', this build wants '%s') — re-extracting\n",
+                 targetPath.string().c_str(),
+                 have.empty() ? "<none>" : have.c_str(), SSB64_ASSET_RECIPE_HASH);
+#endif
+    }
+
+#ifdef __SWITCH__
+    // On Switch, assets must be pre-extracted on a PC and placed alongside
+    // the .nro on the SD card. Torch cannot run on-device.
+    port_log("first_run: %s missing on Switch — place pre-extracted .o2r on SD card\n",
+             target_o2r_path.c_str());
+    return { false, {}, "Assets not found — pre-extract on PC with 'torch o2r baserom.us.z64' and copy .o2r to sdmc:/switch/BattleShip/", {} };
+#endif
+
+    if (!staleRecipe) {
+        port_log("first_run: %s missing — running asset extraction\n",
+                 target_o2r_path.c_str());
+    }
+
+    std::string rom = romOverridePath.empty() ? FindBaseRom() : romOverridePath;
+    if (rom.empty()) {
+        if (staleRecipe) {
+            /* No ROM to re-extract from. Keep running on the old archive —
+             * mostly-working assets beat blocking the user. The log line
+             * above is the breadcrumb if rendering misbehaves. */
+            port_log("first_run: no ROM available for recipe re-extraction; "
+                     "continuing with the existing (possibly stale) %s\n",
+                     SSB64_O2R_NAME);
+            return { true, targetPath.string(), {}, {} };
+        }
+        return ReportMissingRom(silent);
+    }
+
+    ec.clear();
+    const fs::path absoluteRomPath = fs::absolute(fs::path(rom), ec);
+    if (!ec) {
+        rom = absoluteRomPath.string();
+    }
+    port_log("first_run: using ROM %s\n", rom.c_str());
+
+    const std::string cfgDir = FindAssetConfigDir();
+    if (cfgDir.empty()) {
+        port_log("first_run: ERROR could not locate config.yml + yamls/%s/\n", kRegion);
+        return { false, {}, std::string("Could not locate config.yml + yamls/") + kRegion, {} };
+    }
+    port_log("first_run: asset config dir -> %s\n", cfgDir.c_str());
+
+    const std::string torchExe = FindTorchExecutable();
+    if (torchExe.empty()) {
+        port_log("first_run: ERROR could not locate torch executable\n");
+        return { false, {}, "Could not locate torch executable", {} };
+    }
+    port_log("first_run: torch executable -> %s\n", torchExe.c_str());
+
+    return RunExtraction(targetPath, rom, cfgDir, torchExe, staleRecipe, silent);
+}
+
+/* Wizard state machine — WaitingForRom -> Extracting -> Done|Cancelled. */
+enum class State { WaitingForRom, Extracting, Done, Cancelled };
+
+/* Captured wizard UI state shared between the frame loop and the modal
+ * body — the modal is drawn inside DrawWizardFrame's lambda, so the
+ * captures pass through this struct instead. */
+struct WizardUiCtx {
+    const std::string& target;
+    char* romPath;
+    size_t romPathSize;
+    State& state;
+    std::string& statusMsg;
+    int frameCount;
+    std::future<ExtractionResult>& extractFuture;
+    bool& extractRunning;
+};
+
+/* One frame of the "First-run setup" modal: ROM path input + Browse,
+ * extract/progress/quit buttons. */
+static void DrawFirstRunModal(WizardUiCtx& c) {
+    ImGui::OpenPopup("First-run setup");
+
+    const ImVec2 viewportCenter =
+        ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(viewportCenter, ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(620, 0));
+
+    if (ImGui::BeginPopupModal("First-run setup", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize |
+                               ImGuiWindowFlags_NoMove |
+                               ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextWrapped("%s", TR("BattleShip needs to extract assets from your "
+            "Nintendo 64 ROM before it can launch."));
+        ImGui::Spacing();
+        ImGui::TextWrapped(TR("Required: a %s dump in .z64, .n64, or .v64 format."), kRomDesc);
+        ImGui::Separator();
+
+        ImGui::Text("%s", TR("ROM path:"));
+        // InputText takes most of the row, Browse takes the right
+        // edge. -100 reserves room for a 90 px button + padding.
+        ImGui::SetNextItemWidth(-100);
+        ImGui::InputText("##rompath", c.romPath, c.romPathSize);
+        ImGui::SameLine();
+        if (ImGui::Button(TR("Browse..."), ImVec2(90, 0))) {
+            std::string picked = ssb64::OpenFileDialog(
+                "Select your Super Smash Bros. ROM",
+                {"z64", "n64", "v64"});
+            if (!picked.empty()) {
+                std::snprintf(c.romPath, c.romPathSize, "%s",
+                              picked.c_str());
+                c.statusMsg.clear();
+                port_log("first_run: native picker -> %s\n",
+                         picked.c_str());
+            }
+        }
+
+        ImGui::TextDisabled("%s", TR("Tip: drag a .z64/.n64/.v64 onto the window, or click"));
+        ImGui::TextDisabled("%s", TR("     Browse... and pick your ROM dump."));
+        ImGui::Spacing();
+
+        if (c.state == State::Extracting) {
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f),
+                               "Extracting assets — please wait...");
+            // Indeterminate progress bar. Extraction does not emit
+            // progress callbacks, so we animate a marquee-style
+            // fraction that loops every ~2 s. ImGui doesn't
+            // ship a marquee helper; pass a fraction in [0,1]
+            // and an empty overlay string with a sliding
+            // SetNextItemWidth to fake it.
+            const float t = (c.frameCount % 120) / 120.0f;
+            ImGui::ProgressBar(t, ImVec2(-1, 0), "Extracting " SSB64_O2R_NAME "...");
+        } else if (!c.statusMsg.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                               "%s", c.statusMsg.c_str());
+        }
+
+        ImGui::Spacing();
+
+        const bool busy = (c.state == State::Extracting);
+        ImGui::BeginDisabled(busy);
+
+        if (ImGui::Button(TR("Extract"), ImVec2(120, 0))) {
+            if (!fs::exists(c.romPath)) {
+                c.statusMsg = "ROM not found at that path.";
+            } else {
+                c.state = State::Extracting;
+                c.statusMsg.clear();
+                std::string target = c.target;
+                std::string selectedRom = c.romPath;
+                c.extractFuture = std::async(std::launch::async, [target, selectedRom]() {
+                    return ExtractAssetsIfNeeded(target, true, selectedRom);
+                });
+                c.extractRunning = true;
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button(TR("Quit"), ImVec2(120, 0))) {
+            c.state = State::Cancelled;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndDisabled();
+        ImGui::EndPopup();
+    }
+}
+
+
+/* Pastes a window-dropped file path into the ROM input and clears
+ * the status line. */
+static void ConsumeDroppedRomPath(const std::shared_ptr<Ship::FileDropMgr>& fdm,
+                                  char* romPath, size_t romPathSize,
+                                  std::string& statusMsg)
+{
+if (fdm && fdm->FileDropped()) {
+    if (const char* p = fdm->GetDroppedFile()) {
+        std::snprintf(romPath, romPathSize, "%s", p);
+        statusMsg.clear();
+        port_log("first_run: drag-drop -> %s\n", p);
+    }
+    fdm->ClearDroppedFile();
+}
+}
+
+
+/* Polls the background extraction future; on completion moves state
+ * to Done or back to WaitingForRom with the error surfaced in
+ * statusMsg. */
+static void PollExtraction(bool& extractRunning,
+                           std::future<ExtractionResult>& extractFuture,
+                           State& state, std::string& statusMsg)
+{
+// Poll the background extraction. wait_for(0) returns ready
+// immediately if the thread finished since last frame.
+if (extractRunning && extractFuture.valid()) {
+    auto status =
+        extractFuture.wait_for(std::chrono::milliseconds(0));
+    if (status == std::future_status::ready) {
+        auto result = extractFuture.get();
+        extractRunning = false;
+        if (result.success) {
+            state = State::Done;
+        } else {
+            state = State::WaitingForRom;
+            statusMsg = "Extraction failed";
+            if (!result.error.empty()) {
+                statusMsg += ": " + result.error;
+            }
+            if (!result.logPath.empty()) {
+                statusMsg += "\nLog: " + result.logPath;
+            }
+        }
+    }
+}
+}
+
+
+/* "Consume everything" drop handler for the duration of the wizard.
+ * FileDropMgr::CallHandlers fires synchronously from the SDL_DROPFILE
+ * event in the SDL2 backend; if no handler claims the drop (returns
+ * true), it falls through to
+ *   gui->GetGameOverlay()->TextDrawNotification("Unsupported file
+ *                                                dropped, ignoring")
+ * which queues an overlay notification. GameOverlay has no font yet
+ * (Gui::Init / GameOverlay::Init runs during the first game frame),
+ * so the notification's later ImGui::PushFont(nullptr) deref crashes
+ * once the user clicks Extract and another frame draws.
+ *
+ * Registered/unregistered around the wizard so this only changes
+ * behavior here — outside the wizard, drops still surface the
+ * standard "unsupported" toast. */
+static bool SwallowWizardDrop(char* /*path*/) { return true; }
+
+/* Wizard teardown: join any in-flight extraction future (a cancel mid-
+ * extraction must not let the thread outlive the future's stored
+ * state), restore the normal drop handling, and report the outcome. */
+static bool FinishWizard(std::future<ExtractionResult>& extractFuture,
+                         const std::shared_ptr<Ship::FileDropMgr>& fdm,
+                         State state)
+{
+    if (extractFuture.valid()) {
+        extractFuture.wait();
+    }
+    if (fdm) {
+        fdm->UnregisterDropHandler(SwallowWizardDrop);
+    }
+    if (state == State::Cancelled) {
+        port_log("first_run: wizard cancelled by user\n");
+        return false;
+    }
+    port_log("first_run: wizard completed successfully\n");
+    return true;
+}
+
 bool RunFirstRunWizard(const std::string& target_o2r_path) {
     port_log("first_run: launching ImGui wizard\n");
 
@@ -572,7 +855,6 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
     std::snprintf(romPath, sizeof(romPath), "%s/%s.z64",
                   appData.c_str(), kRomBase);
 
-    enum class State { WaitingForRom, Extracting, Done, Cancelled };
     State state = State::WaitingForRom;
     std::string statusMsg;
 
@@ -597,26 +879,11 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
      * indeterminate progress bar animated on frameCount. */
     std::future<ExtractionResult> extractFuture;
     bool extractRunning = false;
+    WizardUiCtx ctx{target_o2r_path, romPath, sizeof(romPath),
+                    state, statusMsg, frameCount, extractFuture, extractRunning};
 
-    /* Register a "consume everything" drop handler for the duration of
-     * the wizard.  FileDropMgr::CallHandlers fires synchronously from
-     * the SDL_DROPFILE event in the SDL2 backend; if no handler claims
-     * the drop (returns true), it falls through to
-     *   gui->GetGameOverlay()->TextDrawNotification("Unsupported file
-     *                                                dropped, ignoring")
-     * which queues an overlay notification.  GameOverlay's font hasn't
-     * been initialized yet (Gui::Init / GameOverlay::Init normally runs
-     * during the first game frame), so the notification's later
-     * ImGui::PushFont(nullptr) deref crashes once the user clicks
-     * Extract and another frame draws.
-     *
-     * We register and unregister around the wizard so this only changes
-     * behavior here — outside the wizard, drops still surface the
-     * standard "unsupported" toast. */
-    using DropFunc = bool (*)(char*);
-    DropFunc consumer = [](char*) -> bool { return true; };
     if (fdm) {
-        fdm->RegisterDropHandler(consumer);
+        fdm->RegisterDropHandler(SwallowWizardDrop);
     }
 
     while (state != State::Done && state != State::Cancelled) {
@@ -638,102 +905,10 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
         // since last frame, paste its path into the input. SDL already
         // routes SDL_DROPFILE events to FileDropMgr via Fast3dWindow's
         // event handler; we just consume them here.
-        if (fdm && fdm->FileDropped()) {
-            if (const char* p = fdm->GetDroppedFile()) {
-                std::snprintf(romPath, sizeof(romPath), "%s", p);
-                statusMsg.clear();
-                port_log("first_run: drag-drop -> %s\n", p);
-            }
-            fdm->ClearDroppedFile();
-        }
+        ConsumeDroppedRomPath(fdm, romPath, sizeof(romPath), statusMsg);
 
         DrawWizardFrame([&] {
-            ImGui::OpenPopup("First-run setup");
-
-            const ImVec2 viewportCenter =
-                ImGui::GetMainViewport()->GetCenter();
-            ImGui::SetNextWindowPos(viewportCenter, ImGuiCond_Always,
-                                    ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(620, 0));
-
-            if (ImGui::BeginPopupModal("First-run setup", nullptr,
-                                       ImGuiWindowFlags_AlwaysAutoResize |
-                                       ImGuiWindowFlags_NoMove |
-                                       ImGuiWindowFlags_NoSavedSettings)) {
-                ImGui::TextWrapped("%s", TR("BattleShip needs to extract assets from your "
-                    "Nintendo 64 ROM before it can launch."));
-                ImGui::Spacing();
-                ImGui::TextWrapped(TR("Required: a %s dump in .z64, .n64, or .v64 format."), kRomDesc);
-                ImGui::Separator();
-
-                ImGui::Text("%s", TR("ROM path:"));
-                // InputText takes most of the row, Browse takes the right
-                // edge. -100 reserves room for a 90 px button + padding.
-                ImGui::SetNextItemWidth(-100);
-                ImGui::InputText("##rompath", romPath, sizeof(romPath));
-                ImGui::SameLine();
-                if (ImGui::Button(TR("Browse..."), ImVec2(90, 0))) {
-                    std::string picked = ssb64::OpenFileDialog(
-                        "Select your Super Smash Bros. ROM",
-                        {"z64", "n64", "v64"});
-                    if (!picked.empty()) {
-                        std::snprintf(romPath, sizeof(romPath), "%s",
-                                      picked.c_str());
-                        statusMsg.clear();
-                        port_log("first_run: native picker -> %s\n",
-                                 picked.c_str());
-                    }
-                }
-
-                ImGui::TextDisabled("%s", TR("Tip: drag a .z64/.n64/.v64 onto the window, or click"));
-                ImGui::TextDisabled("%s", TR("     Browse... and pick your ROM dump."));
-                ImGui::Spacing();
-
-                if (state == State::Extracting) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f),
-                                       "Extracting assets — please wait...");
-                    // Indeterminate progress bar. Extraction does not emit
-                    // progress callbacks, so we animate a marquee-style
-                    // fraction that loops every ~2 s. ImGui doesn't
-                    // ship a marquee helper; pass a fraction in [0,1]
-                    // and an empty overlay string with a sliding
-                    // SetNextItemWidth to fake it.
-                    const float t = (frameCount % 120) / 120.0f;
-                    ImGui::ProgressBar(t, ImVec2(-1, 0), "Extracting " SSB64_O2R_NAME "...");
-                } else if (!statusMsg.empty()) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
-                                       "%s", statusMsg.c_str());
-                }
-
-                ImGui::Spacing();
-
-                const bool busy = (state == State::Extracting);
-                ImGui::BeginDisabled(busy);
-
-                if (ImGui::Button(TR("Extract"), ImVec2(120, 0))) {
-                    if (!fs::exists(romPath)) {
-                        statusMsg = "ROM not found at that path.";
-                    } else {
-                        state = State::Extracting;
-                        statusMsg.clear();
-                        std::string target = target_o2r_path;
-                        std::string selectedRom = romPath;
-                        extractFuture = std::async(std::launch::async, [target, selectedRom]() {
-                            return ExtractAssetsIfNeeded(target, true, selectedRom);
-                        });
-                        extractRunning = true;
-                    }
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button(TR("Quit"), ImVec2(120, 0))) {
-                    state = State::Cancelled;
-                    ImGui::CloseCurrentPopup();
-                }
-
-                ImGui::EndDisabled();
-                ImGui::EndPopup();
-            }
+            DrawFirstRunModal(ctx);
         });
 
 #ifdef SSB64_TEST_HOOKS
@@ -742,46 +917,9 @@ bool RunFirstRunWizard(const std::string& target_o2r_path) {
         PortScreenshotMaybeCaptureFrame(frameCount);
 #endif
 
-        // Poll the background extraction. wait_for(0) returns ready
-        // immediately if the thread finished since last frame.
-        if (extractRunning && extractFuture.valid()) {
-            auto status =
-                extractFuture.wait_for(std::chrono::milliseconds(0));
-            if (status == std::future_status::ready) {
-                auto result = extractFuture.get();
-                extractRunning = false;
-                if (result.success) {
-                    state = State::Done;
-                } else {
-                    state = State::WaitingForRom;
-                    statusMsg = "Extraction failed";
-                    if (!result.error.empty()) {
-                        statusMsg += ": " + result.error;
-                    }
-                    if (!result.logPath.empty()) {
-                        statusMsg += "\nLog: " + result.logPath;
-                    }
-                }
-            }
-        }
+        PollExtraction(extractRunning, extractFuture, state, statusMsg);
     }
-    // If we're exiting with a future still in flight (cancel during
-    // extraction), block on it so the thread doesn't outlive the
-    // future's stored state.
-    if (extractFuture.valid()) {
-        extractFuture.wait();
-    }
-
-    if (fdm) {
-        fdm->UnregisterDropHandler(consumer);
-    }
-
-    if (state == State::Cancelled) {
-        port_log("first_run: wizard cancelled by user\n");
-        return false;
-    }
-    port_log("first_run: wizard completed successfully\n");
-    return true;
+    return FinishWizard(extractFuture, fdm, state);
 }
 
 } // namespace ssb64

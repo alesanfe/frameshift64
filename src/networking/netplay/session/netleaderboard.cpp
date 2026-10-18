@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -39,30 +40,6 @@ std::vector<LbRow>& sRows = *new std::vector<LbRow>;
 std::atomic<int>& sState = *new std::atomic<int>{0};      /* idle */
 std::string& sMyClaimed = *new std::string;               /* name we submitted under (for rank) */
 
-/* ws://host/... -> http://host, wss:// -> https://, path stripped. A bare
- * hostname gets https://. Empty input stays empty (callers gate on it). */
-std::string http_base(const char *server)
-{
-    std::string s = (server != nullptr) ? server : "";
-    const size_t scheme = s.find("://");
-    if (scheme != std::string::npos) {
-        const bool secure = s.compare(0, scheme, "wss") == 0 ||
-                            s.compare(0, scheme, "https") == 0;
-        s = s.substr(scheme + 3);
-        const size_t slash = s.find('/');
-        if (slash != std::string::npos) {
-            s.resize(slash);
-        }
-        s = (secure ? "https://" : "http://") + s;
-        return s;
-    }
-    const size_t slash = s.find('/');
-    if (slash != std::string::npos) {
-        s.resize(slash);
-    }
-    return s.empty() ? s : "https://" + s;
-}
-
 /* Mirror of sanitizeName() in services/netplay-lobby/src/domain/
  * leaderboard.mjs — the server strips anything outside its alphabet
  * (letters/digits + " _.-[]()", 24 chars, trimmed) before storing, so
@@ -70,13 +47,17 @@ std::string http_base(const char *server)
  * profile string (a name with e.g. "?" or emojis would never match a
  * row and "Your rank" would stay hidden). ASCII-only isalnum is the
  * pragmatic subset of the server's \p{L}\p{N} class. */
+bool lb_name_char(unsigned char u)
+{
+    return std::isalnum(u) != 0 || std::strchr(" _.-[]()", static_cast<char>(u)) != nullptr;
+}
+
 std::string sanitize_lb_name(const char *raw)
 {
     std::string out;
     for (const char *p = raw != nullptr ? raw : ""; *p != '\0' && out.size() < 24; ++p) {
         const unsigned char u = static_cast<unsigned char>(*p);
-        if (std::isalnum(u) || u == ' ' || u == '_' || u == '.' || u == '-' ||
-            u == '[' || u == ']' || u == '(' || u == ')') {
+        if (lb_name_char(u)) {
             out += static_cast<char>(u);
         }
     }
@@ -84,6 +65,35 @@ std::string sanitize_lb_name(const char *raw)
         out.pop_back();
     }
     return out;
+}
+
+
+/* Fills rows from a parsed "entries" array (server rows are
+ * {name,rating,wins,losses}); caps at 1000 so a hostile server cannot grow
+ * memory unbounded. */
+void parse_lb_entries(const nlohmann::json &entries, std::vector<LbRow> &rows)
+{
+    for (const auto &e : entries) {
+        if (rows.size() >= 1000) {
+            break;      /* cap: don't let the server grow memory */
+        }
+        if (!e.is_object()) {
+            continue;
+        }
+        LbRow r;
+        const auto name = e.find("name");
+        if (name != e.end() && name->is_string()) {
+            r.name = name->get<std::string>().substr(0, 64);
+        }
+        const auto num = [&e](const char *k) {
+            const auto it = e.find(k);
+            return (it != e.end() && it->is_number()) ? it->get<int>() : 0;
+        };
+        r.rating = num("rating");
+        r.wins = num("wins");
+        r.losses = num("losses");
+        rows.push_back(std::move(r));
+    }
 }
 
 } // namespace
@@ -97,7 +107,7 @@ extern "C" int port_netleaderboard_state(void)
 extern "C" void port_netleaderboard_fetch(const char *server)
 {
 #ifdef SSB64_HAVE_CURL
-    const std::string base = http_base(server);
+    const std::string base = ssb64::HttpBaseFromWsServer(server);
     if (base.empty()) {
         return;
     }
@@ -119,27 +129,7 @@ extern "C" void port_netleaderboard_fetch(const char *server)
             /* operator[]("entries") on a non-object doc is UB — check the
              * shape first (a hostile server could send anything). */
             if (doc.is_object() && doc["entries"].is_array()) {
-                for (const auto &e : doc["entries"]) {
-                    if (rows.size() >= 1000) {
-                        break;      /* cap: don't let the server grow memory */
-                    }
-                    if (!e.is_object()) {
-                        continue;
-                    }
-                    LbRow r;
-                    const auto name = e.find("name");
-                    if (name != e.end() && name->is_string()) {
-                        r.name = name->get<std::string>().substr(0, 64);
-                    }
-                    const auto num = [&e](const char *k) {
-                        const auto it = e.find(k);
-                        return (it != e.end() && it->is_number()) ? it->get<int>() : 0;
-                    };
-                    r.rating = num("rating");
-                    r.wins = num("wins");
-                    r.losses = num("losses");
-                    rows.push_back(std::move(r));
-                }
+                parse_lb_entries(doc["entries"], rows);
             } else {
                 state = -1;
             }
@@ -160,7 +150,7 @@ extern "C" void port_netleaderboard_fetch(const char *server)
 extern "C" void port_netleaderboard_submit(const char *server)
 {
 #ifdef SSB64_HAVE_CURL
-    const std::string base = http_base(server);
+    const std::string base = ssb64::HttpBaseFromWsServer(server);
     if (base.empty()) {
         return;
     }
@@ -220,7 +210,7 @@ extern "C" void port_netleaderboard_report_result(const char *server,
                                                   unsigned int duration_ticks)
 {
 #ifdef SSB64_HAVE_CURL
-    const std::string base = http_base(server);
+    const std::string base = ssb64::HttpBaseFromWsServer(server);
     const std::string opp = sanitize_lb_name(opp_name);
     const std::string me = sanitize_lb_name(CVarGetString("gProfiles.Name", "Player"));
     if (base.empty() || opp.empty() || me.empty() || code == nullptr ||
