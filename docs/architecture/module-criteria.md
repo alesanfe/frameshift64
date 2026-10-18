@@ -15,15 +15,15 @@ how important it is.
 | 1 | `application/` | Does it wire composition, boot, shutdown, or app-global state? | everything below |
 | 2 | `game/` | Does it implement or bridge *game* behaviour (decomp ABI, gameplay rules, mods)? | engine, shared |
 | 3 | `networking/` | Does it move bytes or presence to other machines? | game contracts, infra |
-| 4 | `interfaces/` | Does a human perceive it (eyes, ears, hands)? | feature contracts, infra |
+| 4 | `audio/` `input/` `presentation/` `rendering/` | Does a human perceive it (eyes, ears, hands)? | feature contracts, infra |
 | 5 | `platform/` | Does it exist only because this OS/toolchain lacks or differs? | infra contracts |
 | 6 | `config/` `i18n/` `observability/` `persistence/` | Is it a leaf service with *no* dependency on the rows above? | nothing (observability excepted) |
 | 7 | `shared/` | Is it a dependency-free contract (types, results) usable by all? | nothing |
 
 `resources/` was dissolved (2026-10): its members live next to their real
 owner — relocation + CSS asset providers under `game/engine/`, N64 audio
-backend under `interfaces/audio/n64/`, frame interpolation + shader
-manifest + HiRes packs under `interfaces/rendering/`. Resource-loading
+backend under `audio/n64/`, frame interpolation + shader
+manifest + HiRes packs under `rendering/`. Resource-loading
 code joins the module that consumes it instead of a catch-all bucket.
 
 ## Tie-breakers (the ambiguous cases that prompted this doc)
@@ -36,7 +36,7 @@ code joins the module that consumes it instead of a catch-all bucket.
   (The `core/` catch-all was flattened 2026-10-18 — leaf services are
   first-level dirs: `config/`, `i18n/`, `observability/`, `persistence/`.)
 - **Narration is presentation** — it's user-facing feedback, so
-  `interfaces/presentation/`, not `platform/` (moved 2026-10-18).
+  `presentation/`, not `platform/` (moved 2026-10-18).
 - **Watchdog/liveness is observability**, so `observability/` (moved
   2026-10-18); only `application/` may *start/stop* it.
 - **A CVar schema entry does not create a module.** Config keys live in

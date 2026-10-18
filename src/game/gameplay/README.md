@@ -3,9 +3,9 @@
 Opt-in enhancements the player can toggle. Infrastructure that only
 *delivers* features (updater, pack downloads, signing) lives in
 `src/application/update/` — not here. Non-gameplay feature packs live in their
-own top-level modules: `src/interfaces/audio/` (music/volume), `src/networking/social/`
-(Discord Rich Presence), `src/interfaces/input/` (controller remap + stick
-behaviors, `internal/buttons.h`), `src/interfaces/rendering/` (widescreen, HUD).
+own top-level modules: `src/audio/` (music/volume), `src/networking/social/`
+(Discord Rich Presence), `src/input/` (controller remap + stick
+behaviors, `internal/buttons.h`), `src/rendering/` (widescreen, HUD).
 
 | Subdir | Contents |
 |--------|----------|

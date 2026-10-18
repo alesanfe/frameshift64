@@ -51,13 +51,13 @@
 #include "game/engine/decomp/framebuffer_capture.h"
 #include "game/gameplay/enhancements.h"
 #include "first_run.h"
-#include "interfaces/presentation/UpdatePrompt.h"
-#include "interfaces/presentation/OnlineStatus.h"
-#include "interfaces/presentation/Toasts.h"
-#include "interfaces/presentation/PortMenu.h"
+#include "presentation/UpdatePrompt.h"
+#include "presentation/OnlineStatus.h"
+#include "presentation/Toasts.h"
+#include "presentation/PortMenu.h"
 #ifdef PORT_HIRES_ENABLED
-#include "interfaces/rendering/textures/hires/HiResHook.h"
-#include "interfaces/rendering/textures/hires/HiResPack.h"
+#include "rendering/textures/hires/HiResHook.h"
+#include "rendering/textures/hires/HiResPack.h"
 #endif
 #if !defined(__ANDROID__)
 #include "port_window_icon.h"
@@ -78,7 +78,7 @@
 #include "port_log.h"
 #include "fighter_registry.h"
 #include "focus.h"
-#include "interfaces/rendering/shaders/fast3d_shader_manifest.h"
+#include "rendering/shaders/fast3d_shader_manifest.h"
 
 #ifndef DISABLE_SCRIPTING
 #include <ship/scripting/ScriptLoader.h>
@@ -139,7 +139,7 @@ static std::string PortLocateFile(const std::string& basename) {
 }
 
 /* ── Console "reset" command ─────────────────────────────────────────────
- * The ESC-menu Reset button (src/interfaces/presentation/Menu.cpp) and the Ctrl/Cmd-R shortcut
+ * The ESC-menu Reset button (src/presentation/Menu.cpp) and the Ctrl/Cmd-R shortcut
  * (libultraship Gui.cpp) both Dispatch("reset") at the LUS console, but the
  * command was never registered, so both fell through to "[LUS] Command not
  * found" and did nothing.

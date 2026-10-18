@@ -635,8 +635,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # download service (HttpURLConnection via JNI on Android) and
     # in-process libzip/SHA-256, so they run on Android too.
     # The corresponding menu entries are gated with #if !defined(__ANDROID__)
-    # in src/interfaces/presentation/PortMenu.cpp so nothing references the removed symbols.
-    # (src/interfaces/rendering/textures/hires/ is NOT dropped here — it compiles on Android but runs
+    # in src/presentation/PortMenu.cpp so nothing references the removed symbols.
+    # (src/rendering/textures/hires/ is NOT dropped here — it compiles on Android but runs
     # opt-in with a reduced LRU budget; see the PORT_HIRES_ENABLED block.)
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
         "src/(application/update/updater/Updater|networking/social/DiscordRichPresence)\\.cpp$")
@@ -687,7 +687,7 @@ list(APPEND SSB64_SRC_PORT ${SSB64_GEN_HEADER_SRCS})
 # BEFORE the per-module partition — module OBJECT libraries snapshoot
 # SSB64_SRC_PORT at partition time.
 if(NOT SSB64_VERSION STREQUAL "us")
-    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/interfaces/rendering/textures/hires/")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/rendering/textures/hires/")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
@@ -732,7 +732,7 @@ ssb64_apply_sanitizers(ssb64_port_options)
 # the pool before the parent claims it (update<application,
 # decomp/hooks<engine, compatibility<platform). Roots are explicit —
 # name-matched filters would let e.g. "audio" steal
-# src/interfaces/audio/n64/.
+# src/audio/n64/.
 set(SSB64_MODULE_DIRS
     update application
     config i18n observability persistence
@@ -751,10 +751,10 @@ set(SSB64_MODULE_ROOT_hooks         src/game/engine/hooks)
 set(SSB64_MODULE_ROOT_engine        src/game/engine)
 set(SSB64_MODULE_ROOT_gameplay      src/game/gameplay)
 set(SSB64_MODULE_ROOT_modding       src/game/modding)
-set(SSB64_MODULE_ROOT_audio         src/interfaces/audio)
-set(SSB64_MODULE_ROOT_input         src/interfaces/input)
-set(SSB64_MODULE_ROOT_presentation  src/interfaces/presentation)
-set(SSB64_MODULE_ROOT_rendering     src/interfaces/rendering)
+set(SSB64_MODULE_ROOT_audio         src/audio)
+set(SSB64_MODULE_ROOT_input         src/input)
+set(SSB64_MODULE_ROOT_presentation  src/presentation)
+set(SSB64_MODULE_ROOT_rendering     src/rendering)
 set(SSB64_MODULE_ROOT_netplay       src/networking/netplay)
 set(SSB64_MODULE_ROOT_social        src/networking/social)
 set(SSB64_MODULE_ROOT_compatibility src/platform/compatibility)
@@ -784,10 +784,10 @@ set(SSB64_MODULE_SCOPE_compatibility
     src/platform/http src/platform/filesystem src/platform/window
     src/platform/android
     src/config src/observability src/persistence
-    src/interfaces/rendering src/interfaces/rendering/interpolation
+    src/rendering src/rendering/interpolation
     src/game/engine/relocation
-    src/interfaces/rendering/shaders
-    src/interfaces/rendering/textures/hires)
+    src/rendering/shaders
+    src/rendering/textures/hires)
 set(SSB64_MODULE_SCOPE_platform
     src/platform src/platform/coroutine src/platform/http
     src/platform/filesystem src/platform/window src/platform/android
@@ -820,31 +820,31 @@ set(SSB64_MODULE_SCOPE_social
     src/game/gameplay                  # enhancements.h — presence reads game state
     src/observability)
 set(SSB64_MODULE_SCOPE_audio
-    src/interfaces/audio src/interfaces/audio/n64
+    src/audio src/audio/n64
     src/game/gameplay                  # enhancements.h
     src/observability)
 set(SSB64_MODULE_SCOPE_input
-    src/interfaces/input src/interfaces/input/internal
+    src/input src/input/internal
     src/networking/netplay/domain      # netrules.h — input sync rules
     src/game/gameplay
     src/observability)
 set(SSB64_MODULE_SCOPE_rendering
-    src/interfaces/rendering src/interfaces/rendering/widescreen
-    src/interfaces/rendering/cosmetics
-    src/interfaces/rendering/interpolation
-    src/interfaces/rendering/shaders src/interfaces/rendering/textures/hires
+    src/rendering src/rendering/widescreen
+    src/rendering/cosmetics
+    src/rendering/interpolation
+    src/rendering/shaders src/rendering/textures/hires
     src/game/gameplay                  # enhancements.h
     src/observability)
 set(SSB64_MODULE_SCOPE_presentation
-    src/interfaces/presentation
+    src/presentation
     src/application                    # app_mods.h — mods panel
     src/config src/i18n src/persistence
     src/observability
     src/game/gameplay                  # enhancements.h
     src/networking/netplay/session src/networking/netplay/transport
     src/platform src/platform/filesystem
-    src/interfaces/rendering/interpolation
-    src/interfaces/rendering/textures/hires)
+    src/rendering/interpolation
+    src/rendering/textures/hires)
 set(SSB64_MODULE_SCOPE_decomp
     src/game/engine/decomp
     src/game/engine/relocation)          # RelocFile/RelocPointerTable
@@ -1044,7 +1044,7 @@ endif()
 
 # Hi-res texture pack support is US-only (desktop AND Android). On Android
 # it compiles but defaults to OFF and runs with a smaller decoded-RGBA8 LRU
-# budget (see src/interfaces/rendering/textures/hires/HiResPack.h: kHiResEnabledDefault / kDefaultLruBudgetMB)
+# budget (see src/rendering/textures/hires/HiResPack.h: kHiResEnabledDefault / kDefaultLruBudgetMB)
 # plus a per-texture upscale cap, so a pack can't blow the mobile memory
 # budget and trip the low-memory killer; the dev dump-tooling menu items are
 # still gated off touch UI in PortMenu.cpp.
@@ -1052,7 +1052,7 @@ endif()
 # came out of the US ROM fast-path; JP rendering hits different hash inputs
 # (different glyph art for VS-records, JP-only menus, plus palette/sprite
 # nuances on shared assets), so a US-built pack would silently miss on JP
-# and no JP-only pack has been authored. Drop src/interfaces/rendering/textures/hires/ from the JP build
+# and no JP-only pack has been authored. Drop src/rendering/textures/hires/ from the JP build
 # entirely and gate the port.cpp / PortMenu.cpp integration on PORT_HIRES_ENABLED.
 if(SSB64_VERSION STREQUAL "us")
     list(APPEND SSB64_COMPILE_DEFS PORT_HIRES_ENABLED=1)
@@ -1158,7 +1158,7 @@ endif()
 
 # N64 audio library — synthesis driver, sequence player, voice management.
 # These decomp files are compiled with PORT defines; the CPU Acmd interpreter
-# (src/interfaces/audio/n64/mixer.h) replaces RSP microcode via macro substitution.
+# (src/audio/n64/mixer.h) replaces RSP microcode via macro substitution.
 set(SSB64_NAUDIO_PORT
     components/decomp/src/libultra/n_audio/n_env.c             # Core: synth driver, audio frame, pull chain, CSP, FX, event queue
     components/decomp/src/libultra/n_audio/n_synaddplayer.c     # Add player to synth driver
@@ -1211,13 +1211,12 @@ target_include_directories(ssb64_game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/hooks
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/modding
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/gameplay
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/audio
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/input
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/presentation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/widescreen
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/cosmetics
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/input
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/cosmetics
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/domain
@@ -1226,11 +1225,11 @@ target_include_directories(ssb64_game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/rollback
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/social
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/relocation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/interpolation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/audio/n64
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/shaders
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/interpolation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/n64
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/shaders
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/css_icons
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/textures/hires
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/textures/hires
     ${CMAKE_BINARY_DIR}/generated/include/us   # reloc_data.us.h selector target
     ${CMAKE_BINARY_DIR}/generated/include/jp
     ${CMAKE_BINARY_DIR}/generated/src/us      # RelocFileTable.us.h selector target
@@ -1502,13 +1501,12 @@ target_include_directories(ssb64_src_flat_includes INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/hooks
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/modding
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/gameplay
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/audio
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/input
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/presentation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/widescreen
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/cosmetics
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/input
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/widescreen
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/cosmetics
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/domain
@@ -1517,11 +1515,11 @@ target_include_directories(ssb64_src_flat_includes INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/netplay/rollback
     ${CMAKE_CURRENT_SOURCE_DIR}/src/networking/social
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/relocation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/interpolation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/audio/n64
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/shaders
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/interpolation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/n64
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/shaders
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/css_icons
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/interfaces/rendering/textures/hires
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/textures/hires
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/coroutine
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/http
@@ -1591,7 +1589,7 @@ foreach(mod IN LISTS SSB64_MODULE_DIRS)
 endforeach()
 if (WIN32)
     # src/observability/port_symbolize.cpp (SyncTest diagnostics), src/networking/netplay/transport/udp_transport.cpp, src/networking/netplay/transport/websocket_transport.cpp
-    # sapi: §9 menu narration (src/interfaces/presentation/narration.cpp)
+    # sapi: §9 menu narration (src/presentation/narration.cpp)
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt sapi ole32)
 endif()
 

@@ -19,7 +19,7 @@
  * redefine them to call CPU functions directly. The 'pkt' parameter
  * (command list pointer) is evaluated but discarded.
  *
- * Reference: Starship (Star Fox 64) PC port — src/interfaces/audio/mixer.c
+ * Reference: Starship (Star Fox 64) PC port — src/audio/mixer.c
  */
 
 #ifndef PORT_AUDIO_MIXER_H

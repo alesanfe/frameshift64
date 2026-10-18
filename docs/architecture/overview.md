@@ -46,8 +46,8 @@ src/              — Modern C++ port layer, by responsibility:
                   delivery machinery, not features
   presentation/   imgui menu, UI widgets, dialogs, online status
                   (asset/relocation glue lives with its owner:
-                  game/engine/relocation + css_icons, interfaces/audio/n64,
-                  interfaces/rendering interpolation+shaders+textures/hires)
+                  game/engine/relocation + css_icons, audio/n64,
+                  rendering interpolation+shaders+textures/hires)
   platform/       coroutine/ (fibers .cpp+.S), io/ (http, download_service,
                   zip), window icon, android/, switch/
   observability/  port_log (locked, JSONL mirror, sinks)
@@ -162,7 +162,7 @@ The generator is the source of truth (`tools/code-generation/`).
 - components/decomp/src/ovl8/, `components/decomp/src/db/` — Debug overlay/menu (kept on the
   `port-patches` branch of the decomp submodule only as headers transitively
   required by `sys/develop.h`; no `.c` files compiled)
-- components/decomp/src/interfaces/audio/, components/decomp/src/particles/ — Asset authoring sources;
+- components/decomp/src/audio/, components/decomp/src/particles/ — Asset authoring sources;
   the port consumes these via Torch instead. Removed from `port-patches`.
 - components/decomp/src/libultra/{io,libc,os,sp,vimodes}/ — Replaced by libultraship.
   Removed from `port-patches`. Port still compiles `libultra/{gu,n_audio,audio}/`.

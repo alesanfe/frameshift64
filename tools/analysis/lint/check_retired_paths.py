@@ -42,10 +42,7 @@ RETIRED_DIRS = {
     "src/distribution": "src/application/update/",
     "src/integration": "src/game/{engine,modding}/",
     "src/gameplay": "src/game/gameplay/",
-    "src/audio": "src/interfaces/audio/",
-    "src/input": "src/interfaces/input/",
-    "src/rendering": "src/interfaces/rendering/",
-    "src/presentation": "src/interfaces/presentation/",
+    "src/interfaces": "src/{audio,input,presentation,rendering}/",
     "src/netplay": "src/networking/netplay/",
     "src/social": "src/networking/social/",
     "src/compatibility": "src/platform/compatibility/",
@@ -118,9 +115,10 @@ RETIRED_REF = re.compile(
     # 2026-10-18: config/i18n/observability/persistence flattened back OUT
     # of src/core/ and are live again; src/core/ itself is now retired.
     r'|src/(?:diagnostics|distribution|integration|gameplay'
-    r'|compatibility|netplay|social|audio|input|rendering'
-    r'|presentation)/'
+    r'|compatibility|netplay|social)/'
     r'|src/core/'
+    r'|src/interfaces/'
+    r'|"interfaces/(?:audio|input|presentation|rendering)/'
     # tools/ + packaging/ regrouping (2026-10). The components/* submodule
     # roots aren't scanned here: <libultraship/...> include prefixes stay
     # legal (the move changed disk location, not include namespace).

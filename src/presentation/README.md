@@ -1,4 +1,4 @@
-# src/interfaces/presentation — ImGui menu layer
+# src/presentation — ImGui menu layer
 
 The port's UI: `Menu`/`PortMenu`/`MenuTypes`, `UIWidgets`,
 `OnlineStatus`, `UpdatePrompt`, `native_dialog` (OS file pickers) and

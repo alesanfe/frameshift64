@@ -48,22 +48,22 @@ INCLUDE_PREFIX_MODULE = {
     "modding": "src/game/modding",
     "gameplay": "src/game/gameplay",
     "integration": "src/game/engine",
-    "audio": "src/interfaces/audio",
-    "input": "src/interfaces/input",
-    "presentation": "src/interfaces/presentation",
-    "rendering": "src/interfaces/rendering",
+    "audio": "src/audio",
+    "input": "src/input",
+    "presentation": "src/presentation",
+    "rendering": "src/rendering",
     "netplay": "src/networking/netplay",
     "social": "src/networking/social",
     "platform": "src/platform",
     "compatibility": "src/platform/compatibility",
 }
-GROUP_PREFIXES = ("game/", "interfaces/", "networking/")
+GROUP_PREFIXES = ("game/", "networking/")
 
 # module -> set of src modules it may NOT include. 'decomp' handled separately.
 ALL_PRODUCT = {"src/application", "src/application/update",
-               "src/interfaces/presentation", "src/game/gameplay",
-               "src/interfaces/audio", "src/networking/social",
-               "src/interfaces/input", "src/networking/netplay",
+               "src/presentation", "src/game/gameplay",
+               "src/audio", "src/networking/social",
+               "src/input", "src/networking/netplay",
                "src/platform", "src/platform/compatibility",
                "src/game/engine", "src/game/modding",
                "src/game/engine/relocation"}
@@ -84,48 +84,48 @@ FORBIDDEN = {
                           | {"src/config", "src/persistence"},
     # rendering/cosmetics + widescreen are gameplay features that live in the
     # rendering module — they may pull the gameplay facade (enhancements.h).
-    "src/interfaces/rendering": ALL_PRODUCT - {"src/game/gameplay"}
+    "src/rendering": ALL_PRODUCT - {"src/game/gameplay"}
                           | {"src/persistence", "src/config"},
-    "src/platform/compatibility": {"src/application", "src/interfaces/presentation",
-                          "src/game/gameplay", "src/interfaces/audio",
-                          "src/networking/social", "src/interfaces/input",
+    "src/platform/compatibility": {"src/application", "src/presentation",
+                          "src/game/gameplay", "src/audio",
+                          "src/networking/social", "src/input",
                           "src/application/update", "src/networking/netplay",
                           "src/game/engine", "src/game/modding",
                "src/game/engine/relocation"},
-    "src/platform":      {"src/application", "src/interfaces/presentation",
-                          "src/game/gameplay", "src/interfaces/audio",
-                          "src/networking/social", "src/interfaces/input",
+    "src/platform":      {"src/application", "src/presentation",
+                          "src/game/gameplay", "src/audio",
+                          "src/networking/social", "src/input",
                           "src/application/update", "src/networking/netplay",
                           "src/game/engine", "src/game/modding",
                           "src/game/engine/relocation",
-                          "src/interfaces/rendering",
+                          "src/rendering",
                           "src/persistence", "src/config",
                           "src/i18n"},
     # game/engine (facade + components/decomp/hooks adapter layer) and game/modding:
     # allowed to see platform/components/decomp/libultraship — never the
     # product top layers.
     "src/game/engine":   {"src/application", "src/application/update",
-                          "src/interfaces/presentation"},
+                          "src/presentation"},
     # relocation is the shared asset-reloc ABI — engine peers plus the
     # consumers granted in SSB64_MODULE_SCOPE_* (compatibility/resources/
     # decomp). Same product restrictions as engine itself.
     "src/game/engine/relocation": {"src/application", "src/application/update",
-                          "src/interfaces/presentation"},
-    "src/game/modding":  {"src/application", "src/interfaces/presentation"},
-    "src/application/update":  {"src/application", "src/interfaces/presentation"},
-    "src/game/gameplay":      {"src/application", "src/interfaces/presentation"},
-    "src/interfaces/audio":         {"src/application", "src/interfaces/presentation"},
-    "src/networking/social":        {"src/application", "src/interfaces/presentation"},
-    "src/interfaces/input":         {"src/application", "src/interfaces/presentation"},
-    "src/networking/netplay":       {"src/application", "src/interfaces/presentation",
-                          "src/game/gameplay", "src/interfaces/audio",
-                          "src/networking/social", "src/interfaces/input",
+                          "src/presentation"},
+    "src/game/modding":  {"src/application", "src/presentation"},
+    "src/application/update":  {"src/application", "src/presentation"},
+    "src/game/gameplay":      {"src/application", "src/presentation"},
+    "src/audio":         {"src/application", "src/presentation"},
+    "src/networking/social":        {"src/application", "src/presentation"},
+    "src/input":         {"src/application", "src/presentation"},
+    "src/networking/netplay":       {"src/application", "src/presentation",
+                          "src/game/gameplay", "src/audio",
+                          "src/networking/social", "src/input",
                           "src/game/engine/relocation",
                           "src/application/update"},
-    "src/interfaces/presentation":  {"src/game/engine", "src/game/modding",
+    "src/presentation":  {"src/game/engine", "src/game/modding",
                           "decomp"},
     # application: top of the stack — everything allowed.
-    "decomp":            {"src/interfaces/presentation", "src/application",
+    "decomp":            {"src/presentation", "src/application",
                           "src/platform"},
 }
 
@@ -174,7 +174,7 @@ def module_of(rel: str) -> str:
                 len(parts) > 3 and parts[3] == 'relocation':
             return 'src/game/engine/relocation'
         # Group dirs hold leaf modules one level deeper.
-        if parts[1] in ('core', 'game', 'interfaces', 'networking'):
+        if parts[1] in ('game', 'networking'):
             return f"src/{parts[1]}/{parts[2]}"
         if parts[1] == 'application' and parts[2] == 'update':
             return 'src/application/update'

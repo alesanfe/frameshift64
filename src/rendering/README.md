@@ -1,4 +1,4 @@
-# src/interfaces/rendering — display-list range validation
+# src/rendering — display-list range validation
 
 `port_dl_ranges` bounds-checks display-list reads against known RDRAM
 segments — the guard that turns wild pointers into diagnosable faults
