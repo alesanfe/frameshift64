@@ -235,16 +235,20 @@ printf "$(RED)[ERROR]$(RESET) %s\n" "$(1)" >&2
 endef
 
 .PHONY: help help-advanced info doctor \
-        setup bootstrap dependencies submodules submodules-check submodules-update \
-        configure reconfigure configure-clean build build-all rebuild run \
-        codegen codegen-check assets generate-yamls synth-verify \
+        setup bootstrap dependencies install install-python install-node lock-python \
+        submodules submodules-check submodules-update \
+        configure reconfigure configure-clean build build-all rebuild dev-build run \
+        codegen codegen-check assets generate-yamls generate-sources synth-verify \
         test test-unit test-integration test-contract test-suite test-list test-all ctest \
-        e2e e2e-netplay e2e-lobby e2e-lan e2e-compat e2e-spectate \
+        test-determinism verify verify-fast \
+        e2e e2e-netplay e2e-lobby e2e-impaired e2e-lan e2e-compat e2e-spectate \
         e2e-replay-takeover e2e-mutation e2e-soak e2e-local \
         fuzz fuzz-all coverage coverage-python \
-        check quick-check ci \
-        lint lint-skip-configure format format-check \
-        module-deps env-check docs-check retired-paths-check cvar-check gen-headers-check \
+        check quick-check ci layout-check prune regenerate \
+        lint lint-skip-configure format format-check static-analysis \
+        sanitizers asan ubsan \
+        module-deps env-check docs-check retired-paths-check cvar-check \
+        gen-headers-check generated-check \
         security semgrep dependency-audit sbom release-binary-check \
         lobby-install lobby-test lobby-dev \
         mods-test \
@@ -253,7 +257,8 @@ endef
         release-check release-dry-run \
         android android-install android-test uwp \
         docs docs-serve \
-        clean clean-build clean-logs clean-reports clean-tests distclean reset \
+        clean clean-build clean-logs clean-reports clean-tests clean-dependencies \
+        clean-generated distclean reset \
         print-% guard-region guard-preset guard-configured guard-rom guard-exe
 
 # ------------------------------------------------------------------------------
