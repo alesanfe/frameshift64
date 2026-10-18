@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """check_cvar_schema.py — every literal `g*` CVar key used in src/ must be
-declared in src/core/config/schema.cpp (TD-005).
+declared in src/config/schema.cpp (TD-005).
 
 The schema is the single catalog of first-party config keys: it drives
 boot-time range clamping, type-mismatch warnings, the unknown-key policy,
@@ -48,7 +48,7 @@ def main() -> int:
 
     if missing:
         print("check_cvar_schema: g* CVar keys used in src/ but not declared in "
-              "src/core/config/schema.cpp:")
+              "src/config/schema.cpp:")
         for key in sorted(missing):
             print(f"  {key}")
             for src in missing[key][:3]:

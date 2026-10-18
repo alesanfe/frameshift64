@@ -1,4 +1,4 @@
-# src/core/observability — logging infrastructure
+# src/observability — logging infrastructure
 
 `port_log.{c,h}` — the process-wide logger. Locked across platforms
 (Interlocked/libnx Mutex/pthread), JSONL mirror via `SSB64_LOG_JSON`,

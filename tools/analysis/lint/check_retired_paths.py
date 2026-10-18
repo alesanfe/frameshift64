@@ -34,10 +34,11 @@ RETIRED_DIRS = {
     "assets/controllers": "config/controllers/",
     "assets/custom": "assets/fonts/",
     "assets/readme-stats": "assets/branding/readme/",
-    # src/ consolidation (2026-10-16): flat modules -> grouped tree
-    "src/diagnostics": "src/core/observability/",
-    "src/config": "src/core/config/",
-    "src/persistence": "src/core/persistence/",
+    # src/ consolidation (2026-10-16): flat modules -> grouped tree;
+    # src/core/ flattened back out (2026-10-18): config/i18n/observability/
+    # persistence are first-level dirs again.
+    "src/diagnostics": "src/observability/",
+    "src/core": "src/{config,i18n,observability,persistence}/",
     "src/distribution": "src/application/update/",
     "src/integration": "src/game/{engine,modding}/",
     "src/gameplay": "src/game/gameplay/",
@@ -113,12 +114,13 @@ RETIRED_REF = re.compile(
     # config/analysis/ consolidation (2026-10): semgrep + static-analysis
     r'|config/(?:semgrep|static-analysis)/'
     # src/ consolidation (2026-10-16): retired flat module dirs must not
-    # reappear as path literals in source includes or build files. New
-    # grouped paths (src/core/config/ etc.) don't contain these fragments.
-    r'|src/(?:diagnostics|distribution|integration|gameplay|observability'
-    r'|persistence|compatibility|netplay|social|audio|input|rendering'
+    # reappear as path literals in source includes or build files.
+    # 2026-10-18: config/i18n/observability/persistence flattened back OUT
+    # of src/core/ and are live again; src/core/ itself is now retired.
+    r'|src/(?:diagnostics|distribution|integration|gameplay'
+    r'|compatibility|netplay|social|audio|input|rendering'
     r'|presentation)/'
-    r'|src/config/'
+    r'|src/core/'
     # tools/ + packaging/ regrouping (2026-10). The components/* submodule
     # roots aren't scanned here: <libultraship/...> include prefixes stay
     # legal (the move changed disk location, not include namespace).

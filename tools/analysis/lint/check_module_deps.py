@@ -41,10 +41,10 @@ INCLUDE_PREFIX_MODULE = {
     "application": "src/application",
     "update": "src/application/update",
     "distribution": "src/application/update",
-    "config": "src/core/config",
-    "diagnostics": "src/core/observability",
-    "observability": "src/core/observability",
-    "persistence": "src/core/persistence",
+    "config": "src/config",
+    "diagnostics": "src/observability",
+    "observability": "src/observability",
+    "persistence": "src/persistence",
     "modding": "src/game/modding",
     "gameplay": "src/game/gameplay",
     "integration": "src/game/engine",
@@ -57,7 +57,7 @@ INCLUDE_PREFIX_MODULE = {
     "platform": "src/platform",
     "compatibility": "src/platform/compatibility",
 }
-GROUP_PREFIXES = ("core/", "game/", "interfaces/", "networking/")
+GROUP_PREFIXES = ("game/", "interfaces/", "networking/")
 
 # module -> set of src modules it may NOT include. 'decomp' handled separately.
 ALL_PRODUCT = {"src/application", "src/application/update",
@@ -71,21 +71,21 @@ ALL_PRODUCT = {"src/application", "src/application/update",
 # module -> set of src modules it may NOT include. 'decomp' handled separately.
 FORBIDDEN = {
     # leaf modules — no product deps (external/decomp headers only)
-    "src/core/observability": ALL_PRODUCT | {"src/core/persistence",
-                          "src/core/config", "src/core/i18n"},
+    "src/observability": ALL_PRODUCT | {"src/persistence",
+                          "src/config", "src/i18n"},
     # leaf modules may log through observability — it's the shared sink.
-    "src/core/persistence":   ALL_PRODUCT | {"src/core/config",
-                          "src/core/i18n"},
-    "src/core/config":        ALL_PRODUCT | {"src/core/persistence",
-                          "src/core/i18n"},
+    "src/persistence":   ALL_PRODUCT | {"src/config",
+                          "src/i18n"},
+    "src/config":        ALL_PRODUCT | {"src/persistence",
+                          "src/i18n"},
     # i18n leaf — may use platform filesystem probing (lang/ lookup) and the
     # observability log sink; nothing else.
-    "src/core/i18n":          ALL_PRODUCT - {"src/platform"}
-                          | {"src/core/config", "src/core/persistence"},
+    "src/i18n":          ALL_PRODUCT - {"src/platform"}
+                          | {"src/config", "src/persistence"},
     # rendering/cosmetics + widescreen are gameplay features that live in the
     # rendering module — they may pull the gameplay facade (enhancements.h).
     "src/interfaces/rendering": ALL_PRODUCT - {"src/game/gameplay"}
-                          | {"src/core/persistence", "src/core/config"},
+                          | {"src/persistence", "src/config"},
     "src/platform/compatibility": {"src/application", "src/interfaces/presentation",
                           "src/game/gameplay", "src/interfaces/audio",
                           "src/networking/social", "src/interfaces/input",
@@ -99,8 +99,8 @@ FORBIDDEN = {
                           "src/game/engine", "src/game/modding",
                           "src/game/engine/relocation",
                           "src/interfaces/rendering",
-                          "src/core/persistence", "src/core/config",
-                          "src/core/i18n"},
+                          "src/persistence", "src/config",
+                          "src/i18n"},
     # game/engine (facade + components/decomp/hooks adapter layer) and game/modding:
     # allowed to see platform/components/decomp/libultraship — never the
     # product top layers.

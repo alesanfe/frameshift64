@@ -17,7 +17,7 @@ how important it is.
 | 3 | `networking/` | Does it move bytes or presence to other machines? | game contracts, infra |
 | 4 | `interfaces/` | Does a human perceive it (eyes, ears, hands)? | feature contracts, infra |
 | 5 | `platform/` | Does it exist only because this OS/toolchain lacks or differs? | infra contracts |
-| 6 | `core/` | Is it a leaf service with *no* dependency on any row above? | nothing (observability excepted) |
+| 6 | `config/` `i18n/` `observability/` `persistence/` | Is it a leaf service with *no* dependency on the rows above? | nothing (observability excepted) |
 | 7 | `shared/` | Is it a dependency-free contract (types, results) usable by all? | nothing |
 
 `resources/` was dissolved (2026-10): its members live next to their real
@@ -31,25 +31,26 @@ code joins the module that consumes it instead of a catch-all bucket.
 - **Netplay is a feature, not transport plumbing.** `src/networking/` owns
   protocol+rollback+session; `src/platform/http` owns the generic HTTP GET.
   Downloads for updates/mods use platform/http and live in the feature dir.
-- **Save/profile state lives in `core/persistence`**, not `game/` — the
+- **Save/profile state lives in `persistence/`**, not `game/` — the
   profile snapshot is a service other features consume, not gameplay logic.
-  (Debated; `persistence` may later move to `infrastructure/` — see the
-  `core/` sunsetting note.)
+  (The `core/` catch-all was flattened 2026-10-18 — leaf services are
+  first-level dirs: `config/`, `i18n/`, `observability/`, `persistence/`.)
 - **Narration is presentation** — it's user-facing feedback, so
   `interfaces/presentation/`, not `platform/` (moved 2026-10-18).
-- **Watchdog/liveness is observability**, so `core/observability/` (moved
+- **Watchdog/liveness is observability**, so `observability/` (moved
   2026-10-18); only `application/` may *start/stop* it.
 - **A CVar schema entry does not create a module.** Config keys live in
-  `core/config/schema.cpp` until that file outgrows ~500 LOC, then split
-  by domain under `core/config/schema/`.
+  `config/schema.cpp` until that file outgrows ~500 LOC, then split
+  by domain under `config/schema/`.
 
 ## Hard rules
 
 1. `decomp` never sees `src/` headers; `game/engine/decomp` is the only
    bridge home. A `#include` past the `port_*` ABI is an instant reject.
-2. `core/` and `shared/` may not depend upward — no game/menu/netplay
-   includes. `observability` (port_log) is the sanctioned exception every
-   scope already carries.
+2. Leaf services (`config/`, `i18n/`, `observability/`, `persistence/`) and
+   `shared/` may not depend upward — no game/menu/netplay includes.
+   `observability` (port_log) is the sanctioned exception every scope
+   already carries.
 3. No `utils/`, `common/`, `misc/` — a file with no membership answer is
    usually `shared/` (pure contract) or mis-scoped feature code.
 4. Adding a top-level `src/` dir requires updating this file, the

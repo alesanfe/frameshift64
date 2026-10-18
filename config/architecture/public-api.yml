@@ -13,13 +13,13 @@ public:
   # decomp ↔ port C ABI — the only surface decomp may call
   - src/game/engine/decomp/port_types.h
   - src/game/engine/port.h
-  - src/core/observability/port_watchdog.h
-  - src/core/observability/port_log.h   # decomp logs through it directly
-  - src/core/persistence/port_save.h
+  - src/observability/port_watchdog.h
+  - src/observability/port_log.h   # decomp logs through it directly
+  - src/persistence/port_save.h
   # error taxonomy — part of the module contract (error-model.md)
   - src/shared/result/error_code.h
   - src/shared/result/result.h
   # config schema — consumed by tooling + menu
-  - src/core/config/schema.h
+  - src/config/schema.h
 
 retired: {}

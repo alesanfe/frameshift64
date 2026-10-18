@@ -33,7 +33,7 @@ function(ssb64_stage_asset_recipes source destination version)
     # Torch reads "config.yml" from its CWD at runtime — the staged name is
     # part of its contract even though the source lives in config/project/.
     configure_file("${source}/config/project/config.yml" "${destination}/config.yml" COPYONLY)
-    # i18n string tables (src/core/i18n/Locale.cpp loads lang/<code>.json
+    # i18n string tables (src/i18n/Locale.cpp loads lang/<code>.json
     # next to the binary; missing files simply keep the English source
     # literals).
     file(GLOB langs "${source}/assets/lang/*.json")

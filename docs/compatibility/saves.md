@@ -27,7 +27,7 @@ field-level assertions a unit test runs after load.
 
 ## Current state (2026-10-14)
 
-`src/core/persistence/port_save.cpp` keeps the SRAM image as a flat 32 KiB chip mirror —
+`src/persistence/port_save.cpp` keeps the SRAM image as a flat 32 KiB chip mirror —
 no in-image header, because every game offset is absolute. Format metadata
 lives in a `ssb64_save.meta` sidecar written on first save:
 

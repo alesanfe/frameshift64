@@ -1,4 +1,4 @@
-# src/core/config — settings schema
+# src/config — settings schema
 
 `schema.cpp` declares the CVar/settings surface the menu and CVars
 system expose (defaults, ranges, categories). Validated by

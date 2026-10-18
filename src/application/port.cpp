@@ -26,7 +26,7 @@
 #include <typeinfo>
 #include <unordered_set>
 
-#include "core/persistence/port_save.h"
+#include "persistence/port_save.h"
 #include "game/engine/relocation/ResourceType.h"
 #include "game/engine/relocation/RelocFileFactory.h"
 #include "game/engine/relocation/SyntheticReloc.h"
@@ -44,8 +44,8 @@
 #include <fast/resource/factory/VertexFactory.h>
 
 #include "app_paths.h"
-#include "core/config/schema.h"
-#include "core/observability/crash_bundle.h"
+#include "config/schema.h"
+#include "observability/crash_bundle.h"
 #include "application/update/integrity/ReleaseSig.h"
 #include "game/engine/decomp/audio_bridge.h"
 #include "game/engine/decomp/framebuffer_capture.h"

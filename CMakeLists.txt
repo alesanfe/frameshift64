@@ -742,10 +742,10 @@ set(SSB64_MODULE_DIRS
     compatibility platform)
 set(SSB64_MODULE_ROOT_update        src/application/update)
 set(SSB64_MODULE_ROOT_application   src/application)
-set(SSB64_MODULE_ROOT_config        src/core/config)
-set(SSB64_MODULE_ROOT_i18n          src/core/i18n)
-set(SSB64_MODULE_ROOT_observability src/core/observability)
-set(SSB64_MODULE_ROOT_persistence   src/core/persistence)
+set(SSB64_MODULE_ROOT_config        src/config)
+set(SSB64_MODULE_ROOT_i18n          src/i18n)
+set(SSB64_MODULE_ROOT_observability src/observability)
+set(SSB64_MODULE_ROOT_persistence   src/persistence)
 set(SSB64_MODULE_ROOT_decomp        src/game/engine/decomp)
 set(SSB64_MODULE_ROOT_hooks         src/game/engine/hooks)
 set(SSB64_MODULE_ROOT_engine        src/game/engine)
@@ -768,22 +768,22 @@ set(SSB64_MODULE_ROOT_platform      src/platform)
 # qualified `src/<module>/...` includes resolve via the src/ root entry,
 # which scoped modules do not get (the lint still covers that channel).
 set(SSB64_MODULE_SCOPE_observability
-    src/core/observability)
+    src/observability)
 set(SSB64_MODULE_SCOPE_config
-    src/core/config
-    src/core/observability)            # port_log.h — shared log sink
+    src/config
+    src/observability)            # port_log.h — shared log sink
 set(SSB64_MODULE_SCOPE_persistence
-    src/core/persistence
-    src/core/observability)
+    src/persistence
+    src/observability)
 set(SSB64_MODULE_SCOPE_i18n
-    src/core/i18n
-    src/core/observability             # port_log.h
+    src/i18n
+    src/observability             # port_log.h
     src/platform/filesystem)           # app_paths.h — lang/ lookup
 set(SSB64_MODULE_SCOPE_compatibility
     src/platform/compatibility src/platform src/platform/coroutine
     src/platform/http src/platform/filesystem src/platform/window
     src/platform/android
-    src/core/config src/core/observability src/core/persistence
+    src/config src/observability src/persistence
     src/interfaces/rendering src/interfaces/rendering/interpolation
     src/game/engine/relocation
     src/interfaces/rendering/shaders
@@ -792,54 +792,54 @@ set(SSB64_MODULE_SCOPE_platform
     src/platform src/platform/coroutine src/platform/http
     src/platform/filesystem src/platform/window src/platform/android
     src/platform/compatibility
-    src/core/observability)            # port_log.h — shared log sink
+    src/observability)            # port_log.h — shared log sink
 set(SSB64_MODULE_SCOPE_engine
     src/game/engine src/game/engine/decomp src/game/engine/hooks
     src/game/engine/relocation         # RelocFile/RelocPointerTable — asset reloc ABI
     src/game/engine/css_icons          # CSS stage/arrow assets served to decomp
     src/platform/filesystem            # app_paths.h — css_icons asset lookup
-    src/core/observability)
+    src/observability)
 set(SSB64_MODULE_SCOPE_gameplay
     src/game/gameplay src/game/gameplay/assists src/game/gameplay/modes
     src/game/gameplay/rules src/game/gameplay/training
     src/game/gameplay/unlocks
     src/networking/netplay/domain      # netrules.h — rules shared with netplay
-    src/core/observability)
+    src/observability)
 set(SSB64_MODULE_SCOPE_modding
     src/game/modding
-    src/core/observability)
+    src/observability)
 set(SSB64_MODULE_SCOPE_netplay
     src/networking/netplay src/networking/netplay/domain
     src/networking/netplay/protocol src/networking/netplay/session
     src/networking/netplay/transport src/networking/netplay/rollback
     src/networking/netplay/diagnostics
     src/game/modding                   # ModRegistry.h — mod-loaded check
-    src/core/i18n src/core/observability)
+    src/i18n src/observability)
 set(SSB64_MODULE_SCOPE_social
     src/networking/social
     src/game/gameplay                  # enhancements.h — presence reads game state
-    src/core/observability)
+    src/observability)
 set(SSB64_MODULE_SCOPE_audio
     src/interfaces/audio src/interfaces/audio/n64
     src/game/gameplay                  # enhancements.h
-    src/core/observability)
+    src/observability)
 set(SSB64_MODULE_SCOPE_input
     src/interfaces/input src/interfaces/input/internal
     src/networking/netplay/domain      # netrules.h — input sync rules
     src/game/gameplay
-    src/core/observability)
+    src/observability)
 set(SSB64_MODULE_SCOPE_rendering
     src/interfaces/rendering src/interfaces/rendering/widescreen
     src/interfaces/rendering/cosmetics
     src/interfaces/rendering/interpolation
     src/interfaces/rendering/shaders src/interfaces/rendering/textures/hires
     src/game/gameplay                  # enhancements.h
-    src/core/observability)
+    src/observability)
 set(SSB64_MODULE_SCOPE_presentation
     src/interfaces/presentation
     src/application                    # app_mods.h — mods panel
-    src/core/config src/core/i18n src/core/persistence
-    src/core/observability
+    src/config src/i18n src/persistence
+    src/observability
     src/game/gameplay                  # enhancements.h
     src/networking/netplay/session src/networking/netplay/transport
     src/platform src/platform/filesystem
@@ -856,7 +856,7 @@ set(SSB64_MODULE_SCOPE_update
     src/application/update/manifests
     src/game/gameplay                  # enhancements.h — update check entry
     src/platform/filesystem src/platform/http
-    src/core/observability)
+    src/observability)
 
 set(SSB64_MODULE_OBJECTS "")
 set(SSB64_SRC_PORT_TOPLEVEL ${SSB64_SRC_PORT})
@@ -1201,11 +1201,10 @@ target_include_directories(ssb64_game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/downloads
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/integrity
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/manifests
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/config
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/i18n
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/observability
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/persistence
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/config
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/i18n
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/observability
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/persistence
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/decomp
@@ -1493,11 +1492,10 @@ target_include_directories(ssb64_src_flat_includes INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/downloads
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/integrity
     ${CMAKE_CURRENT_SOURCE_DIR}/src/application/update/manifests
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/config
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/i18n
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/observability
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/persistence
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/config
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/i18n
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/observability
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/persistence
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game/engine/decomp
@@ -1592,7 +1590,7 @@ foreach(mod IN LISTS SSB64_MODULE_DIRS)
     endif()
 endforeach()
 if (WIN32)
-    # src/core/observability/port_symbolize.cpp (SyncTest diagnostics), src/networking/netplay/transport/udp_transport.cpp, src/networking/netplay/transport/websocket_transport.cpp
+    # src/observability/port_symbolize.cpp (SyncTest diagnostics), src/networking/netplay/transport/udp_transport.cpp, src/networking/netplay/transport/websocket_transport.cpp
     # sapi: §9 menu narration (src/interfaces/presentation/narration.cpp)
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt sapi ole32)
 endif()

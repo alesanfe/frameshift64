@@ -2,7 +2,7 @@
 #include "gameloop.h"
 #include "app_paths.h"
 #include "gameloop.h"
-#include "core/i18n/PortI18n.h"
+#include "i18n/PortI18n.h"
 #include "native_dialog.h"
 #include "port_log.h"
 
