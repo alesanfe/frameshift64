@@ -84,7 +84,7 @@ has already ported libultraship for Ship of Harkinian — this plan follows the 
 - `components/libultraship/src/ship/config/Config.cpp` — +6 lines
 - `src/application/port_watchdog.cpp` — +15 lines
 - `src/platform/coroutine/coroutine_posix.cpp` or `src/platform/coroutine/coroutine_switch.cpp` — verify or implement
-- `src/interfaces/presentation/native_dialog.cpp` — ensure fallback works
+- `src/presentation/native_dialog.cpp` — ensure fallback works
 - `src/application/first_run.cpp` — ROM extraction skip for Switch
 
 ---

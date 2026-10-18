@@ -81,7 +81,7 @@ reload)"** — default **ON**, latched once at boot
 ## Files touched
 
 `src/game/gameplay/modes/ClassicCoop.cpp` (new), `enhancements.h`,
-`src/interfaces/presentation/PortMenu.cpp`, `src/application/port.cpp`,
+`src/presentation/PortMenu.cpp`, `src/application/port.cpp`,
 `components/decomp/src/sc/sctypes.h`, `components/decomp/src/sc/scmanager.c`,
 `components/decomp/src/sc/sc1pmode/sc1pmanager.{c,h}`,
 `components/decomp/src/sc/sc1pmode/sc1pgame.c`,

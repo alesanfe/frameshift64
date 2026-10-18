@@ -2,7 +2,7 @@
 Test the VPK0 decompressor by building it as a shared library via ctypes
 and running it against all compressed files in the ROM.
 
-Usage: python tests/unit/resources/vpk0_test.py [path-to-baserom.us.z64]
+Usage: python tests/unit/relocation/vpk0_test.py [path-to-baserom.us.z64]
 
 Also runnable through pytest (wrapped by test_native_scripts.py,
 marked requires-rom).

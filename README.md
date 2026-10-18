@@ -242,7 +242,7 @@ The port has three layers and they are kept deliberately separate:
 
 `baserom.us.z64` is never read at runtime. At build time, **Torch** walks the ROM with the YAMLs under `assets/game/us/` and emits `BattleShip.o2r` — a zip-format archive of typed resources (textures, sequences, sample banks, animations, reloc files). At launch, libultraship's resource manager mounts `BattleShip.o2r` + `f3d.o2r` and the port code requests resources by path. This is the same pipeline used by Ship of Harkinian, Starship, SpaghettiKart, etc.
 
-The relocatable-data files (fighter tables, item tables, effects, sprites) are SSB64-specific and required custom factories on the Torch side and a custom loader (`src/resources/relocation/RelocFileFactory.cpp`) on the runtime side.
+The relocatable-data files (fighter tables, item tables, effects, sprites) are SSB64-specific and required custom factories on the Torch side and a custom loader (`src/game/engine/relocation/RelocFileFactory.cpp`) on the runtime side.
 
 ### Build-time codegen
 

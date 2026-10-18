@@ -17,7 +17,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_DIR = REPO_ROOT / "src"
-SCHEMA = SRC_DIR / "core" / "config" / "schema.cpp"
+SCHEMA = SRC_DIR / "config" / "schema.cpp"
 
 # A CVar key: "g" + uppercase + dotted segments, e.g. "gNetplay.Delay".
 # The g<Upper> anchor excludes false positives like "gameloop.h",

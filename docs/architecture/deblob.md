@@ -233,5 +233,5 @@ format mod DLs author against; unresolvable references are fatal (I7).
   pre-relocates intern slots at extraction (the chain `next` field is
   unknowable from a sliced DL), so the runtime uses explicit slot lists and
   every comparison uses the **relocated view**.
-- Hires packs hash decoded RGBA8 + fmt/siz at upload (`src/resources/loading/textures/hires/`), not
+- Hires packs hash decoded RGBA8 + fmt/siz at upload (`src/rendering/textures/hires/`), not
   paths — vanilla byte-exactness ⇒ existing packs keep binding.

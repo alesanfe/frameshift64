@@ -7,7 +7,7 @@ For each file, checks that:
 3. All extern file IDs are valid (< 2132)
 4. The extern region size matches the number of reloc chain entries
 
-Usage: python tests/unit/resources/extern_ids_test.py [path-to-baserom.us.z64]
+Usage: python tests/unit/relocation/extern_ids_test.py [path-to-baserom.us.z64]
 """
 
 import os

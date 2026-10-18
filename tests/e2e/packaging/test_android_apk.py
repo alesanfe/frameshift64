@@ -439,7 +439,3 @@ def test_android_ui_rom_picker(apk: Path, device: str,
             adb_out(adb_bin, "-s", device, "shell", "mv", "-f",
                     f"{files_dir}/BattleShip.o2r.e2e_bak",
                     f"{files_dir}/BattleShip.o2r")
-        if had_o2r:
-            adb_out(adb_bin, "-s", device, "shell", "mv", "-f",
-                    f"{files_dir}/BattleShip.o2r.e2e_bak",
-                    f"{files_dir}/BattleShip.o2r")

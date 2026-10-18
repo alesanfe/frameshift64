@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from smash_test.processes import run_script
 
-UNIT = Path(__file__).resolve().parent / "resources"
+UNIT = Path(__file__).resolve().parent / "relocation"
 
 
 @pytest.mark.unit

@@ -7,7 +7,7 @@ This builds on `docs/netplay/netplay_architecture.md` (input boundary, debug P2P
 Code:
 - `components/decomp/src/sys/netrollback.{c,h}`
 - `src/networking/netplay/rollback/netrollback_seg.h`
-- `src/core/observability/port_symbolize.cpp`
+- `src/observability/port_symbolize.cpp`
 - `scripts/development/rollback_synctest.ps1`
 
 ## Tick boundary
