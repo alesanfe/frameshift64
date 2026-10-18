@@ -236,6 +236,98 @@ def _launch_and_settle(adb_bin: str, device: str, settle_s: int = 30):
     time.sleep(settle_s)
 
 
+def _content_is_rendered(path: Path) -> bool:
+    """Stronger than png_is_rendered: the system status/nav bars give a flat
+    black app frame 'contrast' and ~20KB of PNG — crop them out and require
+    real structure in the app's own content area."""
+    if not path.is_file() or path.stat().st_size < 15_000:
+        return False
+    try:
+        from PIL import Image
+    except ImportError:
+        return True  # size gate only
+    with Image.open(path) as im:
+        w, h = im.size
+        # middle 80%x70% — excludes status bar, nav pill, and bezel letterbox
+        px = im.convert("L").crop((int(w*0.1), int(h*0.15),
+                                   int(w*0.9), int(h*0.85))).resize((64, 36))
+        data = list(px.getdata())
+    lo, hi = min(data), max(data)
+    return hi - lo > 8 and len(set(data)) > 10
+
+
+def _is_landscape(path: Path) -> bool:
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            return im.size[0] > im.size[1]
+    except ImportError:
+        return True  # can't tell — don't gate on it
+
+
+def _app_is_foreground(adb_bin: str, device: str) -> bool:
+    """The resumed activity is ours — without this gate a screencap during
+    app launch catches the (also 'rendered') launcher instead of the game."""
+    out = adb_out(adb_bin, "-s", device, "shell",
+                  "dumpsys activity activities | grep -i ResumedActivity",
+                  timeout=15).stdout
+    return "battleship" in out.lower()
+
+
+def _has_wizard_surface(path: Path) -> bool:
+    """The first-run wizard's 'Choose your SSB64 ROM' button is a wide
+    mid-gray bar across the lower-middle band — a signature the splash
+    logo (centered red circle, black surround) never produces. Measured:
+    wizard ≈ 0.69 mid-gray fraction in the band, splash/menu ≈ 0.004."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return _content_is_rendered(path)
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+            px = im.convert("L").crop(
+                (int(w*.08), int(h*.60), int(w*.92), int(h*.74)))
+            data = list(px.getdata())
+    except OSError:
+        return False
+    return sum(1 for v in data if 90 < v < 245) / len(data) > 0.3
+
+
+def _launch_and_wait_render(adb_bin: str, device: str, out_png: Path,
+                            artifacts_dir: Path, tag: str,
+                            timeout_s: int = 120,
+                            need_landscape: bool = False,
+                            predicate=None) -> Path:
+    """Fresh installs spend tens of seconds in BootActivity asset staging +
+    first EGL context creation (swiftshader on the CI emulator is slow), and
+    the display stays black meanwhile. Poll screencap until a real frame
+    shows up or the deadline hits — a fixed sleep is flaky either way.
+    need_landscape additionally skips the portrait BootActivity splash so
+    the capture lands on the actual game/wizard surface.
+    Always dumps logcat for post-mortem."""
+    adb_out(adb_bin, "-s", device, "shell", "am", "force-stop", PKG)
+    adb_out(adb_bin, "-s", device, "shell", "am", "start", "-n",
+            BOOT_ACTIVITY, timeout=30)
+    if predicate is None:
+        predicate = _content_is_rendered
+    deadline = time.time() + timeout_s
+    while True:
+        _screencap(adb_bin, device, out_png)
+        if _app_is_foreground(adb_bin, device) and \
+                predicate(out_png) and \
+                (not need_landscape or _is_landscape(out_png)):
+            break
+        if time.time() >= deadline:
+            break
+        time.sleep(4)
+    log = adb_out(adb_bin, "-s", device, "logcat", "-d", "-t", "400",
+                  timeout=30).stdout
+    (artifacts_dir / f"logcat-{tag}.txt").write_text(log, encoding="utf-8",
+                                                     errors="replace")
+    return out_png
+
+
 def _ensure_o2r(adb_bin: str, device: str) -> None:
     """Stage BattleShip.o2r if absent — tests must not rely on
     test_app_boots_and_renders having pushed it (pytest-randomly reorders,
@@ -267,15 +359,16 @@ def test_android_ui_menu_overlay(apk: Path, device: str,
     # Baseline: no cfg seed — whatever the game normally shows.
     adb_out(adb_bin, "-s", device, "shell", "rm", "-f",
             f"{_FILES_DIR}/BattleShip.cfg.json")
-    _launch_and_settle(adb_bin, device)
-    baseline = _screencap(adb_bin, device,
-                          artifacts_dir / "ui-baseline.png")
+    baseline = _launch_and_wait_render(adb_bin, device,
+                                       artifacts_dir / "ui-baseline.png",
+                                       artifacts_dir, "baseline")
 
     _push_game_cfg(adb_bin, device, artifacts_dir, {"gOpenPortMenu": 1})
-    _launch_and_settle(adb_bin, device)
     try:
-        shot = _screencap(adb_bin, device, artifacts_dir / "ui-menu.png")
-        assert png_is_rendered(shot, min_bytes=20_000), \
+        shot = _launch_and_wait_render(adb_bin, device,
+                                       artifacts_dir / "ui-menu.png",
+                                       artifacts_dir, "menu")
+        assert _content_is_rendered(shot), \
             "menu capture is blank — ImGui overlay did not render"
         try:
             from PIL import Image, ImageChops
@@ -290,8 +383,8 @@ def test_android_ui_menu_overlay(apk: Path, device: str,
                 "— overlay never appeared"
         except ImportError:
             pass  # pixel-diff needs PIL; artifacts are still saved either way
-        log = adb_out(adb_bin, "-s", device, "logcat", "-d", "-t", "300",
-                      timeout=30).stdout
+        log = (artifacts_dir / "logcat-menu.txt").read_text(errors="replace") \
+            if (artifacts_dir / "logcat-menu.txt").is_file() else ""
         fatal = re.search(r"FATAL EXCEPTION|SIGSEGV|SIGABRT", log)
         assert fatal is None, f"crash while showing menu: {fatal.group(0)}"
     finally:
@@ -315,17 +408,31 @@ def test_android_ui_rom_picker(apk: Path, device: str,
         adb_out(adb_bin, "-s", device, "shell", "mv", "-f",
                 f"{files_dir}/BattleShip.o2r",
                 f"{files_dir}/BattleShip.o2r.e2e_bak")
-    _launch_and_settle(adb_bin, device, settle_s=20)
+    _launch_and_wait_render(adb_bin, device,
+                            artifacts_dir / "ui-rom-picker.png",
+                            artifacts_dir, "rom-picker",
+                            need_landscape=True,
+                            predicate=_has_wizard_surface)
     try:
-        shot = _screencap(adb_bin, device,
-                          artifacts_dir / "ui-rom-picker.png")
-        assert png_is_rendered(shot, min_bytes=8_000), \
+        shot = artifacts_dir / "ui-rom-picker.png"
+        assert _content_is_rendered(shot), \
             "ROM-picker capture is blank — first-run UI did not render"
+        assert _is_landscape(shot), \
+            "capture is still the portrait splash — picker never appeared"
+        assert _has_wizard_surface(shot), \
+            "captured landscape frame lacks the wizard button bar — " \
+            "the ROM-picker surface never appeared"
         top = adb_out(adb_bin, "-s", device, "shell",
                       "dumpsys activity activities | grep -i battleship",
                       timeout=30).stdout
         assert "battleship" in top.lower(), \
             "BattleShip not in foreground for ROM-picker capture"
+        logp = artifacts_dir / "logcat-rom-picker.txt"
+        if logp.is_file():
+            fatal = re.search(r"FATAL EXCEPTION|SIGSEGV|SIGABRT",
+                              logp.read_text(errors="replace"))
+            assert fatal is None, \
+                f"crash on ROM-picker surface: {fatal.group(0)}"
     finally:
         adb_out(adb_bin, "-s", device, "shell", "am", "force-stop", PKG)
         if had_o2r:
