@@ -65,7 +65,7 @@ blind approval of a broken one.
 | Input Mappings | Control Enhancements |
 | ![Audio](settings-audio.png) | ![Accessibility](settings-accessibility.png) |
 | Audio | Accessibility |
-| ![Cheats](settings-cheats.png) | |
+| ![Cheats](settings-cheats.png) | ![Developer](settings-developer.png) |
 | Cheats | |
 
 ## Online

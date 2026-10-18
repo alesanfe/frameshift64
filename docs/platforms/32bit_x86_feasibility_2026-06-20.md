@@ -39,8 +39,8 @@ at ~3 GB).
 | Subsystem | Why it works on ILP32 |
 |---|---|
 | **Fast3D renderer** | `Fast::F3DGfx` = `{ uintptr_t w0; uintptr_t w1; }` (`components/libultraship/include/fast/lus_gbi.h:1144`), **not** `uint64_t`. On ILP32 it is 8 bytes = the native N64 command. The display-list widening (`portNormalizeDisplayListPointer`, `components/libultraship/src/fast/interpreter.cpp:153`) uses `PORT_PACKED_GFX_SIZE` / `sizeof(F3DGfx)` for strides — never a literal 16 — so it becomes a near-identity segment-`0x0E` rewrite. The only 64-bit-specific code (the native-format probe, `interpreter.cpp:161-189`) is already **disabled**. |
-| **Token-pointer table** (`src/resources/relocation/RelocPointerTable.cpp`) | Exists only because desktop pointers are 8 bytes and don't fit the file-data structs' 4-byte slots. On ILP32 a real pointer fits the slot natively; the token round-trip is correct and unchanged (just redundant). |
-| **N64 segment translation** (`src/platform/compatibility/segment_symbols.c`, `src/interfaces/rendering/port_dl_ranges.cpp`) | All `uintptr_t` / `sizeof`-based; auto-scales. The `port_dl_range_classify_str` heuristic degrades gracefully (the `>= 4 GiB` branch is simply unreachable on ILP32). |
+| **Token-pointer table** (`src/game/engine/relocation/RelocPointerTable.cpp`) | Exists only because desktop pointers are 8 bytes and don't fit the file-data structs' 4-byte slots. On ILP32 a real pointer fits the slot natively; the token round-trip is correct and unchanged (just redundant). |
+| **N64 segment translation** (`src/platform/compatibility/segment_symbols.c`, `src/rendering/port_dl_ranges.cpp`) | All `uintptr_t` / `sizeof`-based; auto-scales. The `port_dl_range_classify_str` heuristic degrades gracefully (the `>= 4 GiB` branch is simply unreachable on ILP32). |
 | **Decomp struct layouts** | Fixed-width `u32`/`s32` typedefs (`src/game/engine/decomp/port_types.h`). ILP32 *reduces* layout risk vs. LP64 — closer to the ROM's native layout. The `_Static_assert(sizeof(X) == N)` size checks (DObjDesc==44, Sprite==68, FTAttributes==0x348, ...) hold because the PORT pointer fields are already `u32`. |
 
 ### Empirical confirmation

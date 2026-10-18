@@ -31,7 +31,7 @@ Each failed check → `sSYNetPeerPacketsDropped++`, no state change.
 
 | Direction | Message | Notes |
 |-----------|---------|-------|
-| C→S | `?role=host|join|spec&v=1|2&room=&slot=&key=` | URL params on upgrade |
+| C→S | `?role=host|join|spec|queue&v=1|2&room=&slot=&key=` | URL params on upgrade; `queue` (v2 only) is matchmaking — the room assigns `host` when slot 0 is free, `join` otherwise, and the welcome reports the resolved role. Quick-play clients walk the well-known `QUEUE2..9` codes; the client picks its start room by rating band (proven ≥1500 → QUEUE8). |
 | S→C | `{type:"welcome", upkey, ...}` | upkey is the slot-attach secret |
 | S→C | `{type:"error", reason}` then close 4000 | see error-codes.md |
 | S→C/C→S | `{type:"peer", ...}` text | join/part/topology |

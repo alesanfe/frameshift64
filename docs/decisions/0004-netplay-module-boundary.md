@@ -1,6 +1,7 @@
 # ADR 0004 — Netplay is a first-class module
 
 **Status:** accepted (2026-10)
+**Links:** `docs/netplay/protocol/` (normative spec, ADR 0006), `services/netplay-lobby/README.md`
 
 Client netplay code lives in `src/networking/netplay/` (was `src/networking/netplay/`): lobby client (`netlobby.*`), ruleset sync (`netrules.*`), UDP transport (`udp_transport.*`), WebSocket transport (`websocket_transport.*`), rollback segment config (`netrollback_seg.h`).
 

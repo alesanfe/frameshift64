@@ -82,4 +82,4 @@ The new instance is the *type-overlay* form of the same family: a freelist slot 
 
 ## Open follow-up
 
-Audio still emits silence (no `first non-zero sample detected` log). Crash and corruption are gone, notes successfully look up sounds, but the mixer output buffer stays zero. Next: investigate downstream synth — `dc_memin` truncating `(s32) dc_table->base` casts at `n_env.c:566/628/683` are unwrapped LP64 traps that would feed garbage to the ADPCM decoder; also `src/resources/loading/audio/mixer.c` implementations of the `aXxx` macros. See task #6 and `docs/investigations/audio_buildout_2026-04-24.md`.
+Audio still emits silence (no `first non-zero sample detected` log). Crash and corruption are gone, notes successfully look up sounds, but the mixer output buffer stays zero. Next: investigate downstream synth — `dc_memin` truncating `(s32) dc_table->base` casts at `n_env.c:566/628/683` are unwrapped LP64 traps that would feed garbage to the ADPCM decoder; also `src/audio/n64/mixer.c` implementations of the `aXxx` macros. See task #6 and `docs/investigations/audio_buildout_2026-04-24.md`.

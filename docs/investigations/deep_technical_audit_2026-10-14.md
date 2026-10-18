@@ -451,10 +451,10 @@ Resumen (evidencia completa en el análisis de build/CI):
 - **AUD-41** `coroutine_test` include dir `port/` muerto; 3 CMakeLists de
   mods llaman tools/merge_mod.py (real `tools/developer/modding/merge_mod.py`); `test_vpk0.py`/
   `test_extern_ids.py` calculan repo-root un nivel corto y referencian
-  tools/test_vpk0.c (real `tests/unit/resources/vpk0_test.c`).
+  tools/test_vpk0.c (real `tests/unit/relocation/vpk0_test.c`).
   **RESUELTO (post-reorganización):** include dir → `src/platform`,
   mod CMakeLists → `tools/developer/modding/merge_mod.py`, probes corregidos
-  (`` `tests/unit/resources/*_test.py` `` resuelven root y ROM vía `roms/`/`SMASH_BASEROM`).
+  (`` `tests/unit/relocation/*_test.py` `` resuelven root y ROM vía `roms/`/`SMASH_BASEROM`).
 - **AUD-42** `RelocFileTable.us.h:11` embebe `C:/Users/alex0/...` absoluto —
   diffs por máquina + leak de path del autor.
 - **AUD-43** `TorchExternal` sin `BUILD_ALWAYS` → submodule movido no
@@ -521,7 +521,7 @@ Resumen (evidencia completa en el análisis de build/CI):
 ## 9. Gaps de test
 
 - No hay ctest/enable_testing: toda la cobertura es manual.
-- `tests/unit/resources/vpk0_test.py`, `test_extern_ids.py` rotos (root math).
+- `tests/unit/relocation/vpk0_test.py`, `test_extern_ids.py` rotos (root math).
 - `test-lobby-security.js` tiene cero casos spec y ninguno que ejercite el
   edge-fetch — por eso AUD-09/AUD-10 sobrevivieron.
 - Nada prueba: spec→host binario, host cross-version, flood de oversize,

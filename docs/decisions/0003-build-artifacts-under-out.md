@@ -1,6 +1,7 @@
 # ADR 0003 — All generated output under `out/`
 
 **Status:** accepted (2026-10)
+**Links:** `generated/README.md`, `docs/architecture/build_and_tooling.md`, ADR 0001
 
 Build trees, lint reports, coverage, packages and logs live under `out/` (gitignored): `out/build/<preset>`, `out/reports/{lint,cppcheck,semgrep,tests,coverage}`, `out/packages`, `out/logs`.
 

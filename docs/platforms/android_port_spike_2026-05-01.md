@@ -63,7 +63,7 @@ None of this exists in either repo today. Estimated ~2 days of plumbing.
 ### 3.5. Save data (mostly handled by upstream)
 
 Main landed an SRAM-backed save persistence in
-`src/core/persistence/port_save.{cpp,h}` (commit 87cc570). The path resolution chain is:
+`src/persistence/port_save.{cpp,h}` (commit 87cc570). The path resolution chain is:
 
 ```
 $SSB64_SAVE_PATH  >  Ship::Context::GetPathRelativeToAppDirectory  >  SDL_GetPrefPath  >  cwd

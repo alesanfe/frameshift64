@@ -40,8 +40,8 @@ code joins the module that consumes it instead of a catch-all bucket.
 - **Watchdog/liveness is observability**, so `observability/` (moved
   2026-10-18); only `application/` may *start/stop* it.
 - **A CVar schema entry does not create a module.** Config keys live in
-  `config/schema.cpp` until that file outgrows ~500 LOC, then split
-  by domain under `config/schema/`.
+  `src/config/schema.cpp` until that file outgrows ~500 LOC, then split
+  by domain under `src/config/`.
 
 ## Hard rules
 

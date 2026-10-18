@@ -1,6 +1,7 @@
 # ADR 0002 — Submodule isolation rules
 
 **Status:** accepted (2026-10)
+**Links:** `AGENTS.md` (worktree workflow), ADR 0001
 
 Submodules stay at their current paths: `components/decomp/`, `components/libultraship/`, `components/game-runtime/`. Physically relocating them (`game/components/decomp/`, `third_party/…`) was considered and deferred — the churn in `.gitmodules`, `new-worktree` and CI outweighed the benefit.
 

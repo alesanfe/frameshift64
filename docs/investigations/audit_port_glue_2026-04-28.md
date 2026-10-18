@@ -252,7 +252,7 @@ The POSIX ucontext_t on ARM64 (both Linux and macOS) includes d8-d15 NEON regist
 
 **Status:** ✅ **NO ISSUE FOUND**
 
-Audit of `src/resources/loading/audio/mixer.h` include order:
+Audit of `src/audio/n64/mixer.h` include order:
 - mixer.c includes: `<stdint.h>`, `<stdlib.h>`, `<string.h>`, `<stdio.h>`, then `"mixer.h"`
 - mixer.h does NOT include `n_abi.h` (it declares that the caller has included it before: "These are defined in abi.h which is included before this header.")
 - The undef/redefine pattern at mixer.h:79-94 is safe as long as abi.h macros are already in scope.

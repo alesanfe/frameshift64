@@ -111,7 +111,7 @@ NULL-string crash — both fixed separately.
 After the thread-safety fix above, the same ~50% shutdown crash persisted
 under a different shape. `_CrtSetAllocHook` instrumentation on **both** CRTs
 (`SSB64_HEAP_HOOK=1`, plus `SSB64_HEAP_CHECK`/`TRACE`/`XCHECK`/`GWATCH` —
-see `src/core/observability/heap_check_boot.cpp`) found:
+see `src/observability/heap_check_boot.cpp`) found:
 
 - `zip_close` itself now succeeds cleanly — a pre-close autopsy walked all
   ~167 K live ucrt debug blocks with zero link/gap violations and every free

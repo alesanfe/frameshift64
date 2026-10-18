@@ -47,13 +47,13 @@ All of the following compile and link into `ssb64.exe`:
 
 | File | Purpose |
 |------|---------|
-| `src/resources/relocation/RelocPointerTable.h` | Token table API: `portRelocRegisterPointer()`, `portRelocResolvePointer()`, `RELOC_RESOLVE()` macro |
-| `src/resources/relocation/RelocPointerTable.cpp` | Flat-array implementation, O(1) lookup, 256K initial capacity |
-| `src/resources/relocation/RelocFileTable.h` | Maps file_id (0-2131) to .o2r resource path |
+| `src/game/engine/relocation/RelocPointerTable.h` | Token table API: `portRelocRegisterPointer()`, `portRelocResolvePointer()`, `RELOC_RESOLVE()` macro |
+| `src/game/engine/relocation/RelocPointerTable.cpp` | Flat-array implementation, O(1) lookup, 256K initial capacity |
+| `src/game/engine/relocation/RelocFileTable.h` | Maps file_id (0-2131) to .o2r resource path |
 | `generated/src/us/RelocFileTable.us.cpp` | Auto-generated from assets/game/us/reloc_*.yml (regenerate via `python tools/code-generation/generate_reloc_table.py`) |
-| `src/resources/relocation/RelocFile.h` | LUS Resource type holding decompressed file data + reloc metadata |
-| `src/resources/relocation/RelocFileFactory.h/.cpp` | LUS factory: reads RELO resources from .o2r |
-| `src/resources/relocation/ResourceType.h` | SSB64Reloc = 0x52454C4F ("RELO") |
+| `src/game/engine/relocation/RelocFile.h` | LUS Resource type holding decompressed file data + reloc metadata |
+| `src/game/engine/relocation/RelocFileFactory.h/.cpp` | LUS factory: reads RELO resources from .o2r |
+| `src/game/engine/relocation/ResourceType.h` | SSB64Reloc = 0x52454C4F ("RELO") |
 | `src/game/engine/decomp/lbreloc_bridge.cpp` | Full replacement of `components/decomp/src/lb/lbreloc.c` — loads from LUS ResourceManager, token-based relocation |
 | `src/game/engine/decomp/port_types.h` | Decomp type definitions (u32, s32, etc.) without pulling in `include/` which shadows system headers |
 | `components/decomp/src/lb/lbreloc.c` | Wrapped in `#ifndef PORT` — excluded from port build |

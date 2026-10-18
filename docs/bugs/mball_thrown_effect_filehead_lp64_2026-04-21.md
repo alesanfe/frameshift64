@@ -16,7 +16,7 @@ SSB64: x1=0x3a3000003a2
   5 sc1PGameWaitStageCommonUpdate + 236
 ```
 
-The fault-address "two-halves" pattern `0x3a3_0000_03a2` decomposes into two adjacent 32-bit values (`0x3a2 = 930`, `0x3a3 = 931`), matching `portRelocRegisterPointer`'s monotonically-increasing token numbering (`src/resources/relocation/RelocPointerTable.cpp:49`, tokens start at 1 and count up per-load).
+The fault-address "two-halves" pattern `0x3a3_0000_03a2` decomposes into two adjacent 32-bit values (`0x3a2 = 930`, `0x3a3 = 931`), matching `portRelocRegisterPointer`'s monotonically-increasing token numbering (`src/game/engine/relocation/RelocPointerTable.cpp:49`, tokens start at 1 and count up per-load).
 
 ## Root cause
 

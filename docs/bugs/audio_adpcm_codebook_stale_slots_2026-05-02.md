@@ -19,7 +19,7 @@ WAV-dump signature (instrumented build, `SSB64_AUDIO_DUMP=1`):
 
 ## Root cause
 
-The audio mixer (`src/resources/loading/audio/mixer.c`) keeps a single global 256-byte ADPCM codebook buffer:
+The audio mixer (`src/audio/n64/mixer.c`) keeps a single global 256-byte ADPCM codebook buffer:
 
 ```c
 static struct {
@@ -56,7 +56,7 @@ Why **Sector Z** specifically: the Arwing whoosh (`nSYAudioFGMSectorAmbient1`, f
 
 ## Fix
 
-`src/resources/loading/audio/mixer.c::aLoadADPCMImpl`:
+`src/audio/n64/mixer.c::aLoadADPCMImpl`:
 
 ```c
 void aLoadADPCMImpl(int count, uintptr_t book_addr) {

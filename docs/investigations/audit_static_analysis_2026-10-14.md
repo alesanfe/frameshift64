@@ -34,14 +34,14 @@ Informes crudos en `lint-reports/` (gitignored).
    ni de formato (cert-err34-c, regla `unbounded-atoi-on-packet`). Coherente
    con el análisis previo: el parser asume peers bienintencionados. Con
    SEC-1/SEC-2 sin cerrar, estos campos son superficie de ataque real.
-3. **`src/core/observability/renderdoc_app.h:43`** — `#error "Unknown platform"`: cppcheck lo
+3. **`src/observability/renderdoc_app.h:43`** — `#error "Unknown platform"`: cppcheck lo
    evalúa sin macros de plataforma; verificar que solo se incluya bajo
    Windows/MSVC o dar fallback.
-4. **`src/interfaces/presentation/UIWidgets.cpp:969`** — `uninitvar: longest` (cppcheck).
+4. **`src/presentation/UIWidgets.cpp:969`** — `uninitvar: longest` (cppcheck).
 5. **`src/platform/coroutine/coroutine_posix.cpp:47-51`** — `PortCoroutine` sin inicializadores
    de miembro; `src/networking/netplay/transport/udp_transport.cpp:47` — `PendingPacket::release_ms` sin
    default (hoy siempre se asigna en el único constructor; frágil).
-6. **`src/resources/loading/textures/hires/HiResHook.cpp:104`, `src/interfaces/presentation/Menu.cpp:419`,
+6. **`src/rendering/textures/hires/HiResHook.cpp:104`, `src/presentation/Menu.cpp:419`,
    `PortMenu.cpp:1689`, `port.cpp:632/1181/1436`, `ShaderDownloader.cpp:747`** —
    `try{}` con excepciones deshabilitadas según clang-tidy. El build MSVC real
    los compila (¿`/EHsc` por target, no global?), pero un build con

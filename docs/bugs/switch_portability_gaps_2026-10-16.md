@@ -22,7 +22,7 @@ Cross-compiling for `NintendoSwitch` (devkitPro toolchain) surfaced a chain of f
 - `src/application/port_switch_stubs.cpp` — NEW. No-op `ExtractAssetsIfNeeded`/`RunFirstRunWizard`/`SetWindowIcon`. Assets ship pre-extracted next to the `.nro`; if `BattleShip.o2r` is missing the stub path exits cleanly. Stubs (not `#if` at call sites) were chosen because call sites live in actively-edited menu/init code — link-time symbols can't be lost to a guard revert.
 - `CMakeLists.txt` — Switch exclusion block mirroring UWP: `Updater.cpp`, `ShaderDownloader.cpp`, `ModPackDownloader.cpp`, `DiscordRichPresence.cpp`, `port_window_icon.cpp`, `first_run.cpp` all out of `SSB64_SRC_PORT`.
 - `src/application/port.cpp`, `PortMenu*.cpp` — `__SWITCH__` guards where call sites gate behavior (shader-pack downloader UI hidden; local post-process shader picker kept — it works over GLES).
-- `src/core/observability/port_log.c` — Switch exit branch uses `svcExitProcess()` (libnx), not POSIX `_exit`.
+- `src/observability/port_log.c` — Switch exit branch uses `svcExitProcess()` (libnx), not POSIX `_exit`.
 
 ## Verification
 

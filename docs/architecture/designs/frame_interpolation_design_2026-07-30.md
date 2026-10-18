@@ -136,7 +136,7 @@ PortPushFrame()                            ── once per game tick (60 Hz)
 
 ## Phases
 
-1. **Port module + subframe loop** (`src/resources/interpolation/frame_interpolation.{h,cpp}`,
+1. **Port module + subframe loop** (`src/rendering/interpolation/frame_interpolation.{h,cpp}`,
    `gameloop.cpp` drain restructure, pacing, throttle, config, menu). With no
    hooks yet, renders k identical subframes — verifies the game clock stays
    60 Hz under k=2/3/4 before any visual change exists. Verification: frame-60

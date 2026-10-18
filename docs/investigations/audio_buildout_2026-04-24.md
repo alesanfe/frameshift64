@@ -18,7 +18,7 @@ Two more fixes after the variant-overrun:
 
 1. **`dc_memin (s32) truncations** at `n_env.c:566/628/683` — wrapped in `#ifdef PORT (uintptr_t) #else (s32) #endif` to match the existing pattern at line 732. Latent LP64 fix; didn't unblock audio alone.
 
-2. **The actual unblock — mixer macro clobber.** `abi.h` auto-included `src/resources/loading/audio/mixer.h` at its tail, BEFORE `n_abi.h` was pulled in via `n_synthInternals.h`. Mixer.h `#undef`-ed and redefined the standard `aXxx` family (worked) and the N_MICRO `n_aXxx` family (silently no-op'd: those macros didn't exist yet because n_abi.h hadn't run). When n_abi.h later ran, it defined the original Acmd-write `n_aLoadBuffer`/`n_aADPCMdec`/etc., **silently overriding** mixer.h's CPU-impl versions. The pull chain wrote Acmd command words that nothing consumed. Fix: removed the auto-include from abi.h; n_env.c already includes mixer.h *after* the n_audio headers, so the override now sticks. See `docs/bugs/audio_mixer_macro_clobber_2026-04-24.md`.
+2. **The actual unblock — mixer macro clobber.** `abi.h` auto-included `src/audio/n64/mixer.h` at its tail, BEFORE `n_abi.h` was pulled in via `n_synthInternals.h`. Mixer.h `#undef`-ed and redefined the standard `aXxx` family (worked) and the N_MICRO `n_aXxx` family (silently no-op'd: those macros didn't exist yet because n_abi.h hadn't run). When n_abi.h later ran, it defined the original Acmd-write `n_aLoadBuffer`/`n_aADPCMdec`/etc., **silently overriding** mixer.h's CPU-impl versions. The pull chain wrote Acmd command words that nothing consumed. Fix: removed the auto-include from abi.h; n_env.c already includes mixer.h *after* the n_audio headers, so the override now sticks. See `docs/bugs/audio_mixer_macro_clobber_2026-04-24.md`.
 
 **Verified:** `SSB64 Audio: first non-zero sample detected (idx=0 v=17)` fires within seconds of `syAudioPlayBGM` being called. 30 s smoke test stable. BGM 33 audible end-to-end on the attract demo. Diagnostic instrumentation removed.
 
@@ -74,7 +74,7 @@ None of these are settled. Option 1 is the most promising starting point — loo
 
 Low-volume runtime logs that confirm the pipeline is alive (remove when the remaining bug is closed):
 
-- `src/resources/loading/audio/audio_playback.cpp` — first-submit and first-non-zero-sample one-shot logs
+- `src/audio/n64/audio_playback.cpp` — first-submit and first-non-zero-sample one-shot logs
 - `components/decomp/src/sys/audio.c` — first `syAudioPlayBGM` / first `syAudioPlayFGM` / first `n_alAudioFrame` / audio thread-enter logs
 
 All are one-shot `if (!logged) { logged = true; port_log(...); }` — no per-frame spam.

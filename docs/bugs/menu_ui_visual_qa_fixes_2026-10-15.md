@@ -14,9 +14,9 @@
 
 **Root causes & fixes:**
 
-1. **Checkbox frame.** `UIWidgets::PushStyleCheckbox` pushed the accent color at alpha 1.0 into `ImGuiCol_FrameBg` unconditionally, so the off state filled solid. The unchecked frame now uses a subdued fill with an accent border; the checkmark still only draws when the value is true (`src/interfaces/presentation/UIWidgets.cpp`).
+1. **Checkbox frame.** `UIWidgets::PushStyleCheckbox` pushed the accent color at alpha 1.0 into `ImGuiCol_FrameBg` unconditionally, so the off state filled solid. The unchecked frame now uses a subdued fill with an accent border; the checkmark still only draws when the value is true (`src/presentation/UIWidgets.cpp`).
 
-2. **Glyph coverage.** Menu fonts were built with the default Latin-1 atlas. The standard font now bakes General Punctuation (0x2010–0x205F: dashes, quotes, ellipsis, bullets) alongside the default ranges (`src/interfaces/presentation/Menu.cpp`).
+2. **Glyph coverage.** Menu fonts were built with the default Latin-1 atlas. The standard font now bakes General Punctuation (0x2010–0x205F: dashes, quotes, ellipsis, bullets) alongside the default ranges (`src/presentation/Menu.cpp`).
 
 3. **Label/formatting cleanup.** Dropped "(Needs reload)" suffixes wherever a `.Tag("Restart required")` already exists (`PortMenu.cpp`, `Menu.cpp`); `FloatSliderOptions::format` default changed `"%f"` → `"%.4g"` (`UIWidgets.hpp`) — `10`, `0.85`, `10.05` instead of trailing-zero noise; explicit `.Format()` overrides still win.
 

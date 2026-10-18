@@ -6,15 +6,15 @@
 
 **Findings & fixes:**
 
-1. **No keyboard navigation (A-01, S2).** Only gamepad nav was enabled — keyboard users could not traverse any widget even though the footer hints showed "Enter Select". `ImGuiConfigFlags_NavEnableKeyboard` is now set everywhere `NavEnableGamepad` is toggled (`src/interfaces/presentation/Menu.cpp`, `components/libultraship/src/ship/window/gui/Gui.cpp`, 4 sites).
+1. **No keyboard navigation (A-01, S2).** Only gamepad nav was enabled — keyboard users could not traverse any widget even though the footer hints showed "Enter Select". `ImGuiConfigFlags_NavEnableKeyboard` is now set everywhere `NavEnableGamepad` is toggled (`src/presentation/Menu.cpp`, `components/libultraship/src/ship/window/gui/Gui.cpp`, 4 sites).
 
-2. **Netplay status as free-form string only (S3).** `port_netlobby_status()` rendered as an undifferentiated paragraph — failures looked identical to normal states. `RenderNetplayLobby` now maps `port_netlobby_state()` to a severity tag + semantic color (`[Failed]` red, `[Connected]`/`[Live]` green, `[Connecting]`/`[Waiting]`/`[Starting]` blue) and prints a recovery hint on `PORT_NETLOBBY_FAILED` ("Check the room code and server address…"). Ping quality uses the same tokens (`src/interfaces/presentation/PortMenuOnline.cpp`).
+2. **Netplay status as free-form string only (S3).** `port_netlobby_status()` rendered as an undifferentiated paragraph — failures looked identical to normal states. `RenderNetplayLobby` now maps `port_netlobby_state()` to a severity tag + semantic color (`[Failed]` red, `[Connected]`/`[Live]` green, `[Connecting]`/`[Waiting]`/`[Starting]` blue) and prints a recovery hint on `PORT_NETLOBBY_FAILED` ("Check the room code and server address…"). Ping quality uses the same tokens (`src/presentation/PortMenuOnline.cpp`).
 
 3. **Quit ignored live netplay sessions (U-02, S3).** "Quit BattleShip" closed the app unconditionally. It now opens a "Quit during online session?" modal whenever the lobby state is anything but IDLE/FAILED (`mShowQuitConfirm`, `PortMenuSupport.cpp` + modal in `PortMenu.cpp`).
 
 4. **Mixed-language key names (V-01, S3).** `GetKeyNameTextA` returns OS-locale names, so an English UI showed "BARRA ESPACIADORA" on Spanish Windows. `gfx_dxgi.cpp` now resolves the scancode through a static English table first; the OS name is only a fallback for scancodes the table doesn't know (`components/libultraship/src/fast/backends/gfx_dxgi.cpp`).
 
-5. **No per-section restore defaults (U-01, S2).** A "Restore section defaults" button now sits at the bottom of every settings section that contains restorable widgets; it walks the section's `WidgetInfo` list and rewrites each CVar from the option's `DefaultValue` metadata, then toasts the count (`src/interfaces/presentation/Menu.cpp::ResetSectionCvars`).
+5. **No per-section restore defaults (U-01, S2).** A "Restore section defaults" button now sits at the bottom of every settings section that contains restorable widgets; it walks the section's `WidgetInfo` list and rewrites each CVar from the option's `DefaultValue` metadata, then toasts the count (`src/presentation/Menu.cpp::ResetSectionCvars`).
 
 6. **Duplicated literal colors (C-05, S3).** `UIWidgets::SemanticColors` centralizes Success/Warning/Error/Info/Muted/Placeholder; applied across Menu/PortMenu*/Toasts/OnlineStatus instead of scattered `ImVec4` literals (`UIWidgets.hpp`).
 
@@ -56,7 +56,7 @@
     `obj` mtime > source mtime before trusting a capture.
 
 17. **`port_narrate` LNK2019 + SAPI constant typo.** New
-    `src/platform/narration.cpp` (§9 screen-reader hook, Windows SAPI) was
+    `src/presentation/narration.cpp` (§9 screen-reader hook, Windows SAPI) was
     created mid-build — the glob re-check added it to `smash_platform` after
     that target's compile step ran, so the first link failed unresolved.
     Second build surfaced `SPF_PURGE_BEFORE_SPEAK` — the real SAPI constant
@@ -165,3 +165,76 @@ with origins and Go buttons; `settings-display.png` re-captured to confirm
 the Display section stayed intact after the sidebar insert (an early edit
 leaked "Display" separator widgets into the new sidebar — caught by the
 screenshot, fixed). i18n catalogue + es/fr/de/pt resynced.
+
+## Round 5 — full-section debt & bug audit (2026-10-17)
+
+Static audit of all 28 sidebars / 172 widgets plus screenshot-driven fixes:
+
+- **Combobox `.at()` crash (the Control Enhancements abort).**
+  `UIWidgets::Combobox` did `comboMap.at(*value)` unconditionally — with
+  zero saved profiles the map is empty and `std::out_of_range` unwound
+  mid-frame, `EndFrame` never ran, next `NewFrame` tripped
+  `ErrorCheckNewFrameSanityChecks`. Every fresh profile hit this. All map
+  and vector combobox variants now clamp out-of-range persisted values and
+  render a safe fallback on empty containers.
+
+- **WIDGET_CVAR_INPUT had no draw case.** "New profile name" rendered
+  nothing — added the `CVarInputString`/`CVarInputInt` renderer.
+
+- **Dangling `c_str()` in the Profile combo.** `comboMap` held pointers
+  into a `static std::vector<std::string>` that was reassigned every
+  frame. Labels now rebuild only when the name set changes, with stable
+  backing storage.
+
+- **Restart-required metadata vs. accounting.** Three widgets showed the
+  `[Restart required]` tag but never counted toward the pending-restart
+  chip because `.Tag()` is display-only. `Low Resolution Mode`,
+  `Texture Filter` and `Classic Co-op` now carry explicit
+  `.ApplyPolicyOf(ApplyPolicy::RequiresRestart)`; the details-panel
+  revert covers all of them (every restart-required CVar is int-backed).
+
+- **Explicit defaults everywhere.** ~37 CVar widgets relied on implicit
+  option defaults (checkbox→0, int slider→1, float→1.0, combo→key 0).
+  Correct today, fragile tomorrow — every CVar-bound widget now declares
+  `DefaultValue`/`DefaultIndex`, and `menu_structure_test` gained a lint
+  rule enforcing it plus an unregistered-sidebar attachment check.
+
+- **i18n sweep.** ~16 user-visible literals the TR-lint couldn't see
+  (toasts, status lines, the netplay timeout message, "Room code
+  copied…") wrapped in `TR()`; catalogue + es/fr/de/pt regenerated
+  (655 keys, 0 missing).
+
+- **Netplay text clipping.** The input-delay explanation ran past the
+  column edge (`TextDisabled` never wraps) — switched to disabled-colour
+  `TextWrapped`.
+
+- **Screenshot harness**: `SECTIONS` entries accept a 5th element for
+  per-shot CVar seeds; `settings-developer` seeds
+  `gSettings.EnableDevTools=1` so the CVar-gated Developer sidebar can be
+  captured. 40 PNGs in `docs/screenshots/menu/`, all verified visually.
+
+### Round 5 follow-up — footer collision & Modified values
+
+- **Footer hint overlap.** Long translations (es "Escribe en el cuadro de
+  búsqueda...") pushed the right-aligned hints left of the pending-restart
+  chip / match banner — the old left-clamp would draw hints *over* that
+  cluster. `leftClusterEndX` now tracks the cluster's real right edge; if
+  hints still don't fit they degrade to the compact wording
+  (`compactHints` per pad family / keyboard).
+
+- **Modified panel shows live values.** Each row is now
+  `Name = value   (Section -> Sidebar)   [Go]` via `WidgetCurrentValue`
+  (same type coverage as `WidgetIsNonDefault` — On/Off, combo labels,
+  sliders, btn-selector, input strings, #RRGGBBAA colour).
+
+- **Text clipping sweep (cont'd).** `TextDisabled`→wrapped for the
+  Replays note, UpdatePrompt restart line, pack `summary`, and the
+  GhostlyDark attribution line — all previously ran past the column edge.
+
+- **Harness:** `SECTIONS` gained a per-shot extra-CVar element (Developer
+  seeds `gSettings.EnableDevTools`); test file re-pointed at
+  `src/presentation/` after the `interfaces/` flatten.
+
+**Verification:** build green post-restructure, `menu_structure_test`
+PASS (28 sidebars, 172 widgets), On/Off catalogued in 4 languages,
+`settings-modified.png` re-captured showing values.

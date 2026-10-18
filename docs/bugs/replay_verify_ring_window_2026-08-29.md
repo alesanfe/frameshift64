@@ -1,7 +1,7 @@
 # Replay playback verify could never pass for replays longer than 720 frames
 
 **Date:** 2026-08-29
-**Status:** FIXED (decomp `port-patches`: `components/decomp/src/sys/netinput.c`, `components/decomp/src/sys/netinput.h`, `components/decomp/src/sys/netreplay.c`; BattleShip: `src/core/observability/port_log.c`, `src/core/observability/port_log.h`)
+**Status:** FIXED (decomp `port-patches`: `components/decomp/src/sys/netinput.c`, `components/decomp/src/sys/netinput.h`, `components/decomp/src/sys/netreplay.c`; BattleShip: `src/observability/port_log.c`, `src/observability/port_log.h`)
 **Class:** verification harness defect (false negative) — the oracle, not the game
 
 ## Symptom
@@ -64,7 +64,7 @@ makes the process exit right after the verdict — 0 PASS, 1 FAIL, 2 INCOMPLETE,
 (nothing would ever arm playback, so a batch run would otherwise sit at the title
 screen forever) — so batch runs can gate on the exit code. The loader also rejects
 `frame_count == 0`: a zero-frame file used to verify PASS immediately. It calls a new `port_exit_process()`
-(`src/core/observability/port_log.c`): flush the log and all stdio streams, then terminate
+(`src/observability/port_log.c`): flush the log and all stdio streams, then terminate
 immediately — `_exit()` on POSIX, `TerminateProcess()` on Windows. Normal teardown
 from the game coroutine is not safe (render/audio threads are mid-frame), and on
 Windows even `_exit()` is not enough: it runs `ExitProcess`, which kills the other

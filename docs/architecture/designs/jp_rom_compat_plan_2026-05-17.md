@@ -189,7 +189,7 @@ port to the decomp's existing design instead of inventing a parallel one:
   `generated/src/us/RelocFileTable.us.*`; the flat
   `generated/include/us/reloc_data.us.h` and `generated/src/us/RelocFileTable.us.cpp` were
   removed. US content is **byte-identical** to the old flat files (only
-  renamed). `src/resources/relocation/RelocFileTable.h` is now a committed selector
+  renamed). `src/game/engine/relocation/RelocFileTable.h` is now a committed selector
   shim mirroring the decomp's `reloc_data.h` shim. Both versions' headers
   coexist in the source tree → separate build dirs never collide.
 
