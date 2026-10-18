@@ -118,6 +118,24 @@
    "cacheVariables": {
     "SSB64_ENABLE_UBSAN": "ON"
    }
+  },
+  {
+   "name": "macos-asan",
+   "displayName": "macOS ASan (US, dev)",
+   "inherits": "macos-debug",
+   "binaryDir": "${sourceDir}/out/build/macos-asan",
+   "cacheVariables": {
+    "SSB64_ENABLE_ASAN": "ON"
+   }
+  },
+  {
+   "name": "macos-ubsan",
+   "displayName": "macOS UBSan (US, dev)",
+   "inherits": "macos-debug",
+   "binaryDir": "${sourceDir}/out/build/macos-ubsan",
+   "cacheVariables": {
+    "SSB64_ENABLE_UBSAN": "ON"
+   }
   }
  ],
  "buildPresets": [
@@ -163,6 +181,14 @@
   {
    "name": "linux-ubsan",
    "configurePreset": "linux-ubsan"
+  },
+  {
+   "name": "macos-asan",
+   "configurePreset": "macos-asan"
+  },
+  {
+   "name": "macos-ubsan",
+   "configurePreset": "macos-ubsan"
   }
  ]
 }

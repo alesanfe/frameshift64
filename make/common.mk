@@ -241,7 +241,7 @@ endef
         codegen codegen-check assets generate-yamls generate-sources synth-verify \
         test test-unit test-integration test-contract test-suite test-list test-all ctest \
         test-determinism verify verify-fast \
-        e2e e2e-netplay e2e-lobby e2e-impaired e2e-lan e2e-compat e2e-spectate \
+        e2e e2e-netplay e2e-lobby e2e-lobby-1v1 e2e-impaired e2e-lan e2e-compat e2e-spectate \
         e2e-replay-takeover e2e-mutation e2e-soak e2e-local \
         fuzz fuzz-all coverage coverage-python \
         check quick-check ci layout-check prune regenerate \

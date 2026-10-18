@@ -30,8 +30,13 @@ rebuild: clean-build configure codegen build
 asan: ## Configure+build+test with AddressSanitizer (<host>-asan preset)
 	@$(MAKE) --no-print-directory PRESET="$(HOST_PLATFORM)-asan" configure build test-suite
 
-ubsan: ## Configure+build+test with UBSan (<host>-ubsan preset)
+ubsan: ## Configure+build+test with UBSan (<host>-ubsan preset; Clang/GCC only)
+ifeq ($(HOST_PLATFORM),windows)
+	@$(call failure,UBSan is not supported on MSVC — use 'make asan' or a clang toolchain)
+	@exit 1
+else
 	@$(MAKE) --no-print-directory PRESET="$(HOST_PLATFORM)-ubsan" configure build test-suite
+endif
 
 sanitizers: asan ubsan ## ASan + UBSan passes
 

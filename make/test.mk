@@ -33,11 +33,12 @@ test-all: test-suite lobby-test ## pytest full + lobby suites
 # E2E netplay — drives the Python drivers in tests/e2e/netplay/
 # (the scripts/testing/*.ps1 wrappers call the same code)
 # ------------------------------------------------------------------------------
-e2e: ## Run E2E_SCENARIO (all|lobby|lan|compat|spectate|replay|mutation|soak|local)
+e2e: ## Run E2E_SCENARIO (all|lobby|lobby-1v1|lan|compat|spectate|replay|mutation|soak|local)
 	@case "$(E2E_SCENARIO)" in \
 	  all)            $(MAKE) --no-print-directory e2e-local e2e-lobby ;; \
 	  lobby)          $(MAKE) --no-print-directory e2e-lobby ;; \
 	  lobby-multi)    $(MAKE) --no-print-directory e2e-lobby ;; \
+	  lobby-1v1|lobby-2p) $(MAKE) --no-print-directory e2e-lobby-1v1 ;; \
 	  lan)            $(MAKE) --no-print-directory e2e-lan ;; \
 	  compat)         $(MAKE) --no-print-directory e2e-compat ;; \
 	  spectate)       $(MAKE) --no-print-directory e2e-spectate ;; \
@@ -63,6 +64,12 @@ e2e-lobby: guard-exe ## Host + N-1 clients over the local lobby (NET_PROFILE=<na
 	  --build-dir "$$bd" --out-dir "$$out" $(TEST_ARGS)
 
 e2e-netplay: e2e-lobby
+
+e2e-lobby-1v1: guard-exe ## 1v1 lobby room (lobbytest driver)
+	@out="$(LOG_DIR)/lobby-1v1"; mkdir -p "$$out"; \
+	bd="$$(dirname '$(EXE_DIR)')"; \
+	$(PYTHON) "$(E2E_DIR)/lobbytest_test.py" --seconds "$(E2E_SECONDS)" \
+	  --build-dir "$$bd" --out-dir "$$out" $(TEST_ARGS)
 
 e2e-lan: guard-exe ## Direct-IP LAN session, no lobby (NET_PROFILE=<name> for impairment)
 	@out="$(LOG_DIR)/lan"; mkdir -p "$$out"; \
