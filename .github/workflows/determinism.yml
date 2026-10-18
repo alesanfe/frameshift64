@@ -19,12 +19,51 @@ name: Determinism & Netplay
 on:
   schedule:
     - cron: '12 3 * * *'
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  # ROM-free slice of the suite: builds + runs the CTest harness (netpacket
+  # protocol fuzz, menu structure) on every PR — the parts that need no
+  # extracted assets. The ROM-gated jobs below still need BASEROM_US_Z64.
+  no-rom:
+    name: Protocol determinism (no ROM)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+          fetch-depth: 0
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build zip clang \
+            libsdl2-dev libzip-dev libglew-dev \
+            nlohmann-json3-dev libtinyxml2-dev libspdlog-dev \
+            libgl1-mesa-dev libegl1-mesa-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            python3 python3-pil imagemagick file
+          sudo touch /usr/bin/zipcmp /usr/bin/zipmerge /usr/bin/ziptool
+          sudo chmod +x /usr/bin/zipcmp /usr/bin/zipmerge /usr/bin/ziptool
+      - name: Use clang as the C/C++ compiler
+        run: |
+          echo "CC=clang"    >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DNON_PORTABLE=ON -DSSB64_BUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: CTest (protocol + structure)
+        run: ctest --test-dir build --output-on-failure
+
   rollback:
     name: Rollback suite (Windows)
     runs-on: windows-2022
@@ -35,6 +74,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         if: env.BASEROM_B64 != ''
         with:
+          persist-credentials: false
           submodules: recursive
           fetch-depth: 0
       - name: Skip notice
@@ -83,9 +123,24 @@ jobs:
       - name: Netplay local test — degraded net matrix (P1–P4)
         if: env.BASEROM_B64 != ''
         run: |
-          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 50 -JitterMs 10
-          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 100 -JitterMs 25 -LossPct 3 -DupPct 2 -ReorderPct 5
-          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 -LatencyMs 150 -JitterMs 50 -LossPct 5 -DupPct 5 -ReorderPct 15 -CorruptPct 2
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 50 -JitterMs 10 -OutDir out/logs/netplay-matrix/p1
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 100 -JitterMs 25 -LossPct 3 -DupPct 2 -ReorderPct 5 -OutDir out/logs/netplay-matrix/p2
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 150 -JitterMs 50 -LossPct 5 -DupPct 5 -ReorderPct 15 -CorruptPct 2 -OutDir out/logs/netplay-matrix/p3
+        shell: pwsh
+      - name: Desync/rollback metrics per profile
+        if: env.BASEROM_B64 != ''
+        run: |
+          foreach ($p in @('p1','p2','p3')) {
+            python tools/analysis/netplay_metrics.py --dir "out/logs/netplay-matrix/$p" `
+              --out "out/logs/netplay-matrix/$p/metrics.json" `
+              --history out/logs/metrics-history.jsonl --label $p
+          }
+          python tools/analysis/netplay_metrics.py --dir out/logs/netplay-test `
+            --out out/logs/netplay-test/metrics.json `
+            --history out/logs/metrics-history.jsonl --label sync-test
         shell: pwsh
 
       # ── §11: packet parser fuzz — must not crash; desync is expected ───
@@ -112,12 +167,15 @@ jobs:
           }
         shell: pwsh
 
-      - name: Upload traces + logs
+      - name: Upload traces + logs + metrics
         if: env.BASEROM_B64 != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: determinism-traces
-          path: out/logs/netplay-test/
+          path: |
+            out/logs/netplay-test/
+            out/logs/netplay-matrix/
+            out/logs/metrics-history.jsonl
           retention-days: 30
           if-no-files-found: ignore
 
@@ -131,6 +189,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         if: env.BASEROM_B64 != ''
         with:
+          persist-credentials: false
           submodules: recursive
           fetch-depth: 0
       - name: Skip notice
@@ -209,6 +268,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         if: env.BASEROM_B64 != ''
         with:
+          persist-credentials: false
           submodules: recursive
           fetch-depth: 0
       - name: Skip notice
@@ -279,6 +339,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         if: env.BASEROM_B64 != ''
         with:
+          persist-credentials: false
           submodules: recursive
           fetch-depth: 0
       - name: Skip notice
@@ -368,6 +429,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         if: env.BASEROM_B64 != ''
         with:
+          persist-credentials: false
           submodules: recursive
           fetch-depth: 0
       - name: Skip notice

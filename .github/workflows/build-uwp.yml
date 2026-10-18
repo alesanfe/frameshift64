@@ -9,6 +9,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read        # build-only workflow — no token writes needed
+
 jobs:
   build-uwp:
     runs-on: windows-2022
@@ -16,6 +19,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Configure MSVC

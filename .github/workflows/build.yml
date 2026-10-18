@@ -39,6 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
+          persist-credentials: false
           submodules: recursive
           # The updater derives the version via `git describe --tags` at
           # configure time; a shallow clone omits tags and breaks configure.
@@ -87,6 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
+          persist-credentials: false
           submodules: recursive
           fetch-depth: 0
       - name: Install build deps
@@ -110,6 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
+          persist-credentials: false
           submodules: recursive
           fetch-depth: 0
       - name: Install build deps

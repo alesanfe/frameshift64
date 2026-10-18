@@ -1,0 +1,103 @@
+name: Coverage
+
+# LLVM source-based coverage for the modern port layer (src/). Mirrors the
+# build.yml Linux job (clang, ROM-free: the binary and all tests here build
+# and run without extracted assets) with SSB64_ENABLE_COVERAGE=ON, runs the
+# ctest suite under LLVM_PROFILE_FILE, then merges with
+# tools/developer/testing/coverage.py.
+#
+# The report excludes components/ (decomp, libultraship, game-runtime),
+# tests/ and generated/ — the metric tracks the modern port layer only.
+#
+# Runs on PRs and pushes to main. Not a hard gate yet: it publishes the
+# line/region/function rates to the job summary and uploads lcov.info +
+# the HTML report. Once a baseline is established, wire the rates into a
+# diff-coverage check (e.g. "patch coverage >= 80%").
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: LLVM coverage (Linux/clang)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+          fetch-depth: 0
+      - name: Install build + coverage deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build zip clang llvm \
+            libsdl2-dev libzip-dev libglew-dev \
+            nlohmann-json3-dev libtinyxml2-dev libspdlog-dev \
+            libgl1-mesa-dev libegl1-mesa-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            python3 python3-pil imagemagick file
+          sudo touch /usr/bin/zipcmp /usr/bin/zipmerge /usr/bin/ziptool
+          sudo chmod +x /usr/bin/zipcmp /usr/bin/zipmerge /usr/bin/ziptool
+      - name: Use clang as the C/C++ compiler
+        run: |
+          echo "CC=clang"    >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+      - name: Configure (instrumented)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DNON_PORTABLE=ON \
+               -DSSB64_BUILD_TESTING=ON -DSSB64_ENABLE_COVERAGE=ON
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Test (profiled)
+        env:
+          LLVM_PROFILE_FILE: ${{ github.workspace }}/out/coverage/native/raw/%p-%m.profraw
+        run: |
+          mkdir -p out/coverage/native/raw
+          ctest --test-dir build --output-on-failure
+      - name: Merge + report
+        run: |
+          python3 tools/developer/testing/coverage.py \
+            --binary build/BattleShip \
+            --output-dir out/coverage/native
+      - name: Coverage summary
+        run: |
+          llvm-cov report build/BattleShip \
+            -instr-profile out/coverage/native/coverage.profdata \
+            -ignore-filename-regex="(decomp|libultraship|torch|tests|generated|vcpkg_installed)/" \
+            >> "$GITHUB_STEP_SUMMARY"
+      - name: Coverage gate (ratchet)
+        run: |
+          # lcov.info is the machine-readable total: LF = lines found,
+          # LH = lines hit. Fail the run when coverage drops below the
+          # committed baseline (config/coverage-baseline.txt) — bump that
+          # file after the first green run and whenever coverage improves.
+          PCT=$(awk '/^LF:/{f+=$2} /^LH:/{h+=$2} END{print (f?100*h/f:0)}' \
+                out/coverage/native/lcov.info)
+          BASE=$(cat config/coverage-baseline.txt)
+          echo "coverage: ${PCT}% (baseline ${BASE}%)"
+          awk -v cur="$PCT" -v base="$BASE" \
+            'BEGIN{exit (cur + 0.05 < base) ? 1 : 0}' || {
+              echo "::error::coverage ${PCT}% dropped below baseline ${BASE}%"
+              exit 1; }
+          echo "coverage_total_pct=$PCT" >> "$GITHUB_ENV"
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: coverage-report
+          path: |
+            out/coverage/native/lcov.info
+            out/coverage/native/html/
+            out/coverage/native/coverage.profdata
+          retention-days: 30
+          if-no-files-found: error
