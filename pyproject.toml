@@ -53,6 +53,9 @@ markers = [
     "slow: unsuitable for the quick test suite",
     "serial: cannot run concurrently",
     "flaky: temporarily quarantined test with an issue",
+    "hardware: requires physical hardware (console, controller, device)",
+    "destructive: mutates device or repo state — never run in parallel",
+    "release_gate: must pass before a release is cut",
 ]
 timeout = 60
 junit_family = "xunit2"
@@ -94,9 +97,20 @@ output = "out/coverage/python/coverage.xml"
 # set is kept; only the suppressions below are pinned.
 [tool.ruff]
 target-version = "py311"
+# Submodule checkouts are upstream repos — their Python tooling is linted
+# (or not) by their own projects; findings here are not actionable in-tree.
+extend-exclude = ["components"]
 
 [tool.ruff.lint.per-file-ignores]
 # Dev/test tooling: broad excepts, stdout-fallback file handles, and silent
 # try/except-skip are intentional patterns, not production error boundaries.
 "tools/**" = ["BLE001", "SIM115", "S110", "S112", "TRY004", "DTZ011"]
 "tests/**" = ["BLE001", "SIM115", "S110", "S112"]
+
+# cmake-lint (cmakelang) — repo conventions: CRLF checkouts on Windows,
+# 4-space body indent, 120-col lines. Without this, `cmake-lint` reports
+# C0327 on every line and C0307 on every body block.
+[tool.cmake-format]
+line_ending = "windows"
+tab_size = 4
+line_width = 120

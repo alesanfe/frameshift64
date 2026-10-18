@@ -36,7 +36,7 @@ CAPTURE_SIZE = (960, 800)
 
 
 def app_cfg_paths(exe_dir: Path) -> list:
-    """Every location the runtime may resolve its config from. NON_PORTABLE
+    r"""Every location the runtime may resolve its config from. NON_PORTABLE
     builds read only SDL_GetPrefPath (%APPDATA%\BattleShip) — see
     Context::InitConfiguration -> GetPathRelativeToAppDirectory — while a
     portable build reads ./BattleShip.cfg.json. Seed all candidates: the
@@ -73,7 +73,7 @@ def write_cfg(cfg_path: Path, size: tuple, lang: int = 0) -> None:
 
 def lobby_healthy(timeout: float = 1.0) -> bool:
     try:
-        return urllib.request.urlopen(HEALTH, timeout=timeout).status == 200
+        return urllib.request.urlopen(HEALTH, timeout=timeout).status == 200  # nosec B310 — fixed localhost URL
     except Exception:
         return False
 

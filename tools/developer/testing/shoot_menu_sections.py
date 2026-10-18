@@ -45,6 +45,9 @@ SECTIONS = [
     ("Settings", "SettingsSidebarSection", "Audio", "settings-audio"),
     ("Settings", "SettingsSidebarSection", "Accessibility", "settings-accessibility"),
     ("Settings", "SettingsSidebarSection", "Cheats", "settings-cheats"),
+    # Developer only registers while gSettings.EnableDevTools is set.
+    ("Settings", "SettingsSidebarSection", "Developer", "settings-developer",
+     {"gSettings.EnableDevTools": 1}),
     ("Customization", "CustomizationSidebarSection", "Shaders", "customization-shaders"),
     ("Customization", "CustomizationSidebarSection", "Texture Packs", "customization-texture-packs"),
     ("Customization", "CustomizationSidebarSection", "Script Mods", "customization-script-mods"),
@@ -161,7 +164,7 @@ def run_shot(exe: Path, cwd: Path, env: dict, tmp: Path, dest: Path) -> bool:
 
 
 def app_cfg_paths(exe_dir: Path) -> list:
-    """Every location the runtime may resolve its config from. The platform
+    r"""Every location the runtime may resolve its config from. The platform
     app dir (%APPDATA%\BattleShip) is authoritative for this build, but a
     BattleShip.cfg.json next to the exe is used by portable runs — seed
     both so the menu selection lands regardless of which one wins."""
@@ -251,7 +254,8 @@ def main() -> int:
     })
 
     # --matrix expands (section x size x scale) into the same name-keyed loop.
-    sections = [(h, s, sb, n) for h, s, sb, n in SECTIONS]
+    # Entries may carry a 5th element: extra CVars seeded for that shot only.
+    sections = [(*e, {}) if len(e) == 4 else e for e in SECTIONS]
     windows = list(WINDOWS)
     if args.matrix:
         sections = [e for e in sections if e[3] in MATRIX_SECTIONS]
@@ -299,20 +303,21 @@ def main() -> int:
             for size in MATRIX_SIZES:
                 for scale in MATRIX_SCALES:
                     tag = f"{size[0]}x{size[1]}-s{scale:g}"
-                    for header, scvar, sidebar, name in sections:
+                    for header, scvar, sidebar, name, extra in sections:
                         if args.only and name not in args.only:
                             continue
                         out_name = f"{name}-{tag}"
                         for p in cfg_paths:
-                            write_cfg(p, header, scvar, sidebar, size=size, ui_scale=scale)
+                            write_cfg(p, header, scvar, sidebar, extra,
+                                      size=size, ui_scale=scale)
                         capture(out_name, args.out / f"{out_name}.png", env,
                                 expect_header=header)
         else:
-            for header, scvar, sidebar, name in sections:
+            for header, scvar, sidebar, name, extra in sections:
                 if args.only and name not in args.only:
                     continue
                 for p in cfg_paths:
-                    write_cfg(p, header, scvar, sidebar,
+                    write_cfg(p, header, scvar, sidebar, extra,
                               size=capture_size, ui_scale=args.ui_scale)
                 capture(name, args.out / f"{name}.png", env, expect_header=header)
 

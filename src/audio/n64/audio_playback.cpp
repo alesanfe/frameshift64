@@ -6,11 +6,12 @@
 //   https://github.com/HarbourMasters/Starship
 // Licensed under the MIT License; see LICENSE at repository root.
 
-// Audio playback bridge — Phase 1: silence pipeline
+// Audio playback bridge
 //
-// Generates zeroed PCM and feeds it to libultraship's AudioPlayerPlayFrame()
-// to prove the audio output path works end-to-end. The audio coroutine calls
-// portAudioPushSilence() once per tick.
+// portAudioSubmitFrame() receives real synthesized PCM from n_alAudioFrame
+// (interleaved stereo s16), applies the output low-pass, and feeds it to
+// libultraship's AudioPlayerPlayFrame(). portAudioPushSilence() is the
+// fallback for ticks with no synthesized buffer.
 
 #include "audio_playback.h"
 #include "port_log.h"

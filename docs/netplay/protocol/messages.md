@@ -42,3 +42,16 @@ Each failed check → `sSYNetPeerPacketsDropped++`, no state change.
 Room codes: `^[A-HJ-NP-Z2-9]{6}$` (6 chars, ambiguous glyphs excluded).
 Text messages ≤ 2048 B; binary ≤ 1024 B; rate limits 20 text/s and
 600 binary/s per socket, plus a bounded join/uplink rate per room.
+
+## HTTP endpoints (no WebSocket upgrade)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | uptime probe `{"ok":true,...}` |
+| GET | `/metrics` | Prometheus exposition (node-lobby only) |
+| GET | `/leaderboard` | `{"entries":[{name,rating,wins,losses,updated}]}` top-100 by rating |
+| POST | `/submit` | upsert `{"name",key,rating,wins,losses}` — `key` is the client's persisted claim token (≥16 hex); `400 name-taken` on key mismatch, `400 bad-*` on out-of-range fields |
+
+Leaderboard state lives on the dedicated `leaderboard-global` DO (worker)
+or `leaderboard.json` (node-lobby). Ratings are self-reported — see
+observability.md for the threat model.

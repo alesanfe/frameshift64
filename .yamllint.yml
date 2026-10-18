@@ -16,6 +16,7 @@ rules:
 ignore: |
   build/
   build-lint/
+  out/
   .venv-lint/
   .claude/
   components/decomp/

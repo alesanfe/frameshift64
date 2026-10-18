@@ -28,7 +28,9 @@ export const IDLE_SWEEP_MS = 30000;
 // trip fatal version/compat checks and kill the room.
 export const SPEC_MAGIC = [0x53, 0x53, 0x42, 0x4c, 0x20];  // "SSBL "
 
-export const VALID_ROLES = new Set(["host", "join", "spec"]);
+export const VALID_ROLES = new Set(["host", "join", "spec", "queue"]);
+// "queue" is matchmaking (quick play): the room assigns the real role — the
+// first queued connection becomes the host, later ones join. v2 only.
 
 /* Per-connection uplink key (v2): the uplink upgrade must prove it knows
  * this secret, so slot ownership comes from the welcome, not the URL. */

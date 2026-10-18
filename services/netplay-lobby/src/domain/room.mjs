@@ -153,6 +153,15 @@ export class LobbyRoom {
                        endpoint: null, relay: false, owner } };
     }
 
+    // Matchmaking (v2): a queue connection hosts when the room has no host,
+    // joins otherwise — two queued players always pair up. Quick-play rooms
+    // are the well-known QUEUE<n> codes; everything downstream stays the
+    // normal host/join semantics.
+    if (p.role === "queue") {
+      if (p.version !== 2) return { kind: "reject", reason: "version-mismatch" };
+      p = { ...p, role: this.socketForSlot(0) ? "join" : "host" };
+    }
+
     // Spectator (v2): slots 4..7, no endpoints, always relayed — the host
     // pushes every player's confirmed input stream to them.
     if (p.role === "spec") {

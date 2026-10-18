@@ -1,6 +1,7 @@
 /* http_download.cpp — per-platform backends behind the common
  * HttpDownloadToFile contract declared in http_download.h. */
 #include "http_download.h"
+#include "url_safety.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -73,59 +74,34 @@ bool HttpDownloadToFile(const std::string&, const std::filesystem::path&) {
 }
 } // namespace ssb64
 
-#else // desktop: Windows / Linux / macOS — `curl` on PATH
+#elif defined(SSB64_HAVE_CURL) // desktop: in-process libcurl
+
+#include "http_curl.h"
 
 namespace ssb64 {
-namespace {
-
-/* Run a subprocess, drain stdout so the child can't block on a full
- * pipe, and return true on exit code 0. */
-bool RunSilent(const std::string& cmd) {
-#if defined(_WIN32)
-    FILE* pipe = _popen(cmd.c_str(), "r");
-#else
-    FILE* pipe = popen(cmd.c_str(), "r");
-#endif
-    if (!pipe) {
-        SPDLOG_ERROR("http download: popen failed for `{}`", cmd);
-        return false;
-    }
-    char buf[256];
-    while (fgets(buf, sizeof(buf), pipe) != nullptr) {
-    }
-#if defined(_WIN32)
-    const int rc = _pclose(pipe);
-#else
-    const int rc = pclose(pipe);
-#endif
-    if (rc != 0) {
-        // 127 = "command not found" — breadcrumb for minimal Linux
-        // installs without curl.
-        SPDLOG_ERROR("http download: command failed (exit={}): `{}`", rc, cmd);
-    }
-    return rc == 0;
-}
-
-/* Forward slashes are accepted by every tool we shell out to and avoid
- * the cmd.exe pitfall where a path ending in a backslash escapes the
- * closing quote. */
-std::string ShellQuote(const std::filesystem::path& p) {
-    return "\"" + p.generic_string() + "\"";
-}
-
-} // namespace
 
 bool HttpDownloadToFile(const std::string& url,
                         const std::filesystem::path& destPath) {
-    const std::string cmd = "curl -fLs -o " + ShellQuote(destPath) + " \"" + url + "\"";
-    if (RunSilent(cmd)) {
-        return true;
+    if (!IsAllowedHttpUrl(url)) {
+        SPDLOG_ERROR("http download: refusing unsafe URL `{}`", url);
+        return false;
     }
-    std::error_code ec;
-    std::filesystem::remove(destPath, ec);
-    return false;
+    std::string error;
+    if (!CurlDownloadToFile(url, destPath, &error)) {
+        SPDLOG_ERROR("http download: `{}` failed: {}", url, error);
+        return false;
+    }
+    return true;
 }
 
+} // namespace ssb64
+
+#else // no curl backend (Switch): downloads unavailable
+
+namespace ssb64 {
+bool HttpDownloadToFile(const std::string&, const std::filesystem::path&) {
+    return false;
+}
 } // namespace ssb64
 
 #endif

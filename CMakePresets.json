@@ -136,6 +136,18 @@
    "cacheVariables": {
     "SSB64_ENABLE_UBSAN": "ON"
    }
+  },
+  {
+   "name": "web-wasm",
+   "displayName": "Web WASM (Emscripten, US)",
+   "inherits": "ninja-base",
+   "toolchainFile": "${sourceDir}/out/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+   "binaryDir": "${sourceDir}/out/build/web-wasm",
+   "cacheVariables": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "SSB64_VERSION": "us",
+    "NON_PORTABLE": "OFF"
+   }
   }
  ],
  "buildPresets": [

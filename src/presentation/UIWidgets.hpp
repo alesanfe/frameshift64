@@ -744,7 +744,12 @@ bool Combobox(std::string label, T* value, const std::map<T, const char*>& combo
     }
 
     ImGui::SetNextItemWidth(comboWidth);
-    if (ImGui::BeginCombo(invisibleLabel, TR(comboMap.at(*value)), options.flags)) {
+    /* The stored key can be absent from the map (empty dynamic maps like the
+     * profiles picker, or a stale CVar) — at() throws std::out_of_range mid-
+     * frame and the aborted frame never reaches EndFrame. */
+    const auto previewIt = comboMap.find(*value);
+    const char* previewLabel = previewIt != comboMap.end() ? previewIt->second : "";
+    if (ImGui::BeginCombo(invisibleLabel, TR(previewLabel), options.flags)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 10.0f));
         for (const auto& pair : comboMap) {
             if (strlen(pair.second) > 1) {
@@ -764,7 +769,7 @@ bool Combobox(std::string label, T* value, const std::map<T, const char*>& combo
                 ImGui::SameLine();
                 ImGui::Text("%s", trueLabel.c_str());
             } else if (options.labelPosition == LabelPositions::Far) {
-                float width = ImGui::CalcTextSize(TR(comboMap.at(*value))).x + ImGui::GetStyle().FramePadding.x * 2;
+                float width = ImGui::CalcTextSize(TR(previewLabel)).x + ImGui::GetStyle().FramePadding.x * 2;
                 ImGui::SameLine(ImGui::GetContentRegionAvail().x - width);
                 ImGui::Text("%s", trueLabel.c_str());
             }
@@ -787,7 +792,13 @@ template <typename T = size_t>
 bool Combobox(std::string label, T* value, const std::vector<const char*>& comboVector,
               const ComboboxOptions& options = {}) {
     bool dirty = false;
-    size_t currentValueIndex = static_cast<size_t>(*value);
+    /* A persisted CVar can hold an index past the end (config hand-edited or
+     * the list shrank): clamp before at()/[] below or it throws out_of_range
+     * inside the frame. */
+    size_t currentValueIndex =
+        (!comboVector.empty() && static_cast<size_t>(*value) < comboVector.size())
+            ? static_cast<size_t>(*value)
+            : 0;
     std::string invisibleLabelStr = "##" + std::string(label);
     const char* invisibleLabel = invisibleLabelStr.c_str();
     std::string trueLabel = label.substr(0, label.find("#"));
@@ -827,7 +838,8 @@ bool Combobox(std::string label, T* value, const std::vector<const char*>& combo
     }
 
     ImGui::SetNextItemWidth(comboWidth);
-    if (ImGui::BeginCombo(invisibleLabel, TR(comboVector.at(currentValueIndex)), options.flags)) {
+    const char* previewLabel = comboVector.empty() ? "" : comboVector.at(currentValueIndex);
+    if (ImGui::BeginCombo(invisibleLabel, TR(previewLabel), options.flags)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 10.0f));
         for (size_t i = 0; i < comboVector.size(); ++i) {
             auto newValue = static_cast<T>(i);
@@ -872,7 +884,10 @@ template <typename T = size_t>
 bool Combobox(std::string label, T* value, const std::vector<std::string>& comboVector,
               const ComboboxOptions& options = {}) {
     bool dirty = false;
-    size_t currentValueIndex = static_cast<size_t>(*value);
+    size_t currentValueIndex =
+        (!comboVector.empty() && static_cast<size_t>(*value) < comboVector.size())
+            ? static_cast<size_t>(*value)
+            : 0;
     std::string invisibleLabelStr = "##" + std::string(label);
     const char* invisibleLabel = invisibleLabelStr.c_str();
     std::string trueLabel = label.substr(0, label.find("#"));
@@ -912,7 +927,8 @@ bool Combobox(std::string label, T* value, const std::vector<std::string>& combo
     }
 
     ImGui::SetNextItemWidth(comboWidth);
-    if (ImGui::BeginCombo(invisibleLabel, TR(comboVector.at(currentValueIndex).c_str()), options.flags)) {
+    const char* previewLabel = comboVector.empty() ? "" : comboVector.at(currentValueIndex).c_str();
+    if (ImGui::BeginCombo(invisibleLabel, TR(previewLabel), options.flags)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 10.0f));
         for (size_t i = 0; i < comboVector.size(); ++i) {
             auto newValue = static_cast<T>(i);

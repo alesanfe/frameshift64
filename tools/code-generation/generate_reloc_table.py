@@ -13,7 +13,7 @@ Usage:
   jp          : extraction/jp -> generated/src/jp/RelocFileTable.jp.{cpp,h}
                 (RELOC_FILE_COUNT = 2107)
 
-src/resources/relocation/RelocFileTable.h is a committed selector shim that
+src/game/engine/relocation/RelocFileTable.h is a committed selector shim that
 #includes RelocFileTable.<REGION>.h, mirroring the decomp's
 reloc_data.h design so both versions coexist in the source tree.
 """

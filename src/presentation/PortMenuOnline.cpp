@@ -11,7 +11,10 @@
 #include "Toasts.h"
 #include "UIWidgets.hpp"
 #include "Compat.h"
+#include "netfriends.h"
+#include "netleaderboard.h"
 #include "netlobby.h"
+#include "netstats.h"
 #include "udp_transport.h"
 #include "websocket_transport.h"
 
@@ -142,7 +145,7 @@ static void PollConnTest(ConnTest& test) {
             test.result = fmt::format(fmt::runtime(TR("Server reachable — handshake answered in {} ms")), elapsedMs);
             test.ok = true;
         } else if (elapsedMs > 10000) {
-            test.result = "Timed out — the server did not answer within 10 seconds";
+            test.result = TR("Timed out — the server did not answer within 10 seconds");
             test.ok = false;
         } else {
             test.result = fmt::format(fmt::runtime(TR("Unreachable — {}")), (err != nullptr && err[0] != '\0') ? err : "no error detail");
@@ -212,6 +215,21 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
      * to the room/status view below so the creation controls can't be
      * mistaken for live settings. */
     if (idle) {
+        if (ImGui::CollapsingHeader(TR("How to play online"))) {
+            ImGui::PushTextWrapPos();
+            ImGui::TextWrapped("%s", TR(
+                "• Quick play: press Find match — you join a public queue room and\n"
+                "  get paired with whoever else is searching. No code needed.\n"
+                "• Play with a friend: one of you presses Host and shares the\n"
+                "  6-letter room code; the other enters it under Join a match.\n"
+                "• Spectate: enter a room code and press Spectate — you watch\n"
+                "  live without affecting the match or its netcode.\n"
+                "• Ready up when you're set; the host starts the match.\n"
+                "• LAN (direct IP) skips the lobby server entirely — use it on\n"
+                "  the same network or over a VPN."));
+            ImGui::PopTextWrapPos();
+        }
+
         ImGui::SeparatorText(TR("Host a match"));
         ImGui::TextUnformatted(TR("Stage"));
         ImGui::SetNextItemWidth(-FLT_MIN);
@@ -253,17 +271,77 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                 ImGui::EndCombo();
             }
         }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         if (autoDelay) {
-            ImGui::TextDisabled(TR("Automatic: resolves from measured ping at room start (now: %d "
-                                   "frames). Everyone in the room plays with the host's value."),
-                                effectiveDelay);
+            ImGui::TextWrapped(TR("Automatic: resolves from measured ping at room start (now: %d "
+                                  "frames). Everyone in the room plays with the host's value."),
+                               effectiveDelay);
         } else {
-            ImGui::TextDisabled("%s", TR("Recommended: 2 for most connections. Raise it on high-ping "
-                                "links to reduce visible rollbacks; everyone in the room "
-                                "plays with the host's value."));
+            ImGui::TextWrapped("%s", TR("Recommended: 2 for most connections. Raise it on high-ping "
+                               "links to reduce visible rollbacks; everyone in the room "
+                               "plays with the host's value."));
         }
+        ImGui::PopStyleColor();
         if (UIWidgets::Button(TR("Host"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
             port_netlobby_host(serverBuf, fighter, stage, stocks, itemsOn ? 1 : 0, effectiveDelay);
+        }
+
+        ImGui::SeparatorText(TR("Quick play"));
+        /* Local rating mirror: rating, record and history live in
+         * netstats.json next to the save file. */
+        {
+            const int rating = port_netstats_rating();
+            const int n = port_netstats_wins() + port_netstats_losses() + port_netstats_draws();
+            char seasonBuf[16] = {};
+            port_netstats_season(seasonBuf, sizeof(seasonBuf));
+            if (seasonBuf[0] != '\0') {
+                ImGui::TextDisabled(TR("Season %s"), seasonBuf);
+            }
+            if (n == 0) {
+                ImGui::TextDisabled("%s", TR("No online matches on record yet."));
+            } else {
+                std::string line = port_netstats_provisional()
+                    ? fmt::format(fmt::runtime(TR("Rating: %d (provisional)  ·  %d-%d-%d")),
+                                  rating, port_netstats_wins(), port_netstats_losses(),
+                                  port_netstats_draws())
+                    : fmt::format(fmt::runtime(TR("Rating: %d  ·  %d-%d-%d")),
+                                  rating, port_netstats_wins(), port_netstats_losses(),
+                                  port_netstats_draws());
+                ImGui::TextWrapped("%s", line.c_str());
+                if (ImGui::TreeNode(TR("Recent matches"))) {
+                    const int total = port_netstats_history_count();
+                    const int shown = (std::min)(total, 5);
+                    for (int i = 0; i < shown; i++) {
+                        int won = 0, opp = -1;
+                        unsigned int ticks = 0;
+                        unsigned long long ts = 0;
+                        if (!port_netstats_history_at(i, &won, &opp, &ticks, &ts)) {
+                            continue;
+                        }
+                        const char* verdict = won == 1 ? TR("Win")
+                                            : won == 0 ? TR("Loss") : TR("Draw");
+                        const ImVec4 vc = won == 1 ? SemanticColors::Success
+                                        : won == 0 ? SemanticColors::Error
+                                                   : SemanticColors::Muted;
+                        ImGui::Bullet();
+                        ImGui::TextColored(vc, "%s", verdict);
+                        ImGui::SameLine();
+                        if (opp > 0) {
+                            ImGui::TextDisabled(TR("vs ~%d rating  ·  %ds"), opp, ticks / 60);
+                        } else {
+                            ImGui::TextDisabled(TR("%ds"), ticks / 60);
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+        }
+        if (UIWidgets::Button(TR("Find match"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+            port_netlobby_quickplay(serverBuf, fighter, stage, stocks, itemsOn ? 1 : 0, effectiveDelay);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", TR("Joins the public queue — pairs with whoever else is waiting.\n"
+                                      "Your rating is shared with the opponent and updates after the match."));
         }
 
         ImGui::SeparatorText(TR("Join a match"));
@@ -313,6 +391,7 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
             ImGui::TextUnformatted(TR("Host port"));
             ImGui::SetNextItemWidth(-FLT_MIN);
             ImGui::InputInt("##LanPort", &lanPort, 0, 0);
+            lanPort = std::clamp(lanPort, 1, 65535);
             if (UIWidgets::Button(TR("Host LAN"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
                 port_netlobby_lan_host(lanPort, fighter, stage, stocks, itemsOn ? 1 : 0, effectiveDelay);
             }
@@ -322,6 +401,117 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
             if (UIWidgets::Button(TR("Join LAN"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
                 port_netlobby_lan_join(lanAddr, fighter);
             }
+        }
+
+        if (ImGui::CollapsingHeader(TR("Friends"))) {
+            static char friendBuf[32] = {};
+            ImGui::SetNextItemWidth(-80.0f);
+            const bool nameEnter = ImGui::InputText("##FriendName", friendBuf, sizeof(friendBuf),
+                                                    ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::SameLine();
+            const bool canAdd = friendBuf[0] != '\0';
+            ImGui::BeginDisabled(!canAdd);
+            if (ImGui::SmallButton(TR("Add")) || (nameEnter && canAdd)) {
+                if (port_netfriends_add(friendBuf)) {
+                    ToastSuccess(TR("Friend added"));
+                    friendBuf[0] = '\0';
+                } else {
+                    ToastError(TR("Could not add that name"));
+                }
+            }
+            ImGui::EndDisabled();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            ImGui::TextWrapped("%s", TR("Names are the ones players type in their profile — a friend "
+                                       "list entry flags them when they join your room. Blocking a "
+                                       "name warns you if someone using it connects."));
+            ImGui::PopStyleColor();
+            const int friendCount = port_netfriends_count();
+            if (friendCount == 0) {
+                ImGui::TextDisabled("%s", TR("No friends added yet."));
+            }
+            for (int i = 0; i < friendCount; i++) {
+                PortNetFriend f;
+                if (!port_netfriends_get(i, &f)) {
+                    continue;
+                }
+                ImGui::PushID(i);
+                ImGui::BulletText("%s", f.name.data());
+                ImGui::SameLine();
+                if (f.blocked) {
+                    ImGui::TextColored(SemanticColors::Error, "%s", TR("blocked"));
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(TR("Unblock"))) {
+                        port_netfriends_set_blocked(f.name.data(), false);
+                    }
+                } else {
+                    if (ImGui::SmallButton(TR("Block"))) {
+                        port_netfriends_set_blocked(f.name.data(), true);
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton(TR("Remove"))) {
+                    port_netfriends_remove(f.name.data());
+                }
+                ImGui::PopID();
+            }
+        }
+
+        if (ImGui::CollapsingHeader(TR("Leaderboard"))) {
+            /* Self-reported board on the lobby server — refreshed on
+             * demand, rows cached between draws. */
+            int submitStats = CVarGetInteger("gNetplay.SubmitStats", 0);
+            if (ImGui::Checkbox(TR("Publish my rating after matches"), &submitStats)) {
+                CVarSetInteger("gNetplay.SubmitStats", submitStats);
+                save();
+            }
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            ImGui::TextWrapped("%s", TR("Shares your display name and rating with the lobby server. "
+                                       "Off by default."));
+            ImGui::PopStyleColor();
+            if (ImGui::SmallButton(TR("Refresh"))) {
+                port_netleaderboard_fetch(serverBuf);
+            }
+            const int lbState = port_netleaderboard_state();
+            if (lbState == 1) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", TR("Loading..."));
+            }
+            if (lbState == -1) {
+                ImGui::TextColored(SemanticColors::Error, "%s",
+                                 TR("Could not reach the leaderboard."));
+            } else if (lbState == 2) {
+                const int myRank = port_netleaderboard_my_rank();
+                if (myRank > 0) {
+                    ImGui::TextColored(SemanticColors::Success,
+                                       TR("Your rank: #%d"), myRank);
+                }
+                const int total = port_netleaderboard_count();
+                if (total == 0) {
+                    ImGui::TextDisabled("%s", TR("No entries yet."));
+                }
+                for (int i = 0; i < total; i++) {
+                    char name[32] = {};
+                    int r = 0, w = 0, l = 0;
+                    if (!port_netleaderboard_at(i, name, sizeof(name), &r, &w, &l)) {
+                        continue;
+                    }
+                    const bool mine = (myRank == i + 1);
+                    ImGui::Bullet();
+                    if (mine) {
+                        ImGui::TextColored(SemanticColors::Success, "#%d %s", i + 1, name);
+                    } else {
+                        ImGui::Text("#%d %s", i + 1, name);
+                    }
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%d  ·  %d-%d", r, w, l);
+                }
+            } else {
+                ImGui::TextDisabled("%s", TR("Press Refresh to load the board."));
+            }
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            ImGui::TextWrapped("%s", TR("Ratings are self-reported by each client — treat the board "
+                                       "as a friends ladder, not verified ranked."));
+            ImGui::PopStyleColor();
         }
 
         if (ImGui::CollapsingHeader(TR("Advanced"))) {
@@ -372,7 +562,7 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
         ImGui::SameLine();
         if (ImGui::SmallButton(TR("Copy"))) {
             ImGui::SetClipboardText(port_netlobby_code());
-            ToastSuccess("Room code copied to clipboard");
+            ToastSuccess(TR("Room code copied to clipboard"));
         }
     }
     if (state == PORT_NETLOBBY_CONNECTED || state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH) {
@@ -405,6 +595,11 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
             }
             ImGui::BulletText(TR("Player %d: %s"), slot + 1, label);
             ImGui::SameLine(0.0f, 4.0f);
+            const char* pname = port_netlobby_peer_name_at(i);
+            if (pname[0] != '\0') {
+                ImGui::TextDisabled(TR("(%s)"), pname);
+                ImGui::SameLine(0.0f, 4.0f);
+            }
             if (slot == 0) {
                 ImGui::TextDisabled("%s", TR("— host"));
             } else {

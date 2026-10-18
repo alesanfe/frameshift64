@@ -129,11 +129,17 @@ jobs:
             -LatencyMs 100 -JitterMs 25 -LossPct 3 -DupPct 2 -ReorderPct 5 -OutDir out/logs/netplay-matrix/p2
           ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
             -LatencyMs 150 -JitterMs 50 -LossPct 5 -DupPct 5 -ReorderPct 15 -CorruptPct 2 -OutDir out/logs/netplay-matrix/p3
+          # Torture profile: 250 ms / 20% loss / heavy jitter + dup — the
+          # worst link the rollback layer is expected to survive without a
+          # crash or an unchecked desync (desync detection itself is fine).
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 250 -JitterMs 75 -LossPct 20 -DupPct 5 -ReorderPct 20 -CorruptPct 3 `
+            -OutDir out/logs/netplay-matrix/p4
         shell: pwsh
       - name: Desync/rollback metrics per profile
         if: env.BASEROM_B64 != ''
         run: |
-          foreach ($p in @('p1','p2','p3')) {
+          foreach ($p in @('p1','p2','p3','p4')) {
             python tools/analysis/netplay_metrics.py --dir "out/logs/netplay-matrix/$p" `
               --out "out/logs/netplay-matrix/$p/metrics.json" `
               --history out/logs/metrics-history.jsonl --label $p
@@ -141,6 +147,15 @@ jobs:
           python tools/analysis/netplay_metrics.py --dir out/logs/netplay-test `
             --out out/logs/netplay-test/metrics.json `
             --history out/logs/metrics-history.jsonl --label sync-test
+        shell: pwsh
+
+      # ── T3: golden gameplay — fixed input tapes vs committed state traces ──
+      # Each case replays a committed .ssr and diffs every tick's state hash
+      # against tests/support/golden/*.trace. A DESYNC here means the sim is
+      # no longer bit-identical to the recorded baseline.
+      - name: Golden gameplay cases
+        if: env.BASEROM_B64 != ''
+        run: python tests/e2e/golden/golden_gameplay_test.py --build-dir build/Release --timeout 300
         shell: pwsh
 
       # ── §11: packet parser fuzz — must not crash; desync is expected ───

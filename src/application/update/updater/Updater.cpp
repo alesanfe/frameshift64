@@ -19,6 +19,7 @@
 
 #include "FileHash.h" // Sha256File + DownloadedFileMatches (shared with ModPackDownloader)
 #include "ReleaseSig.h" // TD-009: signed SHA256SUMS.txt verification
+#include "http_curl.h" // CurlGetToString / CurlDownloadToFile — libcurl in-process
 #include "port_log.h"
 
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -31,8 +32,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <iterator>
 #include <mutex>
 #include <sstream>
@@ -44,8 +47,13 @@
 
 #include <nlohmann/json.hpp>
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
+#include <cerrno>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 #if defined(_WIN32)
@@ -233,54 +241,6 @@ int CompareVersions(const std::string& a, const std::string& b) {
 }
 
 #if defined(_WIN32)
-int RunCaptureNoWindow(std::string cmd, const std::function<void(const std::string&)>& onLine) {
-    HANDLE readPipe = nullptr;
-    HANDLE writePipe = nullptr;
-    SECURITY_ATTRIBUTES sa{};
-    sa.nLength = sizeof(sa);
-    sa.bInheritHandle = TRUE;
-    if (!CreatePipe(&readPipe, &writePipe, &sa, 0)) return -1;
-    SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
-
-    STARTUPINFOA si{};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = writePipe;
-    si.hStdError = writePipe;
-
-    PROCESS_INFORMATION pi{};
-    BOOL ok = CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
-    CloseHandle(writePipe);
-    if (!ok) {
-        CloseHandle(readPipe);
-        return -1;
-    }
-    std::string line;
-    char buf[512];
-    DWORD got = 0;
-    while (ReadFile(readPipe, buf, sizeof(buf), &got, nullptr) && got > 0) {
-        for (DWORD i = 0; i < got; ++i) {
-            char c = buf[i];
-            if (c == '\r' || c == '\n') {
-                if (!line.empty()) {
-                    onLine(line);
-                    line.clear();
-                }
-            } else {
-                line += c;
-            }
-        }
-    }
-    if (!line.empty()) onLine(line);
-    CloseHandle(readPipe);
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD code = 0;
-    GetExitCodeProcess(pi.hProcess, &code);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    return static_cast<int>(code);
-}
-
 std::string ExecutablePath() {
     char path[MAX_PATH];
     DWORD n = GetModuleFileNameA(nullptr, path, MAX_PATH);
@@ -288,60 +248,33 @@ std::string ExecutablePath() {
 }
 #endif
 
-int RunCapture(std::string cmd, const std::function<void(const std::string&)>& onLine) {
-#ifdef __SWITCH__
-    // No point in trying to capture output on Switch.
-    return 0;
-#elif defined(_WIN32)
-    return RunCaptureNoWindow(std::move(cmd), onLine);
-#else
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return -1;
-    int c;
-    std::string currentLine;
-    while ((c = fgetc(pipe)) != EOF) {
-        if (c == '\r' || c == '\n') {
-            if (!currentLine.empty()) onLine(currentLine);
-            currentLine.clear();
-        } else {
-            currentLine += static_cast<char>(c);
-        }
+/* In-process HTTP via libcurl (src/platform/http/http_curl.cpp). Replaces
+ * the curl.exe subprocess + pipe dance: no shell quoting to audit, no
+ * AppImage LD_LIBRARY_PATH strip, and progress comes from a real callback
+ * instead of parsing `-#` output. */
+bool FetchToString(const std::string& url, std::string* out, long timeoutSeconds = 600) {
+    std::string err;
+    if (!CurlGetToString(url, out, &err,
+                       { "Accept: application/vnd.github+json" }, timeoutSeconds)) {
+        port_log("Updater: fetch %s failed: %s\n", url.c_str(), err.c_str());
+        return false;
     }
-    if (!currentLine.empty()) onLine(currentLine);
-    return pclose(pipe);
-#endif
+    return true;
 }
 
-std::string CurlCommandPrefix() {
-#if defined(__linux__)
-    // AppRun prepends bundled AppImage libs for the game itself. Those libs
-    // poison distro tools like curl/xdg-open, so strip loader overrides here.
-    return "env -u LD_LIBRARY_PATH -u LD_PRELOAD curl";
-#else
-    return "curl";
-#endif
+bool FetchToFile(const std::string& url, const std::filesystem::path& destPath,
+                 const CurlProgressFn& progress = nullptr) {
+    std::string err;
+    if (!CurlDownloadToFile(url, destPath, &err, progress)) {
+        port_log("Updater: download %s failed: %s\n", url.c_str(), err.c_str());
+        return false;
+    }
+    return true;
 }
 
-std::string BuildCheckCommand() {
-#if defined(_WIN32)
-    return std::string("curl -fLsS -m 10 -H \"User-Agent: SmashClassic-Updater\" -H \"Accept: application/vnd.github+json\" \"") +
-           kLatestReleaseApi + "\"";
-#else
-    return CurlCommandPrefix() + " -fLsS -m 10 -H " + ShellSingleQuote("User-Agent: SmashClassic-Updater") + " " +
-           ShellSingleQuote(kLatestReleaseApi) + " 2>&1";
-#endif
-}
-
-std::string BuildDownloadCommand(const std::string& destPath, const std::string& url) {
-#if defined(_WIN32)
-    return "curl -fL -# -m 600 -o \"" + destPath + "\" \"" + url + "\"";
-#else
-    return CurlCommandPrefix() + " -fL -# -o " + ShellSingleQuote(destPath) + " " + ShellSingleQuote(url) + " 2>&1";
-#endif
-}
-
-/* Only this repo's release downloads are trusted, and the URL is spliced
- * into a command line, so it must not contain quoting characters. */
+/* Only this repo's release downloads are trusted — keep rejecting URLs
+ * outside our releases even though there's no longer a shell line for
+ * them to escape into. */
 bool IsTrustedDownloadUrl(const std::string& url) {
     if (url.rfind(kDownloadPrefix, 0) != 0) return false;
     for (char c : url) {
@@ -396,8 +329,7 @@ void CheckForUpdatesAsync(bool force) {
 
     std::thread([]() {
         std::string response;
-        int exitCode = RunCapture(BuildCheckCommand(), [&](const std::string& line) { response += line; });
-        if (exitCode != 0 || response.empty()) {
+        if (!FetchToString(kLatestReleaseApi, &response, 10) || response.empty()) {
             s_updateCheckFailed.store(true);
             SetUpdateStatus("Unable to check for updates.");
             s_isCheckingForUpdates.store(false);
@@ -442,7 +374,7 @@ void CheckForUpdatesAsync(bool force) {
                             else if (an == "SHA256SUMS.txt.minisig") sig = au;
                         }
                         /* Only keep URLs that pass the same trust gate as
-                         * the payload — they get spliced into curl commands. */
+                         * the payload — they go straight to libcurl. */
                         std::lock_guard<std::mutex> lock(s_stringMutex);
                         s_sumsUrl = (!sums.empty() && IsTrustedDownloadUrl(sums)) ? sums : "";
                         s_sigUrl  = (!sig.empty()  && IsTrustedDownloadUrl(sig))  ? sig  : "";
@@ -514,13 +446,13 @@ void StartGameUpdate() {
     }
 
     std::thread([url, expectedSize, expectedDigest, version, sumsUrl, sigUrl]() {
-        auto onProgressLine = [](const std::string& line) {
-            if (line.find('%') == std::string::npos) return;
-            std::string pct;
-            for (char ch : line) {
-                if ((ch >= '0' && ch <= '9') || ch == '.') pct += ch;
-            }
-            if (!pct.empty()) SetDownloadStatus("Downloading... " + pct + "%");
+        auto onProgress = [](unsigned long long now, unsigned long long total) {
+            if (total == 0) return true;
+            std::ostringstream s;
+            s << "Downloading... " << std::fixed << std::setprecision(1)
+              << (100.0 * static_cast<double>(now) / static_cast<double>(total)) << "%";
+            SetDownloadStatus(s.str());
+            return true;
         };
         auto fail = [](const std::string& message) {
             SetDownloadStatus("Error: " + message);
@@ -553,8 +485,7 @@ void StartGameUpdate() {
             const std::string sigPath  = tmpPath + ".minisig";
             std::remove(sumsPath.c_str());
             std::remove(sigPath.c_str());
-            if (RunCapture(BuildDownloadCommand(sumsPath, sumsUrl), [](const std::string&) {}) != 0 ||
-                RunCapture(BuildDownloadCommand(sigPath, sigUrl), [](const std::string&) {}) != 0) {
+            if (!FetchToFile(sumsUrl, sumsPath) || !FetchToFile(sigUrl, sigPath)) {
                 err = "could not download the signed release manifest";
                 return false;
             }
@@ -597,7 +528,7 @@ void StartGameUpdate() {
         std::remove(zipPath.c_str());
         std::remove((zipPath + ".started").c_str());
 
-        if (RunCapture(BuildDownloadCommand(zipPath, url), onProgressLine) != 0) {
+        if (!FetchToFile(url, zipPath, onProgress)) {
             std::remove(zipPath.c_str());
             fail("download failed.");
             return;
@@ -672,7 +603,7 @@ void StartGameUpdate() {
             return;
         }
         std::string tempPath = std::string(appImagePath) + ".part";
-        if (RunCapture(BuildDownloadCommand(tempPath, url), onProgressLine) != 0) {
+        if (!FetchToFile(url, tempPath, onProgress)) {
             std::remove(tempPath.c_str());
             fail("download failed.");
             return;
@@ -696,7 +627,7 @@ void StartGameUpdate() {
         s_downloadComplete.store(true);
 #elif defined(__APPLE__)
         std::string tempDmg = "/tmp/SmashClassic_Update.dmg";
-        if (RunCapture(BuildDownloadCommand(tempDmg, url), onProgressLine) != 0) {
+        if (!FetchToFile(url, tempDmg, onProgress)) {
             std::remove(tempDmg.c_str());
             fail("download failed.");
             return;

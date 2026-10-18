@@ -6,10 +6,8 @@ Prints candidate code addresses (RVA into each module) so a symbolizer can
 resolve them. Works with minidump files written by portWriteMinidump().
 """
 import sys
+
 from minidump.minidumpfile import MinidumpFile
-from minidump.streams import (ExceptionStream, ModuleListStream,
-                              ThreadListStream, MemoryInfoListStream,
-                              MemoryListStream)
 
 
 def main() -> int:

@@ -1800,44 +1800,54 @@ void Menu::DrawElement() {
         if (mShowActionBar) {
             const bool padNav = CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) != 0;
             const char* hints;
+            const char* compactHints;
             if (padNav) {
                 switch (DetectPadFamily()) {
                 case PadFamily::PlayStation:
-                    hints = compactLayout ? TR("[Cross] Select   [Circle] Back   [Square] Search   [Esc] Close")
+                    compactHints = TR("[Cross] Select   [Circle] Back   [Square] Search   [Esc] Close");
+                    hints = compactLayout ? compactHints
                                           : TR("[Cross] Select    [Circle] Back    [Square] Search    [Esc] Close menu");
                     break;
                 case PadFamily::Nintendo:
-                    hints = compactLayout ? TR("[B] Select   [A] Back   [Y] Search   [Esc] Close")
+                    compactHints = TR("[B] Select   [A] Back   [Y] Search   [Esc] Close");
+                    hints = compactLayout ? compactHints
                                           : TR("[B] Select    [A] Back    [Y] Search    [Esc] Close menu");
                     break;
                 default:
-                    hints = compactLayout ? TR("[A] Select   [B] Back   [X] Search   [Esc] Close")
+                    compactHints = TR("[A] Select   [B] Back   [X] Search   [Esc] Close");
+                    hints = compactLayout ? compactHints
                                           : TR("[A] Select    [B] Back    [X] Search    [Esc] Close menu");
                     break;
                 }
             } else {
-                hints = compactLayout ? TR("Enter Select   Esc Close menu")
+                compactHints = TR("Enter Select   Esc Close menu");
+                hints = compactLayout ? compactHints
                                       : TR("Enter Select    Esc Close menu    Type in Search box to find settings");
             }
             if (!compactLayout) {
                 ImGui::Separator();
             }
             const float hintLineY = ImGui::GetCursorScreenPos().y;
+            /* Right edge of the left-aligned footer cluster (match banner
+             * + pending chip). Long translations make `hints` wider than
+             * the free strip and the old clamp would draw them over that
+             * cluster — clamp against the real right edge instead. */
+            float leftClusterEndX = menuBlockPos.x + style.ItemSpacing.x * 2;
             /* Online-match context: the menu never pauses netplay, so make
              * that explicit instead of letting the player assume otherwise.
              * Skipped in compact mode — a single footer line can't hold both
              * texts; the Online section shows its own in-match banner. */
             if (!compactLayout && port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
-                ImGui::SetCursorScreenPos(ImVec2(menuBlockPos.x + style.ItemSpacing.x * 2, hintLineY));
+                ImGui::SetCursorScreenPos(ImVec2(leftClusterEndX, hintLineY));
                 ImGui::TextColored(UIWidgets::SemanticColors::Warning, "%s", TR("Match in progress - the game continues while this menu is open"));
+                leftClusterEndX = ImGui::GetItemRectMax().x;
             }
             /* §34 pending-changes chip: left-aligned, after the match banner
              * when both are up (compact mode keeps the single hint line). */
             if (!compactLayout && sPendingRestart > 0) {
-                float chipX = menuBlockPos.x + style.ItemSpacing.x * 2;
+                float chipX = leftClusterEndX;
                 if (port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
-                    chipX += ImGui::CalcTextSize(TR("Match in progress - the game continues while this menu is open")).x +
-                             style.ItemSpacing.x * 2;
+                    chipX += style.ItemSpacing.x * 2;
                 }
                 char pendingText[96];
                 std::snprintf(pendingText, sizeof(pendingText), TR("%d change(s) pending restart"), sPendingRestart);
@@ -1874,11 +1884,19 @@ void Menu::DrawElement() {
                         Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow("Console"))
                         ->Dispatch("reset");
                 }
+                leftClusterEndX = ImGui::GetItemRectMax().x;
             }
-            const float hintX =
+            float hintX =
                 menuBlockPos.x + menuSize.x - ImGui::CalcTextSize(hints).x - style.ItemSpacing.x * 2;
+            if (hintX < leftClusterEndX + style.ItemSpacing.x && !compactLayout) {
+                /* Long translation + occupied left cluster: switch to the
+                 * compact wording before we'd collide. */
+                hints = compactHints;
+                hintX = menuBlockPos.x + menuSize.x - ImGui::CalcTextSize(hints).x -
+                        style.ItemSpacing.x * 2;
+            }
             ImGui::SetCursorScreenPos(
-                ImVec2(ImMax(hintX, menuBlockPos.x + style.ItemSpacing.x * 2), hintLineY));
+                ImVec2(ImMax(hintX, leftClusterEndX + style.ItemSpacing.x), hintLineY));
             ImGui::TextDisabled(TR("%s"), hints);
         }
     }

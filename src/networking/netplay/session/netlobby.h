@@ -33,6 +33,11 @@ void port_netlobby_update(void);
 
 void port_netlobby_host(const char *server, int fkind, int stage, int stocks, int items, int delay);
 void port_netlobby_join(const char *server, const char *code, int fkind);
+/* Quick play: matchmaking over the well-known QUEUE<n> rooms. The first
+ * queued player hosts, the next joins — the assigned role arrives in the
+ * room's "welcome" so the caller doesn't need to know which happened. */
+void port_netlobby_quickplay(const char *server, int fkind, int stage, int stocks, int items,
+                             int delay);
 /* LAN (direct IP): no lobby server or STUN. Host binds a UDP port and hands
  * out room slots to whoever says HELLO; joiner passes "host-ip[:port]". */
 void port_netlobby_lan_host(int port, int fkind, int stage, int stocks, int items, int delay);
@@ -82,6 +87,13 @@ int port_netlobby_after_match(void);
 
 /* Called by sys/netpeer.c when an online match's VS session ends. */
 void port_netlobby_on_match_end(void);
+/* Engine → lobby, called just before on_match_end while the battle state is
+ * still readable: the winner's game slot (-1 = draw/tie) and match length.
+ * Feeds the local rating record (see netstats). */
+void port_netlobby_set_match_result(int winner_slot, unsigned int duration_ticks);
+/* Display name of the peer at `index` as declared in its PICK ("" until the
+ * peer picks). Names are self-claimed — not an identity. */
+const char *port_netlobby_peer_name_at(int index);
 
 #ifdef __cplusplus
 }

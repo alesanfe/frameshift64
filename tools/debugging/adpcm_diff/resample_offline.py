@@ -27,8 +27,9 @@ Output dump format:
 import os
 import struct
 import sys
+import tempfile
 
-# Resample table copied verbatim from src/resources/audio/mixer.c (64×4 s16, hex).
+# Resample table copied verbatim from src/audio/n64/mixer.c (64×4 s16, hex).
 RESAMPLE_TABLE = [
     [0x0c39, 0x66ad, 0x0d46, 0xffdf], [0x0b39, 0x6696, 0x0e5f, 0xffd8],
     [0x0a44, 0x6669, 0x0f83, 0xffd0], [0x095a, 0x6626, 0x10b4, 0xffc8],
@@ -184,8 +185,8 @@ def parse_dump(path):
 
 
 def main():
-    dump_path = sys.argv[1] if len(sys.argv) > 1 else "/tmp/resample_dump.bin"
-    output_path = sys.argv[2] if len(sys.argv) > 2 else "/tmp/resample_dump_output.bin"
+    dump_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(tempfile.gettempdir(), "resample_dump.bin")
+    output_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(tempfile.gettempdir(), "resample_dump_output.bin")
 
     d = parse_dump(dump_path)
     print(f"== Dump {dump_path}")

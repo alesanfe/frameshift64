@@ -885,7 +885,7 @@ bool InputInt(const char* label, int32_t* value, const InputOptions& options) {
 
 bool CVarInputInt(const char* label, const char* cvarName, const InputOptions& options) {
     bool dirty = false;
-    int32_t defaultValue = std::stoi(options.defaultValue);
+    int32_t defaultValue = options.defaultValue.empty() ? 0 : std::atoi(options.defaultValue.c_str());
     int32_t value = CVarGetInteger(cvarName, defaultValue);
     if (InputInt(label, &value, options)) {
         CVarSetInteger(cvarName, value);
@@ -927,12 +927,6 @@ bool CVarColorPicker(const char* label, const char* cvarName, Color_RGBA8 defaul
                               UIWidgets::ButtonOptions({ { .tooltip = "Resets this color to its default value" } })
                                   .Color(themeColor)
                                   .Size(UIWidgets::Sizes::Inline))) {
-            // TODO: Remove for next minor or major version, temporary fix for already migrated configs to 3 for 9.0.0
-            CVarClear((std::string(cvarName) + ".R").c_str());
-            CVarClear((std::string(cvarName) + ".G").c_str());
-            CVarClear((std::string(cvarName) + ".B").c_str());
-            CVarClear((std::string(cvarName) + ".A").c_str());
-            CVarClear((std::string(cvarName) + ".Type").c_str());
             CVarClearBlock(valueCVar.c_str());
             Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         }
@@ -1074,7 +1068,7 @@ void DrawFlagArray32(const std::string& name, uint32_t& flags, Colors color) {
             ImGui::SameLine();
         }
         ImGui::PushID(flagIndex);
-        uint32_t bitMask = 1 << flagIndex;
+        uint32_t bitMask = 1u << flagIndex;
         bool flag = (flags & bitMask) != 0;
         PushStyleCheckbox(color);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 3.0f));

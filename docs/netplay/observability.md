@@ -55,3 +55,19 @@ the confirmed-state trace diff into `metrics.json` + an append-only JSONL
 history (`--history`). `.github/workflows/determinism.yml` uploads
 `metrics-history.jsonl` as a 30-day artifact — that is the "last 30 days"
 panel for desync rate, worst rollback depth, and resimulated-frames-per-tick.
+`--summarize <history.jsonl>` reduces the window to P50/P95/P99 per metric
+(the dashboard feed); `--days N` changes the window (default 30).
+
+## `/leaderboard` + `/submit` — self-reported rating board (both adapters)
+
+`GET /leaderboard` → `{"entries": [{name, rating, wins, losses, updated}]}`
+sorted by rating (top 100). `POST /submit` with
+`{"name", "key", "rating", "wins", "losses"}` upserts the caller's row.
+
+- `key` is a random hex token the client persists in `netstats.json`; the
+  first submitter claims the name and later submits must present the same
+  key (`400 name-taken` otherwise). It stops casual hijacking only —
+  ratings are self-reported, so treat the board as a friends ladder.
+- Worker adapter persists it in the dedicated `leaderboard-global` DO;
+  node-lobby persists `leaderboard.json` next to the script.
+- Client: `gNetplay.SubmitStats=0` opts out of the post-match submit.

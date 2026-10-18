@@ -11,6 +11,12 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <shlwapi.h>
+#else
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace ssb64 {
@@ -18,24 +24,63 @@ namespace ssb64 {
 namespace {
 
 #ifndef _WIN32
-// popen/pclose helper: run the command, capture the first non-empty line of
-// stdout, return it (trimmed of trailing newline). Returns "" on any error.
-std::string RunAndCaptureFirstLine(const std::string& cmd) {
-    FILE* f = popen(cmd.c_str(), "r");
-    if (!f) return {};
-    std::string line;
-    char buf[1024];
-    while (std::fgets(buf, sizeof(buf), f) != nullptr) {
-        line = buf;
-        // Strip trailing newline / CR.
-        while (!line.empty() &&
-               (line.back() == '\n' || line.back() == '\r')) {
-            line.pop_back();
-        }
-        if (!line.empty()) break;
+// fork/execvp helper: run argv with no shell in the middle, so title and
+// filter strings reach the dialog process verbatim — nothing to quote.
+// Captures the first non-empty line of stdout (trimmed of trailing
+// newline); child stderr goes to /dev/null. strip_ld_env drops
+// LD_LIBRARY_PATH/LD_PRELOAD in the child so bundled AppImage libs can't
+// poison the system dialog's loader path. Returns "" on any error,
+// including nonzero exit (which is also the cancel path).
+std::string RunAndCaptureFirstLine(const std::vector<std::string>& argv,
+                                   bool strip_ld_env) {
+    if (argv.empty() || argv[0].empty()) return {};
+    int fds[2];
+    if (pipe(fds) != 0) return {};
+    const pid_t pid = fork();
+    if (pid < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        return {};
     }
-    int rc = pclose(f);
-    if (rc != 0) return {};
+    if (pid == 0) {
+        dup2(fds[1], STDOUT_FILENO);
+        const int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) dup2(devnull, STDERR_FILENO);
+        close(fds[0]);
+        close(fds[1]);
+        if (strip_ld_env) {
+            unsetenv("LD_LIBRARY_PATH");
+            unsetenv("LD_PRELOAD");
+        }
+        std::vector<char*> cargv;
+        cargv.reserve(argv.size() + 1);
+        for (const std::string& a : argv) {
+            cargv.push_back(const_cast<char*>(a.c_str()));
+        }
+        cargv.push_back(nullptr);
+        execvp(cargv[0], cargv.data());
+        _exit(127);
+    }
+    close(fds[1]);
+    std::string line;
+    if (FILE* f = fdopen(fds[0], "r")) {
+        char buf[1024];
+        while (std::fgets(buf, sizeof(buf), f) != nullptr) {
+            line = buf;
+            while (!line.empty() &&
+                   (line.back() == '\n' || line.back() == '\r')) {
+                line.pop_back();
+            }
+            if (!line.empty()) break;
+        }
+        fclose(f);
+    } else {
+        close(fds[0]);
+    }
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return {};
     return line;
 }
 
@@ -48,18 +93,6 @@ std::string AppleScriptQuote(const std::string& s) {
         if (c == '"' || c == '\\') out += '\\';
         out += c;
     }
-    return out;
-}
-
-// Quote a string for embedding inside a single-quoted shell argument:
-// close the quote, escape, reopen.
-std::string ShellSingleQuote(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) {
-        if (c == '\'') out += "'\\''";
-        else out += c;
-    }
-    out += "'";
     return out;
 }
 #endif // !_WIN32
@@ -84,8 +117,8 @@ std::string OpenFileDialog(const std::string& title,
     // POSIX path of (choose file ...) — gives a Unix path without "Macintosh HD:..."
     script = "POSIX path of (" + script + ")";
 
-    std::string cmd = "osascript -e " + ShellSingleQuote(script) + " 2>/dev/null";
-    return RunAndCaptureFirstLine(cmd);
+    return RunAndCaptureFirstLine({"osascript", "-e", script},
+                                  /*strip_ld_env=*/false);
 
 #elif defined(__linux__) || defined(__unix__)
     // Inside an AppImage, our AppRun sets LD_LIBRARY_PATH to the
@@ -95,42 +128,39 @@ std::string OpenFileDialog(const std::string& title,
     // distro's libssl/libcrypto/libcurl/etc. — the bundled
     // libcrypto.so.3 from the build host is older than the system
     // libssl.so.3 expects, so the dialog dies with `version
-    // OPENSSL_3.X.0 not found` before it can show a window. Strip
-    // LD_LIBRARY_PATH (and LD_PRELOAD, for symmetry) on the spawned
-    // dialog process so it only sees the system loader path.
-    constexpr const char* env_strip =
-        "env -u LD_LIBRARY_PATH -u LD_PRELOAD ";
+    // OPENSSL_3.X.0 not found` before it can show a window. The
+    // strip_ld_env flag unsets those variables in the spawned child
+    // so it only sees the system loader path.
 
     // zenity first.
     {
-        std::string cmd = env_strip;
-        cmd += "zenity --file-selection --title=" +
-               ShellSingleQuote(title);
+        std::vector<std::string> argv{
+            "zenity", "--file-selection", "--title=" + title};
         if (!extensions.empty()) {
-            std::string filter = "--file-filter=";
+            std::string filter;
             for (size_t i = 0; i < extensions.size(); ++i) {
                 filter += (i ? " " : "") + std::string("*.") + extensions[i];
             }
-            cmd += " " + ShellSingleQuote(filter);
+            argv.push_back("--file-filter=" + filter);
         }
-        cmd += " 2>/dev/null";
-        std::string r = RunAndCaptureFirstLine(cmd);
+        std::string r = RunAndCaptureFirstLine(argv, /*strip_ld_env=*/true);
         if (!r.empty()) return r;
     }
     // Fall back to kdialog if zenity isn't installed or returned empty.
     {
-        std::string cmd = env_strip;
-        cmd += "kdialog --getopenfilename ~ ";
+        // No shell expansion under execvp — resolve ~ ourselves.
+        const char* home = std::getenv("HOME");
+        std::vector<std::string> argv{
+            "kdialog", "--getopenfilename", (home && *home) ? home : "~"};
         if (!extensions.empty()) {
             std::string filter;
             for (size_t i = 0; i < extensions.size(); ++i) {
                 filter += (i ? " " : "") + std::string("*.") + extensions[i];
             }
             filter += "|" + title;
-            cmd += ShellSingleQuote(filter);
+            argv.push_back(filter);
         }
-        cmd += " 2>/dev/null";
-        return RunAndCaptureFirstLine(cmd);
+        return RunAndCaptureFirstLine(argv, /*strip_ld_env=*/true);
     }
 
 #elif defined(_WIN32)

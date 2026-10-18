@@ -133,3 +133,17 @@ jobs:
         shell: pwsh
       - name: Build
         run: cmake --build build --config Release -j 4
+      - name: Binary size gate
+        # Ratchet vs the committed baseline (config/binary-size-baseline.txt):
+        # fail when the release binary grows >10% without the baseline being
+        # bumped in the same PR — that's the "justification" record.
+        run: |
+          $exe = "build/Release/BattleShip.exe"
+          $size = (Get-Item $exe).Length
+          $base = [double](Get-Content config/binary-size-baseline.txt)
+          Write-Host "BattleShip.exe: $size bytes (baseline $base)"
+          if ($base -gt 0 -and $size -gt $base * 1.10) {
+            Write-Error "binary size +$([math]::Round(100*($size-$base)/$base,1))% exceeds the 10% gate - bump config/binary-size-baseline.txt with justification"
+            exit 1
+          }
+        shell: pwsh

@@ -38,7 +38,7 @@
  * Usage in mnmaps.c (after the main thread wires up call sites):
  *
  *   #ifdef PORT
- *   #include <resources/loading/css_icons/port_css_stage_assets.h>
+ *   #include <game/engine/css_icons/port_css_stage_assets.h>
  *   ...
  *   Sprite *bg     = portCSSGetStageBackgroundSprite(nGRKindLast);
  *   Sprite *icon   = portCSSGetStageIconSprite(nGRKindLast);

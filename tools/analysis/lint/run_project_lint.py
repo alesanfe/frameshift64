@@ -178,6 +178,13 @@ def build_checks(args) -> list:
                          "-L", "120", "-a", "6", "-w",
                          "-x", "*/node_modules/*"] + dirs,
               "lizard.txt", required=False),
+        # Complexity ratchet: per-file quota vs config/complexity-baseline.txt.
+        # Blocks growth of CCN>=15 / NLOC>=100 functions; the lizard report
+        # above stays informational.
+        Check("complexity",
+              [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
+                                   "check_complexity.py")],
+              "complexity.txt", required=True),
         Check("cmake-lint", [resolve("cmake-lint")] + find_cmake_files() +
               ["-c", ".cmakelintrc"],
               "cmake-lint.txt", required=False),

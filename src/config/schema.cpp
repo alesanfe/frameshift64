@@ -105,6 +105,8 @@ constexpr SchemaEntry kSchema[] = {
     { "gNetplay.Stage",   KeyType::Int,    0, 8,   true  },
     { "gNetplay.Stocks",  KeyType::Int,    1, 99,  true  },
     { "gNetplay.Server",  KeyType::String, 0, 0,   false },
+    { "gNetplay.StunServer", KeyType::String, 0, 0, false },
+    { "gNetplay.SubmitStats", KeyType::Bool, 0, 1, false },
     { "gProfiles.Name",   KeyType::String, 0, 0,   false },
     { "gProfiles.Selected",KeyType::Int, -100, 1000, false },
 

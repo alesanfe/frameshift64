@@ -13,8 +13,8 @@ namespace ssb64 {
 //   e.g. {"z64", "n64", "v64"}. Empty means "any file".
 //
 // Implemented per-platform:
-//   macOS:   shells out to osascript with `choose file`.
-//   Linux:   shells out to zenity, falls back to kdialog.
+//   macOS:   spawns osascript with `choose file`.
+//   Linux:   spawns zenity, falls back to kdialog.
 //   Windows: GetOpenFileNameW from commdlg.h.
 //   Other:   returns "" (caller falls back to the wizard's text input).
 std::string OpenFileDialog(const std::string& title,

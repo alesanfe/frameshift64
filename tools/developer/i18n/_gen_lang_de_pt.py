@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _gen_lang_tables import emit  # noqa: E402
+from _gen_lang_tables import emit
 
 DE = {
     "     Browse... and pick your ROM dump.": "     Durchsuchen... und wählen Sie Ihren ROM-Dump.",

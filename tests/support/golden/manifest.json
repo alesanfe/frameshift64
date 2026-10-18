@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "comment": "Golden gameplay cases. replay/.ssr fixtures are produced by tools/developer/testing/make_replay.py (committed, deterministic); golden .trace files are captured once per build flavor via tests/e2e/golden/golden_gameplay_test.py --capture and committed. Path fields are relative to tests/support/.",
+  "cases": [
+    {
+      "name": "idle_2p",
+      "replay": "fixtures/replays/idle_2p.ssr",
+      "trace": "golden/idle_2p.trace",
+      "frames": 300,
+      "description": "Baseline: 2 CPUs, no inputs — pure sim determinism"
+    },
+    {
+      "name": "mario_fair",
+      "replay": "fixtures/replays/mario_fair.ssr",
+      "trace": "golden/mario_fair.trace",
+      "frames": 600,
+      "description": "Mario walk + jump + forward air vs Fox"
+    },
+    {
+      "name": "fox_usmash",
+      "replay": "fixtures/replays/fox_usmash.ssr",
+      "trace": "golden/fox_usmash.trace",
+      "frames": 600,
+      "description": "Fox dash + up-smash vs Mario"
+    },
+    {
+      "name": "kirby_inhale",
+      "replay": "fixtures/replays/kirby_inhale.ssr",
+      "trace": "golden/kirby_inhale.trace",
+      "frames": 600,
+      "description": "Kirby walk + inhale (B) vs Mario"
+    },
+    {
+      "name": "falcon_punch",
+      "replay": "fixtures/replays/falcon_punch.ssr",
+      "trace": "golden/falcon_punch.trace",
+      "frames": 600,
+      "description": "Captain Falcon walk + falcon punch (B) vs Mario"
+    }
+  ]
+}

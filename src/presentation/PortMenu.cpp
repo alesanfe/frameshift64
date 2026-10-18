@@ -109,7 +109,7 @@ static const std::map<int32_t, const char*> kMenuBaseThemeOptions = {
     { 2, "High Contrast" },
 };
 
-/* Mirrors PortI18n::kLangCodes (src/core/i18n/PortI18n.cpp). Labels stay in
+/* Mirrors PortI18n::kLangCodes (src/i18n/PortI18n.cpp). Labels stay in
  * each language's own name on purpose — a user who picked a language they
  * can't read must still be able to find theirs. */
 static const std::map<int32_t, const char*> kMenuLanguageOptions = {
@@ -180,7 +180,7 @@ static void ApplyGraphicsPreset(int preset) {
 }
 
 // Enhanced framerate mode: CVar stores the target render fps; game logic
-// always stays at 60 Hz (see src/resources/interpolation/frame_interpolation.h).
+// always stays at 60 Hz (see src/rendering/interpolation/frame_interpolation.h).
 static const std::map<int32_t, const char*> kEnhancedFpsMap = {
     { 0, "Off (60 FPS)" },
     { 120, "120 FPS" },
@@ -252,6 +252,9 @@ WidgetInfo& PortMenu::AddWidget(WidgetPath& pathInfo, std::string widgetName, Wi
     }
     if (pathInfo.sidebarName == "Developer") {
         widget.impact = SettingImpact::DeveloperOnly;
+        /* impact is metadata-only; advanced is what SidebarAdvancedOnly checks
+         * when hiding the page in Simple mode. */
+        widget.advanced = true;
     }
     /* Backend switches only take effect after a relaunch — declared once
      * here instead of relying on each widget's tooltip to say it. */
@@ -380,9 +383,9 @@ static void RenderReplayBrowser(WidgetInfo&) {
     if (ImGui::Button(TR("Play Replay"))) {
         const std::string fullPath = ReplayDir() + "/" + s_replayFiles[s_replayIndex];
         if (portNetReplayPlayFile(fullPath.c_str())) {
-            ToastInfo("Loading replay...");
+            ToastInfo(TR("Loading replay..."));
         } else {
-            ToastError("Replay file rejected — see the log for details");
+            ToastError(TR("Replay file rejected — see the log for details"));
         }
     }
     ImGui::EndDisabled();
@@ -508,6 +511,40 @@ static bool WidgetIsNonDefault(const WidgetInfo& w) {
     }
 }
 
+/* Live CVar value of a widget, formatted for the "Modified" audit list -
+ * same type coverage as WidgetIsNonDefault. */
+static std::string WidgetCurrentValue(const WidgetInfo& w) {
+    char buf[64];
+    switch (w.type) {
+        case WIDGET_CVAR_CHECKBOX:
+            return CVarGetInteger(w.cVar, 0) ? TR("On") : TR("Off");
+        case WIDGET_CVAR_COMBOBOX:
+        case WIDGET_AUDIO_BACKEND:
+        case WIDGET_VIDEO_BACKEND: {
+            const int32_t v = CVarGetInteger(w.cVar, 0);
+            const auto& map = std::static_pointer_cast<ComboboxOptions>(w.options)->comboMap;
+            const auto it = map.find(v);
+            return it != map.end() ? TR(it->second) : std::to_string(v);
+        }
+        case WIDGET_CVAR_SLIDER_INT:
+        case WIDGET_CVAR_BTN_SELECTOR:
+            std::snprintf(buf, sizeof(buf), "%d", CVarGetInteger(w.cVar, 0));
+            return buf;
+        case WIDGET_CVAR_SLIDER_FLOAT:
+            std::snprintf(buf, sizeof(buf), "%.2f", CVarGetFloat(w.cVar, 0.0f));
+            return buf;
+        case WIDGET_CVAR_INPUT:
+            return CVarGetString(w.cVar, "");
+        case WIDGET_CVAR_COLOR_PICKER: {
+            const Color_RGBA8 c = CVarGetColor(w.cVar, { 255, 255, 255, 255 });
+            std::snprintf(buf, sizeof(buf), "#%02X%02X%02X%02X", c.r, c.g, c.b, c.a);
+            return buf;
+        }
+        default:
+            return "";
+    }
+}
+
 } // namespace
 
 void PortMenu::AddMenuSettings() {
@@ -551,7 +588,7 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Menu Controller Navigation", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_IMGUI_CONTROLLER_NAV)
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Allows controller navigation of the port menu.\nCAUTION: this disables game inputs while the menu is visible."));
 
     AddWidget(path, "Allow background inputs", WIDGET_CVAR_CHECKBOX)
@@ -606,7 +643,7 @@ void PortMenu::AddMenuSettings() {
             Ship::Context::GetInstance()->GetWindow()->SetForceCursorVisibility(
                 CVarGetInteger(CVAR_SETTING("CursorVisibility"), 0));
         })
-        .Options(CheckboxOptions().Tooltip("Makes the cursor always visible, even in fullscreen."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Makes the cursor always visible, even in fullscreen."));
 
     AddWidget(path, "Search In Sidebar", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_SETTING("Menu.SidebarSearch"))
@@ -618,13 +655,13 @@ void PortMenu::AddMenuSettings() {
                 RemoveSidebarSearch();
             }
         })
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Displays the Search page as a sidebar entry in Settings instead of in the header."));
 
     AddWidget(path, "Search Input Autofocus", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_SETTING("Menu.SearchAutofocus"))
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Gives the search input focus when it becomes visible."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Gives the search input focus when it becomes visible."));
 
     AddWidget(path, "All settings save automatically as you change them.", WIDGET_TEXT)
         .RaceDisable(false)
@@ -636,7 +673,7 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Enable Discord Rich Presence", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_SETTING("Menu.EnableDRP"))
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Adds Discord Rich Presence (DRP)."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Adds Discord Rich Presence (DRP)."));
 #endif
 
     /* "Modified" sidebar — audit view of every CVar-bound widget whose live
@@ -655,6 +692,7 @@ void PortMenu::AddMenuSettings() {
                 std::string section;
                 std::string sidebar;
                 std::string name;
+                std::string value;
             };
             std::vector<ModRow> rows;
             for (const auto& [entryName, entry] : menuEntries) {
@@ -662,7 +700,8 @@ void PortMenu::AddMenuSettings() {
                     for (const auto& col : sb.columnWidgets) {
                         for (const auto& w : col) {
                             if (WidgetIsNonDefault(w)) {
-                                rows.push_back({ std::string(w.name), entryName, sbName, std::string(w.name) });
+                                rows.push_back({ std::string(w.name), entryName, sbName, std::string(w.name),
+                                                 WidgetCurrentValue(w) });
                             }
                         }
                     }
@@ -681,6 +720,8 @@ void PortMenu::AddMenuSettings() {
                 for (const auto& r : rows) {
                     ImGui::PushID(r.name.c_str());
                     ImGui::TextUnformatted(r.label.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("= %s", r.value.c_str());
                     ImGui::SameLine();
                     ImGui::TextDisabled("(%s -> %s)", r.section.c_str(), r.sidebar.c_str());
                     ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() -
@@ -745,7 +786,7 @@ void PortMenu::AddMenuSettings() {
                 info.activeDisables.push_back(DISABLE_FOR_LOW_RES_MODE_ON);
             }
         })
-        .Options(FloatSliderOptions()
+        .Options(FloatSliderOptions().DefaultValue(1.0f)
                      .Tooltip("Multiplies the internal rendering resolution.")
                      .ShowButtons(false)
                      .IsPercentage()
@@ -755,6 +796,7 @@ void PortMenu::AddMenuSettings() {
     path.sidebarName = "Display";
     AddWidget(path, "Low Resolution Mode", WIDGET_CVAR_COMBOBOX)
         .Tag("Restart required")
+        .ApplyPolicyOf(ApplyPolicy::RequiresRestart)
         .CVar("gLowResModePending")
         .RaceDisable(false)
         .Options(ComboboxOptions()
@@ -837,7 +879,7 @@ void PortMenu::AddMenuSettings() {
         .PreFunc([this](WidgetInfo& info) {
             info.isHidden = disabledMap.at(DISABLE_FOR_NO_WINDOWED_FULLSCREEN).active;
         })
-        .Options(CheckboxOptions().Tooltip("Enables borderless windowed fullscreen mode."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Enables borderless windowed fullscreen mode."));
 #endif
 
     path.sidebarName = "Advanced";
@@ -857,9 +899,10 @@ void PortMenu::AddMenuSettings() {
     path.sidebarName = "Image Quality";
     AddWidget(path, "Texture Filter", WIDGET_CVAR_COMBOBOX)
         .Tag("Restart required")
+        .ApplyPolicyOf(ApplyPolicy::RequiresRestart)
         .CVar(CVAR_TEXTURE_FILTER)
         .RaceDisable(false)
-        .Options(ComboboxOptions().Tooltip("Sets the active texture filtering mode.").ComboMap(kTextureFilteringMap));
+        .Options(ComboboxOptions().DefaultIndex(0).Tooltip("Sets the active texture filtering mode.").ComboMap(kTextureFilteringMap));
 
     path.sidebarName = "Display";
     AddWidget(path, "Widescreen", WIDGET_CVAR_CHECKBOX)
@@ -918,7 +961,7 @@ void PortMenu::AddMenuSettings() {
         .CVar("gSettings.EnableDevTools")
         .RaceDisable(false)
         .Callback([this](WidgetInfo&) { RebuildMenu(); })
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Shows the Developer sidebar in Settings (Stats, Console, Gfx Debugger)."));
 
     path.sidebarName = "Match Rules";
@@ -964,7 +1007,7 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Use Competitive Ruleset", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::CompRulesetCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Forces the following in VS Mode: \n"
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Forces the following in VS Mode: \n"
                                            "- 4 Stocks \n"
                                            "- 8 Minutes \n"
                                            "- Items Off \n"
@@ -973,18 +1016,18 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Neutral Spawns on Dreamland", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::NeutralSpawnsCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Forces balanced, opposite-side starting positions for 1v1 and Team Battles."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Forces balanced, opposite-side starting positions for 1v1 and Team Battles."));
 
     path.sidebarName = "Practice";
     AddWidget(path, "Z-Cancel Options", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Auto Z-Cancel", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::AutoZCancelCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Automatically cancels the landing lag from aerial attacks."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Automatically cancels the landing lag from aerial attacks."));
     AddWidget(path, "Flash on Failed Z-Cancel", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::FailedZCancelCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Makes your character temporarily flash in flames on a failed Z-Cancel."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Makes your character temporarily flash in flames on a failed Z-Cancel."));
 
     path.sidebarName = "Interface";
     AddSidebarEntry("Settings", "Interface", 1);
@@ -992,10 +1035,11 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Boot to VS CSS", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::BootToVSCSSCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Skips the intro sequences and boots directly to the VS Mode Character Select Screen."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Skips the intro sequences and boots directly to the VS Mode Character Select Screen."));
     path.sidebarName = "Classic Mode";
     AddWidget(path, "Classic Co-op", WIDGET_CVAR_CHECKBOX)
         .Tag("Restart required")
+        .ApplyPolicyOf(ApplyPolicy::RequiresRestart)
         .CVar(ssb64::enhancements::ClassicCoopCVarName())
         .RaceDisable(false)
         .Options(CheckboxOptions()
@@ -1016,17 +1060,17 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Skip Results Screen", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::SkipResultsScreenCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Skips the victory podium and returns directly to the Character Select Screen."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Skips the victory podium and returns directly to the Character Select Screen."));
     path.sidebarName = "Match Rules";
     AddWidget(path, "Force CPU Level 9", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::CpuLevel9CVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Automatically forces all CPU players to Level 9."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Automatically forces all CPU players to Level 9."));
     path.sidebarName = "Interface";
         AddWidget(path, "Disable HUD", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::DisableHUDCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Disables the in-game HUD. Note that some icons will still be visible (e.g. CPU icons in 1P Mode on the top-left.)"));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Disables the in-game HUD. Note that some icons will still be visible (e.g. CPU icons in 1P Mode on the top-left.)"));
 
     // --- Input customization ---
     path.sidebarName = "Input Mappings";
@@ -1130,7 +1174,7 @@ void PortMenu::AddMenuSettings() {
                 }
             }
             CVarSave();
-            ToastSuccess("Player 1 settings copied to players 2-4");
+            ToastSuccess(TR("Player 1 settings copied to players 2-4"));
         })
         .Options(ButtonOptions().Tooltip("Copies every Control Enhancements value from Player 1 to "
                                          "players 2-4, including NRage deadzone and range."));
@@ -1140,7 +1184,7 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "New profile name", WIDGET_CVAR_INPUT)
         .CVar("gProfiles.Name")
         .RaceDisable(false)
-        .Options(InputOptions()
+        .Options(InputOptions().DefaultValue("")
                      .PlaceholderText("e.g. tournament-ready")
                      .Tooltip("Name that 'Save current as profile' will use."));
 
@@ -1149,13 +1193,13 @@ void PortMenu::AddMenuSettings() {
         .Callback([](WidgetInfo&) {
             const char* name = CVarGetString("gProfiles.Name", "");
             if (name == nullptr || name[0] == '\0') {
-                ToastError("Type a profile name first");
+                ToastError(TR("Type a profile name first"));
                 return;
             }
             if (port_profile_save(name) == 0) {
                 ToastSuccess(fmt::format(fmt::runtime(TR("Profile '{}' saved")), name).c_str());
             } else {
-                ToastError("Could not save profile - use only letters, numbers, spaces, - and _");
+                ToastError(TR("Could not save profile - use only letters, numbers, spaces, - and _"));
             }
         })
         .Options(ButtonOptions().Tooltip(
@@ -1166,18 +1210,24 @@ void PortMenu::AddMenuSettings() {
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
             static std::vector<std::string> sNames;
-            sNames = PortProfileNames();
-            auto opts = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
-            opts->comboMap.clear();
-            for (int i = 0; i < static_cast<int>(sNames.size()); i++) {
-                opts->comboMap[i] = sNames[i].c_str();
+            const auto fresh = PortProfileNames();
+            /* comboMap labels point into sNames — only rebuild when the list
+             * actually changes; otherwise every frame's reassignment leaves
+             * the stored c_str() pointers dangling. */
+            if (fresh != sNames) {
+                sNames = fresh;
+                auto opts = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+                opts->comboMap.clear();
+                for (int i = 0; i < static_cast<int>(sNames.size()); i++) {
+                    opts->comboMap[i] = sNames[i].c_str();
+                }
             }
             if (sNames.empty()) {
                 info.options->disabled = true;
                 info.options->disabledTooltip = TR("No saved profiles yet - save one above.");
             }
         })
-        .Options(ComboboxOptions().Tooltip("Pick which saved profile to load or delete."));
+        .Options(ComboboxOptions().DefaultIndex(0).Tooltip("Pick which saved profile to load or delete."));
 
     AddWidget(path, "Load selected profile", WIDGET_BUTTON)
         .RaceDisable(false)
@@ -1192,7 +1242,7 @@ void PortMenu::AddMenuSettings() {
             if (port_profile_load(name.c_str()) == 0) {
                 ToastSuccess(fmt::format(fmt::runtime(TR("Profile '{}' loaded - controllers remapped")), name).c_str());
             } else {
-                ToastError("Failed to load profile");
+                ToastError(TR("Failed to load profile"));
             }
         })
         .Options(ButtonOptions().Tooltip("Restores the profile's mappings and enhancements."));
@@ -1210,7 +1260,7 @@ void PortMenu::AddMenuSettings() {
             if (port_profile_delete(name.c_str()) == 0) {
                 ToastInfo(fmt::format(fmt::runtime(TR("Profile '{}' deleted")), name).c_str());
             } else {
-                ToastError("Failed to delete profile");
+                ToastError(TR("Failed to delete profile"));
             }
         })
         .Options(ButtonOptions()
@@ -1250,11 +1300,11 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Shuffle Music", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::ShuffleMusicCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Randomizes the BGM after a stage is chosen. Useful when enabling the competitive ruleset."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Randomizes the BGM after a stage is chosen. Useful when enabling the competitive ruleset."));
     AddWidget(path, "Add Music Selection Screen", WIDGET_CVAR_CHECKBOX)
         .CVar(ssb64::enhancements::MusicSelectionCVarName())
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Allows the player to pick a custom BGM track after the stage selection screen (music shuffling is ignored if this is turned on)."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Allows the player to pick a custom BGM track after the stage selection screen (music shuffling is ignored if this is turned on)."));
 
     // Sound Effects Volume Slider
     AddWidget(path, "Sound Volume", WIDGET_CVAR_SLIDER_FLOAT)
@@ -1304,20 +1354,20 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "High Contrast Focus", WIDGET_CVAR_CHECKBOX)
         .CVar("gSettings.HighContrastFocus")
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Makes the keyboard/controller focus ring near-opaque so the focused control is easy to spot."));
 
     AddWidget(path, "Text & Help", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Persistent Descriptions", WIDGET_CVAR_CHECKBOX)
         .CVar("gSettings.PersistentDescriptions")
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Shows each option's help text under the control instead of requiring a hover. Useful with gamepad or touch."));
     AddWidget(path, "Narration", WIDGET_CVAR_CHECKBOX)
         .CVar("gSettings.Narration")
         .RaceDisable(false)
         .SearchTerms({ "screen reader", "speech", "speak", "blind", "accessibility" })
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Speaks the name of each menu option as it gains focus, via the OS voice. "
             "Currently Windows (SAPI) only — does nothing on other platforms."));
 
@@ -1325,7 +1375,7 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Reduce Motion", WIDGET_CVAR_CHECKBOX)
         .CVar("gSettings.ReducedMotion")
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Disables blinking/animated UI elements such as the text cursor."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Disables blinking/animated UI elements such as the text cursor."));
 
     // --- Cheats ---
     path.sidebarName = "Cheats";
@@ -1336,25 +1386,25 @@ void PortMenu::AddMenuSettings() {
     AddWidget(path, "Unlock Everything", WIDGET_CVAR_CHECKBOX)
         .CVar("gCheats.UnlockAll")
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Unlocks every character and bonus feature at once."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Unlocks every character and bonus feature at once."));
 
     AddWidget(path, "Individual Characters", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Unlock Captain Falcon", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockCaptain").RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Adds Captain Falcon to the character select screen."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Adds Captain Falcon to the character select screen."));
     AddWidget(path, "Unlock Jigglypuff", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockPurin").RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Adds Jigglypuff to the character select screen."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Adds Jigglypuff to the character select screen."));
     AddWidget(path, "Unlock Luigi", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockLuigi").RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Adds Luigi to the character select screen."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Adds Luigi to the character select screen."));
     AddWidget(path, "Unlock Ness", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockNess").RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Adds Ness to the character select screen."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Adds Ness to the character select screen."));
 
     AddWidget(path, "Individual Features", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Unlock Mushroom Kingdom", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockInishie").RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Unlocks the hidden Mushroom Kingdom stage."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Unlocks the hidden Mushroom Kingdom stage."));
     AddWidget(path, "Unlock Item Switch Menu", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockItemSwitch").RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Enables the VS-mode item switch menu."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Enables the VS-mode item switch menu."));
     AddWidget(path, "Unlock Sound Test Menu", WIDGET_CVAR_CHECKBOX).CVar("gCheats.UnlockSoundTest").RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Enables the sound test screen in the Data menu."));
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip("Enables the sound test screen in the Data menu."));
 
     // --- Developer tools ---
     // Hidden behind a CVar so the average player doesn't see debugging

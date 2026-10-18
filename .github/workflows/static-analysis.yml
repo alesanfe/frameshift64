@@ -57,6 +57,8 @@ jobs:
           lizard -l cpp -C 15 -L 120 -a 6 -w \
             src include platforms tools \
             > out/reports/lint/lizard.txt 2>&1 || true
+      - name: Complexity ratchet (gate)
+        run: python tools/analysis/lint/check_complexity.py
           cpplint --recursive --extensions=c,cc,cpp,cxx,h,hh,hpp,hxx \
             --filter=-whitespace/line_length,-build/include_subdir \
             --exclude=build --exclude=out/build/lint --exclude=decomp \

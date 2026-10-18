@@ -260,9 +260,9 @@ static void PortApplyCliEnvArgs(int argc, char* argv[]) {
 }
 #endif /* SSB64_TEST_HOOKS */
 
-static int PortInitImpl(int argc, char* argv[]) {
-	port_log("SSB64: PortInit entered\n");
-
+/* Test-hook env shims + parser-fuzz early entry. Returns 0 to continue
+ * normal boot; exits the process itself for fuzz/test-mode paths. */
+static int PortInitTestHooks(int argc, char* argv[]) {
 #ifdef SSB64_TEST_HOOKS
 	PortApplyCliEnvArgs(argc, argv);
 
@@ -346,6 +346,11 @@ static int PortInitImpl(int argc, char* argv[]) {
 		port_exit_process(0);
 	}
 #endif /* SSB64_TEST_HOOKS */
+	return 0;
+}
+
+/* DL-range hooks, context instance, logging, config + CVars. */
+static int PortInitContext() {
 
 	/* Wire the SSB64-specific DL-range bounds-check and diag classifier
 	 * into libultraship's GFX walker (see port/port_dl_ranges.h). Done
@@ -386,6 +391,12 @@ static int PortInitImpl(int argc, char* argv[]) {
 	if (!sContext->InitConfiguration()) { port_log("SSB64: InitConfiguration failed\n"); return 1; }
 	if (!sContext->InitConsoleVariables()) { port_log("SSB64: InitConsoleVariables failed\n"); return 1; }
 	port_log("SSB64: Config + CVars OK\n");
+	return 0;
+}
+
+/* Feature latches: schema validate, UWP backend, co-op latch, hi-res
+ * packs, pillarbox, platform backend overrides. No failure paths. */
+static void PortInitFeatureLatches() {
 
 	/* TD-005: typed-schema pass over the loaded CVars — clamp out-of-range
 	 * values and warn on `g*` keys nothing declares (typos / stale entries
@@ -565,6 +576,11 @@ static int PortInitImpl(int argc, char* argv[]) {
 		static_cast<int>(Ship::WindowBackend::FAST3D_SDL_METAL));
 	sContext->GetConfig()->SetString("Window.Backend.Name", "Metal");
 #endif
+}
+
+/* Core runtime bring-up: crash handler, console, control deck,
+ * bootstrap ResourceManager (f3d.o2r), window + Port menu. */
+static int PortInitCoreRuntime() {
 
 	/* New init order:
 	 *   1. CrashHandler / Console / ControlDeck     — resource-agnostic
@@ -651,7 +667,12 @@ static int PortInitImpl(int argc, char* argv[]) {
 		ssb64::SetWindowIcon();
 #endif
 	}
+	return 0;
+}
 
+/* Assets + services: framebuffer pin, file-drop, first-run wizard,
+ * game archive registration, shader prewarm, audio, events. */
+static int PortInitAssetsAndServices() {
 	// Pin LUS to off-screen rendering so mGameFb is populated during
 	// gameplay and the GPU readback at scene transitions captures the
 	// prior frame rather than the post-Present swap-chain back buffer
@@ -805,7 +826,12 @@ static int PortInitImpl(int argc, char* argv[]) {
 	PortRegisterEvents();
 	ssb64::RegisterFocusListener();
 	port_log("SSB64: Engine events registered\n");
+	return 0;
+}
 
+/* Mods + factories: script loader, resource factories, symbol
+ * resolver, fighter registry seed, mods/ mount + TCC compile. */
+static int PortInitMods() {
 #ifndef DISABLE_SCRIPTING
 	// TCC mod scripting: configure the include paths + library paths under
 	// .tcc/ that the engine populates post-build (see CMakeLists.txt). On
@@ -969,6 +995,17 @@ static int PortInitImpl(int argc, char* argv[]) {
 	}
 	}
 #endif
+	return 0;
+}
+static int PortInitImpl(int argc, char* argv[]) {
+	port_log("SSB64: PortInit entered\n");
+
+	if (const int rc = PortInitTestHooks(argc, argv)) { return rc; }
+	if (const int rc = PortInitContext()) { return rc; }
+	PortInitFeatureLatches();
+	if (const int rc = PortInitCoreRuntime()) { return rc; }
+	if (const int rc = PortInitAssetsAndServices()) { return rc; }
+	if (const int rc = PortInitMods()) { return rc; }
 
 	port_log("SSB64: init complete\n");
 	return 0;
@@ -1255,7 +1292,7 @@ int main(int argc, char* argv[]) {
 		extern int portSyntheticRelocSelfTest();
 		int failures = portSyntheticRelocSelfTest();
 		PortShutdown();
-		_exit(failures == 0 ? 0 : 1);
+		port_exit_process(failures == 0 ? 0 : 1);   /* no _exit on wasm */
 	}
 #endif
 

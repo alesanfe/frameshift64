@@ -9,5 +9,10 @@
   "durable_objects": {
     "bindings": [{ "name": "ROOMS", "class_name": "NetplayRoom" }]
   },
+  // One datapoint per room admission (role, outcome, protocol version) —
+  // queryable for the Grafana dashboards in docs/observability/.
+  "analytics_engine_datasets": [
+    { "binding": "LOBBY_ANALYTICS", "dataset": "ssb64_netplay_lobby" }
+  ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["NetplayRoom"] }]
 }

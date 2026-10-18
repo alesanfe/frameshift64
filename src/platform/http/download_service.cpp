@@ -1,6 +1,7 @@
 /* download_service.cpp — backends behind the Download API declared in
  * download_service.h. See the header for the contract. */
 #include "download_service.h"
+#include "url_safety.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -151,179 +152,74 @@ void DownloadCancel(Download*) {}
 DownloadState DownloadFinish(Download*) { return DownloadState::Error; }
 } // namespace ssb64
 
-#else // desktop: spawned curl child (killable for mid-transfer cancel)
+#elif defined(SSB64_HAVE_CURL) // desktop: in-process libcurl worker
 
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#endif
+#include "http_curl.h"
+
+#include <atomic>
+#include <thread>
 
 namespace ssb64 {
 
+/* The worker runs one blocking easy transfer; DownloadCancel flips the
+ * flag the XFERINFO callback polls (≤200ms to abort), Finish joins the
+ * thread so the handle is always destroyed exactly once. */
 struct Download {
-#if defined(_WIN32)
-    HANDLE proc = nullptr;
-#else
-    pid_t pid = -1;
-    FILE* pipe = nullptr;
-#endif
-    // mutable: Poll stores the terminal state it observes so Finish can
-    // report it after the child has already been reaped (pclose would
-    // otherwise lose the exit status to ECHILD).
-    mutable DownloadState state = DownloadState::Running;
-    bool cancelRequested = false;
+    std::thread worker;
+    std::atomic<DownloadState> state{ DownloadState::Running };
+    std::atomic<bool> cancelRequested{ false };
 };
-
-namespace {
-
-std::string ShellQuote(const std::filesystem::path& p) {
-    return "\"" + p.generic_string() + "\"";
-}
-
-std::string CurlCommandPrefix() {
-#if defined(__linux__)
-    // AppImage: bundled libs poison distro tools — same strip as Updater.
-    return "env -u LD_LIBRARY_PATH -u LD_PRELOAD curl";
-#else
-    return "curl";
-#endif
-}
-
-#if defined(_WIN32)
-HANDLE SpawnCurl(const std::string& cmd) {
-    STARTUPINFOA si{};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi{};
-    std::string mutableCmd = cmd;
-    if (!CreateProcessA(nullptr, mutableCmd.data(), nullptr, nullptr, FALSE,
-                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-        SPDLOG_ERROR("download: CreateProcess failed ({}) for `{}`",
-                     GetLastError(), cmd);
-        return nullptr;
-    }
-    CloseHandle(pi.hThread);
-    return pi.hProcess;
-}
-#else
-/* The shim reports its own pid then exec()s curl — the printed pid IS
- * curl's after exec, so the caller can SIGTERM it and waitpid() it
- * directly instead of relying on pclose's internal reap. */
-pid_t SpawnCurl(const std::string& curlArgs, FILE** pipeOut) {
-    const std::string shim = "sh -c 'echo $$; exec " + curlArgs + "'";
-    FILE* pipe = popen(shim.c_str(), "r");
-    if (!pipe) {
-        SPDLOG_ERROR("download: popen failed for `{}`", shim);
-        return -1;
-    }
-    pid_t pid = -1;
-    char buf[64];
-    if (fgets(buf, sizeof(buf), pipe)) {
-        pid = static_cast<pid_t>(std::strtol(buf, nullptr, 10));
-    }
-    *pipeOut = pipe;
-    return pid;
-}
-#endif
-
-} // namespace
 
 Download* DownloadStart(const std::string& url,
                         const std::filesystem::path& destPath) {
-    const std::string args = "-fLs -o " + ShellQuote(destPath) + " \"" + url + "\"";
+    if (!IsAllowedHttpUrl(url)) {
+        SPDLOG_ERROR("download: refusing unsafe URL `{}`", url);
+        return nullptr;
+    }
     auto* d = new Download;
-#if defined(_WIN32)
-    d->proc = SpawnCurl(CurlCommandPrefix() + " " + args);
-    if (d->proc == nullptr) {
-        delete d;
-        return nullptr;
-    }
-#else
-    d->pid = SpawnCurl(CurlCommandPrefix() + " " + args, &d->pipe);
-    if (d->pid <= 0 || d->pipe == nullptr) {
-        if (d->pipe) pclose(d->pipe);
-        delete d;
-        return nullptr;
-    }
-#endif
+    d->worker = std::thread([d, url, destPath] {
+        std::string error;
+        const bool ok = CurlDownloadToFile(url, destPath, &error, nullptr, &d->cancelRequested);
+        if (ok) {
+            d->state = DownloadState::Done;
+        } else if (d->cancelRequested.load()) {
+            d->state = DownloadState::Cancelled;
+        } else {
+            SPDLOG_ERROR("download: `{}` failed: {}", url, error);
+            d->state = DownloadState::Error;
+        }
+    });
     return d;
 }
 
 DownloadState DownloadPoll(const Download* d) {
-    if (d->state != DownloadState::Running) return d->state;
-#if defined(_WIN32)
-    if (WaitForSingleObject(d->proc, 0) == WAIT_TIMEOUT) {
-        return DownloadState::Running;
-    }
-    DWORD code = 1;
-    GetExitCodeProcess(d->proc, &code);
-    d->state = d->cancelRequested ? DownloadState::Cancelled
-                                  : (code == 0 ? DownloadState::Done : DownloadState::Error);
-#else
-    // WNOHANG reaps a finished child — the terminal state is stored in
-    // d->state because pclose can't recover it afterwards (ECHILD).
-    int status = 0;
-    if (waitpid(d->pid, &status, WNOHANG) <= 0) {
-        return DownloadState::Running;
-    }
-    d->state = d->cancelRequested ? DownloadState::Cancelled
-        : (WIFEXITED(status) && WEXITSTATUS(status) == 0
-               ? DownloadState::Done : DownloadState::Error);
-#endif
-    return d->state;
+    return d->state.load();
 }
 
 void DownloadCancel(Download* d) {
     d->cancelRequested = true;
-#if defined(_WIN32)
-    if (d->proc != nullptr) TerminateProcess(d->proc, 1);
-#else
-    if (d->pid > 0) kill(d->pid, SIGTERM);
-#endif
 }
 
 DownloadState DownloadFinish(Download* d) {
-    if (d->state == DownloadState::Running) {
-        // Still in flight when joined — block until it exits (a cancel
-        // was already signalled, or the caller stopped polling early).
-#if defined(_WIN32)
-        WaitForSingleObject(d->proc, INFINITE);
-        DWORD code = 1;
-        GetExitCodeProcess(d->proc, &code);
-        d->state = d->cancelRequested ? DownloadState::Cancelled
-                                      : (code == 0 ? DownloadState::Done : DownloadState::Error);
-#else
-        int status = 0;
-        if (waitpid(d->pid, &status, 0) > 0) {
-            d->state = d->cancelRequested ? DownloadState::Cancelled
-                : (WIFEXITED(status) && WEXITSTATUS(status) == 0
-                       ? DownloadState::Done : DownloadState::Error);
-        } else {
-            d->state = d->cancelRequested ? DownloadState::Cancelled
-                                          : DownloadState::Error;
-        }
-#endif
+    if (d->worker.joinable()) {
+        d->worker.join();
     }
-#if defined(_WIN32)
-    if (d->proc != nullptr) CloseHandle(d->proc);
-#else
-    if (d->pipe != nullptr) {
-        // Free the popen FILE. The exit status is already in d->state —
-        // pclose is only bookkeeping here (its own waitpid may ECHILD).
-        char buf[256];
-        while (fgets(buf, sizeof(buf), d->pipe) != nullptr) {
-        }
-        pclose(d->pipe);
-    }
-#endif
-    const DownloadState st = d->state;
+    const DownloadState st = d->state.load();
     delete d;
     return st;
 }
 
+} // namespace ssb64
+
+#else // no curl backend (Switch): downloads unavailable
+
+namespace ssb64 {
+Download* DownloadStart(const std::string&, const std::filesystem::path&) {
+    return nullptr;
+}
+DownloadState DownloadPoll(const Download*) { return DownloadState::Error; }
+void DownloadCancel(Download*) {}
+DownloadState DownloadFinish(Download*) { return DownloadState::Error; }
 } // namespace ssb64
 
 #endif

@@ -1,0 +1,11 @@
+# cmake-lint (cmakelang) conventions for this repo — invoked via
+# `cmake-lint <files> -c .cmakelintrc` (see run_project_lint.py).
+# CRLF checkouts on Windows, 4-space body indent, 120-col lines.
+line_ending: windows
+tab_size: 4
+line_width: 120
+# C0327 false-positives on the phantom empty last line of every CRLF-
+# terminated file (cmakelang 1.4.3 splits on \n, then checks for \r).
+# Real ending consistency is enforced by .gitattributes (eol=crlf).
+disabled_codes:
+  - C0327

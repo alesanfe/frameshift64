@@ -10,6 +10,7 @@ import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
+import { Leaderboard } from "../../domain/leaderboard.mjs";
 
 // Per-isolate IP join accounting (approximate — isolates aren't shared,
 // and that's fine: this bounds scanning cost, it isn't a security
@@ -22,6 +23,13 @@ export default {
 
     if (url.pathname === "/health") {
       return Response.json({ ok: true, service: "smash-netplay" });
+    }
+    // Self-reported rating board lives on a dedicated DO (HTTP only — no
+    // ws). Same stub mechanism as rooms, fixed name.
+    if (url.pathname === "/leaderboard" || url.pathname === "/submit" ||
+        url.pathname === "/result") {
+      const stub = env.ROOMS.get(env.ROOMS.idFromName("leaderboard-global"));
+      return stub.fetch(request);
     }
     if (url.pathname !== "/ws") {
       return new Response("not found", { status: 404 });
@@ -92,9 +100,51 @@ export class NetplayRoom extends DurableObject {
 
   /* ---- connection ---- */
 
+  /* HTTP-only leaderboard paths — intercepted before any ws/room logic
+   * (these requests carry no ?room= param). Persisted via DO storage so
+   * the board survives isolate eviction. */
+  async fetchLeaderboard(request, url) {
+    if (url.pathname === "/leaderboard") {
+      const rows = (await this.ctx.storage.get("lb")) || [];
+      return Response.json({ entries: Leaderboard.fromJSON(rows).list() });
+    }
+    if (url.pathname === "/submit" && request.method === "POST") {
+      let body = null;
+      try { body = await request.json(); } catch { /* bad json */ }
+      const rows = await this.ctx.storage.get("lb");
+      const lb = Leaderboard.fromJSON(rows);
+      const result = lb.submit(body);
+      if (result.kind !== "ok") {
+        return Response.json({ error: result.reason }, { status: 400 });
+      }
+      await this.ctx.storage.put("lb", lb.toJSON());
+      return Response.json({ ok: true, rank: result.rank });
+    }
+    /* Corroborated match result — the rating-moving path. Both clients
+     * report the same match_id; the second report either verifies (Elo
+     * applied) or mismatches (dispute counted). */
+    if (url.pathname === "/result" && request.method === "POST") {
+      let body = null;
+      try { body = await request.json(); } catch { /* bad json */ }
+      const rows = await this.ctx.storage.get("lb");
+      const lb = Leaderboard.fromJSON(rows);
+      const result = lb.reportResult(body);
+      if (result.kind === "reject") {
+        return Response.json({ error: result.reason }, { status: 400 });
+      }
+      await this.ctx.storage.put("lb", lb.toJSON());
+      return Response.json(result);
+    }
+    return new Response("not found", { status: 404 });
+  }
+
   fetch(request) {
     const url = new URL(request.url);
-    const code = url.searchParams.get("room").toUpperCase();
+    if (url.pathname === "/leaderboard" || url.pathname === "/submit" ||
+        url.pathname === "/result") {
+      return this.fetchLeaderboard(request, url);
+    }
+    const code = (url.searchParams.get("room") || "").toUpperCase();
     const role = url.searchParams.get("role");
     const version = url.searchParams.get("v") === "2" ? 2 : 1;
 
@@ -110,6 +160,17 @@ export class NetplayRoom extends DurableObject {
       uplinkSlot: parseInt(url.searchParams.get("slot") || "-1", 10),
       uplinkKey: url.searchParams.get("key") || "",
     });
+
+    /* Optional Analytics Engine telemetry (LOBBY_ANALYTICS dataset binding):
+     * one datapoint per admission — Grafana reads it via the Cloudflare
+     * datasource plugin. No binding = no-op; failure never blocks a join. */
+    try {
+      this.env.LOBBY_ANALYTICS?.writeDataPoint({
+        blobs: [role, action.kind],
+        doubles: [version],
+        indexes: [action.kind === "reject" ? action.reason : ""],
+      });
+    } catch { /* telemetry must never break admission */ }
 
     if (action.kind === "reject") {
       return this.reject(action.reason);

@@ -133,7 +133,7 @@ static void RenderDiagnostics(WidgetInfo&) {
                         port_netlobby_status(),
                         port_diag_safe_mode_active() ? "ON" : "off");
         ImGui::SetClipboardText(summary.c_str());
-        ToastSuccess("Diagnostics copied to clipboard");
+        ToastSuccess(TR("Diagnostics copied to clipboard"));
     }
     ImGui::SameLine();
     if (ImGui::Button(TR("Open data folder"))) {

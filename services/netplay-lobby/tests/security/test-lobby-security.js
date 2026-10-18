@@ -178,6 +178,39 @@ async function main() {
   const bcode = await bclosed;
   ok("oversize flood closed with 4029", bcode === 4029);
 
+  // --- matchmaking: role=queue hosts an empty room, joins an occupied one ---
+  const q1 = await connect("room=QUEUE2&role=queue&v=2");
+  const q1w = await jmsgWait(q1, "welcome");
+  ok("queue on empty room lands as host", q1w && q1w.role === "host" && q1w.slot === 0);
+  const q2 = await connect("room=QUEUE2&role=queue&v=2");
+  const q2w = await jmsgWait(q2, "welcome");
+  ok("queue on hosted room lands as join", q2w && q2w.role === "join" && q2w.slot === 1);
+  const q1bad = await connect("room=QUEUE3&role=queue");   // v1 can't queue
+  const q1err = await jmsgWait(q1bad, "error");
+  ok("queue on v1 rejected", q1err && q1err.reason === "version-mismatch");
+  q1.ws.close(); q2.ws.close(); q1bad.ws.close();
+
+  // --- leaderboard: claim-key binds a name; bad payloads rejected ---
+  const lbBase = `http://127.0.0.1:${PORT}`;
+  const KEY_A = "0123456789abcdef0123456789abcdef";
+  const KEY_B = "ffffffffffffffffffffffffffffffff";
+  const post = (body) => fetch(`${lbBase}/submit`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const r1 = await post({ name: "SecTest", key: KEY_A, rating: 1500, wins: 4, losses: 1 });
+  ok("leaderboard submit accepted", r1.status === 200);
+  const r2 = await post({ name: "SecTest", key: KEY_B, rating: 2000, wins: 9, losses: 0 });
+  ok("leaderboard wrong-key rejected", r2.status === 400);
+  const r3 = await post({ name: "SecTest", key: KEY_A, rating: 99999, wins: 0, losses: 0 });
+  ok("leaderboard absurd rating rejected", r3.status === 400);
+  const r4 = await post({ name: '"><script>', key: KEY_A, rating: 1300, wins: 1, losses: 0 });
+  ok("leaderboard hostile name sanitized or rejected", r4.status !== 500);
+  const lb = await (await fetch(`${lbBase}/leaderboard`)).json();
+  const row = lb.entries.find((e) => e.name === "SecTest");
+  ok("leaderboard lists claimed name at first rating",
+     row && row.rating === 1500 && row.wins === 4);
+
   host.ws.close(); c1.ws.close(); c2.ws.close(); up1.ws.close();
   host2.ws.close(); spec.ws.close(); cSpec.ws.close();
   await sleep(150);

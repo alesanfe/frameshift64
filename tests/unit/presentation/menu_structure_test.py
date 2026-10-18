@@ -1,7 +1,7 @@
 """Structural usability checks for the port menu widget registry.
 
 Parses the AddSidebarEntry/AddWidget call sequences in
-src/interfaces/presentation/PortMenu*.cpp and enforces the navigation and
+src/presentation/PortMenu*.cpp and enforces the navigation and
 self-documentation invariants the UI relies on (audit §52/§53):
 
   1. Every registered sidebar section receives at least one widget — an
@@ -30,6 +30,12 @@ self-documentation invariants the UI relies on (audit §52/§53):
   8. Set parity: every catalog key exists in es/fr/de/pt (missing keys
      render as raw English); every lang key exists in catalog (stale
      keys get flagged rather than silently rotting).
+  9. Every WIDGET_CVAR_* widget with a .CVar() binding declares its
+     default explicitly (.DefaultValue()/.DefaultIndex()) — the option
+     structs carry implicit fallbacks (checkbox=false, int slider=1,
+     float slider=1.0, combobox=map key 0) that do NOT necessarily match
+     the runtime CVar default, and both "Restore section defaults" and
+     the Modified panel trust the declared value.
 
 Widget attachment follows the WidgetPath state (path.sidebarName,
 path.column) exactly like the runtime does — AddSidebarEntry only
@@ -45,11 +51,11 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-PRESENTATION = REPO / "src" / "interfaces" / "presentation"
+PRESENTATION = REPO / "src" / "presentation"
 SOURCES = sorted(PRESENTATION.glob("PortMenu*.cpp"))
 ALL_PRESENTATION = sorted(PRESENTATION.glob("*.cpp"))
 CATALOG = json.loads((REPO / "assets" / "lang" / "catalog.json").read_text(encoding="utf-8"))
-MENU_TYPES = (REPO / "src" / "interfaces" / "presentation" / "MenuTypes.h").read_text(
+MENU_TYPES = (REPO / "src" / "presentation" / "MenuTypes.h").read_text(
     encoding="utf-8", errors="replace")
 
 SIDEBAR_RE = re.compile(
@@ -168,7 +174,7 @@ def check_widget_enum_coverage(failures):
     """Every WIDGET_* member must appear as `case WIDGET_*:` somewhere in
     presentation — otherwise the type draws nothing."""
     enum_block = re.search(
-        r'typedef\s+enum\s*\{(.*?)\}\s*WidgetType', MENU_TYPES, re.S)
+        r'typedef\s+enum\s*\{(.*?)\}\s*WidgetType', MENU_TYPES, re.DOTALL)
     if not enum_block:
         failures.append("MenuTypes.h: WidgetType enum not found")
         return
@@ -278,6 +284,13 @@ def main():
                 counts[key] = counts.get(key, 0) + 1
                 seen.setdefault(key, set())
 
+                if key not in declared:
+                    failures.append(
+                        f"{rel}: widget bound to sidebar "
+                        f"'{cur_section}/{cur_sidebar}' that has no "
+                        f"AddSidebarEntry yet — runtime assert in "
+                        f"AddWidget aborts on this")
+
                 declared_cols = declared.get(key)
                 if declared_cols is not None and column > declared_cols:
                     failures.append(
@@ -299,6 +312,16 @@ def main():
                 if wtype == "WIDGET_BUTTON" and ".Callback(" not in stmt:
                     failures.append(
                         f"{rel}: WIDGET_BUTTON '{label}' has no .Callback()")
+
+                if (wtype and wtype.startswith("WIDGET_CVAR")
+                        and ".CVar(" in stmt
+                        and ".DefaultValue(" not in stmt
+                        and ".DefaultIndex(" not in stmt):
+                    failures.append(
+                        f"{rel}: CVar widget '{label}' ({wtype}) declares no "
+                        "explicit default — Restore/Modified use the option "
+                        "struct's implicit fallback, not the runtime CVar "
+                        "default")
 
                 if (wtype and wtype not in NON_INTERACTIVE
                         and ".Tooltip(" not in stmt

@@ -88,8 +88,14 @@ static void *AllocExec(size_t len) {
 
 static bool MakeExec(void *mem, size_t len) {
 #if defined(_WIN32)
-    (void)mem;
-    (void)len; /* already PAGE_EXECUTE_READWRITE */
+    /* Drop the write bit so the stub is RX like the POSIX path — the
+     * comment above promises W^X; leaving RWX would make every thunk a
+     * writable+executable gadget. Re-pointing goes through the cell. */
+    DWORD old_protect = 0;
+    if (!VirtualProtect(mem, len, PAGE_EXECUTE_READ, &old_protect)) {
+        return false;
+    }
+    FlushInstructionCache(GetCurrentProcess(), mem, len);
     return true;
 #else
     if (mprotect(mem, len, PROT_READ | PROT_EXEC) != 0) {

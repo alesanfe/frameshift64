@@ -11,7 +11,17 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <thread>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
+#endif
 
 #if !defined(_WIN32) && !defined(__SWITCH__)
 #include <fcntl.h>
@@ -586,6 +596,36 @@ extern "C" void port_watchdog_note_frame_end(void) {
 extern "C" void port_dump_backtrace(void) {
     DumpBacktraceBoth();
 }
+#elif defined(_WIN32)
+/* Windows variant: CaptureStackBackTrace + SymFromAddr. dbghelp is
+ * initialized at boot by the mod loader's SymbolResolver (and linked in
+ * via crash_handler's #pragma), so symbol names resolve without extra
+ * setup. NOT async-signal-safe (dbghelp allocates) — the sole call site
+ * is ftMainSetStatus's negative-status diagnostic in game code, and the
+ * crash path writes minidumps instead. */
+extern "C" void port_dump_backtrace(void) {
+    void *frames[64];
+    const USHORT n = CaptureStackBackTrace(0, 64, frames, nullptr);
+    port_log("SSB64: ---- main-thread backtrace ----\n");
+    for (USHORT i = 0; i < n; i++) {
+        char line[512];
+        char symBuf[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
+        SYMBOL_INFO *si = reinterpret_cast<SYMBOL_INFO *>(symBuf);
+        std::memset(si, 0, sizeof(symBuf));
+        si->SizeOfStruct = sizeof(SYMBOL_INFO);
+        si->MaxNameLen = MAX_SYM_NAME;
+        DWORD64 disp = 0;
+        if (SymFromAddr(GetCurrentProcess(), reinterpret_cast<DWORD64>(frames[i]), &disp, si) &&
+            si->Name[0] != '\0') {
+            std::snprintf(line, sizeof(line), "SSB64:   %p  %s+0x%llx\n",
+                          frames[i], si->Name, static_cast<unsigned long long>(disp));
+        } else {
+            std::snprintf(line, sizeof(line), "SSB64:   %p\n", frames[i]);
+        }
+        port_log("%s", line);
+    }
+    port_log("SSB64: ---- end backtrace ----\n");
+}
 #else
-extern "C" void port_dump_backtrace(void) { /* stub on Windows */ }
+extern "C" void port_dump_backtrace(void) { /* stub on Switch */ }
 #endif

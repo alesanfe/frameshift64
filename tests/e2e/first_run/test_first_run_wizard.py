@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from smash_test.artifacts import launch_game, png_is_rendered
 
 pytestmark = [

@@ -43,9 +43,9 @@
  * instead of running to completion in the background. After any later
  * step the worker deletes the staged output and returns to Idle.
  *
- * Transport: src/platform/http/download_service.* — curl child on desktop,
- * HttpURLConnection worker on Android, stub on UWP (this file is
- * excluded from the UWP build in CMakeLists.txt).
+ * Transport: src/platform/http/download_service.* — in-process libcurl
+ * worker on desktop, HttpURLConnection worker on Android, stub on UWP
+ * (this file is excluded from the UWP build in CMakeLists.txt).
  */
 #include "enhancements.h"
 
@@ -228,7 +228,7 @@ std::string DeriveBaseName(const std::string& source) {
     std::string base = slash == std::string::npos ? clean : clean.substr(slash + 1);
     const size_t dot = base.find_last_of('.');
     if (dot != std::string::npos && dot > 0) {
-        base = base.substr(0, dot);
+        base.resize(dot);
     }
     return SanitizeInstallName(base);
 }

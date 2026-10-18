@@ -106,7 +106,9 @@ void UpdatePromptWindow::DrawElement() {
     ImGui::EndDisabled();
 
     ImGui::Spacing();
-    ImGui::TextDisabled("%s", TR("The game restarts by itself once the update is installed. Saves and settings are kept."));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", TR("The game restarts by itself once the update is installed. Saves and settings are kept."));
+    ImGui::PopStyleColor();
 }
 
 } // namespace ssb64

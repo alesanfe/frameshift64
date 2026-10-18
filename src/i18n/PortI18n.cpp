@@ -60,6 +60,10 @@ static void LoadLanguage(int index) {
     fseek(f, 0, SEEK_END);
     const long size = ftell(f);
     fseek(f, 0, SEEK_SET);
+    if (size <= 0 || size > 4 * 1024 * 1024) { /* lang files are a few KB */
+        fclose(f);
+        return;
+    }
     std::string text((size_t)size, '\0');
     const size_t read = fread(text.data(), 1, (size_t)size, f);
     fclose(f);

@@ -27,6 +27,10 @@ assets/game/**/manifests/*.json text eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
+# CMake sources: CRLF (repo convention; cmake-lint line_ending=windows).
+*.cmake text eol=crlf
+CMakeLists.txt text eol=crlf
+
 # ---------------------------------------------------------------------------
 # Binary — never let git touch these
 # ---------------------------------------------------------------------------

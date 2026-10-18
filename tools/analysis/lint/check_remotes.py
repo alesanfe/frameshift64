@@ -63,9 +63,8 @@ def gitmodule_urls() -> dict[str, str]:
     for line in cfg.read_text(encoding="utf-8").splitlines():
         if m := re.match(r"\s*path\s*=\s*(\S+)", line):
             path = m.group(1)
-        elif m := re.match(r"\s*url\s*=\s*(\S+)", line):
-            if path:
-                urls[path] = m.group(1)
+        elif path and (m := re.match(r"\s*url\s*=\s*(\S+)", line)):
+            urls[path] = m.group(1)
     return urls
 
 
@@ -83,7 +82,8 @@ def recorded_gitlinks() -> dict[str, str]:
 def ls_remote_shas(url: str) -> set[str]:
     """All SHAs advertised by a remote (any ref)."""
     out = subprocess.run(["git", "ls-remote", url],
-                         capture_output=True, text=True, timeout=60).stdout
+                         capture_output=True, text=True, timeout=60,
+                         check=False).stdout
     return {line.split()[0] for line in out.splitlines() if line.strip()}
 
 

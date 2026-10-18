@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -108,6 +109,8 @@ def parse_link_header(header: str) -> dict[str, str]:
 
 
 def api_request(url: str, accept: str) -> tuple[object, str]:
+    if urllib.parse.urlparse(url).scheme != "https":
+        raise ValueError(f"refusing non-https API url: {url}")
     request = urllib.request.Request(url)
     request.add_header("Accept", accept)
     request.add_header("User-Agent", "battleship-readme-stats")
@@ -117,7 +120,7 @@ def api_request(url: str, accept: str) -> tuple[object, str]:
         request.add_header("Authorization", f"Bearer {token}")
 
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310 — scheme restricted to https above
             payload = json.loads(response.read().decode("utf-8"))
             return payload, response.headers.get("Link", "")
     except urllib.error.HTTPError as exc:

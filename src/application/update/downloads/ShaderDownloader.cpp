@@ -307,8 +307,8 @@ bool ReferencesUnsupportedHistoryBinding(const std::string& source) {
 // HttpDownloadToFile / ZipExtractToDir refactor there are no external
 // tool dependencies on any target:
 //
-//   * Download: `curl` on desktop PATH (macOS, Win10+, mainstream
-//     Linux distros) or java.net.HttpURLConnection via JNI on Android
+//   * Download: in-process libcurl on desktop or
+//     java.net.HttpURLConnection via JNI on Android
 //     (src/platform/http/http_download.cpp). INTERNET permission is in the
 //     manifest.
 //   * Extraction: libzip in-process on every platform — libultraship

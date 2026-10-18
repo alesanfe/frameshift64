@@ -50,7 +50,9 @@ upstream comment style.
   on newer-format sidecars (warn-and-read, never discards user saves).
 - Repo hygiene: legacy `ci/` → `platforms/uwp/ci/`, `prs.json` removed,
   `server/` → `services/netplay-lobby/`, empty placeholders removed.
-- FetchContent deps now all SHA-pinned (funchook, discord-rpc, uwp-dep).
+- FetchContent deps now all SHA-pinned (funchook, uwp-dep). The archived
+  discord-rpc SDK was removed entirely — Rich Presence is an in-tree
+  client for Discord's documented local IPC.
 - Governance: CODEOWNERS, PR template, GOVERNANCE/MAINTAINERS/SUPPORT/
   CODE_OF_CONDUCT, `.editorconfig`, CHANGELOG, `.git-blame-ignore-revs`.
 - CI: `repo-checks.yml` (docs check, env-var catalog, lobby security+fuzz,

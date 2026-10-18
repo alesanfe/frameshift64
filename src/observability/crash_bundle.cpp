@@ -49,13 +49,15 @@ bool sSafeModeActive = false;
 /* ── crash-marker writer (signal-handler side) ─────────────────────────── */
 
 /* Manual hex/decimal formatting — snprintf is not on the POSIX
- * async-signal-safe list, so the marker writer can't use it. */
-size_t AppendStr(char *buf, size_t pos, const char *s) {
-    while (*s) buf[pos++] = *s++;
+ * async-signal-safe list, so the marker writer can't use it.
+ * All appends take `cap` (sizeof the body buffer) and saturate at
+ * cap-1 so a long reason can't smash the stack inside the handler. */
+size_t AppendStr(char *buf, size_t pos, const char *s, size_t cap) {
+    while (*s && pos + 1 < cap) buf[pos++] = *s++;
     return pos;
 }
 
-size_t AppendHex(char *buf, size_t pos, uintptr_t v) {
+size_t AppendHex(char *buf, size_t pos, uintptr_t v, size_t cap) {
     static const char kHex[] = "0123456789abcdef";
     char tmp[32];
     int n = 0;
@@ -66,13 +68,12 @@ size_t AppendHex(char *buf, size_t pos, uintptr_t v) {
         tmp[n++] = kHex[v & 0xF];
         v >>= 4;
     }
-    buf[pos++] = '0';
-    buf[pos++] = 'x';
-    while (n > 0) buf[pos++] = tmp[--n];
+    if (pos + 2 < cap) { buf[pos++] = '0'; buf[pos++] = 'x'; }
+    while (n > 0 && pos + 1 < cap) buf[pos++] = tmp[--n];
     return pos;
 }
 
-size_t AppendDec(char *buf, size_t pos, unsigned long v) {
+size_t AppendDec(char *buf, size_t pos, unsigned long v, size_t cap) {
     char tmp[24];
     int n = 0;
     if (v == 0) {
@@ -82,7 +83,12 @@ size_t AppendDec(char *buf, size_t pos, unsigned long v) {
         tmp[n++] = (char)('0' + (v % 10));
         v /= 10;
     }
-    while (n > 0) buf[pos++] = tmp[--n];
+    while (n > 0 && pos + 1 < cap) buf[pos++] = tmp[--n];
+    return pos;
+}
+
+size_t AppendChar(char *buf, size_t pos, char c, size_t cap) {
+    if (pos + 1 < cap) buf[pos++] = c;
     return pos;
 }
 
@@ -182,26 +188,27 @@ extern "C" void port_diag_write_crash_marker(const char *reason, uintptr_t fault
     std::memcpy(path + n, "/crash.marker", 14); /* includes NUL */
 
     char body[768];
+    const size_t cap = sizeof(body);
     size_t pos = 0;
-    pos = AppendStr(body, pos, "reason=");
-    pos = AppendStr(body, pos, reason != nullptr ? reason : "unknown");
-    body[pos++] = '\n';
-    pos = AppendStr(body, pos, "fault_addr=");
-    pos = AppendHex(body, pos, fault_addr);
-    body[pos++] = '\n';
-    pos = AppendStr(body, pos, "scene=");
-    pos = AppendDec(body, pos, port_diag_get_scene_curr());
-    body[pos++] = '\n';
-    pos = AppendStr(body, pos, "scene_prev=");
-    pos = AppendDec(body, pos, port_diag_get_scene_prev());
-    body[pos++] = '\n';
-    pos = AppendStr(body, pos, "pid=");
+    pos = AppendStr(body, pos, "reason=", cap);
+    pos = AppendStr(body, pos, reason != nullptr ? reason : "unknown", cap);
+    pos = AppendChar(body, pos, '\n', cap);
+    pos = AppendStr(body, pos, "fault_addr=", cap);
+    pos = AppendHex(body, pos, fault_addr, cap);
+    pos = AppendChar(body, pos, '\n', cap);
+    pos = AppendStr(body, pos, "scene=", cap);
+    pos = AppendDec(body, pos, port_diag_get_scene_curr(), cap);
+    pos = AppendChar(body, pos, '\n', cap);
+    pos = AppendStr(body, pos, "scene_prev=", cap);
+    pos = AppendDec(body, pos, port_diag_get_scene_prev(), cap);
+    pos = AppendChar(body, pos, '\n', cap);
+    pos = AppendStr(body, pos, "pid=", cap);
 #if defined(_WIN32)
-    pos = AppendDec(body, pos, (unsigned long)_getpid());
+    pos = AppendDec(body, pos, (unsigned long)_getpid(), cap);
 #else
-    pos = AppendDec(body, pos, (unsigned long)getpid());
+    pos = AppendDec(body, pos, (unsigned long)getpid(), cap);
 #endif
-    body[pos++] = '\n';
+    pos = AppendChar(body, pos, '\n', cap);
 
 #if defined(_WIN32)
     HANDLE hf = CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,

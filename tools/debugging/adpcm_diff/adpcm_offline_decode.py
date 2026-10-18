@@ -28,6 +28,7 @@ Dump format (header + body):
 import os
 import struct
 import sys
+import tempfile
 
 
 def clamp16(v: int) -> int:
@@ -133,8 +134,8 @@ def parse_dump(path: str):
 
 
 def main():
-    dump_path = sys.argv[1] if len(sys.argv) > 1 else "/tmp/adpcm_dump.bin"
-    output_path = sys.argv[2] if len(sys.argv) > 2 else "/tmp/adpcm_dump_output.bin"
+    dump_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(tempfile.gettempdir(), "adpcm_dump.bin")
+    output_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(tempfile.gettempdir(), "adpcm_dump_output.bin")
 
     d = parse_dump(dump_path)
     print(f"== Dump {dump_path}")

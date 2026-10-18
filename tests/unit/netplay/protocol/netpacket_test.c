@@ -541,6 +541,7 @@ static void test_fuzz_arbitrary(void)
 
 	/* Pass 1: 10k fully arbitrary datagrams (empty → oversized). Every
 	 * parser must reject cleanly — the contract is "no crash, no OOB". */
+	memset(buf, 0, sizeof(buf)); /* deterministic baseline for the fill loop */
 	for (i = 0; i < 10000; i++)
 	{
 		size = rng() % sizeof(buf);

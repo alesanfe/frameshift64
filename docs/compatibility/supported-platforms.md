@@ -43,7 +43,7 @@ preference; each row names the real blocker and what unifying would cost.
 | In-app updater | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | desktop replaces the binary in-place; Android can only do assisted installs (Play In-App Updates via Play Core when Play-distributed, or `PackageInstaller` session for sideloaded APKs — user confirmation required). Unifiable behind an `IUpdateService` interface, not yet implemented |
 | Shader-pack downloader | ✔ | ✔ | ✔ | ✔ | ✘ | ✘ | unified: HTTP via `HttpDownloadToFile` (curl on desktop, HttpURLConnection/JNI on Android) + libzip extraction on all; UWP ships packaged shaders |
 | Curated pack downloads | ✔ | ✔ | ✔ | ✔ | ✘ | ✘ | unified: `DownloadService` (killable curl child on desktop, HttpURLConnection task on Android) + in-process SHA-256 + libzip audit on all |
-| Discord Rich Presence | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | discord-rpc is desktop-only, but the Discord Social SDK officially supports Android ≥7 — an `IDiscordIntegration` backend could unify this; not yet integrated |
+| Discord Rich Presence | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | in-tree client for Discord's local IPC (`discord-ipc-N` pipe/unix socket — no SDK dependency). The Discord Social SDK officially supports Android ≥7 — an `IDiscordIntegration` backend could unify this; not yet integrated |
 | Windowed-fullscreen toggle | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | Android is always fullscreen; meaningless on UWP/Switch |
 | GameCube adapter (libusb) | ✔ | ✔ | ✔ | ✘ | ✘ | ✘ | libusb host access needs desktop USB stack (WinUSB driver on Windows). Android USB-host API could offer experimental support on OTG-capable devices; not implemented |
 | First-run ROM wizard | ✔ | ✔ | ✔ | ✔* | ✘ | ✘ | *Android extracts on-device via `libtorch_runner.so`; UWP/Switch ship pre-extracted assets |
@@ -72,7 +72,7 @@ the manifest — required for both netplay sockets and downloads.
   Silent installs are impossible outside managed devices either way.
 - **Discord on Android**: Discord Social SDK has official Android support
   (C++/Unity/Unreal). Add an `IDiscordIntegration` interface with the
-  existing discord-rpc backend on desktop and a Social SDK backend on
+  in-tree local-IPC backend on desktop and a Social SDK backend on
   Android; the presence model (`state/details/party/timestamps`) is shared.
 - **Mods on Android**: the interesting parity target is not porting
   funchook/TCC — it is a portable mod backend (declarative packs +

@@ -14,9 +14,13 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 from smash_test.artifacts import (
-    REPO_ROOT, elf_machine, macho_cputype, nro_header_ok, zip_names)
+    REPO_ROOT,
+    elf_machine,
+    macho_cputype,
+    nro_header_ok,
+    zip_names,
+)
 
 pytestmark = pytest.mark.e2e
 

@@ -2,6 +2,7 @@
 #include "netlobby.h"
 #include "netlobby_internal.h"
 #include "netlobby_util.h"
+#include "lobby_json.h"
 #include "netfriends.h"
 #include "netstats.h"
 #include "udp_transport.h"
@@ -30,8 +31,9 @@
 
 #include <ship/Context.h>
 
-/* State-free helpers (compat token, json_field, env, split, rules reads)
- * live in netlobby_util.cpp — the names resolve unqualified here. */
+/* State-free helpers (compat token, env, split, rules reads) live in
+ * netlobby_util.cpp; wire JSON parsing in lobby_json.cpp — the names
+ * resolve unqualified here. */
 using namespace ssb64::netlobby;
 
 namespace ssb64::netlobby {
@@ -259,16 +261,26 @@ static void handle_game_message(Peer &p, const std::vector<std::string> &args)
     if (verb == "PICK" && args.size() >= 6) {
         p.fkind = std::atoi(args[2].c_str());
         p.tap_jump_off = std::atoi(args[4].c_str());
-        p.version = args[5];
+        p.version = args[5].substr(0, 32);   /* display-only, but cap it */
         p.got_pick = true;
         if (args.size() >= 8) {   /* optional trailing fields: rating, name */
-            p.rating = std::atoi(args[7].c_str());
+            /* Self-declared Elo — clamp to the leaderboard's accepted band
+             * (0..4000) so a hostile PICK can't push the local rating math
+             * with an absurd value. */
+            p.rating = std::clamp(std::atoi(args[7].c_str()), 0, 4000);
             if (args.size() >= 9 && p.name.empty()) {
-                /* Wire contract: names are sanitized to <=15 chars by
-                 * local_player_name() — enforce the same bound on
-                 * receive so a hostile PICK can't smuggle an oversized
-                 * label into the log/menu. */
-                p.name = args[8].substr(0, 15);
+                /* Wire contract: names are sanitized to the [alnum._-]
+                 * alphabet and <=15 chars by local_player_name() — enforce
+                 * both bounds on receive so a hostile PICK can't smuggle an
+                 * oversized or quote/newline-laden label into the log/menu
+                 * or, if it is ever persisted, into the JSON stores. */
+                for (const char c : args[8]) {
+                    const unsigned char u = static_cast<unsigned char>(c);
+                    if ((std::isalnum(u) || c == '_' || c == '-' || c == '.') &&
+                        p.name.size() < 15) {
+                        p.name += c;
+                    }
+                }
             }
         }
         if (!p.name_checked && !p.name.empty()) {
@@ -563,15 +575,15 @@ void pump_transport(void)
 
 /* ---- server messages ---- */
 
-static void update_peer_endpoints(int slot, const std::string &json_entry)
+static void update_peer_endpoints(int slot, const nlohmann::json &entry)
 {
     /* clients only ever link to the host: other clients' traffic arrives
      * forwarded by the host once the match starts */
     if (!sLobby.is_host && slot != 0) {
         return;
     }
-    std::string pub = json_field(json_entry, "public");
-    std::string local = json_field(json_entry, "local");
+    std::string pub = json_str(entry, "public");
+    std::string local = json_str(entry, "local");
     if (pub.empty() && local.empty()) {
         return;
     }
@@ -593,8 +605,9 @@ static void update_peer_endpoints(int slot, const std::string &json_entry)
     }
 }
 
-/* The "peers" roster (v2) lists every participant; each entry is a JSON
- * object. Parse loosely: locate each "slot":N and read that object's fields. */
+/* The "peers" roster (v2) lists every participant in a top-level "players"
+ * array of objects — iterate it structurally (the old substring scan could
+ * match "slot": inside a string value or a nested object). */
 static void on_roster(const std::string &text)
 {
     bool seen[8] = {};
@@ -602,19 +615,23 @@ static void on_roster(const std::string &text)
         seen[sLobby.my_slot] = true;
     }
 
-    size_t at = 0;
-    while ((at = text.find("\"slot\":", at)) != std::string::npos) {
-        size_t entry_end = text.find('}', at);
-        std::string entry = (entry_end == std::string::npos)
-            ? text.substr(at) : text.substr(at, entry_end - at);
-        int slot = std::atoi(json_field(entry, "slot").c_str());
+    const nlohmann::json doc = json_parse(text);
+    const auto players = doc.find("players");
+    if (players == doc.end() || !players->is_array()) {
+        return;
+    }
+    for (const nlohmann::json &entry : *players) {
+        if (!entry.is_object()) {
+            continue;
+        }
+        const int slot = json_int(entry, "slot");
         if (slot >= 0 && slot < 8) {
             seen[slot] = true;
         }
         if (is_spec_slot(slot)) {
             /* spectators have no endpoints to exchange: the host just opens
              * a relay link and (mid-match) feeds it through the engine */
-            if (sLobby.is_host && json_field(entry, "role") == "spec") {
+            if (sLobby.is_host && json_str(entry, "role") == "spec") {
                 Peer *p = peer_new(slot);
                 if (p != nullptr && !p->connected) {
                     p->connected = port_udp_link_set(slot, "relay") == 1;
@@ -647,16 +664,15 @@ static void on_roster(const std::string &text)
                 update_peer_endpoints(slot, entry);
                 Peer *p = peer_for_slot(slot);
                 if (p != nullptr) {
-                    p->ready = json_field(entry, "ready") == "true";
+                    p->ready = json_str(entry, "ready") == "true";
                 }
             } else if (sLobby.server_version == 2 &&
-                       (json_field(entry, "ready") == "true") != sLobby.my_ready) {
+                       (json_str(entry, "ready") == "true") != sLobby.my_ready) {
                 /* the room's copy of our flag went stale (a reconnect resets
                  * it server-side) - re-announce our truth */
                 send_ready_state();
             }
         }
-        at = (entry_end == std::string::npos) ? entry_end : entry_end + 1;
     }
     int count = 0;
     for (int i = 0; i < 4; i++) {      /* player_count never includes specs */
@@ -683,22 +699,23 @@ static void on_roster(const std::string &text)
 
 void on_server_text(const char *text)
 {
-    std::string type = json_field(text, "type");
+    const nlohmann::json doc = json_parse(text);
+    const std::string type = json_str(doc, "type");
 
     if (type == "welcome") {
         sLobby.ws_welcomed = true;
-        sLobby.code = json_field(text, "room");
-        sLobby.up_key = json_field(text, "upkey");
+        sLobby.code = json_str(doc, "room");
+        sLobby.up_key = json_str(doc, "upkey");
         if (sLobby.quickplay) {
             /* role=queue: the room tells us which side we landed on */
-            sLobby.is_host = (json_field(text, "role") == "host");
+            sLobby.is_host = (json_str(doc, "role") == "host");
         }
         port_netstats_note_room(sLobby.code.c_str());
-        std::string slot = json_field(text, "slot");
-        if (!slot.empty()) {
+        const int slot = json_int(doc, "slot");
+        if (slot >= 0) {
             sLobby.server_version = 2;
-            sLobby.my_slot = std::atoi(slot.c_str());
-            sLobby.up_key = json_field(text, "upkey");
+            sLobby.my_slot = slot;
+            sLobby.up_key = json_str(doc, "upkey");
             port_udp_set_relay_framed(1);
             port_udp_set_relay_hooks(relay_send, relay_recv);
             if (sLobby.spectate) {
@@ -742,9 +759,7 @@ void on_server_text(const char *text)
         return;
     }
     if (type == "peer") {          // v1: single opponent endpoints
-        std::string entry = std::string("\"public\":\"") + json_field(text, "public") +
-                            "\",\"local\":\"" + json_field(text, "local") + "\"";
-        update_peer_endpoints(sLobby.is_host ? 1 : 0, entry);
+        update_peer_endpoints(sLobby.is_host ? 1 : 0, doc);
         sLobby.player_count = 2;
         if (sLobby.state == PORT_NETLOBBY_WAITING || sLobby.state == PORT_NETLOBBY_JOINING) {
             set_state(PORT_NETLOBBY_PUNCHING, TR("Peer joined - punching through NAT."));
@@ -752,7 +767,10 @@ void on_server_text(const char *text)
         return;
     }
     if (type == "peer_relay") {    // v2: one peer fell back to the relay
-        int slot = std::atoi(json_field(text, "slot").c_str());
+        const int slot = json_int(doc, "slot");
+        if (slot < 0) {
+            return;                /* absent/invalid — free peers are slot -1 */
+        }
         Peer *p = peer_for_slot(slot);
         /* A peer that asked for relay but already connected via direct is
          * fine to leave alone *only* if the direct path is proven both ways
@@ -774,9 +792,8 @@ void on_server_text(const char *text)
         return;
     }
     if (type == "peer_left") {
-        std::string slot = json_field(text, "slot");
-        if (!slot.empty()) {       // v2: one participant left
-            int left = std::atoi(slot.c_str());
+        const int left = json_int(doc, "slot");
+        if (left >= 0) {           // v2: one participant left
             if (left == 0) {       // host left: the room is over
                 if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
                     fail(TR("Host left the room."));
@@ -808,9 +825,9 @@ void on_server_text(const char *text)
         return;
     }
     if (type == "error") {
-        std::string msg = json_field(text, "reason");
+        std::string msg = json_str(doc, "reason");
         if (msg.empty()) {
-            msg = json_field(text, "message");
+            msg = json_str(doc, "message");
         }
         if (msg == "room-full") {
             if (sLobby.quickplay && sLobby.queue_idx + 1 < kQueueRoomCount) {
@@ -824,7 +841,7 @@ void on_server_text(const char *text)
                 connect_server();
                 char msgbuf[128];
                 std::snprintf(msgbuf, sizeof(msgbuf), TR("Queue %d full - trying the next one..."),
-                              sLobby.queue_idx);
+                              2 + sLobby.queue_idx);
                 sLobby.status = msgbuf;
                 return;
             }

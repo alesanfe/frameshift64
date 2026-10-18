@@ -6,20 +6,114 @@
 // Usage: node src/node-lobby.mjs [port]
 
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
+import { Leaderboard } from "../../domain/leaderboard.mjs";
 
 const rooms = new Map();    // code -> LobbyRoom
+
+/* Leaderboard persisted next to the script — runtime state, not repo data. */
+const lbPath = path.join(path.dirname(fileURLToPath(import.meta.url)),
+  "..", "..", "..", "leaderboard.json");
+const lb = Leaderboard.fromJSON(
+  JSON.parse(fs.existsSync(lbPath) ? fs.readFileSync(lbPath, "utf8") : "[]"));
+const saveLb = () => {
+  try { fs.writeFileSync(lbPath, JSON.stringify(lb.toJSON())); } catch { /* ro fs */ }
+};
 const allowIpJoin = makeJoinLimiter();  // cross-code scan throttle (AUD-25)
+
+/* Cumulative counters for /metrics — local mirror of what the deployed
+ * worker reports through Analytics Engine (LOBBY_ANALYTICS binding). */
+const stats = { admits: 0, rejects: 0, byRole: { host: 0, join: 0, spec: 0, queue: 0 } };
 
 const port = parseInt(process.argv[2] || "8799", 10);
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: true, service: "smash-netplay" }));
+    res.end(JSON.stringify({ ok: true, service: "smash-netplay", rooms: rooms.size }));
+    return;
+  }
+  if (req.url === "/metrics") {
+    /* Prometheus text exposition — point Grafana's Cloudflare/Prometheus
+     * datasource at this on a LAN/dev rig. */
+    let sockets = 0, players = 0, specs = 0;
+    for (const r of rooms.values()) {
+      for (const [, i] of r.sockets) {
+        if (i.kind === "up") continue;
+        sockets++;
+        if (i.slot >= 4) specs++; else players++;
+      }
+    }
+    const lines = [
+      "# HELP ssb64_lobby_rooms Open rooms",
+      "# TYPE ssb64_lobby_rooms gauge",
+      `ssb64_lobby_rooms ${rooms.size}`,
+      "# HELP ssb64_lobby_sockets Open player/spectator sockets",
+      "# TYPE ssb64_lobby_sockets gauge",
+      `ssb64_lobby_sockets ${sockets}`,
+      `ssb64_lobby_players ${players}`,
+      `ssb64_lobby_spectators ${specs}`,
+      "# HELP ssb64_lobby_admits_total Admitted connections by role",
+      "# TYPE ssb64_lobby_admits_total counter",
+      `ssb64_lobby_admits_total ${stats.admits}`,
+      `ssb64_lobby_admits_role_total{role="host"} ${stats.byRole.host}`,
+      `ssb64_lobby_admits_role_total{role="join"} ${stats.byRole.join}`,
+      `ssb64_lobby_admits_role_total{role="spec"} ${stats.byRole.spec}`,
+      `ssb64_lobby_admits_role_total{role="queue"} ${stats.byRole.queue}`,
+      "# HELP ssb64_lobby_rejects_total Rejected admissions",
+      "# TYPE ssb64_lobby_rejects_total counter",
+      `ssb64_lobby_rejects_total ${stats.rejects}`,
+      "",
+    ];
+    res.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
+    res.end(lines.join("\n"));
+    return;
+  }
+  if (req.url === "/leaderboard" && req.method === "GET") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ entries: lb.list() }));
+    return;
+  }
+  if (req.url === "/submit" && req.method === "POST") {
+    let raw = "";
+    req.on("data", (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
+    req.on("end", () => {
+      let body = null;
+      try { body = JSON.parse(raw); } catch { /* bad json */ }
+      const result = lb.submit(body);
+      if (result.kind !== "ok") {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: result.reason }));
+        return;
+      }
+      saveLb();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, rank: result.rank }));
+    });
+    return;
+  }
+  if (req.url === "/result" && req.method === "POST") {
+    let raw = "";
+    req.on("data", (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
+    req.on("end", () => {
+      let body = null;
+      try { body = JSON.parse(raw); } catch { /* bad json */ }
+      const result = lb.reportResult(body);
+      if (result.kind === "reject") {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: result.reason }));
+        return;
+      }
+      saveLb();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(result));
+    });
     return;
   }
   res.writeHead(404);
@@ -76,10 +170,11 @@ wss.on("connection", (ws, req) => {
   }
 
   let room = rooms.get(code);
-  // Only a host mints a room: joins and uplinks to a nonexistent room fail
-  // fast instead of accumulating empty objects in the map.
+  // Only a host or a queuer mints a room: joins and uplinks to a nonexistent
+  // room fail fast instead of accumulating empty objects in the map. A
+  // queue connection on a fresh room lands as its host (matchmaking).
   const isUplink = url.searchParams.get("up") === "1";
-  if (!room && (role !== "host" || isUplink)) {
+  if (!room && ((role !== "host" && role !== "queue") || isUplink)) {
     fail(4000, "no-such-room");
     return;
   }
@@ -96,6 +191,7 @@ wss.on("connection", (ws, req) => {
   });
 
   if (action.kind === "reject") {
+    stats.rejects++;
     fail(action.reason === "rate-limited" ? 4029 : 4000, action.reason);
     gc(room);
     return;
@@ -113,6 +209,8 @@ wss.on("connection", (ws, req) => {
     room.sockets.clear();
   }
   attach(room, ws, action.info);
+  stats.admits++;
+  if (role in stats.byRole) stats.byRole[role]++;
   send(action.welcome);
   if (action.after === "introduceV1") room.introduceV1();
   else if (action.after === "broadcastRoster") room.broadcastRoster();

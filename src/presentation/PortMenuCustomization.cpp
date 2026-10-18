@@ -397,13 +397,13 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
             CVarSetInteger("gHiResTextures.Enabled", 1);
             CVarSave();
             ssb64::hires::HiResPack::Get().Init();
-            ToastSuccess("Texture pack installed and enabled");
+            ToastSuccess(TR("Texture pack installed and enabled"));
         } else {
-            ToastSuccess("Pack installed");
+            ToastSuccess(TR("Pack installed"));
         }
     } else if (phase == ModPackInstallPhase::Error &&
                s_prevPhase != ModPackInstallPhase::Error) {
-        ToastError("Pack install failed");
+        ToastError(TR("Pack install failed"));
     }
     s_prevPhase = phase;
 
@@ -416,7 +416,9 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
         ImGui::PushID(pack.id);
 
         ImGui::TextWrapped(TR("%s %s"), pack.displayName, pack.version);
-        ImGui::TextDisabled(TR("%s"), pack.summary);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped(TR("%s"), pack.summary);
+        ImGui::PopStyleColor();
 
         const bool installed = IsModPackInstalled(pack);
         if (installed) {
@@ -461,8 +463,10 @@ void RenderCuratedTexturePacks(WidgetInfo& /*widget*/) {
         ImGui::PopID();
     }
 
-    ImGui::TextDisabled("%s", TR("Third-party pack by GhostlyDark — downloaded from its own "
-                        "GitHub release page (not redistributed by this project)."));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", TR("Third-party pack by GhostlyDark — downloaded from its own "
+                       "GitHub release page (not redistributed by this project)."));
+    ImGui::PopStyleColor();
 
     // --- Install your own --------------------------------------------------
     // Generic installer: user-supplied URL or a file/folder dropped on the
@@ -873,7 +877,9 @@ static void RenderBundledModRows() {
         }
 
         ImGui::TextWrapped(TR("%s"), spec.manifestName);
-        ImGui::TextDisabled(TR("%s"), spec.summary);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped(TR("%s"), spec.summary);
+        ImGui::PopStyleColor();
         if (loaded) {
             ImGui::TextColored(SemanticColors::Success, "%s", TR("Active"));
         } else if (installed) {
@@ -1069,7 +1075,7 @@ void PortMenu::AddMenuCustomization() {
             // --- Action bar -------------------------------------------------
             if (ImGui::Button(TR("Hot Reload"))) {
                 DoHotReload(); // re-snapshots s_modList when it finishes
-                ToastInfo("Reloading script mods...");
+                ToastInfo(TR("Reloading script mods..."));
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("%s", TR("Unload + recompile + re-init all TCC mods.\n"
@@ -1078,7 +1084,7 @@ void PortMenu::AddMenuCustomization() {
             ImGui::SameLine();
             if (ImGui::Button(TR("Rescan"))) {
                 RefreshModList();
-                ToastInfo("Mod list refreshed");
+                ToastInfo(TR("Mod list refreshed"));
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("%s", TR("Re-read the mods/ folder without reloading the mods."));
@@ -1102,10 +1108,10 @@ void PortMenu::AddMenuCustomization() {
                     s_prevPhase != ModPackInstallPhase::Done &&
                     GetLastInstalledPackKind() == ModPackInstalledKind::ScriptMod) {
                     DoHotReload(); // re-snapshots s_modList when it finishes
-                    ToastSuccess("Mod installed — reloading");
+                    ToastSuccess(TR("Mod installed — reloading"));
                 } else if (phase == ModPackInstallPhase::Error &&
                            s_prevPhase != ModPackInstallPhase::Error) {
-                    ToastError("Mod install failed");
+                    ToastError(TR("Mod install failed"));
                 }
                 s_prevPhase = phase;
             }

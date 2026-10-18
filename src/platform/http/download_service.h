@@ -1,8 +1,8 @@
 /* download_service.h — cancellable background file download, same
  * contract on every platform.
  *
- *   - Windows / Linux / macOS: a spawned `curl` child process that the
- *     caller can kill mid-transfer (CREATE_NO_WINDOW / SIGTERM).
+ *   - Windows / Linux / macOS: an in-process libcurl transfer on a
+ *     worker thread; cancel flips a flag the progress callback polls.
  *   - Android: a Java-side worker thread streaming through
  *     HttpURLConnection; cancel disconnects the connection. Apps cannot
  *     exec helper binaries, so the platform HTTP stack is the backend.

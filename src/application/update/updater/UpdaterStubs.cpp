@@ -6,7 +6,7 @@
 
 #include "enhancements.h"
 
-#if defined(BATTLESHIP_UWP) || defined(__ANDROID__) || defined(__SWITCH__)
+#if defined(BATTLESHIP_UWP) || defined(__ANDROID__) || defined(__SWITCH__) || defined(__EMSCRIPTEN__)
 
 namespace ssb64 {
 namespace enhancements {

@@ -75,6 +75,39 @@ smash_add_test(NAME netpacket_test TYPE unit TIMEOUT 15
     LABELS netplay protocol deterministic)
 target_include_directories(netpacket_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# Lobby wire-JSON helpers — self-contained TU, compiles standalone like
+# netpacket.c above (no game state, no network).
+smash_add_test(NAME lobby_json_test TYPE unit TIMEOUT 15
+    SOURCES
+        unit/netplay/session/lobby_json_test.cpp
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/session/lobby_json.cpp
+    LIBRARIES smash_test_support nlohmann_json::nlohmann_json
+    LABELS netplay protocol deterministic)
+target_include_directories(lobby_json_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Persistence stores — SSB64_SAVE_PATH redirects them into a per-process
+# temp dir, so load/save runs fully offline. Each binary runs twice:
+# once against a crafted fixture (default argv) and once against a
+# corrupt file (argv "corrupt") since the lazy load is one-shot per
+# process. tests/support/shim supplies the Ship::Context test double —
+# libultraship itself can't link into a test (unresolved port_* hooks,
+# static-CRT mismatch), see the shim header.
+foreach(store netstats netfriends)
+    smash_add_test(NAME ${store}_test TYPE unit TIMEOUT 15
+        SOURCES
+            unit/netplay/domain/${store}_test.cpp
+            ${CMAKE_SOURCE_DIR}/src/networking/netplay/domain/${store}.cpp
+        LIBRARIES smash_test_support nlohmann_json::nlohmann_json
+        LABELS netplay persistence deterministic)
+    target_include_directories(${store}_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/tests/support/shim
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/domain
+        ${CMAKE_SOURCE_DIR}/src/shared)
+    add_test(NAME ${store}_corrupt_test COMMAND ${store}_test corrupt)
+    set_tests_properties(${store}_corrupt_test PROPERTIES
+        LABELS "unit;netplay;persistence;deterministic" TIMEOUT 15)
+endforeach()
+
 # ── unit/presentation ──────────────────────────────────────────────────
 # Static structural check over the PortMenu widget registry (§52/§53):
 # no empty sidebars, no ImGui label collisions, every interactive widget
@@ -85,6 +118,33 @@ add_test(NAME menu_structure_test
             ${CMAKE_CURRENT_SOURCE_DIR}/unit/presentation/menu_structure_test.py)
 set_tests_properties(menu_structure_test PROPERTIES
     LABELS "unit;presentation;usability;deterministic" TIMEOUT 30)
+
+# ── unit/relocation ────────────────────────────────────────────────────
+# Golden structural invariants of the committed synthetic-reloc spec table
+# (generated/src/<ver>/ssb64_reloc_rebuild.<ver>.cpp): file_id ordering,
+# slice containment, intern/extern slot bounds — the exact contract the
+# deblob runtime trusts (docs/deblob.md). Pure Python, no ROM needed.
+add_test(NAME reloc_spec_golden_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/unit/relocation/reloc_spec_golden_test.py)
+set_tests_properties(reloc_spec_golden_test PROPERTIES
+    LABELS "unit;relocation;deterministic" TIMEOUT 30)
+
+# ── e2e/golden ─────────────────────────────────────────────────────────
+# Golden gameplay verification: replays the committed .ssr input tapes
+# (tests/support/fixtures/replays/, produced by
+# tools/developer/testing/make_replay.py) and diffs the per-tick state
+# trace against the committed goldens (tests/support/golden/*.trace).
+# Needs BattleShip.o2r next to the binary — the driver exits 77 when the
+# extracted assets are absent so ROM-less environments SKIP, not FAIL.
+add_test(NAME golden_gameplay_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/e2e/golden/golden_gameplay_test.py
+            --build-dir $<TARGET_FILE_DIR:ssb64>)
+set_tests_properties(golden_gameplay_test PROPERTIES
+    LABELS "e2e;golden;deterministic;requires-rom"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 600)
 
 # ── tests/fuzz (libFuzzer) ─────────────────────────────────────────────
 # Coverage-guided parser fuzzing (TD-010). Opt-in: requires clang's

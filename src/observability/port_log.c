@@ -10,6 +10,10 @@
 #include <windows.h>
 #elif defined(__SWITCH__)
 #include <switch.h>  /* Mutex */
+#elif defined(__EMSCRIPTEN__)
+#include <unistd.h>
+#include <pthread.h>
+#include <emscripten.h>  /* emscripten_force_exit */
 #else
 #include <unistd.h>
 #include <pthread.h>
@@ -360,6 +364,10 @@ void port_exit_process(int code)
 	/* Immediate kernel exit — no atexit/unwind, same contract as the other
 	 * platforms' paths here. Declared via <switch.h> above. */
 	svcExitProcess();
+#elif defined(__EMSCRIPTEN__)
+	/* wasm has no _exit; force_exit ends the runtime without running
+	 * atexit/destructors — same contract. Declared via <emscripten.h>. */
+	emscripten_force_exit(code);
 #else
 	_exit(code);
 #endif

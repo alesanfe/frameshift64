@@ -27,9 +27,10 @@ endif()
 # and the in-engine call sites (#ifndef DISABLE_SCRIPTING). Forced ON for
 # Android: funchook/TinyCC have no Android target and the loader is desktop-only.
 # Set BEFORE add_subdirectory(libultraship) so the engine half sees it too.
-if (CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
+if (CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # funchook/TinyCC have no Switch target either — the mod loader is
-    # desktop-only on both platforms.
+    # desktop-only on both platforms. Emscripten likewise: no dynamic code
+    # loading on wasm, and -sASYNCIFY instrumentation would fight a JIT.
     set(DISABLE_SCRIPTING ON CACHE BOOL "Disable the mod system (scripting + hooks)" FORCE)
 endif()
 
@@ -41,7 +42,7 @@ if (DISABLE_SCRIPTING)
 endif()
 
 include(ExternalProject)
-include(FetchContent) # pull discord-rpc from GitHub (desktop only)
+include(FetchContent) # funchook / UwpLibs / ed25519 (see below)
 
 # Version string for the built-in updater. String-compared exactly against
 # the name returned by GitHub's /tags API, so it must match the release tag
@@ -193,7 +194,8 @@ set(GBI_UCODE "F3DEX_GBI_2" CACHE STRING "" FORCE)
 # Android needs GLES3 instead of desktop GL + GLEW. Pin USE_OPENGLES ON
 # before the libultraship subdirectory so its src/CMakeLists.txt picks the
 # GLESv3 branch and the ENABLE_OPENGL/USE_OPENGLES compile defs are set.
-if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+# Emscripten is the same case: browsers expose WebGL2 == GLES 3.0, no GLEW.
+if (CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     set(USE_OPENGLES ON CACHE BOOL "" FORCE)
 endif()
 
@@ -229,6 +231,23 @@ endif()
 ################################################################################
 
 add_subdirectory(components/libultraship ${CMAKE_BINARY_DIR}/libultraship)
+
+# automate-vcpkg.cmake include()s vcpkg.cmake from inside libultraship's
+# subdirectory scope, so the toolchain's CMAKE_PREFIX_PATH /
+# CMAKE_LIBRARY_PATH prepends land there and never reach this scope —
+# subdirectory variables can't propagate upward. Without them the vcpkg
+# find_package wrappers still resolve (they check _VCPKG_INSTALLED_DIR
+# absolute paths) but the wrapper's inner _find_package(... CONFIG) can't
+# locate <pkg>Config.cmake (observed: find_package(CURL) failed here).
+# Restore the same root + debug prefixes the toolchain would have added.
+if(DEFINED _VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    list(PREPEND CMAKE_PREFIX_PATH
+        "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}"
+        "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug")
+    list(PREPEND CMAKE_LIBRARY_PATH
+        "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/manual-link"
+        "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib/manual-link")
+endif()
 
 # LUS's embedded-repo helpers (cmake/DefaultCXX.cmake) aim the lib at
 # ${CMAKE_SOURCE_DIR}/x64/<config>/ — correct for a standalone LUS checkout,
@@ -350,6 +369,11 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # Android: build Torch in-tree as a STATIC lib (USE_STANDALONE=OFF
     # was forced above). The libtorch_runner.so SHARED library at the
     # bottom of this file wraps it for JNI.
+    add_subdirectory(components/game-runtime ${CMAKE_BINARY_DIR}/torch)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # Web: game-runtime's own CMake detects EMSCRIPTEN and builds the
+    # embind-wrapped wasm module (src/lib/web.cpp — Companion::Process
+    # extracts a browser-uploaded ROM into BattleShip.o2r in MEMFS).
     add_subdirectory(components/game-runtime ${CMAKE_BINARY_DIR}/torch)
 elseif (NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     # Desktop: build Torch as a host executable via ExternalProject so it
@@ -630,7 +654,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/android/android_torch_bridge\\.cpp$")
     # Drop features we explicitly disable on Android (no curl-driven
     # self-updater — Android updates via APK installs, not in-app binary
-    # replacement — and no discord-rpc target). ShaderDownloader and
+    # replacement — and no Discord Rich Presence). ShaderDownloader and
     # ModPackDownloader are NOT excluded: both go through the platform
     # download service (HttpURLConnection via JNI on Android) and
     # in-process libzip/SHA-256, so they run on Android too.
@@ -658,6 +682,39 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
         "src/(application/update/(updater/Updater|downloads/(ShaderDownloader|ModPackDownloader))|networking/social/DiscordRichPresence)\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/window/port_window_icon\\.cpp$")
     list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/application/first_run\\.cpp$")
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # Web build (platforms/web/): browsers have no subprocesses, no UDP, no
+    # raw sockets, no USB, no native windowing — and no disk beyond MEMFS/
+    # IndexedDB. The swap-in backends live next to the desktop ones:
+    #   coroutine_emscripten.cpp   emscripten_fiber_* replaces ucontext/Win32
+    #                              fibers (requires -sASYNCIFY)
+    #   udp_transport_web.cpp      relay-only UDP facade — every link is a
+    #                              relay link, same [slot] framing as v2
+    #   websocket_web.cpp          port_ws_* over emscripten_websocket_*
+    # Dead-on-web features are dropped entirely rather than stubbed:
+    #   the updater + download services (no self-replace, no subprocesses),
+    #   DiscordRichPresence, first_run (torch.exe spawn — asset extraction
+    #   on web goes through wasm-Torch in a Worker, see platforms/web/),
+    #   the watchdog thread (no hang detector in a cooperative browser
+    #   event loop), TCC/funchook mods (DISABLE_SCRIPTING is forced below),
+    #   and platform shims that only exist for desktop shells.
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX
+        "src/(application/update/.*|networking/social/DiscordRichPresence)\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/window/port_window_icon\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/application/first_run\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/application/port_watchdog\\.cpp$")
+    # RenderDoc capture trigger: no renderdoc/instrumentation API in a
+    # browser — renderdoc_app.h's declspec'd typedefs don't even parse.
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/observability/renderdoc_trigger\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/http/http_curl\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/http/download_service\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/networking/netplay/transport/udp_transport\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/networking/netplay/transport/websocket_transport\\.cpp$")
+    # netleaderboard.cpp is NOT excluded — it self-gates on SSB64_HAVE_CURL
+    # (no curl on web → its entry points compile to inert no-ops).
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/coroutine/coroutine_(posix|win32|android|switch)\\.cpp$")
+    list(FILTER SSB64_SRC_PORT EXCLUDE REGEX "src/platform/android/.*\\.cpp$")
 endif()
 # Treat the generated icon header as a source so CMake schedules it ahead
 # of any port TU compilation (port_window_icon.cpp #includes it). The
@@ -726,6 +783,14 @@ include(cmake/StaticAnalysis.cmake)
 ssb64_apply_warnings(ssb64_port_options)
 ssb64_apply_hardening(ssb64_port_options)
 ssb64_apply_sanitizers(ssb64_port_options)
+
+# First-party TUs use try/catch around Context/fs calls. MSVC without
+# /EHsc compiles them with C4530 and the handlers run WITHOUT proper
+# stack unwinding — locals between throw and catch keep stale state.
+# Enable synchronous-exception semantics so the catches behave as written.
+if(MSVC)
+    target_compile_options(ssb64_port_options INTERFACE /EHsc)
+endif()
 
 # Module name -> canonical source root. Order matters: a module nested
 # under another's directory must be listed FIRST so it is carved out of
@@ -812,7 +877,8 @@ set(SSB64_MODULE_SCOPE_netplay
     src/networking/netplay src/networking/netplay/domain
     src/networking/netplay/protocol src/networking/netplay/session
     src/networking/netplay/transport src/networking/netplay/rollback
-    src/networking/netplay/diagnostics
+    src/platform/http                  # CurlPostToString/CurlGetToString — leaderboard submit/fetch
+    src/shared                         # atomic_write.h — crash-safe stats persist
     src/game/modding                   # ModRegistry.h — mod-loaded check
     src/i18n src/observability)
 set(SSB64_MODULE_SCOPE_social
@@ -842,6 +908,7 @@ set(SSB64_MODULE_SCOPE_presentation
     src/observability
     src/game/gameplay                  # enhancements.h
     src/networking/netplay/session src/networking/netplay/transport
+    src/networking/netplay/domain      # netstats.h — rating/history panel
     src/platform src/platform/filesystem
     src/rendering/interpolation
     src/rendering/textures/hires)
@@ -1285,58 +1352,12 @@ if (NOT MSVC)
 endif()
 
 ################################################################################
-# Fetch Discord RPC (desktop only — Android and Switch drop Discord Rich
-# Presence along with the rest of the network-dependent features).
+# Discord Rich Presence — implemented in-tree as a minimal client for
+# Discord's documented local IPC (see src/networking/social/
+# DiscordRichPresence.cpp). The archived discord-rpc SDK that used to be
+# fetched here is gone: no external dep, no bundled rapidjson to patch.
+# Non-desktop platforms exclude the TU via the source filters above.
 ################################################################################
-if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT BATTLESHIP_UWP)
-    # discord-rpc v3.4.0's CMakeLists declares cmake_minimum_required(VERSION 2.x),
-    # which CMake 3.30+ refuses to honor. Force a baseline policy version for the
-    # fetched subdir so the build still configures with current CMake.
-    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE INTERNAL "" FORCE)
-    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    # BattleShip links against the static CRT on Windows (see the
-    # MSVC_RUNTIME_LIBRARY setting on the ssb64 / ssb64_game targets below).
-    # discord-rpc's own CMakeLists guards the static-CRT switch behind
-    # USE_STATIC_CRT — opt in so the produced discord-rpc.lib uses the same
-    # /MT[d] runtime, otherwise the final link fails with LNK2038.
-    set(USE_STATIC_CRT ON CACHE BOOL "" FORCE)
-    # The bundled rapidjson-1.1.0 declares an ill-formed GenericStringRef
-    # operator= (assigns to a const member); clang 22+ rejects it outright.
-    # Upstream rapidjson removed the operator (rapidjson#1364) — drop the
-    # line at fetch time the same way.
-    # NOTE: the rapidjson patch script must NOT be a PATCH_COMMAND here.
-    # It would be ineffective anyway (rapidjson is downloaded later by
-    # discord-rpc's own configure — see the execute_process below), and
-    # FetchContent serializes PATCH_COMMAND args into a generated CMake
-    # file where a backslashed Windows ${Python3_EXECUTABLE} path becomes
-    # an invalid escape sequence, failing the whole configure on MSVC CI.
-    FetchContent_Declare(
-        discord_rpc
-        GIT_REPOSITORY https://github.com/discordapp/discord-rpc.git
-        GIT_TAG        e6390c8c4190b59f1cc98bcec688e0037b84974d # v3.4.0
-        PATCH_COMMAND  ${CMAKE_COMMAND} -E rm -f .clang-format
-    )
-    FetchContent_MakeAvailable(discord_rpc)
-    # rapidjson is downloaded by discord-rpc's own configure (inside
-    # MakeAvailable), after the FetchContent patch step ran — apply the
-    # clang-22 compat patch now that the file exists.
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build/patch-discord-rapidjson.py
-        WORKING_DIRECTORY ${discord_rpc_SOURCE_DIR}
-        COMMAND_ERROR_IS_FATAL ANY)
-    # Belt and suspenders: enforce the runtime-library property on the
-    # produced target directly so it survives a future cmake_policy(CMP0091)
-    # propagation behavior change.
-    if(MSVC AND TARGET discord-rpc)
-        set_property(TARGET discord-rpc PROPERTY
-            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    endif()
-
-    # Suppress GCC 14 strict template errors in discord-rpc's bundled RapidJSON
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "14.0")
-        target_compile_options(discord-rpc PRIVATE -Wno-template-body)
-    endif()
-endif()
 
 ################################################################################
 # Executable target — port C++ code + decomp object library
@@ -1381,6 +1402,30 @@ else()
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "${SSB64_APP_NAME}")
 endif()
 ssb64_apply_static_analysis(${PROJECT_NAME})
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # Browser target flags. -sUSE_SDL=2 is both a compile flag (SDL2 include
+    # paths) and a link flag (the SDL2 wasm port), so it goes on the shared
+    # options interface — every module lib links ssb64_port_options.
+    target_compile_options(ssb64_port_options INTERFACE -sUSE_SDL=2)
+    target_link_options(${PROJECT_NAME} PRIVATE
+        -sUSE_SDL=2
+        -sASYNCIFY                          # coroutine_emscripten.cpp fibers
+        -sASYNCIFY_STACK_SIZE=262144        # deep scheduler frames at yield sites
+        -sALLOW_MEMORY_GROWTH=1
+        -sWASM_BIGINT
+        -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2   # WebGL2/GLES3 only path
+        -sFORCE_FILESYSTEM=1                # o2r + saves live in MEMFS
+        -lidbfs.js                          # IndexedDB persistence backend
+        -lwebsocket.js                      # emscripten_websocket_* (websocket_web.cpp)
+        --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/platforms/web/shell.html
+        -sEXPORT_NAME=BattleShipModule
+        -sMODULARIZE=1 -sEXPORT_ES6=0       # script tag loader; no bundler required
+        -sEXPORTED_RUNTIME_METHODS=callMain,FS   # shell.html defers main() until the o2r is staged
+        -sEXIT_RUNTIME=0                    # the game never returns from main
+    )
+    set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
+endif()
 
 # Share the runtime destination with the staging prerequisite. Referencing
 # TARGET_FILE_DIR here creates a back-edge with Visual Studio even under
@@ -1441,7 +1486,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
         # Vendored deps default to /MD too — one CRT for everything that
         # links into the exe, or we get LNK4098 and split heaps.
         foreach(vendored IN ITEMS
-            libultraship funchook-static distorm discord-rpc prism
+            libultraship funchook-static distorm prism
             glslang glslang-default-resource-limits
             GenericCodeGen MachineIndependent OSDependent SPIRV
             spirv-cross-core spirv-cross-glsl spirv-cross-hlsl spirv-cross-msl
@@ -1548,7 +1593,6 @@ target_include_directories(ssb64_port_options INTERFACE
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT BATTLESHIP_UWP)
     target_include_directories(ssb64_port_options INTERFACE
         ${SSB64_ICON_GEN_DIR}                         # Generated icon header (port_icon_data.h)
-        ${discord_rpc_SOURCE_DIR}/include             # Discord Rich Presence
     )
 else()
     # Android: include the generated dir for CSS icon baked headers.
@@ -1572,10 +1616,15 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
 elseif(BATTLESHIP_UWP)
     add_dependencies(${PROJECT_NAME} libultraship TorchExternal)
     target_link_libraries(${PROJECT_NAME} PRIVATE libultraship SDL2 LIBUWP GLFW3)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # Web build: no TorchExternal (asset extraction runs through wasm-Torch
+    # in a Worker — platforms/web/), no Discord IPC, no SDL2 target — the
+    # Emscripten SDL2 port comes via -sUSE_SDL=2 in the flags below.
+    add_dependencies(${PROJECT_NAME} libultraship)
+    target_link_libraries(${PROJECT_NAME} PRIVATE libultraship)
 else()
-    add_dependencies(${PROJECT_NAME} libultraship TorchExternal discord-rpc)
-    target_link_libraries(${PROJECT_NAME} PRIVATE libultraship discord-rpc)
-    target_link_libraries(ssb64_port_options INTERFACE discord-rpc)
+    add_dependencies(${PROJECT_NAME} libultraship TorchExternal)
+    target_link_libraries(${PROJECT_NAME} PRIVATE libultraship)
 endif()
 # Engine/dep usage requirements for every port TU (OBJECT libraries get no
 # include dirs from the consuming executable — they inherit them through
@@ -1600,6 +1649,49 @@ endif()
 find_package(libzip REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE libzip::zip)
 target_link_libraries(ssb64_port_options INTERFACE libzip::zip)
+
+# In-process HTTP + WebSocket via libcurl (src/platform/http/http_curl.cpp,
+# updater, netplay WS transport). Replaces the curl.exe subprocess shims —
+# no shell quoting, real progress callbacks, and wss:// off-Windows.
+# Desktop only: Android keeps its JNI backend, Switch/UWP keep theirs,
+# Emscripten has no curl (websocket_web.cpp + relay-only udp_transport_web.cpp
+# carry networking; netleaderboard/http_download self-gate without
+# SSB64_HAVE_CURL).
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT BATTLESHIP_UWP AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    find_package(CURL REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
+    target_link_libraries(ssb64_port_options INTERFACE CURL::libcurl)
+    target_compile_definitions(ssb64_port_options INTERFACE SSB64_HAVE_CURL)
+    # curl_ws_send/curl_ws_recv need libcurl >= 7.86 built with websockets
+    # (vcpkg curl[ssl,websockets]). Read the version straight from the
+    # header — a try_compile here misses MSVC's INCLUDE paths, and an old
+    # system curl degrades to the BSD-socket WS backend instead of failing.
+    get_target_property(_curl_includes CURL::libcurl INTERFACE_INCLUDE_DIRECTORIES)
+    set(SSB64_CURL_HAS_WS OFF)
+    foreach(_dir IN LISTS _curl_includes)
+        if (EXISTS "${_dir}/curl/curlver.h")
+            file(STRINGS "${_dir}/curl/curlver.h" _ver_line REGEX "LIBCURL_VERSION_NUM[ \t]+0x")
+            if (_ver_line MATCHES "0x([0-9a-fA-F]+)")
+                math(EXPR _curl_vernum "0x${CMAKE_MATCH_1}" OUTPUT_FORMAT DECIMAL)
+                if (_curl_vernum GREATER_EQUAL 480768)   # 7.86.0 = 0x075600
+                    set(SSB64_CURL_HAS_WS ON)
+                endif()
+            endif()
+        endif()
+    endforeach()
+    message(STATUS "libcurl WebSocket transport: ${SSB64_CURL_HAS_WS}")
+    if (SSB64_CURL_HAS_WS)
+        target_compile_definitions(ssb64_port_options INTERFACE SSB64_HAVE_CURL_WS)
+    endif()
+endif()
+
+# Header-only; used by leaderboard submit/fetch (netleaderboard.cpp), the
+# updaters, and the always-compiled persistence files
+# (netfriends.cpp/netstats.cpp parse their JSON through it). Kept outside
+# the curl gate above: web/Switch/UWP exclude curl but still compile the
+# persistence files.
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(ssb64_port_options INTERFACE nlohmann_json::nlohmann_json)
 
 # TD-009 — offline-signed release manifest verification. orlp/ed25519 is the
 # small public-domain RFC 8032 implementation; only the verify path is
@@ -1828,7 +1920,11 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/platforms/macos/cmake/macOS.cmake)
 # on a PC and bundled onto the SD card (BundleSwitch target below).
 ################################################################################
 
-if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
+# ExtractAssets / StageRuntimeAssets / GenerateBattleShipO2R are
+# desktop-only: they all shell out to a host torch binary. Emscripten has
+# no host-side Torch (browser extraction goes through the wasm build of
+# game-runtime, added as a subdirectory like on Android).
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 # Accept .z64 (big-endian), .n64 (little-endian), or .v64 (byteswapped).
 # Torch's Cartridge::Normalize converts non-z64 byte orders in-memory.
 # Resolution order: -DSSB64_BASEROM=<path> cache var, $SMASH_BASEROM env,

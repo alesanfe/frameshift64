@@ -18,3 +18,7 @@ pillow
 zizmor
 vulture
 pip-audit
+
+# CVE-2026-59951 — transitive pin (pulled by zizmor's dep tree); force the
+# patched line so pip-audit stays green.
+mcp>=1.30.0

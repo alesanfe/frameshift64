@@ -46,13 +46,8 @@ void port_enhancement_dpad_jump(int player_index, unsigned short* button_hold, u
 // — both schemes coexist, the toggle picks which runs.
 void port_enhancement_analog_remap(int player_index, signed char* stick_x, signed char* stick_y);
 
-int port_cheat_unlock_all_active(void);
-
 // competitive ruleset enhancements
 int port_get_comp_ruleset(void);
-void port_apply_comp_ruleset_overrides(void);
-void port_cleanup_comp_ruleset(void);
-void port_comp_ruleset_skip_stageselect(void);
 
 // neutral spawn points on dreamland
 int port_enhancement_neutral_spawns(void);

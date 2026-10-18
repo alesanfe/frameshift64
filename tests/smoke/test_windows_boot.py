@@ -12,9 +12,11 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from smash_test.artifacts import (
-    GameRun, assert_clean_boot, launch_game, png_is_rendered)
+    assert_clean_boot,
+    launch_game,
+    png_is_rendered,
+)
 
 pytestmark = [
     pytest.mark.smoke,
