@@ -449,4 +449,6 @@ void syDmaReadVpk0(uintptr_t dev_addr, void *ram_dst)
 #endif
 
 // Best I can do with this is functionally equivalent. Somewhat disappointing, but not a big deal; this function is unreferenced. It's also non-matching in Pokémon Snap.
+#ifndef NON_MATCHING
 #pragma GLOBAL_ASM("asm/nonmatchings/sys/dma/unref_800036B4.s")
+#endif

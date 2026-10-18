@@ -17,8 +17,11 @@ syMatrixAdvance(mtx, mtx_heap, Mtx44f)
 // should be a concrete pointer type
 typedef struct syMtxProcess
 {
-    sb32 (*proc_diff)();    // If GObj's last frame drawn is not the same as... something?
-    sb32 (*proc_same)();    // If it's the same ^
+    /* Second arg is the object being drawn — DObj* on the object path,
+     * CObj* on the camera path — so the slot is void* and the callee
+     * casts to whichever type its owner registered for. */
+    sb32 (*proc_diff)(Mtx*, void*, Gfx**);    // If GObj's last frame drawn is not the same as... something?
+    sb32 (*proc_same)(Mtx*, void*, Gfx**);    // If it's the same ^
 
 } syMtxProcess;
 

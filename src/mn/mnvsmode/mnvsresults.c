@@ -3127,7 +3127,7 @@ s32 mnVSResultsGetBestManExcept(s32 player)
 {
 	s32 i;
 	sb32 is_human[GMCOMMON_PLAYERS_MAX];
-	s32 first_man;
+	s32 first_man = 0; /* PORT: upstream read this uninitialized as the loop start */
 	s32 found;
 
 	// determine if human or cpu

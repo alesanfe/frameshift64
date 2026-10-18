@@ -2519,7 +2519,7 @@ void lbCommonDrawSObjBitmap
                      "sobj=%p sprite=%p bitmap=%p raw_buf=%p nbitmaps=%d "
                      "bmfmt=%u bmsiz=%u w=%d h=%d\n",
                      sNullBufLogCount, sobj, sprite, bitmap,
-                     (void*)bitmap->buf, sprite->nbitmaps,
+                     (void*)(uintptr_t)bitmap->buf, sprite->nbitmaps,
                      sprite->bmfmt, sprite->bmsiz,
                      bitmap->width, bitmap->actualHeight);
         }

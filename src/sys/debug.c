@@ -663,7 +663,7 @@ void syDebugFramebufferPrintThreadStatus(OSThread *t, sb32 is_show_summary)
 
     stack_csr = (u8*)(uintptr_t)ctx->sp;
 
-    syDebugFramebufferPrintf(26, 20, "SP Base %08x", (u32)stack_csr);
+    syDebugFramebufferPrintf(26, 20, "SP Base %08x", (u32)(uintptr_t)stack_csr);
 
     y = 30;
 

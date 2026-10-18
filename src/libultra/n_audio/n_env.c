@@ -1330,7 +1330,7 @@ Acmd *n_alEnvmixerPull(N_PVoice *filter, s32 sampleOffset, Acmd *p)
     case (AL_FILTER_SET_WAVETABLE):
       ptr = _pullSubFrame(e, &inp, &loutp, samples, ptr);
       n_alLoadParam(e, AL_FILTER_SET_WAVETABLE,
-		       (void *)e->em_ctrlList->data.i);
+		       (void *)(uintptr_t)(u32)e->em_ctrlList->data.i);
       break;
 #endif
     default:
@@ -1340,7 +1340,7 @@ Acmd *n_alEnvmixerPull(N_PVoice *filter, s32 sampleOffset, Acmd *p)
        */
       ptr = _pullSubFrame(e, &inp, &loutp, samples, ptr);
       n_alEnvmixerParam(e, e->em_ctrlList->type,
-		      (void *) e->em_ctrlList->data.i);
+		      (void *)(uintptr_t)(u32)e->em_ctrlList->data.i);
       break;
     }
     loutp  += (samples<<1);
@@ -1833,6 +1833,7 @@ s32 n_alResampleParam(N_PVoice *filter, s32 paramID, void *param)
 /////////////////////////////////////////////////////////////
 // n_reverb.c
 
+#undef RANGE
 #define RANGE 2
 
 #ifdef AUD_PROFILE
@@ -2020,6 +2021,7 @@ s32 n_alFxParamHdl(void *filter, s32 paramID, void *param)
  *      120,000/ln(2) = 173123.40...
  */
 #define CONVERT 173123.404906676f
+#undef LENGTH
 #define LENGTH  (f->delay[s].output - f->delay[s].input)
 
 		case CHORUSDEPTH_PARAM:
@@ -2063,7 +2065,7 @@ Acmd *_n_loadOutputBuffer(ALFx *r, ALDelay *d, s32 buff, Acmd *p)
     count = (s32) fincount;
     d->rs->delta = fincount - (f32)count;
     out_ptr = &r->input[-((s32)d->output - d->rsdelta)];
-    ramalign = ((s32)out_ptr & 0x7) >> 1;
+    ramalign = ((s32)(uintptr_t)out_ptr & 0x7) >> 1;
     ptr = _n_loadBuffer(r, out_ptr - ramalign, rbuff, count + ramalign, ptr);
     
     ratio = (s32)(fratio * UNITY_PITCH);

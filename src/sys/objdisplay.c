@@ -1472,7 +1472,7 @@ s32 gcPrepDObjMatrix(Gfx **dl, DObj *dobj)
                     {
                         if (sGCMatrixFuncList != NULL)
                         {
-                            sb32(*proc)(Mtx*, DObj*, Gfx**) = (dobj->parent_gobj->frame_draw_last != (u8)dSYTaskmanFrameCount) ? sGCMatrixFuncList[xobj->kind - 66].proc_diff : sGCMatrixFuncList[xobj->kind - 66].proc_same;
+                            sb32(*proc)(Mtx*, void*, Gfx**) = (dobj->parent_gobj->frame_draw_last != (u8)dSYTaskmanFrameCount) ? sGCMatrixFuncList[xobj->kind - 66].proc_diff : sGCMatrixFuncList[xobj->kind - 66].proc_same;
 
                             // If proc's return value uses up a GPR and is assigned to a variable, IDO refuses to free up v0 later down.
                             ret = proc(mtx_hub.gbi, dobj, &current_dl);
@@ -4078,4 +4078,5 @@ void func_80018300(GObj *gobj)
     gDPSetTexturePersp(gSYTaskmanDLHeads[0]++, G_TP_PERSP);
 }
 
-#pragma GCC diagnostic pop
+/* Upstream left a `#pragma GCC diagnostic pop` here with no matching
+ * push — removed: it warns on every compiler and does nothing. */

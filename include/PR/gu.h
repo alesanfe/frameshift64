@@ -33,8 +33,14 @@
 #endif
 #ifdef PORT
 
+/* libc/math.h defines the same macros (float-suffixed); whichever header is
+ * included first wins, so guard both sides instead of hard-ordering. */
+#ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+#ifndef M_DTOR
 #define M_DTOR (3.14159265358979323846 / 180.0)
+#endif
 #endif
 
 #define FTOFIX32(x) (long)((x) * (float)0x00010000)

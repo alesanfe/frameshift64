@@ -22,7 +22,9 @@ extern "C"
 	/*	The copyright notice above does not evidence any   	*/
 	/*	actual or intended publication of such source code.	*/
 
-#ident "$Revision: 1.17 $"
+#if !defined(_MSC_VER)
+#ident "$Revision: 1.17 $" /* SCCS marker — MSVC has no #ident and warns */
+#endif
 
 	/* ANSI C Notes:
 	 *

@@ -3,8 +3,12 @@
 
 #include <PR/ultratypes.h>
 
+#ifndef M_PI
 #define M_PI 3.14159265358979323846f
+#endif
+#ifndef M_DTOR
 #define M_DTOR (M_PI / 180.0f)
+#endif
 #define M_RTOD (180.0f / M_PI)
 #define M_SQRT2 1.41421356237309504880f
 #define M_SQRT1_2 0.70710678118654752440f /* 1/sqrt(2) */
@@ -32,7 +36,11 @@ typedef union
 extern f32 __libm_qnan_f;
 
 float fabsf(float f);
+/* MSVC only ever had a fabsf intrinsic on 32-bit x86 — on x64 (and under
+ * /clang-cl) the pragma just warns; the libcall is identical. */
+#if !defined(_MSC_VER)
 #pragma intrinsic(fabsf)
+#endif
 #ifdef __GNUC__
 #define fabsf(f) __builtin_fabsf((float)(f))
 #endif

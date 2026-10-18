@@ -9,7 +9,7 @@
 // 0x8013E070
 void ftCommonWaitProcInterrupt(GObj *fighter_gobj)
 {
-    !(ftCommonGroundCheckInterrupt(fighter_gobj));
+    (void)!ftCommonGroundCheckInterrupt(fighter_gobj);
 }
 
 // 0x8013E1C8
