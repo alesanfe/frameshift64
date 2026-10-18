@@ -107,6 +107,21 @@ def own_dirs() -> list:
     return [d for d in OWN_CODE_DIRS if (ROOT / d).exists()]
 
 
+def find_shell_files() -> list:
+    """Repo-owned POSIX shell scripts (vendor/submodule trees excluded)."""
+    files = []
+    for d in ("packaging", "scripts", "tools", "platforms"):
+        base = ROOT / d
+        if not base.exists():
+            continue
+        for path in base.rglob("*.sh"):
+            rel = path.relative_to(ROOT).as_posix()
+            if "/build/" in rel or "/out/" in rel:
+                continue
+            files.append(rel)
+    return sorted(files)
+
+
 def configure_cmake(args) -> int:
     if args.skip_configure:
         return 0
@@ -208,6 +223,20 @@ def build_checks(args) -> list:
               [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
                                    "check_remotes.py")],
               "remotes.txt", required=True),
+        # --- external linters beyond the classic suite -------------------
+        Check("zizmor",
+              [resolve("zizmor"), "--format", "plain", ".github/workflows"],
+              "zizmor.txt", required=False),
+        Check("shellcheck",
+              [resolve("shellcheck"), "-S", "warning"] + find_shell_files(),
+              "shellcheck.txt", required=False),
+        Check("vulture",
+              [resolve("vulture"), "tools", "tests", "--min-confidence", "80"],
+              "vulture.txt", required=False),
+        Check("pip-audit",
+              [resolve("pip-audit"), "-r",
+               str(ROOT / "tools" / "analysis" / "lint" / "requirements.txt")],
+              "pip-audit.txt", required=False),
     ]
 
     sem = ROOT / "config" / "analysis" / "semgrep" / "smash-classic.yml"

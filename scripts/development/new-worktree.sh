@@ -128,7 +128,7 @@ for sm in libultraship torch decomp; do
     sm_branch="$(git -C "$ROOT" config -f .gitmodules "submodule.$sm.branch" || echo "")"
 
     step "Submodule $sm_path → $pinned_sha (origin: $origin_url)"
-    rm -rf "$WT_DIR/$sm_path"
+    rm -rf "${WT_DIR:?}/${sm_path:?}"
     mkdir -p "$(dirname "$WT_DIR/$sm_path")"
     git clone --no-local --quiet "$ROOT/$sm_path" "$WT_DIR/$sm_path"
     git -C "$WT_DIR/$sm_path" remote set-url origin "$origin_url"

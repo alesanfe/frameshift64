@@ -12,3 +12,9 @@ semgrep
 clang-tidy
 cppcheck
 pillow
+
+# extended linters (report-only): zizmor (GH Actions security),
+# vulture (dead python), pip-audit (toolchain CVEs)
+zizmor
+vulture
+pip-audit
