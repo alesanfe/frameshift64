@@ -77,9 +77,19 @@ config/           — lint, semgrep, static-analysis configs
 docs/             — see docs/README.md (architecture, development, netplay,
                     investigations, bugs, decisions)
 out/              — all generated output: build trees, reports (gitignored)
-components/libultraship/     — Git submodule
-components/game-runtime/            — Git submodule
+components/libultraship/     — Git submodule (LUS runtime)
+components/game-runtime/     — Git submodule (Torch: offline asset compiler
+                               producing .o2r/.otr + runtime archive shim)
 components/decomp/           — Git submodule (decomp source on port-patches branch)
+
+  game-runtime vs game/engine: `components/game-runtime/` is EXTERNAL
+  (upstream Torch — builds torch.exe + the archive-access shim; upstream
+  takes PRs, not port logic). `src/game/engine/` is OURS — the port-side
+  bridge/adapters: the `port_*` C ABI, decomp-facing relocation
+  (relocation/) and CSS asset providers (css_icons/), event hooks
+  (hooks/) and the mod runtime glue. A bug in the game loop, a new hook
+  or a reloc fix goes in src/game/engine/; a fix in asset *extraction*
+  or O2R *format* goes upstream in components/game-runtime.
 CMakeLists.txt + CMakePresets.json
 
 ### The decomp ↔ port boundary

@@ -10,11 +10,14 @@ Leaf module — decomp may include these headers; nothing here includes
 product code.
 
 The only module allowed to know both N64-decomp internals and
-components/libultraship/mod APIs. Everything here translates across a boundary.
+components/libultraship/mod APIs. Everything here translates across a
+boundary. (Not to be confused with `components/game-runtime/` — that is
+the upstream Torch asset *toolchain* submodule; `game/engine/` is the
+port-side runtime bridge owned by this repo.)
 
 | Subdir | Contents |
 |--------|----------|
-| `components/decomp/`   | Adapters that serve N64 semantics over modern machinery: `audio_bridge` (seq/bank/fgm decoding + playback), `lbreloc_bridge` + `lbreloc_byteswap` (relocatable asset fixup, big-endian→native), `particle_bank_bridge` (validated particle bank loading), `framebuffer_capture`, `ssb64_reloc_rebuild.*` (generated deblob spec). |
+| `decomp/`  | Adapters that serve N64 semantics over modern machinery: `audio_bridge` (seq/bank/fgm decoding + playback), `lbreloc_bridge` + `lbreloc_byteswap` (relocatable asset fixup, big-endian→native), `particle_bank_bridge` (validated particle bank loading), `framebuffer_capture`, `ssb64_reloc_rebuild.*` (generated deblob spec). |
 | `hooks/`    | `Events` — the engine event bus + `list/` catalog of game events decomp call-sites fire. funchook-free; always compiled. |
 | `modding/`  | `HookManager`, `ModRegistry`, `SymbolResolver`, `mod_bridge` — the TCC-compiled mod runtime (funchook detours). Dropped under `DISABLE_SCRIPTING`. |
 
