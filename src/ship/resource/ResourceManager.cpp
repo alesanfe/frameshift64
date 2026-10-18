@@ -58,6 +58,12 @@ void ResourceManager::Init(const std::vector<std::string>& archivePaths,
 
     // the extra `- 1` is because we reserve an extra thread for spdlog
     size_t threadCount = std::max(1, (int32_t)(std::thread::hardware_concurrency() - reservedThreadCount - 1));
+#ifdef __EMSCRIPTEN__
+    // Pool slots are real pthreads drawn from the fixed PTHREAD_POOL_SIZE
+    // prealloc — cores-1 threads blows past it alongside spdlog, the
+    // watchdog and audio. MEMFS/o2r reads are cheap; 3 workers suffice.
+    threadCount = std::min<size_t>(threadCount, 3);
+#endif
     mThreadPool = std::make_shared<BS::thread_pool>(threadCount);
 
     if (!IsLoaded()) {

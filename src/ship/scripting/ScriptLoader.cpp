@@ -453,6 +453,17 @@ void ScriptLoader::CompileAll(const std::optional<std::function<void(const std::
             continue;
         }
 
+        /* API-version gate: a mod compiled against a newer script API than
+         * this build supports is skipped rather than loaded-and-broken.
+         * code-version 0/absent predates the field and loads unguarded. */
+        constexpr uint32_t kMaxSupportedCodeVersion = 1;
+        if (info.CodeVersion > kMaxSupportedCodeVersion) {
+            SPDLOG_WARN("Skipping script {} ({}): manifest code-version {} exceeds "
+                        "this build's script API {} — rebuild the mod or update the game.",
+                        info.Name, entry->GetPath(), info.CodeVersion, kMaxSupportedCodeVersion);
+            continue;
+        }
+
         if (preCallback.has_value()) {
             preCallback.value()(entry);
         }

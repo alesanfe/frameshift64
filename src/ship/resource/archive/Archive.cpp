@@ -132,6 +132,14 @@ bool Archive::ParseManifestBuffer(const char* data, size_t size, ArchiveManifest
                 }
             }
         }
+        if (j.contains("capabilities") && j["capabilities"].is_array()) {
+            out->CapabilitiesDeclared = true;
+            for (const auto& cap : j["capabilities"]) {
+                if (cap.is_string()) {
+                    out->Capabilities.push_back(cap.get<std::string>());
+                }
+            }
+        }
         if (j.contains("checksum") && j["checksum"].is_string()) {
             out->Checksum = j["checksum"].get<std::string>();
         }

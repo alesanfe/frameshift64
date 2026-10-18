@@ -51,6 +51,15 @@ struct ArchiveManifest {
     std::unordered_map<std::string, std::string> Binaries; ///< Platform → binary path map for bundled native libs.
     std::vector<std::string> Dependencies;                 ///< Archive names that must be loaded before this one.
 
+    /** @brief Declared capability names ("network", "persist", "debug",
+     * "system"). The host gates sensitive symbol prefixes on this list:
+     * a scripted mod resolving a gated symbol without the matching
+     * capability gets a denied resolve. Absent key = unrestricted
+     * (legacy mods); an explicit empty array = no gated access —
+     * CapabilitiesDeclared distinguishes the two. */
+    std::vector<std::string> Capabilities;
+    bool CapabilitiesDeclared = false;
+
     std::string Checksum;  ///< Hex-encoded SHA-256 checksum of the archive contents.
     std::string Signature; ///< Base64-encoded digital signature over the checksum.
     std::string PublicKey; ///< Base64-encoded public key used to verify the signature.

@@ -193,6 +193,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(prism)
 
+# prism's CMakeLists does set(CMAKE_CXX_FLAGS "-Wno-narrowing"), which wipes
+# globally-injected flags inside its scope. Under Emscripten+pthreads every
+# TU must carry -pthread or wasm-ld refuses --shared-memory on the object.
+if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten" AND TARGET prism)
+    target_compile_options(prism PRIVATE -pthread)
+endif()
+
 #=========== hidapi (native Raphnet N64 USB adapter support) ===========
 # Static-only, hidraw backend on Linux (no libusb dep). 0.14.0 fixes a
 # macOS hid_close deadlock present in 0.13.x.
