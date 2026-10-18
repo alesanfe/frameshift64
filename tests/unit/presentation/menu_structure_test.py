@@ -40,6 +40,11 @@ self-documentation invariants the UI relies on (audit §52/§53):
 Widget attachment follows the WidgetPath state (path.sidebarName,
 path.column) exactly like the runtime does — AddSidebarEntry only
 registers the section; widgets bind to whichever sidebar `path` names.
+Because the registry is built by helpers that receive `WidgetPath&` and
+mutate it (a caller's tail assignment feeds the next callee), the scan
+replays the `AddX(path)` call graph from the `WidgetPath path = {...}`
+roots instead of reading the file top-to-bottom — source order is not
+evaluation order.
 
 Run:  python tests/unit/presentation/menu_structure_test.py
 Exit code 0 = pass, 1 = failures printed to stdout.
@@ -75,7 +80,11 @@ EVENT_RE = re.compile(
     r'|path\.sidebarName\s*='
     r'|path\.sectionName\s*='
     r'|path\.column\s*=\s*SECTION_COLUMN_'
-    r'|AddWidget\(\s*path\s*,')
+    r'|AddWidget\(\s*path\s*,'
+    r'|Add\w+\s*\(\s*path\s*\)')
+
+FUNC_RE = re.compile(r'void\s+PortMenu::(\w+)\s*\([^)]*\)\s*\{')
+CALL_RE = re.compile(r'\b(Add\w+)\s*\(\s*path\s*\)')
 
 NON_INTERACTIVE = {
     "WIDGET_SEPARATOR", "WIDGET_SEPARATOR_TEXT", "WIDGET_TEXT",
@@ -123,6 +132,51 @@ def statement_end(text, pos):
             return i + 1
         i += 1
     return n
+
+
+def func_bodies(text):
+    """Map `void PortMenu::name(...) {` definitions to (body, offset).
+
+    The menu registry is split across helper functions that receive
+    `WidgetPath& path` and mutate it — attachment order is the CALL
+    order, not source order, so the checks below replay the call graph
+    rather than scanning the file linearly."""
+    out = []
+    for m in FUNC_RE.finditer(text):
+        depth = 1
+        i = m.end()
+        n = len(text)
+        in_str = in_line_comment = in_block_comment = False
+        while i < n and depth:
+            ch = text[i]
+            nxt = text[i + 1] if i + 1 < n else ''
+            if in_line_comment:
+                if ch == '\n':
+                    in_line_comment = False
+            elif in_block_comment:
+                if ch == '*' and nxt == '/':
+                    in_block_comment = False
+                    i += 1
+            elif in_str:
+                if ch == '\\':
+                    i += 1
+                elif ch == '"':
+                    in_str = False
+            elif ch == '"':
+                in_str = True
+            elif ch == '/' and nxt == '/':
+                in_line_comment = True
+                i += 1
+            elif ch == '/' and nxt == '*':
+                in_block_comment = True
+                i += 1
+            elif ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+            i += 1
+        out.append((m.group(1), text[m.end():i - 1], m.end()))
+    return out
 
 
 LIT_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -234,108 +288,163 @@ def main():
     total_widgets = 0
     total_sidebars = 0
 
+    # The registry is built by helpers taking `WidgetPath&` that mutate it,
+    # so effective attachment order is the CALL graph, not file order.
+    # Collect every PortMenu member-function body once, then replay the
+    # call graph: roots are the functions that initialise their own
+    # `WidgetPath path = {...}` (the AddMenu* section builders).
+    funcs = {}                  # name -> (rel, body, base_offset)
+    texts = {}                  # rel -> full file text (unwired sweep)
     for src in SOURCES:
         text = src.read_text(encoding="utf-8", errors="replace")
-        rel = src.relative_to(REPO)
+        rel = str(src.relative_to(REPO))
+        texts[rel] = text
+        for name, body, base in func_bodies(text):
+            funcs[name] = (rel, body, base)
 
-        declared = {}           # (section, sidebar) -> columnCount
-        counts = {}             # (section, sidebar) -> widgets attached
-        seen = {}               # sidebar ctx -> set of literal names
-        cur_section = None
-        cur_sidebar = None
-        column = 1
+    declared = {}               # (section, sidebar) -> columnCount
+    counts = {}                 # (section, sidebar) -> widgets attached
+    seen = {}                   # (section, sidebar) -> literal names
+    covered = set()             # (rel, abs_pos) of simulated AddWidget
+    state = {"section": None, "sidebar": None, "column": 1}
+    stack = []
 
-        for m in EVENT_RE.finditer(text):
+    def check_widget(rel, body, m):
+        end = statement_end(body, m.start())
+        stmt = body[m.start():end]
+        cur_section = state["section"]
+        cur_sidebar = state["sidebar"]
+        key = (cur_section, cur_sidebar)
+
+        if cur_sidebar is None:
+            failures.append(
+                f"{rel}: AddWidget with no active sidebar "
+                f"@ byte {m.start()}")
+            return
+
+        counts[key] = counts.get(key, 0) + 1
+        seen.setdefault(key, set())
+
+        if key not in declared:
+            failures.append(
+                f"{rel}: widget bound to sidebar "
+                f"'{cur_section}/{cur_sidebar}' that has no "
+                f"AddSidebarEntry yet — runtime assert in "
+                f"AddWidget aborts on this")
+
+        declared_cols = declared.get(key)
+        if declared_cols is not None and state["column"] > declared_cols:
+            failures.append(
+                f"{rel}: widget in column {state['column']} but sidebar "
+                f"'{cur_sidebar}' declared {declared_cols} column(s)")
+
+        nm = NAME_STR_RE.search(stmt)
+        label = nm.group(1) if nm else "<dynamic>"
+        if nm:
+            if nm.group(1) in seen[key]:
+                failures.append(
+                    f"{rel}: duplicate widget name '{nm.group(1)}' "
+                    f"in '{cur_sidebar}' (ImGui ID collision)")
+            seen[key].add(nm.group(1))
+
+        tm = TYPE_RE.search(stmt)
+        wtype = tm.group(1) if tm else None
+
+        if wtype == "WIDGET_BUTTON" and ".Callback(" not in stmt:
+            failures.append(
+                f"{rel}: WIDGET_BUTTON '{label}' has no .Callback()")
+
+        if (wtype and wtype.startswith("WIDGET_CVAR")
+                and ".CVar(" in stmt
+                and ".DefaultValue(" not in stmt
+                and ".DefaultIndex(" not in stmt):
+            failures.append(
+                f"{rel}: CVar widget '{label}' ({wtype}) declares no "
+                "explicit default — Restore/Modified use the option "
+                "struct's implicit fallback, not the runtime CVar "
+                "default")
+
+        if (wtype and wtype not in NON_INTERACTIVE
+                and ".Tooltip(" not in stmt
+                and ".DisabledTooltip(" not in stmt):
+            failures.append(
+                f"{rel}: interactive widget '{label}' ({wtype}) "
+                "has no tooltip")
+
+    def run_body(fname):
+        rel, body, base = funcs[fname]
+        if fname in stack:
+            failures.append(
+                f"{rel}: recursive menu-builder call {fname}(path) — "
+                "infinite loop at runtime")
+            return
+        stack.append(fname)
+        for m in EVENT_RE.finditer(body):
             tok = m.group(0)
             if tok.startswith('AddSidebarEntry'):
-                sm = SIDEBAR_RE.match(text, m.start())
+                sm = SIDEBAR_RE.match(body, m.start())
                 if sm:
-                    declared[(sm.group(1), sm.group(2))] = int(sm.group(3))
-                    counts.setdefault((sm.group(1), sm.group(2)), 0)
-                    seen.setdefault((sm.group(1), sm.group(2)), set())
-            elif tok.startswith('WidgetPath'):
-                pm = PATH_INIT_RE.match(text, m.start())
-                if pm:
-                    cur_section, cur_sidebar = pm.group(1), pm.group(2)
-                    column = int(pm.group(3))
-            elif tok.startswith('path.sidebarName'):
-                sm = SIDENAME_RE.match(text, m.start())
-                if sm:
-                    cur_sidebar = sm.group(1)
-            elif tok.startswith('path.sectionName'):
-                sm = SECNAME_RE.match(text, m.start())
-                if sm:
-                    cur_section = sm.group(1)
-            elif tok.startswith('path.column'):
-                cm = COLUMN_RE.match(text, m.start())
-                if cm:
-                    column = int(cm.group(1))
-            else:  # AddWidget
-                end = statement_end(text, m.start())
-                stmt = text[m.start():end]
-                key = (cur_section, cur_sidebar)
-
-                if cur_sidebar is None:
-                    failures.append(
-                        f"{rel}: AddWidget with no active sidebar "
-                        f"@ byte {m.start()}")
-                    continue
-
-                counts[key] = counts.get(key, 0) + 1
-                seen.setdefault(key, set())
-
-                if key not in declared:
-                    failures.append(
-                        f"{rel}: widget bound to sidebar "
-                        f"'{cur_section}/{cur_sidebar}' that has no "
-                        f"AddSidebarEntry yet — runtime assert in "
-                        f"AddWidget aborts on this")
-
-                declared_cols = declared.get(key)
-                if declared_cols is not None and column > declared_cols:
-                    failures.append(
-                        f"{rel}: widget in column {column} but sidebar "
-                        f"'{cur_sidebar}' declared {declared_cols} column(s)")
-
-                nm = NAME_STR_RE.search(stmt)
-                label = nm.group(1) if nm else "<dynamic>"
-                if nm:
-                    if nm.group(1) in seen[key]:
+                    key = (sm.group(1), sm.group(2))
+                    if key in declared:
                         failures.append(
-                            f"{rel}: duplicate widget name '{nm.group(1)}' "
-                            f"in '{cur_sidebar}' (ImGui ID collision)")
-                    seen[key].add(nm.group(1))
+                            f"{rel}: duplicate AddSidebarEntry for "
+                            f"'{key[0]}/{key[1]}' — sidebarOrder lists it "
+                            "twice and its widgets get appended twice")
+                    else:
+                        declared[key] = int(sm.group(3))
+                    counts.setdefault(key, 0)
+                    seen.setdefault(key, set())
+            elif tok.startswith('WidgetPath'):
+                pm = PATH_INIT_RE.match(body, m.start())
+                if pm:
+                    state["section"] = pm.group(1)
+                    state["sidebar"] = pm.group(2)
+                    state["column"] = int(pm.group(3))
+            elif tok.startswith('path.sidebarName'):
+                sm = SIDENAME_RE.match(body, m.start())
+                if sm:
+                    state["sidebar"] = sm.group(1)
+            elif tok.startswith('path.sectionName'):
+                sm = SECNAME_RE.match(body, m.start())
+                if sm:
+                    state["section"] = sm.group(1)
+            elif tok.startswith('path.column'):
+                cm = COLUMN_RE.match(body, m.start())
+                if cm:
+                    state["column"] = int(cm.group(1))
+            elif tok.startswith('AddWidget'):
+                covered.add((rel, base + m.start()))
+                check_widget(rel, body, m)
+            else:  # AddX(path) helper call
+                cm = CALL_RE.match(body, m.start())
+                if cm and cm.group(1) in funcs:
+                    run_body(cm.group(1))
+        stack.pop()
 
-                tm = TYPE_RE.search(stmt)
-                wtype = tm.group(1) if tm else None
+    # Deterministic root order: file order then definition order.
+    roots = sorted((name for name, (rel, body, base) in funcs.items()
+                    if PATH_INIT_RE.search(body)),
+                   key=lambda n: (funcs[n][0], funcs[n][2]))
+    for r in roots:
+        state.update(section=None, sidebar=None, column=1)
+        run_body(r)
 
-                if wtype == "WIDGET_BUTTON" and ".Callback(" not in stmt:
-                    failures.append(
-                        f"{rel}: WIDGET_BUTTON '{label}' has no .Callback()")
+    for (sec, sb), n in counts.items():
+        if n == 0:
+            failures.append(
+                f"sidebar '{sec}/{sb}' declared but never populated")
+    total_widgets += sum(counts.values())
+    total_sidebars += len(counts)
 
-                if (wtype and wtype.startswith("WIDGET_CVAR")
-                        and ".CVar(" in stmt
-                        and ".DefaultValue(" not in stmt
-                        and ".DefaultIndex(" not in stmt):
-                    failures.append(
-                        f"{rel}: CVar widget '{label}' ({wtype}) declares no "
-                        "explicit default — Restore/Modified use the option "
-                        "struct's implicit fallback, not the runtime CVar "
-                        "default")
-
-                if (wtype and wtype not in NON_INTERACTIVE
-                        and ".Tooltip(" not in stmt
-                        and ".DisabledTooltip(" not in stmt):
-                    failures.append(
-                        f"{rel}: interactive widget '{label}' ({wtype}) "
-                        "has no tooltip")
-
-        for (sec, sb), n in counts.items():
-            if n == 0:
+    # Every AddWidget must be reachable through the call graph — a widget
+    # inside a helper nobody calls is dead code that silently never draws.
+    for rel, text in texts.items():
+        for m in WIDGET_RE.finditer(text):
+            if (rel, m.start()) not in covered:
                 failures.append(
-                    f"{rel}: sidebar '{sec}/{sb}' declared but never populated")
-        total_widgets += sum(counts.values())
-        total_sidebars += len(counts)
+                    f"{rel}: AddWidget @ byte {m.start()} is never wired "
+                    "into the menu tree — its helper is not called from "
+                    "any WidgetPath root")
 
     check_widget_enum_coverage(failures)
     check_i18n_coverage(failures)
