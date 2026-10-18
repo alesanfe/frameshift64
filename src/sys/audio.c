@@ -7,8 +7,8 @@
 #include <PR/gu.h>
 
 #ifdef PORT
-#include "resources/loading/audio/audio_playback.h"
-#include "resources/loading/audio/audio_dma.h"
+#include "interfaces/audio/n64/audio_playback.h"
+#include "interfaces/audio/n64/audio_dma.h"
 #include "game/engine/decomp/audio_bridge.h"
 #include "acmd_trace/acmd_trace.h"
 #include "port_log.h"
