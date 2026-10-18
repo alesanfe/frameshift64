@@ -2933,25 +2933,39 @@ void syNetPeerStopVSSession(void)
 		 * to offline so the next local VS match isn't netplay. */
 		extern void port_netlobby_on_match_end(void);
 		extern void port_netlobby_set_match_result(s32 winner_slot, u32 duration_ticks);
-		s32 i, winner = -1, best = -1;
+		s32 i, winner = -1, best_stocks = -1, best_score = -1;
+		sb8 dead_heat = FALSE;
 
-		/* Winner = the game slot with the most remaining stocks while the
-		 * battle state is still readable (called before the scene switch).
-		 * A top tie (timeout with equal stocks) records a draw — sudden death
-		 * resolves those in the sim before this point anyway. */
-		for (i = 0; (gSCManagerBattleState != NULL) && (i < MAXCONTROLLERS); i++)
+		/* Winner = the game slot with the most remaining stocks, tie-broken
+		 * by the game's own score (the results-screen ranking metric), while
+		 * the battle state is still readable (called before the scene
+		 * switch). A dead heat on both records a draw — sudden death
+		 * resolves true ties in the sim before this point anyway. This also
+		 * makes timed matches work: all slots sit at equal stocks, so the
+		 * score picks the real winner instead of an automatic draw. */
+		/* Slots past player_count are empty — they must not enter the
+		 * comparison or a -1/0 seat could win a timed match on score 0. */
+		for (i = 0; (gSCManagerBattleState != NULL) &&
+		            (i < sSYNetPeerBootstrapMetadata.player_count) &&
+		            (i < MAXCONTROLLERS); i++)
 		{
-			s32 stocks = (i < sSYNetPeerBootstrapMetadata.player_count)
-				? gSCManagerBattleState->players[i].stock_count : -1;
-			if (stocks > best)
+			s32 stocks = gSCManagerBattleState->players[i].stock_count;
+			s32 score = gSCManagerBattleState->players[i].score;
+			if (stocks > best_stocks || (stocks == best_stocks && score > best_score))
 			{
-				best = stocks;
+				best_stocks = stocks;
+				best_score = score;
 				winner = i;
+				dead_heat = FALSE;
 			}
-			else if (stocks == best)
+			else if (stocks == best_stocks && score == best_score)
 			{
-				winner = -1;
+				dead_heat = TRUE;
 			}
+		}
+		if (dead_heat)
+		{
+			winner = -1;
 		}
 		/* the loop above already tolerates a NULL battle state (quit before
 		 * the scene fully came up) — keep the duration read behind the same
