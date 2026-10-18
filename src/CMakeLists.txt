@@ -90,7 +90,8 @@ target_link_libraries(libultraship PRIVATE hidapi::hidapi)
 option(LUS_GCADAPTER "Native GameCube adapter support (libusb)" ON)
 option(LUS_GCADAPTER_FETCH_LIBUSB "Always build libusb from source instead of using the system one" OFF)
 if (LUS_GCADAPTER AND NOT CMAKE_SYSTEM_NAME STREQUAL "Android" AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS"
-    AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT BATTLESHIP_UWP)
+    AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT BATTLESHIP_UWP
+    AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     set(_LUS_LIBUSB_TARGET "")
     if (NOT LUS_GCADAPTER_FETCH_LIBUSB AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME MATCHES "BSD"))
         find_package(PkgConfig QUIET)
@@ -153,6 +154,9 @@ if (USE_OPENGLES)
     if (CMAKE_SYSTEM_NAME STREQUAL "Android")
         find_library(OPENGLES_LIBRARY GLESv3)
         target_link_libraries(libultraship PRIVATE GLESv3)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        # WebGL2/GLES3 entry points are built into the emscripten runtime —
+        # gl* symbols resolve at link with no library to find_library.
     elseif(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
         target_link_libraries(libultraship PRIVATE OpenGL::GLES2)
     else()

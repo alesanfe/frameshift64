@@ -205,7 +205,10 @@ FetchContent_MakeAvailable(prism)
 # decides "no adapter found" and the SDL2 / Java HIDDeviceManager handles
 # everything that's actually present. Switch is in the same boat: no USB
 # host HID access from a retail .nro, so the same stub applies.
-if (CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
+# Emscripten joins the stub set: browsers have no raw USB HID without the
+# WebHID API, so Raphnet enumeration must report "no adapter" and SDL's
+# GameController path handles pads.
+if (CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     set(_LUS_HIDAPI_STUB_DIR ${CMAKE_CURRENT_BINARY_DIR}/hidapi_stub)
     file(MAKE_DIRECTORY ${_LUS_HIDAPI_STUB_DIR})
     file(WRITE ${_LUS_HIDAPI_STUB_DIR}/hidapi.h [=[
@@ -248,7 +251,7 @@ static inline int                       hid_read(hid_device *dev, unsigned char 
 static inline int                       hid_send_feature_report(hid_device *dev, const unsigned char *data, size_t length) { (void)dev; (void)data; (void)length; return -1; }
 static inline int                       hid_get_feature_report(hid_device *dev, unsigned char *data, size_t length) { (void)dev; (void)data; (void)length; return -1; }
 static inline int                       hid_set_nonblocking(hid_device *dev, int nonblock) { (void)dev; (void)nonblock; return 0; }
-static inline const wchar_t            *hid_error(hid_device *dev) { (void)dev; return L"hidapi-stub: Android build has no native HID backend"; }
+static inline const wchar_t            *hid_error(hid_device *dev) { (void)dev; return L"hidapi-stub: this platform has no native HID backend"; }
 
 #ifdef __cplusplus
 }

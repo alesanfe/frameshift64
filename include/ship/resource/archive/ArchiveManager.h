@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <list>
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
@@ -63,6 +64,11 @@ class ArchiveManager {
     std::vector<uint32_t> mGameVersions;
     std::unordered_set<uint32_t> mValidGameVersions;
     std::unordered_map<uint64_t, std::string> mHashes;
+    /* HashToString() returns pointers into mHashes that outlive the lock.
+     * ResetVirtualFileSystem() retires the table here instead of clearing
+     * it — an unordered_map move preserves element addresses, so in-flight
+     * pointers stay valid for the life of the manager. */
+    std::deque<std::unordered_map<uint64_t, std::string>> mRetiredHashes;
     std::unordered_set<std::string> mDirectories;
     std::unordered_map<uint64_t, std::shared_ptr<Archive>> mFileToArchive;
 };

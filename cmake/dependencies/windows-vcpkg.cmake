@@ -18,6 +18,8 @@ endif()
 		# desktop SDL produces duplicate symbols and the wrong Win32 backend.
 		vcpkg_install_packages(zlib bzip2 glew libzip nlohmann-json tinyxml2 spdlog)
 	else()
-		vcpkg_install_packages(zlib bzip2 sdl2 glew libzip nlohmann-json tinyxml2 spdlog)
+		# curl[ssl,websockets]: in-process downloads + WebSocket transport
+		# (wss via Schannel) — replaces the curl.exe subprocess shims.
+		vcpkg_install_packages(zlib bzip2 sdl2 glew libzip nlohmann-json tinyxml2 spdlog curl[ssl,websockets])
 	endif()
 endif()

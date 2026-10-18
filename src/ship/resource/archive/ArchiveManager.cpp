@@ -155,6 +155,12 @@ void ArchiveManager::ResetVirtualFileSystem() {
     auto archives = mArchives;
     mArchives.clear();
     mGameVersions.clear();
+    /* Retire, don't clear: HashToString() hands out `const std::string*`
+     * into this map and the lock is released on return — a worker may still
+     * dereference its pointer while a mod install resets the table. Moving
+     * the map into mRetiredHashes keeps the node addresses (and therefore
+     * the strings) alive. */
+    mRetiredHashes.push_back(std::move(mHashes));
     mHashes.clear();
     mFileToArchive.clear();
     for (const auto& archive : archives) {
