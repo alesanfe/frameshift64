@@ -1600,7 +1600,7 @@ foreach(mod IN LISTS SSB64_MODULE_DIRS)
 endforeach()
 if (WIN32)
     # src/core/observability/port_symbolize.cpp (SyncTest diagnostics), src/networking/netplay/transport/udp_transport.cpp, src/networking/netplay/transport/websocket_transport.cpp
-    # sapi: §9 menu narration (src/platform/narration.cpp)
+    # sapi: §9 menu narration (src/interfaces/presentation/narration.cpp)
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt sapi ole32)
 endif()
 
