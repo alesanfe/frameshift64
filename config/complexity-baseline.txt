@@ -1,11 +1,13 @@
 # Per-file complexity violation quota (lizard -C 15 -L 100).
 # Regenerate with: python tools/analysis/lint/check_complexity.py --update
 src/application/crash_handler.cpp 2
-src/application/gameloop.cpp 3
+src/application/gameloop.cpp 2
+src/application/gameloop_screenshot.cpp 1
 src/application/mods_mount.cpp 1
-src/application/port.cpp 6
+src/application/port.cpp 2
+src/application/port_init_phases.cpp 4
 src/application/port_watchdog.cpp 1
-src/application/update/downloads/ModPackDownloader.cpp 3
+src/application/update/downloads/ModPackDownloader.cpp 1
 src/application/update/downloads/ShaderDownloader.cpp 3
 src/application/update/integrity/ReleaseSig.cpp 1
 src/application/update/updater/Updater.cpp 2
@@ -29,7 +31,9 @@ src/networking/netplay/session/netlobby_protocol.cpp 5
 src/networking/netplay/session/netlobby_start.cpp 2
 src/networking/netplay/session/netlobby_transport.cpp 1
 src/networking/netplay/transport/udp_transport.cpp 3
-src/networking/netplay/transport/websocket_transport.cpp 6
+src/networking/netplay/transport/websocket_transport_curl.cpp 1
+src/networking/netplay/transport/websocket_transport_fallback.cpp 3
+src/networking/netplay/transport/websocket_transport_win32.cpp 1
 src/networking/social/DiscordRichPresence.cpp 1
 src/observability/crash_bundle.cpp 1
 src/observability/heap_check_boot.cpp 2
@@ -46,12 +50,12 @@ src/platform/compatibility/port_aobj_fixup.cpp 2
 src/platform/compatibility/port_diag_stubs.c 2
 src/presentation/Menu.cpp 7
 src/presentation/MenuTypes.h 1
-src/presentation/PortMenu.cpp 5
+src/presentation/PortMenu.cpp 4
 src/presentation/PortMenuCustomization.cpp 4
 src/presentation/PortMenuOnline.cpp 1
 src/presentation/PortMenuSupport.cpp 1
-src/presentation/UIWidgets.cpp 4
-src/presentation/UIWidgets.hpp 4
+src/presentation/UIWidgets.cpp 3
+src/presentation/UIWidgetsTemplates.hpp 4
 src/rendering/interpolation/frame_interpolation.cpp 1
 src/rendering/textures/hires/HiResPack.cpp 2
 tools/debugging/acmd_trace/acmd_decoder.c 1

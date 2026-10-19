@@ -273,6 +273,7 @@ void RenderOnlineLeaderboard(const char *serverBuf) {
         if (ImGui::SmallButton(TR("Refresh"))) {
             port_netleaderboard_fetch(serverBuf);
             port_netleaderboard_fetch_history(serverBuf);
+            port_netleaderboard_fetch_stats(serverBuf);
         }
         const int lbState = port_netleaderboard_state();
         if (lbState == 1) {
@@ -299,6 +300,19 @@ void RenderOnlineLeaderboard(const char *serverBuf) {
         /* Verified match history rides the same Refresh — the service
          * keeps the last LB_HISTORY_MAX corroborated results. */
         RenderRecentMatches();
+        /* Service stats (/stats) — fleet counters plus live presence on
+         * self-hosted lobbies (the Cloudflare adapter doesn't report it). */
+        int online = -1, lbEntries = 0, lbMatches = 0, lbReplays = 0, lbBuilds = 0;
+        if (port_netleaderboard_stats(&online, &lbEntries, &lbMatches,
+                                      &lbReplays, &lbBuilds)) {
+            if (online >= 0) {
+                ImGui::TextDisabled(TR("Lobby: %d online · %d players · %d verified · %d replays · %d builds"),
+                                    online, lbEntries, lbMatches, lbReplays, lbBuilds);
+            } else {
+                ImGui::TextDisabled(TR("Lobby: %d players · %d verified · %d replays · %d builds"),
+                                    lbEntries, lbMatches, lbReplays, lbBuilds);
+            }
+        }
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s", TR("Ratings update when both players report the same result — "
                                    "a casual ladder, not tournament-grade ranked."));

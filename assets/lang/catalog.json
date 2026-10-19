@@ -335,6 +335,8 @@
     "Loading replay...": "",
     "Loading...": "",
     "Lobby server": "",
+    "Lobby: %d online · %d players · %d verified · %d replays · %d builds": "",
+    "Lobby: %d players · %d verified · %d replays · %d builds": "",
     "Locks interpolated rendering to the active display refresh rate, from 60 through 240 Hz. Fractional frame cadence preserves the fixed 60 Hz game simulation on 90/120/144/165 Hz phones, TVs, monitors, and Xbox display modes.": "",
     "Loss": "",
     "Lost connection to the host.": "",
