@@ -10,6 +10,9 @@
     "test": "node tests/security/test-lobby-security.js && node tests/chaos/test-lobby-chaos.js && node tests/domain/test-leaderboard-domain.mjs && node tests/domain/test-bracket-domain.mjs && node tests/fuzz/test-lobby-fuzz.js"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.17",
+    "@hono/node-ws": "^1.3.1",
+    "hono": "^4.13.13",
     "ws": "^8.21.0"
   },
   "devDependencies": {

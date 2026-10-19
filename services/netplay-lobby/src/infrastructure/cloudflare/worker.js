@@ -1,81 +1,119 @@
 // BattleShip netplay lobby — Cloudflare Worker entrypoint.
 //
-// Thin adapter over the shared room domain (src/domain/room.mjs): this
-// file owns ONLY the Workers/DO plumbing — WebSocketPair 101 responses,
-// addEventListener wiring, Blob→ArrayBuffer normalization with a
-// per-socket order queue, and setAlarm idle sweeps. All room semantics
-// live in the domain so the local mirror (node-lobby.mjs) can't drift.
+// Thin adapter over the shared lobby surface: HTTP routes live in
+// src/interfaces/http/app.mjs (the same Hono app the local node mirror
+// serves), room semantics in src/domain/. This file owns ONLY the
+// Workers/DO plumbing — WebSocketPair 101 responses, Blob→ArrayBuffer
+// normalization with a per-socket order queue, setAlarm idle sweeps, and
+// ctx.storage persistence behind the app's deps seam.
+
+import { Hono } from "hono";
 
 import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
-import {
-  Leaderboard, sanitizeName, LB_MUTE_DISPUTES,
-} from "../../domain/leaderboard.mjs";
-import { isValidCrashReport, crashReportRecord, CRASH_RING } from "../../domain/crash.mjs";
-import {
-  REPLAY_ID_RE, mintReplayId, validateReplayBody, evictOldest,
-} from "../../domain/replay.mjs";
-import {
-  Bracket, sanitizeBracketName, BR_MAX_LIVE,
-  mintBracketId, settleLiveBrackets,
-} from "../../domain/bracket.mjs";
+import { Leaderboard } from "../../domain/leaderboard.mjs";
+import { Bracket } from "../../domain/bracket.mjs";
+import { CRASH_RING } from "../../domain/crash.mjs";
 import { BOARD_PAGE_HTML } from "../../domain/board_page.mjs";
+import { createLobbyApp } from "../../interfaces/http/app.mjs";
+
+/* Paths served by the leaderboard Durable Object (HTTP only — no ws).
+ * Same whitelist the raw dispatcher used. */
+const isLbPath = (p) =>
+  p === "/leaderboard" || p === "/history" || p === "/player" ||
+  p === "/submit" || p === "/result" || p === "/report" ||
+  p === "/crash" || p === "/crashes" || p === "/stats" ||
+  p.startsWith("/replay") || p.startsWith("/tournament");
 
 // Per-isolate IP join accounting (approximate — isolates aren't shared,
 // and that's fine: this bounds scanning cost, it isn't a security
 // boundary).
 const allowIpJoin = makeJoinLimiter();
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
+/* Worker-level dispatcher: portal + health locally, leaderboard-family
+ * paths to the global DO, /ws to the per-room DO. */
+const app = new Hono();
 
-    if (url.pathname === "/health") {
-      return Response.json({ ok: true, service: "smash-netplay" });
-    }
-    /* Public portal page — same JSON the game consumes, rendered for a
-     * browser. The HTML is static; data loads from the API endpoints. */
-    if (url.pathname === "/" && request.method === "GET") {
-      return new Response(BOARD_PAGE_HTML, {
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-    }
-    // Self-reported rating board lives on a dedicated DO (HTTP only — no
-    // ws). Same stub mechanism as rooms, fixed name.
-    if (url.pathname === "/leaderboard" || url.pathname === "/history" ||
-        url.pathname === "/player" ||
-        url.pathname === "/submit" ||
-        url.pathname === "/result" || url.pathname === "/report" ||
-        url.pathname === "/crash" || url.pathname === "/crashes" ||
-        url.pathname === "/stats" || url.pathname.startsWith("/replay") ||
-        url.pathname.startsWith("/tournament")) {
-      const stub = env.ROOMS.get(env.ROOMS.idFromName("leaderboard-global"));
-      return stub.fetch(request);
-    }
-    if (url.pathname !== "/ws") {
-      return new Response("not found", { status: 404 });
-    }
-    if (request.headers.get("Upgrade") !== "websocket") {
-      return new Response("expected websocket", { status: 426 });
-    }
-    const room = (url.searchParams.get("room") || "").toUpperCase();
-    const role = url.searchParams.get("role");
-    if (!CODE_RE.test(room) || !VALID_ROLES.has(role)) {
-      return new Response("bad room or role", { status: 400 });
-    }
-    // Cross-code scan throttle: room-existence replies differ
-    // ("no-such-room" vs "room-full"), so joining is the only oracle a
-    // code guesser has — make it cost connections, not requests (AUD-25).
-    const ip = request.headers.get("cf-connecting-ip") || "unknown";
-    if (!allowIpJoin(ip)) {
-      return new Response("rate-limited", { status: 429 });
-    }
-    const stub = env.ROOMS.get(env.ROOMS.idFromName(room));
-    return stub.fetch(request);
-  },
-};
+app.get("/", (c) =>
+  c.body(BOARD_PAGE_HTML, 200, { "content-type": "text/html; charset=utf-8" }));
+
+app.get("/health", (c) => c.json({ ok: true, service: "smash-netplay" }));
+
+app.all("*", (c) => {
+  const url = new URL(c.req.raw.url);
+  if (isLbPath(url.pathname)) {
+    const stub = c.env.ROOMS.get(c.env.ROOMS.idFromName("leaderboard-global"));
+    return stub.fetch(c.req.raw);
+  }
+  if (url.pathname !== "/ws") {
+    return c.text("not found", 404);
+  }
+  if (c.req.header("Upgrade") !== "websocket") {
+    return c.text("expected websocket", 426);
+  }
+  const room = (url.searchParams.get("room") || "").toUpperCase();
+  const role = url.searchParams.get("role");
+  if (!CODE_RE.test(room) || !VALID_ROLES.has(role)) {
+    return c.text("bad room or role", 400);
+  }
+  // Cross-code scan throttle: room-existence replies differ
+  // ("no-such-room" vs "room-full"), so joining is the only oracle a
+  // code guesser has — make it cost connections, not requests (AUD-25).
+  const ip = c.req.header("cf-connecting-ip") || "unknown";
+  if (!allowIpJoin(ip)) {
+    return c.text("rate-limited", 429);
+  }
+  const stub = c.env.ROOMS.get(c.env.ROOMS.idFromName(room));
+  return stub.fetch(c.req.raw);
+});
+
+export default { fetch: (request, env, ctx) => app.fetch(request, env, ctx) };
+
+/* Persistence + telemetry deps for the shared HTTP app, backed by this
+ * DO's transactional storage. The leaderboard DO gets one of these; room
+ * DOs never see lb paths (the worker only forwards them to the global
+ * stub), so per-room instances never exercise it. */
+function doDeps(ctx, env) {
+  const store = ctx.storage;
+  return {
+    loadLb: async () =>
+      Leaderboard.fromJSON((await store.get("lb")) || []),
+    saveLb: (lb) => store.put("lb", lb.toJSON()),
+    loadBrackets: async () => new Map(
+      Object.entries((await store.get("brackets")) || {})
+        .map(([id, o]) => [id, Bracket.fromJSON(o)])),
+    saveBrackets: (map) => store.put("brackets",
+      Object.fromEntries([...map].map(([k, b]) => [k, b.toJSON()]))),
+    replayIndex: {
+      get: async () => (await store.get("replays-idx")) || [],
+      save: (idx) => store.put("replays-idx", idx),
+    },
+    replayBlobs: {
+      get: (id) => store.get(`rp:${id}`),
+      put: (id, rec) => store.put(`rp:${id}`, rec),
+      delete: (id) => store.delete(`rp:${id}`),
+    },
+    crashes: {
+      append: async (rec) => {
+        const ring = (await store.get("crashes")) || [];
+        ring.push(rec);
+        while (ring.length > CRASH_RING) ring.shift();
+        await store.put("crashes", ring);
+      },
+      list: async () => (await store.get("crashes")) || [],
+      count: async () => ((await store.get("crashes")) || []).length,
+    },
+    analytics: (point) => {
+      try { env.LOBBY_ANALYTICS?.writeDataPoint(point); } catch { /* telemetry never blocks */ }
+    },
+    statsExtra: () => ({}),
+    healthExtra: () => ({}),
+    /* metrics: undefined — the DO doesn't expose Prometheus text;
+     * Cloudflare telemetry goes through Analytics Engine. */
+  };
+}
 
 export class NetplayRoom extends DurableObject {
   constructor(ctx, env) {
@@ -84,6 +122,9 @@ export class NetplayRoom extends DurableObject {
     // keeps the DO resident, so in-memory state is authoritative.
     this.room = null;   // LobbyRoom, created lazily on the first admitted fetch
     this.sweepArmed = false;
+    /* The whole HTTP surface the worker forwards here — shared with the
+     * local adapter so endpoint semantics can't drift. */
+    this.http = createLobbyApp(doDeps(ctx, env));
   }
 
   /* ---- socket plumbing (adapter-owned) ---- */
@@ -123,256 +164,12 @@ export class NetplayRoom extends DurableObject {
 
   /* ---- connection ---- */
 
-  /* HTTP-only leaderboard paths — intercepted before any ws/room logic
-   * (these requests carry no ?room= param). Persisted via DO storage so
-   * the board survives isolate eviction. */
-  async fetchLeaderboard(request, url) {
-    if (url.pathname === "/leaderboard") {
-      const rows = (await this.ctx.storage.get("lb")) || [];
-      return Response.json({ entries: Leaderboard.fromJSON(rows).list() });
-    }
-    if (url.pathname === "/submit" && request.method === "POST") {
-      let body = null;
-      try { body = await request.json(); } catch { /* bad json */ }
-      const rows = await this.ctx.storage.get("lb");
-      const lb = Leaderboard.fromJSON(rows);
-      const result = lb.submit(body);
-      if (result.kind !== "ok") {
-        return Response.json({ error: result.reason }, { status: 400 });
-      }
-      await this.ctx.storage.put("lb", lb.toJSON());
-      return Response.json({ ok: true, rank: result.rank });
-    }
-    /* Corroborated match result — the rating-moving path. Both clients
-     * report the same match_id; the second report either verifies (Elo
-     * applied) or mismatches (dispute counted). */
-    if (url.pathname === "/result" && request.method === "POST") {
-      let body = null;
-      try { body = await request.json(); } catch { /* bad json */ }
-      const rows = await this.ctx.storage.get("lb");
-      const lb = Leaderboard.fromJSON(rows);
-      const result = lb.reportResult(body);
-      if (result.kind === "reject") {
-        return Response.json({ error: result.reason }, { status: 400 });
-      }
-      await this.ctx.storage.put("lb", lb.toJSON());
-      /* A verified match_id settles any live bracket pairing waiting on
-       * it — tournaments ride on the same two-key corroboration. */
-      if (result.kind === "verified" && result.winner && !result.draw) {
-        const store = (await this.ctx.storage.get("brackets")) || {};
-        let dirty = false;
-        for (const [id, o] of Object.entries(store)) {
-          const b = Bracket.fromJSON(o);
-          if (b.status === "live" &&
-              b.settle(String(body.match_id || ""), result.winner, result.loser).kind !== "reject") {
-            store[id] = b.toJSON();
-            dirty = true;
-          }
-        }
-        if (dirty) await this.ctx.storage.put("brackets", store);
-      }
-      return Response.json(result);
-    }
-    /* Tournaments — create/join/start/view. Bracket results aren't
-     * trusted to a single reporter: pairings settle only when the same
-     * match_id is verified through /result by distinct claim keys. */
-    if (url.pathname === "/tournament" && request.method === "POST") {
-      let body = null;
-      try { body = await request.json(); } catch { /* bad json */ }
-      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
-      const name = sanitizeBracketName(body?.name);
-      const by = sanitizeName(body?.by);
-      const key = typeof body?.key === "string" ? body.key : "";
-      if (!name || !by || !lb.keyOwns(by, key)) {
-        return Response.json({ error: "bad-request" }, { status: 400 });
-      }
-      const store = (await this.ctx.storage.get("brackets")) || {};
-      const live = Object.values(store).filter((b) => b.status !== "done").length;
-      if (live >= BR_MAX_LIVE) {
-        return Response.json({ error: "too-many-live" }, { status: 400 });
-      }
-      const id = mintBracketId();
-      const b = Bracket.create(id, name, by, body.size);
-      store[id] = b.toJSON();
-      await this.ctx.storage.put("brackets", store);
-      return Response.json({ ok: true, id, size: b.size });
-    }
-    if (url.pathname === "/tournament/join" && request.method === "POST") {
-      let body = null;
-      try { body = await request.json(); } catch { /* bad json */ }
-      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
-      const store = (await this.ctx.storage.get("brackets")) || {};
-      const b = Bracket.fromJSON(store[String(body?.id || "")]);
-      const name = sanitizeName(body?.name);
-      const key = typeof body?.key === "string" ? body.key : "";
-      /* Banned/muted players can't post results — a bracket pairing with
-       * them inside could never verify, so they may not join at all. */
-      const ent = lb.byName.get(name);
-      if (!store[b.id] || !name || !lb.keyOwns(name, key) ||
-          (ent && (ent.banned || (ent.disputes || 0) >= LB_MUTE_DISPUTES))) {
-        return Response.json({ error: "bad-request" }, { status: 400 });
-      }
-      const r = b.join(name);
-      if (r.kind !== "ok") {
-        return Response.json({ error: r.reason }, { status: 400 });
-      }
-      store[b.id] = b.toJSON();
-      await this.ctx.storage.put("brackets", store);
-      return Response.json(r);
-    }
-    if (url.pathname === "/tournament/start" && request.method === "POST") {
-      let body = null;
-      try { body = await request.json(); } catch { /* bad json */ }
-      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
-      const store = (await this.ctx.storage.get("brackets")) || {};
-      const b = Bracket.fromJSON(store[String(body?.id || "")]);
-      const key = typeof body?.key === "string" ? body.key : "";
-      if (!store[b.id] || !lb.keyOwns(b.owner, key)) {
-        return Response.json({ error: "bad-request" }, { status: 400 });
-      }
-      const r = b.start(lb.list().map((e) => e.name));
-      if (r.kind !== "ok") {
-        return Response.json({ error: r.reason }, { status: 400 });
-      }
-      store[b.id] = b.toJSON();
-      await this.ctx.storage.put("brackets", store);
-      return Response.json(b.view());
-    }
-    if (url.pathname === "/tournament" && request.method === "GET") {
-      const store = (await this.ctx.storage.get("brackets")) || {};
-      const id = url.searchParams.get("id");
-      if (id) {
-        const b = store[id];
-        if (!b) {
-          return Response.json({ error: "no-such-bracket" }, { status: 404 });
-        }
-        return Response.json(Bracket.fromJSON(b).view());
-      }
-      return Response.json({
-        brackets: Object.values(store).map((o) => Bracket.fromJSON(o).view()),
-      });
-    }
-    /* Opt-in crash telemetry (gCrashReports.Enabled): {kind:"crash",
-     * info, log_tail} — ring of the last 50 in DO storage, counted via
-     * analytics for the Grafana board. */
-    if (url.pathname === "/crash" && request.method === "POST") {
-      let body = null;
-      try { body = await request.json(); } catch { /* bad json */ }
-      if (isValidCrashReport(body)) {
-        const ring = (await this.ctx.storage.get("crashes")) || [];
-        ring.push({ at: Date.now(), ...crashReportRecord(body) });
-        while (ring.length > CRASH_RING) ring.shift();
-        await this.ctx.storage.put("crashes", ring);
-        try {
-          this.env.LOBBY_ANALYTICS?.writeDataPoint({
-            blobs: ["crash", "report"], doubles: [0, 0], indexes: [""],
-          });
-        } catch { /* telemetry never blocks */ }
-      }
-      return new Response(null, { status: 204 });
-    }
-    /* Recent crash reports (operator debugging; same trust level as the
-     * leaderboard — the reports are opt-in and carry no auth). */
-    if (url.pathname === "/crashes" && request.method === "GET") {
-      const ring = (await this.ctx.storage.get("crashes")) || [];
-      return Response.json({ crashes: ring });
-    }
-    /* Community moderation: {name, key} — `key` is the reporter's own
-     * claim key. BAN_REPORTS distinct keys in 24h flag the name banned;
-     * banned keys stop mutating the board. */
-    if (url.pathname === "/report" && request.method === "POST") {
-      let body = null;
-      try { body = await request.json(); } catch { /* bad json */ }
-      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
-      const result = lb.report(body);
-      if (result.kind !== "ok") {
-        return Response.json({ error: result.reason }, { status: 400 });
-      }
-      await this.ctx.storage.put("lb", lb.toJSON());
-      try {
-        this.env.LOBBY_ANALYTICS?.writeDataPoint({
-          blobs: ["report", result.banned ? "banned" : "counted"],
-          doubles: [result.reports, 0], indexes: [""],
-        });
-      } catch { /* telemetry never blocks */ }
-      return Response.json(result);
-    }
-    /* Public service stats — stable unauthenticated surface for the
-     * dashboard and any external API consumer. */
-    if (url.pathname === "/stats") {
-      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
-      const crashes = (await this.ctx.storage.get("crashes")) || [];
-      const replays = (await this.ctx.storage.get("replays-idx")) || [];
-      return Response.json({
-        leaderboard_entries: lb.byName.size,
-        pending_results: lb.pending.size,
-        verified_matches: lb.settled.size,
-        crash_reports: crashes.length,
-        shared_replays: replays.length,
-        ...lb.fleetStats(),
-      });
-    }
-    /* Recent verified matches — GET /history (all) or /history?name=X.
-     * Public read surface; the records are already public via the board. */
-    if (url.pathname === "/history" && request.method === "GET") {
-      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
-      const name = sanitizeName(url.searchParams.get("name") || "") || null;
-      return Response.json({ matches: lb.historyFor(name) });
-    }
-    /* Player card — GET /player?name=X: board row + rank + recent
-     * verified matches. 404 for unclaimed names. */
-    if (url.pathname === "/player" && request.method === "GET") {
-      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
-      const name = sanitizeName(url.searchParams.get("name") || "");
-      const card = name ? lb.playerCard(name) : null;
-      if (!card) {
-        return Response.json({ error: "no-such-player" }, { status: 404 });
-      }
-      return Response.json(card);
-    }
-    /* Replay sharing — POST {data: <base64 .ssr>} mints a short id and
-     * stores it; GET /replay/<id> serves it back. Replays are a few KB;
-     * cap the index at 200 and evict oldest first. */
-    if (url.pathname === "/replay" && request.method === "POST") {
-      let body = null;
-      try { body = await request.json(); } catch { /* bad json */ }
-      const rec0 = validateReplayBody(body);
-      if (!rec0) {
-        return Response.json({ error: "bad-request" }, { status: 400 });
-      }
-      const idx = (await this.ctx.storage.get("replays-idx")) || [];
-      const id = mintReplayId();
-      const rec = { id, at: Date.now(), by: rec0.by };
-      await this.ctx.storage.put(`rp:${id}`, { ...rec, data: rec0.data });
-      idx.push(rec);
-      for (const old of evictOldest(idx)) {
-        await this.ctx.storage.delete(`rp:${old.id}`);
-      }
-      await this.ctx.storage.put("replays-idx", idx);
-      return Response.json({ ok: true, id });
-    }
-    if (url.pathname.startsWith("/replay/") && request.method === "GET") {
-      const id = url.pathname.slice("/replay/".length);
-      if (!REPLAY_ID_RE.test(id)) {
-        return Response.json({ error: "bad-id" }, { status: 400 });
-      }
-      const rec = await this.ctx.storage.get(`rp:${id}`);
-      if (!rec) return Response.json({ error: "no-such-replay" }, { status: 404 });
-      return Response.json(rec);
-    }
-    return new Response("not found", { status: 404 });
-  }
-
   fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === "/leaderboard" || url.pathname === "/history" ||
-        url.pathname === "/player" ||
-        url.pathname === "/submit" ||
-        url.pathname === "/result" || url.pathname === "/report" ||
-        url.pathname === "/crash" || url.pathname === "/crashes" ||
-        url.pathname === "/stats" || url.pathname.startsWith("/replay") ||
-        url.pathname.startsWith("/tournament")) {
-      return this.fetchLeaderboard(request, url);
+    /* HTTP-only leaderboard paths — delegated to the shared app (these
+     * requests carry no ?room= param). */
+    if (isLbPath(url.pathname)) {
+      return this.http.fetch(request);
     }
     const code = (url.searchParams.get("room") || "").toUpperCase();
     const role = url.searchParams.get("role");
