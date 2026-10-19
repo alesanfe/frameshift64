@@ -79,6 +79,39 @@ def spawn_game(build_dir: Path, name: str, env: dict, out_dir: Path,
             stdout=log, stderr=subprocess.STDOUT)
 
 
+def peer_env(name, fighter, fuzz, out_dir: Path, save: bool = True) -> dict:
+    """Common per-peer env: fuzz/mute/update-check, sim seed, per-peer
+    trace/log/save paths. Tests layer role keys (LOBBY_HOST/JOIN, LAN_*,
+    per-test sim knobs) on top."""
+    env = {
+        "SSB64_NETPLAY_FUZZ": str(fuzz), "SSB64_MUTE": "1",
+        "SSB64_NO_UPDATE_CHECK": "1",
+        "SSB64_NETPLAY_SIM_SEED": str(fuzz),
+        "SSB64_NETPLAY_CONFIRMED_TRACE": str(out_dir / f"{name}.trace"),
+        "SSB64_LOG_PATH": str(out_dir / f"{name}.log"),
+    }
+    if fighter is not None:
+        env["SSB64_LOBBY_FKIND"] = str(fighter)
+    if save:
+        env["SSB64_SAVE_PATH"] = str(out_dir / f"{name}.sav")
+    return env
+
+
+def apply_net_profile(env: dict, args) -> None:
+    """--debug-stages, then either a named impairment profile or the flat
+    --latency/--jitter/--loss knobs (tests without --loss-pct skip it)."""
+    if getattr(args, "debug_stages", False):
+        env["SSB64_NETPLAY_DEBUG_STAGES"] = "1"
+    if getattr(args, "profile", None):
+        env.update(load_profile(args.profile))  # overrides individual flags
+    else:
+        env["SSB64_NETPLAY_SIM_LATENCY_MS"] = str(args.latency_ms)
+        env["SSB64_NETPLAY_SIM_JITTER_MS"] = str(args.jitter_ms)
+        loss = getattr(args, "loss_pct", None)
+        if loss is not None:
+            env["SSB64_NETPLAY_SIM_LOSS_PCT"] = str(loss)
+
+
 def stop_all(procs, grace: float = 3.0) -> None:
     for p in procs:
         if p.poll() is None:

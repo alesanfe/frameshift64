@@ -55,23 +55,9 @@ def main() -> int:
     print(f"lobby server: {server}   players: {a.players} + 1 spec")
 
     def start_peer(name, fighter, fuzz, is_host, is_spec):
-        env = {
-            "SSB64_LOBBY_CODE_FILE": str(out / "code.txt"),
-            "SSB64_LOBBY_FKIND": fighter,
-            "SSB64_NETPLAY_FUZZ": fuzz, "SSB64_MUTE": "1",
-            "SSB64_NO_UPDATE_CHECK": "1",
-            "SSB64_NETPLAY_SIM_SEED": fuzz,
-            "SSB64_NETPLAY_CONFIRMED_TRACE": str(out / f"{name}.trace"),
-            "SSB64_LOG_PATH": str(out / f"{name}.log"),
-            "SSB64_SAVE_PATH": str(out / f"{name}.sav"),
-        }
-        if a.debug_stages:
-            env["SSB64_NETPLAY_DEBUG_STAGES"] = "1"
-        if a.profile:
-            env.update(sr.load_profile(a.profile))   # overrides individual flags
-        else:
-            env["SSB64_NETPLAY_SIM_LATENCY_MS"] = a.latency_ms
-            env["SSB64_NETPLAY_SIM_JITTER_MS"] = a.jitter_ms
+        env = sr.peer_env(name, fighter, fuzz, out)
+        env["SSB64_LOBBY_CODE_FILE"] = str(out / "code.txt")
+        sr.apply_net_profile(env, a)
         if is_spec:
             env["SSB64_LOBBY_JOIN"] = server
             env["SSB64_LOBBY_SPECTATE"] = "1"

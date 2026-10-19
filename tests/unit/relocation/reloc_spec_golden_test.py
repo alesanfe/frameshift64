@@ -120,7 +120,7 @@ def check_version(ver):
             fail(f'{ctx}: slice_count {s["scnt"]} != len({s["sarr"]})={len(sl)}')
 
         prev_off = -1
-        for i, (p, off, sz, kind) in enumerate(sl):
+        for i, (p, off, sz, _kind) in enumerate(sl):
             if off <= prev_off:
                 fail(f'{ctx}: slice {i} offset 0x{off:X} not ascending')
             prev_off = off
@@ -152,7 +152,7 @@ def check_version(ver):
             el = []
         if len(el) != s['ecnt']:
             fail(f'{ctx}: extern_slot_count {s["ecnt"]} != len={len(el)}')
-        for i, (ss, dep, soff, doff) in enumerate(el):
+        for i, (ss, dep, soff, _doff) in enumerate(el):
             if ss >= len(sl):
                 fail(f'{ctx}: extern {i} slot_slice {ss} out of range')
                 continue

@@ -39,24 +39,12 @@ def main() -> int:
     print(f"LAN test: host on 127.0.0.1:{a.port}   players: {a.players}")
 
     def start_peer(name, fighter, fuzz, is_host):
-        env = {
-            "SSB64_LOBBY_FKIND": fighter, "SSB64_LOBBY_STAGE": "0",
+        env = sr.peer_env(name, fighter, fuzz, out)
+        env.update({
+            "SSB64_LOBBY_STAGE": "0",
             "SSB64_LOBBY_AUTOSTART": "1", "SSB64_LOBBY_MIN_PLAYERS": a.players,
-            "SSB64_NETPLAY_FUZZ": fuzz, "SSB64_MUTE": "1",
-            "SSB64_NO_UPDATE_CHECK": "1",
-            "SSB64_NETPLAY_SIM_SEED": fuzz,
-            "SSB64_NETPLAY_CONFIRMED_TRACE": str(out / f"{name}.trace"),
-            "SSB64_LOG_PATH": str(out / f"{name}.log"),
-            "SSB64_SAVE_PATH": str(out / f"{name}.sav"),
-        }
-        if a.debug_stages:
-            env["SSB64_NETPLAY_DEBUG_STAGES"] = "1"
-        if a.profile:
-            env.update(sr.load_profile(a.profile))   # overrides individual flags
-        else:
-            env["SSB64_NETPLAY_SIM_LATENCY_MS"] = a.latency_ms
-            env["SSB64_NETPLAY_SIM_JITTER_MS"] = a.jitter_ms
-            env["SSB64_NETPLAY_SIM_LOSS_PCT"] = a.loss_pct
+        })
+        sr.apply_net_profile(env, a)
         if a.replay_frames > 0:
             env["SSB64_REPLAY_RECORD_FRAMES"] = a.replay_frames
         if not is_host and a.desync_tick >= 0:

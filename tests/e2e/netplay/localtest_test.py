@@ -53,31 +53,26 @@ def main() -> int:
     build = a.build_dir.resolve()
 
     def start_peer(local, remote, bind_port, peer_port, is_host, fuzz, name):
-        env = {
+        env = sr.peer_env(name, None, fuzz, out)
+        env.update({
             "SSB64_NETPLAY": "1", "SSB64_NETPLAY_BOOTSTRAP": "1",
-            "SSB64_NETPLAY_HOST": is_host, "SSB64_MUTE": "1",
-            "SSB64_NO_UPDATE_CHECK": "1",
+            "SSB64_NETPLAY_HOST": is_host,
             "SSB64_NETPLAY_LOCAL_PLAYER": local,
             "SSB64_NETPLAY_REMOTE_PLAYER": remote,
             "SSB64_NETPLAY_BIND": f"127.0.0.1:{bind_port}",
             "SSB64_NETPLAY_PEER": f"127.0.0.1:{peer_port}",
             "SSB64_NETPLAY_DELAY": a.delay, "SSB64_NETPLAY_SEED": a.seed,
-            "SSB64_NETPLAY_FUZZ": fuzz,
             "SSB64_NETPLAY_SIM_LATENCY_MS": a.latency_ms,
             "SSB64_NETPLAY_SIM_JITTER_MS": a.jitter_ms,
             "SSB64_NETPLAY_SIM_LOSS_PCT": a.loss_pct,
-            "SSB64_NETPLAY_SIM_SEED": fuzz,
             "SSB64_NETPLAY_SIM_DUP_PCT": a.dup_pct,
             "SSB64_NETPLAY_SIM_REORDER_PCT": a.reorder_pct,
             "SSB64_NETPLAY_SIM_REORDER_WINDOW_MS": a.reorder_window_ms,
             "SSB64_NETPLAY_SIM_CORRUPT_PCT": a.corrupt_pct,
-            "SSB64_NETPLAY_CONFIRMED_TRACE": str(out / f"{name}.trace"),
-            "SSB64_LOG_PATH": str(out / f"{name}.log"),
-            "SSB64_SAVE_PATH": str(out / f"{name}.sav"),
             "SSB64_NETPLAY_TEST_DESYNC": a.inject_desync if is_host else "-1",
             "SSB64_NETPLAY_MUTANT": a.mutant,
             "SSB64_NETPLAY_PACKETFUZZ": a.packet_fuzz,
-        }
+        })
         if is_host:
             if a.replay_frames > 0:
                 # RECORD_FRAMES is only the frame LIMIT — recording itself

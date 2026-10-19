@@ -50,19 +50,13 @@ def main() -> int:
     print(f"lobby server: {server}")
 
     def start_peer(role, fighter, fuzz):
-        env = {
+        env = sr.peer_env(role, fighter, fuzz, out, save=False)
+        env.update({
             "SSB64_LOBBY_CODE_FILE": str(out / "code.txt"),
-            "SSB64_LOBBY_FKIND": fighter, "SSB64_LOBBY_STAGE": a.stage,
-            "SSB64_NETPLAY_FUZZ": fuzz, "SSB64_MUTE": "1",
-            "SSB64_NO_UPDATE_CHECK": "1",
-            "SSB64_NETPLAY_SIM_LATENCY_MS": a.latency_ms,
-            "SSB64_NETPLAY_SIM_JITTER_MS": a.jitter_ms,
-            "SSB64_NETPLAY_SIM_LOSS_PCT": a.loss_pct,
-            "SSB64_NETPLAY_SIM_SEED": fuzz,
-            "SSB64_NETPLAY_CONFIRMED_TRACE": str(out / f"{role}.trace"),
-            "SSB64_LOG_PATH": str(out / f"{role}.log"),
+            "SSB64_LOBBY_STAGE": a.stage,
             "SSB64_LOBBY_FORCE_RELAY": "1" if a.force_relay else "",
-        }
+        })
+        sr.apply_net_profile(env, a)
         exe_dir = None
         if role == "host":
             env["SSB64_LOBBY_HOST"] = server

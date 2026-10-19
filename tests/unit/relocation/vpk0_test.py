@@ -177,18 +177,14 @@ def main():
     # Cleanup
     if tmp_dir:
         import shutil
-        try:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        except OSError:
-            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     print("\n" + "=" * 50)
     if size_ok and full_ok:
         print("ALL TESTS PASSED")
         return 0
-    else:
-        print("SOME TESTS FAILED")
-        return 1
+    print("SOME TESTS FAILED")
+    return 1
 
 
 if __name__ == "__main__":
