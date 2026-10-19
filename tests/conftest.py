@@ -200,7 +200,7 @@ def native_coverage_env() -> dict[str, str]:
 
 
 @pytest.hookimpl(wrapper=True)
-def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
+def pytest_runtest_makereport(item: pytest.Item):
     report = yield
     if report.when in {"setup", "call", "teardown"} and report.failed:
         item._smash_failed = True
