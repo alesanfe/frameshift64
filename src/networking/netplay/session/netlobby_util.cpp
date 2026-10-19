@@ -4,6 +4,7 @@
 
 #include "netlobby_util.h"
 
+#include "fnv1a.h"
 #include "udp_transport.h"
 #include "port_log.h"
 
@@ -59,17 +60,8 @@ const char* const kBuildSha = BATTLESHIP_BUILD_SHA;
 const char* const kBuildSha = "dev";
 #endif
 
-static void fnv1a_accum(uint64_t& h, const void* data, size_t n) {
-    const unsigned char* p = static_cast<const unsigned char*>(data);
-    for (size_t i = 0; i < n; i++) {
-        h ^= p[i];
-        h *= 1099511628211ULL;
-    }
-}
-
-static void fnv1a_accum_str(uint64_t& h, const std::string& s) {
-    fnv1a_accum(h, s.data(), s.size());
-}
+using ssb64::fnv1a64_accum;
+using ssb64::kFnv1a64Basis;
 
 /* FNV-1a over a whole file (streamed; 0 when unreadable). The buffer must
  * stay small: this runs on the game thread inside port_netlobby_update,
@@ -80,13 +72,13 @@ static uint64_t fnv1a_file(const std::filesystem::path& path) {
     if (!f) {
         return 0;
     }
-    uint64_t h = 1469598103934665603ULL;
+    uint64_t h = ssb64::kFnv1a64Basis;
     char buf[64 << 10];
     while (f) {
         f.read(buf, sizeof(buf));
         const std::streamsize n = f.gcount();
         if (n > 0) {
-            fnv1a_accum(h, buf, static_cast<size_t>(n));
+            h = fnv1a64_accum(h, buf, static_cast<size_t>(n));
         }
     }
     return h;
@@ -104,14 +96,14 @@ static uint64_t mod_content_hash(const std::filesystem::path& path) {
     if (!std::filesystem::is_directory(path, ec)) {
         return 0;
     }
-    uint64_t h = 1469598103934665603ULL;
+    uint64_t h = ssb64::kFnv1a64Basis;
     std::filesystem::recursive_directory_iterator it(path, ec), end;
     for (; !ec && it != end; it.increment(ec)) {
         const std::string rel = it->path().lexically_relative(path).generic_string();
-        fnv1a_accum_str(h, rel);
+        h = fnv1a64_accum(h, rel);
         if (it->is_regular_file(ec)) {
             const uint64_t sz = it->file_size(ec);
-            fnv1a_accum(h, &sz, sizeof(sz));
+            h = fnv1a64_accum(h, &sz, sizeof(sz));
         }
     }
     return h;
@@ -144,7 +136,7 @@ std::string compat_token() {
         return force;
     }
 #endif
-    uint64_t mods = 1469598103934665603ULL; /* FNV-1a 64 */
+    uint64_t mods = ssb64::kFnv1a64Basis; /* FNV-1a 64 */
 #ifndef DISABLE_SCRIPTING
     for (const ssb64::mods::ModInfo& m : ssb64::mods::ModRegistry::Snapshot()) {
         /* Mods that declare "simulation": false in their manifest are
@@ -170,7 +162,7 @@ std::string compat_token() {
         std::snprintf(hashText, sizeof(hashText), ":%016llx;",
                       static_cast<unsigned long long>(mod_content_hash(m.archivePath)));
         entry += hashText;
-        fnv1a_accum_str(mods, entry);
+        mods = fnv1a64_accum(mods, entry);
     }
 #endif
     char text[96];

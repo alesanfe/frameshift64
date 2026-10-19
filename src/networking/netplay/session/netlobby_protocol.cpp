@@ -6,6 +6,7 @@
 #include "netfriends.h"
 #include "netstats.h"
 #include "udp_transport.h"
+#include "fnv1a.h"
 #include "websocket_transport.h"
 #include "port_log.h"
 #include "netrules.h"
@@ -456,11 +457,7 @@ static uint32_t lan_key_hash(void)
     if (k == nullptr || *k == '\0') {
         return 0;
     }
-    uint64_t h = 1469598103934665603ULL;
-    for (const char *c = k; *c != '\0'; c++) {
-        h ^= static_cast<unsigned char>(*c);
-        h *= 1099511628211ULL;
-    }
+    const uint64_t h = ssb64::fnv1a64(k, std::strlen(k));
     return static_cast<uint32_t>(h ^ (h >> 32));
 }
 
@@ -645,7 +642,7 @@ static void on_roster(const std::string &text)
                     p->last_heard_ms = p->joined_ms = port_udp_now_ms();
                     if (sLobby.state == PORT_NETLOBBY_IN_MATCH &&
                         !sLobby.last_start_payload.empty() &&
-                        std::getenv("SSB64_SPECTATE_CATCHUP") == nullptr &&
+                        env("SSB64_SPECTATE_CATCHUP") == nullptr &&
                         syNetInputGetTick() < 21000) {   /* inside the 21600-tick recording cap */
                         /* mid-match catch-up: hand the spec the current
                          * match's STARTM so it boots at tick 0, then arm the

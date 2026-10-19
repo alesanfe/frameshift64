@@ -75,8 +75,7 @@ void fail(const std::string &why)
 
 bool diag_relay(void)
 {
-    static const char *v = std::getenv("SSB64_NETPLAY_DEBUG_STAGES");
-    return v != nullptr && *v != '\0';
+    return env("SSB64_NETPLAY_DEBUG_STAGES") != nullptr;
 }
 
 int relay_send(const void *data, int size)

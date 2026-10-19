@@ -3,6 +3,7 @@
 #include "netleaderboard.h"
 #include "netleaderboard_internal.h"
 #include "../domain/netstats.h"
+#include "fnv1a.h"
 
 #include <algorithm>
 #include <atomic>
@@ -158,19 +159,8 @@ extern "C" void port_netleaderboard_submit(const char *server)
 #endif
 }
 
-/* FNV-1a-64 — deterministic across builds/platforms, which is all a
- * client-consistent match_id needs (both sides hash the same payload). */
-static std::string fnv1a64_hex(const std::string &s)
-{
-    uint64_t h = 1469598103934665603ULL;
-    for (unsigned char c : s) {
-        h ^= c;
-        h *= 1099511628211ULL;
-    }
-    char out[17];
-    std::snprintf(out, sizeof(out), "%016llx", static_cast<unsigned long long>(h));
-    return out;
-}
+/* FNV-1a-64 lives in src/shared/fnv1a.h — deterministic across
+ * builds/platforms, which is all a client-consistent match_id needs. */
 
 extern "C" void port_netleaderboard_report_result(const char *server,
                                                   const char *code,
@@ -194,7 +184,7 @@ extern "C" void port_netleaderboard_report_result(const char *server,
     char salt[384];
     std::snprintf(salt, sizeof(salt), "%s|%u|%s|%s|%u", code, session,
                   lo.c_str(), hi.c_str(), duration_ticks);
-    const std::string match_id = fnv1a64_hex(salt);
+    const std::string match_id = ssb64::fnv1a64_hex(salt);
 
     char key[40];
     port_netstats_player_key(key, sizeof(key));
