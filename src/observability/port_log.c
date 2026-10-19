@@ -263,6 +263,15 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 
 	LOG_LOCK();
 	FILE *f = sLogFile;
+#ifdef __EMSCRIPTEN__
+	/* The log file lives in MEMFS, invisible to the browser console.
+	 * Tee everything to stderr -> Module.printErr so boot/hang
+	 * diagnostics are observable live. stderr writes are synchronous
+	 * imports — they still fire while wasm never yields to the event
+	 * loop, which is exactly when we need them. */
+	fwrite(out, 1, olen, stderr);
+	fflush(stderr);
+#endif
 	if (f != NULL) {
 #ifdef __SWITCH__
 		/* vsnprintf returns the untruncated length — clamp so a too-long

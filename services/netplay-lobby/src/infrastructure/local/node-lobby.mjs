@@ -8,6 +8,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import {
@@ -15,6 +16,9 @@ import {
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
 import { Leaderboard } from "../../domain/leaderboard.mjs";
+import {
+  REPLAY_ID_RE, mintReplayId, validateReplayBody, evictOldest,
+} from "../../domain/replay.mjs";
 
 const rooms = new Map();    // code -> LobbyRoom
 
@@ -27,6 +31,20 @@ const saveLb = () => {
   try { fs.writeFileSync(lbPath, JSON.stringify(lb.toJSON())); } catch { /* ro fs */ }
 };
 const allowIpJoin = makeJoinLimiter();  // cross-code scan throttle (AUD-25)
+
+/* Shared replays land next to the leaderboard store — runtime artifacts,
+ * not repo data. In-memory index mirrors the worker DO's replays-idx. */
+const replayDir = path.join(path.dirname(fileURLToPath(import.meta.url)),
+  "..", "..", "..", "replays");
+const replayIdx = [];
+try {
+  for (const f of fs.readdirSync(replayDir)) {
+    if (!f.endsWith(".json")) continue;
+    const rec = JSON.parse(fs.readFileSync(path.join(replayDir, f), "utf8"));
+    replayIdx.push({ id: rec.id, at: rec.at, by: rec.by || "" });
+  }
+  replayIdx.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+} catch { /* no replay dir yet — starts empty */ }
 
 /* Cumulative counters for /metrics — local mirror of what the deployed
  * worker reports through Analytics Engine (LOBBY_ANALYTICS binding). */
@@ -158,6 +176,98 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(result));
     });
+    return;
+  }
+  /* Community moderation report — same domain semantics as the worker. */
+  if (req.url === "/report" && req.method === "POST") {
+    let raw = "";
+    req.on("data", (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
+    req.on("end", () => {
+      let body = null;
+      try { body = JSON.parse(raw); } catch { /* bad json */ }
+      const result = lb.report(body);
+      if (result.kind !== "ok") {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: result.reason }));
+        return;
+      }
+      saveLb();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(result));
+    });
+    return;
+  }
+  /* Public service stats — same surface as the worker DO /stats. */
+  if (req.url === "/stats") {
+    let sockets = 0, players = 0, specs = 0;
+    for (const r of rooms.values()) {
+      for (const [, i] of r.sockets) {
+        if (i.kind === "up") continue;
+        sockets++;
+        if (i.slot >= 4) specs++; else players++;
+      }
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      rooms: rooms.size, sockets, players, spectators: specs,
+      admits: stats.admits, rejects: stats.rejects,
+      leaderboard_entries: lb.byName.size,
+      pending_results: lb.pending.size,
+      verified_matches: lb.settled.size,
+      crash_reports: stats.crashes,
+      shared_replays: replayIdx.length,
+    }));
+    return;
+  }
+  /* Replay sharing — POST {data: <base64 .ssr>, by?} mints an id; GET
+   * /replay/<id> serves it back. Stored as files under replays/ next to
+   * leaderboard.json; ring capped at 200. */
+  if (req.url === "/replay" && req.method === "POST") {
+    let raw = "";
+    req.on("data", (c) => { raw += c; if (raw.length > 600 * 1024) req.destroy(); });
+    req.on("end", () => {
+      let body = null;
+      try { body = JSON.parse(raw); } catch { /* bad json */ }
+      const rec0 = validateReplayBody(body);
+      if (!rec0) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "bad-request" }));
+        return;
+      }
+      const id = mintReplayId();
+      const rec = { id, at: new Date().toISOString(), by: rec0.by };
+      try {
+        fs.mkdirSync(replayDir, { recursive: true });
+        fs.writeFileSync(path.join(replayDir, `${id}.json`),
+          JSON.stringify({ ...rec, data: rec0.data }));
+      } catch { /* ro fs */ }
+      replayIdx.push(rec);
+      for (const old of evictOldest(replayIdx)) {
+        try { fs.unlinkSync(path.join(replayDir, `${old.id}.json`)); } catch { /* gone */ }
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, id }));
+    });
+    return;
+  }
+  if (req.url.startsWith("/replay/") && req.method === "GET") {
+    const id = req.url.slice("/replay/".length).split("?")[0];
+    if (!REPLAY_ID_RE.test(id)) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "bad-id" }));
+      return;
+    }
+    let rec = null;
+    try {
+      rec = JSON.parse(fs.readFileSync(path.join(replayDir, `${id}.json`), "utf8"));
+    } catch { /* missing */ }
+    if (!rec) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no-such-replay" }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(rec));
     return;
   }
   res.writeHead(404);

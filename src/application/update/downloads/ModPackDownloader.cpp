@@ -434,6 +434,13 @@ bool ValidateCuratedPackZip(zip_t* z, std::string& error) {
         const char* raw = zip_get_name(z, i, 0);
         if (raw == nullptr) continue;
         const std::string name(raw);
+        /* Defense in depth: the pinned digest already proves content, but
+         * the member audit should catch unsafe names even if a caller
+         * ever bypasses verification. */
+        if (HasTraversalOrAbsolute(name)) {
+            error = "archive contains an unsafe path: " + name;
+            return false;
+        }
         if (name.back() == '/') continue;
         const std::string base = BasenameOf(name);
         const std::string ext = LowerExt(base);

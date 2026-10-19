@@ -35,8 +35,7 @@
 
 namespace fs = std::filesystem;
 
-extern "C" int port_diag_safe_mode_active(void);
-extern "C" void port_diag_request_safe_mode(void);
+#include "crash_bundle.h"
 
 #if defined(_WIN32)
 #include <windows.h>

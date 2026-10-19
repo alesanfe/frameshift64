@@ -34,9 +34,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include "port_log.h"
+
 extern "C" {
 #include "particle_bank_bridge.h"
-extern void port_log(const char *fmt, ...);
 
 /* Stub symbols from src/platform/compatibility/segment_symbols.c. Their addresses are the
  * per-bank keys passed into efParticleGetLoadBankID. Types (u/i ptr_t) match

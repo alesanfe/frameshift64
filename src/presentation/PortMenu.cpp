@@ -19,6 +19,7 @@
 #include "profiles.h"
 #include "frame_interpolation.h"
 #include "netlobby.h"
+#include "netleaderboard.h"
 #ifdef PORT_HIRES_ENABLED
 #include "HiResPack.h"
 #endif
@@ -399,6 +400,33 @@ static void RenderReplayBrowser(WidgetInfo&) {
         fs::create_directories(ReplayDir(), ec);
         SDL_OpenURL(("file:///" + fs::absolute(ReplayDir()).string()).c_str());
     }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(netBusy || port_netleaderboard_share_state() == 1);
+    if (ImGui::Button(TR("Share"))) {
+        const std::string fullPath = ReplayDir() + "/" + s_replayFiles[s_replayIndex];
+        port_netleaderboard_share_replay(
+            CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER),
+            fullPath.c_str());
+    }
+    ImGui::EndDisabled();
+    const int shareState = port_netleaderboard_share_state();
+    if (shareState == 1) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", TR("Sharing..."));
+    } else if (shareState == -1) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s", TR("Share failed"));
+    } else if (shareState == 2) {
+        char link[256] = {};
+        port_netleaderboard_share_link(link, sizeof(link));
+        ImGui::SameLine();
+        if (ImGui::SmallButton(TR("Copy Link"))) {
+            SDL_SetClipboardText(link);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", link);
+        }
+    }
     ImGui::TextDisabled("%s", TR("Playback runs the recorded inputs; the match ends into the results screen."));
 }
 
@@ -578,7 +606,7 @@ static void DrawMenuBackgroundPreset(WidgetInfo&) {
         preset = 2;
     }
     static const char* const kPresets[] = { "Transparent", "Dim", "Opaque", "Custom" };
-    ImGui::TextUnformatted(TR("Menu background"));
+    ImGui::TextUnformatted(TR("Menu Background"));
     ImGui::SetNextItemWidth(-FLT_MIN);
     if (ImGui::Combo("##MenuBgPreset", &preset, kPresets, IM_ARRAYSIZE(kPresets))) {
         static const float kValues[] = { 0.40f, 0.75f, 1.0f, 0.85f };

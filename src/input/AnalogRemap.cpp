@@ -60,8 +60,7 @@ constexpr float kAnalogRemapRangeDefault    = 1.00f;
 // When the enable cvar is off, this is a no-op so libultraship's Process()
 // output flows through to the game unchanged.
 extern "C" void port_enhancement_analog_remap(int player_index, signed char* stick_x, signed char* stick_y) {
-    if (player_index < 0 || player_index >= PORT_ENHANCEMENT_MAX_PLAYERS) return;
-    if (!CVarGetInteger(kAnalogRemapEnableCVars[player_index], 0)) return;
+    if (!ssb64::enhancements::PerPlayerEnabled(kAnalogRemapEnableCVars, player_index)) return;
 
     auto ctx = Ship::Context::GetInstance();
     if (!ctx) return;
@@ -129,24 +128,15 @@ namespace ssb64 {
 namespace enhancements {
 
 const char* AnalogRemapCVarName(int playerIndex) {
-    if (playerIndex < 0 || playerIndex >= PORT_ENHANCEMENT_MAX_PLAYERS) {
-        return kAnalogRemapEnableCVars[0];
-    }
-    return kAnalogRemapEnableCVars[playerIndex];
+    return PerPlayerCVar(kAnalogRemapEnableCVars, playerIndex);
 }
 
 const char* AnalogRemapDeadzoneCVarName(int playerIndex) {
-    if (playerIndex < 0 || playerIndex >= PORT_ENHANCEMENT_MAX_PLAYERS) {
-        return kAnalogRemapDeadzoneCVars[0];
-    }
-    return kAnalogRemapDeadzoneCVars[playerIndex];
+    return PerPlayerCVar(kAnalogRemapDeadzoneCVars, playerIndex);
 }
 
 const char* AnalogRemapRangeCVarName(int playerIndex) {
-    if (playerIndex < 0 || playerIndex >= PORT_ENHANCEMENT_MAX_PLAYERS) {
-        return kAnalogRemapRangeCVars[0];
-    }
-    return kAnalogRemapRangeCVars[playerIndex];
+    return PerPlayerCVar(kAnalogRemapRangeCVars, playerIndex);
 }
 
 } // namespace enhancements

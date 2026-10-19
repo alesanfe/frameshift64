@@ -1,6 +1,7 @@
 /* See websocket_transport.h. */
 #include "websocket_transport.h"
 #include "port_log.h"
+#include "base64.h"
 
 #include <atomic>
 #include <cstring>
@@ -1160,23 +1161,6 @@ struct Reader {
     }
 };
 
-const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-std::string b64_encode(const unsigned char *data, size_t size)
-{
-    std::string out;
-    for (size_t i = 0; i < size; i += 3) {
-        unsigned int v = data[i] << 16;
-        if (i + 1 < size) v |= data[i + 1] << 8;
-        if (i + 2 < size) v |= data[i + 2];
-        out += b64_table[(v >> 18) & 63];
-        out += b64_table[(v >> 12) & 63];
-        out += (i + 1 < size) ? b64_table[(v >> 6) & 63] : '=';
-        out += (i + 2 < size) ? b64_table[v & 63] : '=';
-    }
-    return out;
-}
-
 /* ws://host[:port]/path -> connected + upgraded socket; `leftover` gets
  * any frame bytes that rode in past the \r\n\r\n. err set on failure. */
 ws_sock_t ws_dial(const std::string &url, std::string *err,
@@ -1244,7 +1228,7 @@ ws_sock_t ws_dial(const std::string &url, std::string *err,
         "Host: " + hostport + "\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
-        "Sec-WebSocket-Key: " + b64_encode(key_bytes, sizeof(key_bytes)) + "\r\n"
+        "Sec-WebSocket-Key: " + ssb64::Base64Encode(key_bytes, sizeof(key_bytes)) + "\r\n"
         "Sec-WebSocket-Version: 13\r\n\r\n";
     if (!send_all(s, request.data(), request.size())) {
         ws_close_sock(s);

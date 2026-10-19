@@ -267,4 +267,30 @@ extern "C" unsigned int port_udp_now_ms(void)
 		duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
 }
 
+/* No raw UDP in the browser — all traffic is relayed over WebSocket, so the
+ * STUN probe is meaningless here. report start-failure and let the UI say so. */
+extern "C" int port_udp_stun_probe_start(const char *const *specs, int count)
+{
+	(void)specs;
+	(void)count;
+	return 0;
+}
+
+extern "C" int port_udp_stun_probe_poll(void)
+{
+	return 0;
+}
+
+extern "C" int port_udp_stun_probe_result(int index, char *out, int capacity)
+{
+	(void)index;
+	(void)out;
+	(void)capacity;
+	return 0;
+}
+
+extern "C" void port_udp_stun_probe_close(void)
+{
+}
+
 #endif /* __EMSCRIPTEN__ */

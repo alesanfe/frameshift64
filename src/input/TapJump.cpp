@@ -29,10 +29,7 @@ namespace ssb64 {
 namespace enhancements {
 
 const char* TapJumpCVarName(int playerIndex) {
-    if (playerIndex < 0 || playerIndex >= PORT_ENHANCEMENT_MAX_PLAYERS) {
-        return kTapJumpCVars[0];
-    }
-    return kTapJumpCVars[playerIndex];
+    return PerPlayerCVar(kTapJumpCVars, playerIndex);
 }
 
 } // namespace enhancements

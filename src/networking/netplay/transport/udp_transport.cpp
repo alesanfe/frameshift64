@@ -391,7 +391,7 @@ int send_routed(const uint8_t *bytes, int size, const sockaddr_in *to, int relay
     }
     std::vector<uint8_t> corrupted;
     const uint8_t *payload = bytes;
-    if (sSimCorruptPct != 0 && (sSimRng() % 100u) < sSimCorruptPct) {
+    if (sSimCorruptPct != 0 && size > 0 && (sSimRng() % 100u) < sSimCorruptPct) {
         corrupted.assign(bytes, bytes + size);
         corrupted[sSimRng() % corrupted.size()] ^= static_cast<uint8_t>(1u + (sSimRng() % 0xFFu));
         payload = corrupted.data();
@@ -784,4 +784,183 @@ extern "C" unsigned int port_udp_now_ms(void)
 {
     using namespace std::chrono;
     return static_cast<unsigned int>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+
+/* ---- STUN probe (connection assistant) -----------------------------------
+ *
+ * RFC 5389 binding requests on an ephemeral socket of its own — the probe
+ * never touches sSocket, so it is safe to run while a session is live.
+ * Async contract (one poll per frame from the menu):
+ *   start(specs, n) → poll() until it returns 0 → result(i, …) / close().
+ * Sending the same txid to two different servers and comparing the mapped
+ * ports is the classic cheap symmetric-NAT test: equal ports mean the NAT
+ * keeps the mapping stable and hole punching stands a chance; differing
+ * ports mean the peer will likely fall back to the lobby relay. */
+
+namespace {
+
+PortSocket sStunSock = kInvalidSocket;
+uint8_t sStunTxid[12];
+sockaddr_in sStunTargets[PORT_UDP_STUN_MAX];
+char sStunMapped[PORT_UDP_STUN_MAX][48];   /* "ip:port" per server, "" while unanswered */
+int sStunCount = 0;
+unsigned int sStunStartMs = 0;
+unsigned int sStunNextResendMs = 0;
+constexpr unsigned int kStunResendMs = 400;
+constexpr unsigned int kStunTimeoutMs = 2000;
+
+void stun_send_all(void)
+{
+    uint8_t req[20] = { 0x00, 0x01, 0x00, 0x00, 0x21, 0x12, 0xA4, 0x42 };
+    std::memcpy(req + 8, sStunTxid, 12);
+    for (int i = 0; i < sStunCount; i++) {
+        if (sStunMapped[i][0] == '\0') {
+            sendto(sStunSock, reinterpret_cast<const char *>(req), sizeof(req), 0,
+                   reinterpret_cast<const sockaddr *>(&sStunTargets[i]), sizeof(sStunTargets[i]));
+        }
+    }
+}
+
+/* Parses a binding response's (XOR-)MAPPED-ADDRESS into "ip:port". */
+int stun_parse_mapped(const uint8_t *msg, int size, char *out, int cap)
+{
+    if (size < 20 || msg[0] != 0x01 || msg[1] != 0x01 ||
+        msg[4] != 0x21 || msg[5] != 0x12 || msg[6] != 0xA4 || msg[7] != 0x42 ||
+        std::memcmp(msg + 8, sStunTxid, 12) != 0) {
+        return 0;
+    }
+    const int length = (msg[2] << 8) | msg[3];
+    const int end = (20 + length < size) ? 20 + length : size;
+    for (int at = 20; at + 4 <= end;) {
+        const int type = (msg[at] << 8) | msg[at + 1];
+        const int alen = (msg[at + 2] << 8) | msg[at + 3];
+        const uint8_t *v = msg + at + 4;
+        if (at + 4 + alen > end) {
+            break;
+        }
+        if ((type == 0x0020 || type == 0x0001) && alen >= 8 && v[1] == 0x01) {
+            uint16_t port = static_cast<uint16_t>((v[2] << 8) | v[3]);
+            uint32_t addr = (static_cast<uint32_t>(v[4]) << 24) | (v[5] << 16) | (v[6] << 8) | v[7];
+            if (type == 0x0020) {
+                port ^= static_cast<uint16_t>(0x2112);
+                addr ^= 0x2112A442u;
+            }
+            std::snprintf(out, static_cast<size_t>(cap), "%u.%u.%u.%u:%u",
+                          addr >> 24, (addr >> 16) & 0xFF, (addr >> 8) & 0xFF, addr & 0xFF, port);
+            return 1;
+        }
+        at += 4 + ((alen + 3) & ~3);
+    }
+    return 0;
+}
+
+}   // namespace
+
+extern "C" int port_udp_stun_probe_start(const char *const *specs, int count)
+{
+    port_udp_stun_probe_close();
+    if (specs == nullptr || count <= 0 || !startup()) {
+        return 0;
+    }
+    for (int i = 0; i < count && i < PORT_UDP_STUN_MAX; i++) {
+        if (specs[i] == nullptr || !parse_address(specs[i], &sStunTargets[sStunCount])) {
+            continue;
+        }
+        sStunCount++;
+    }
+    if (sStunCount == 0) {
+        return 0;
+    }
+    sStunSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sStunSock == kInvalidSocket) {
+        return 0;
+    }
+#if defined(_WIN32)
+    u_long nonblocking = 1;
+    ioctlsocket(sStunSock, FIONBIO, &nonblocking);
+    BOOL report_reset = FALSE;
+    DWORD returned = 0;
+    WSAIoctl(sStunSock, SIO_UDP_CONNRESET, &report_reset, sizeof(report_reset), nullptr, 0, &returned, nullptr, nullptr);
+#else
+    int flags = fcntl(sStunSock, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(sStunSock, F_SETFL, flags | O_NONBLOCK);
+    }
+#endif
+    /* Txid needs uniqueness between consecutive probes, not secrecy. */
+    unsigned int seed = port_udp_now_ms();
+    for (int i = 0; i < 12; i++) {
+        seed = seed * 1103515245u + 12345u + static_cast<unsigned int>(i);
+        sStunTxid[i] = static_cast<uint8_t>(seed >> 16);
+    }
+    sStunStartMs = port_udp_now_ms();
+    sStunNextResendMs = sStunStartMs;
+    stun_send_all();
+    return 1;
+}
+
+/* Returns 1 while any server is still unanswered inside the timeout, 0 when
+ * the probe is finished (every answer collected or deadline hit). */
+extern "C" int port_udp_stun_probe_poll(void)
+{
+    if (sStunSock == kInvalidSocket) {
+        return 0;
+    }
+    const unsigned int now = port_udp_now_ms();
+    uint8_t buf[512];
+    for (;;) {
+        sockaddr_in from;
+#if defined(_WIN32)
+        int from_len = sizeof(from);
+#else
+        socklen_t from_len = sizeof(from);
+#endif
+        const int n = recvfrom(sStunSock, reinterpret_cast<char *>(buf), sizeof(buf), 0,
+                               reinterpret_cast<sockaddr *>(&from), &from_len);
+        if (n <= 0) {
+            break;
+        }
+        for (int i = 0; i < sStunCount; i++) {
+            if (sStunMapped[i][0] == '\0' && from.sin_addr.s_addr == sStunTargets[i].sin_addr.s_addr &&
+                from.sin_port == sStunTargets[i].sin_port) {
+                stun_parse_mapped(buf, n, sStunMapped[i], sizeof(sStunMapped[i]));
+            }
+        }
+    }
+    int pending = 0;
+    for (int i = 0; i < sStunCount; i++) {
+        pending += (sStunMapped[i][0] == '\0') ? 1 : 0;
+    }
+    if (pending == 0) {
+        return 0;
+    }
+    if (now - sStunStartMs >= kStunTimeoutMs) {
+        return 0;
+    }
+    if (now >= sStunNextResendMs) {
+        stun_send_all();
+        sStunNextResendMs = now + kStunResendMs;
+    }
+    return 1;
+}
+
+extern "C" int port_udp_stun_probe_result(int index, char *out, int capacity)
+{
+    if (out == nullptr || capacity <= 0 || index < 0 || index >= sStunCount || sStunMapped[index][0] == '\0') {
+        return 0;
+    }
+    std::snprintf(out, static_cast<size_t>(capacity), "%s", sStunMapped[index]);
+    return 1;
+}
+
+extern "C" void port_udp_stun_probe_close(void)
+{
+    if (sStunSock != kInvalidSocket) {
+        port_udp_close_socket(sStunSock);
+        sStunSock = kInvalidSocket;
+    }
+    sStunCount = 0;
+    for (int i = 0; i < PORT_UDP_STUN_MAX; i++) {
+        sStunMapped[i][0] = '\0';
+    }
 }

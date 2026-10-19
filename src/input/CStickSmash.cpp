@@ -17,8 +17,7 @@ constexpr const char* kCStickSmashCVars[PORT_ENHANCEMENT_MAX_PLAYERS] = {
 extern "C" void port_enhancement_c_stick_smash(int player_index, unsigned short* button_hold, unsigned short* button_tap, signed char* stick_x, signed char* stick_y, unsigned short tap_pre_remap) {
     using namespace ssb64::enhancements::internal;
 
-    if (player_index < 0 || player_index >= PORT_ENHANCEMENT_MAX_PLAYERS) return;
-    if (!CVarGetInteger(kCStickSmashCVars[player_index], 0)) return;
+    if (!ssb64::enhancements::PerPlayerEnabled(kCStickSmashCVars, player_index)) return;
 
     // Always strip C-bits from both hold/tap so the engine never sees the raw
     // C-button input on this player when the remap is on (otherwise the stock
@@ -66,10 +65,7 @@ namespace ssb64 {
 namespace enhancements {
 
 const char* CStickSmashCVarName(int playerIndex) {
-    if (playerIndex < 0 || playerIndex >= PORT_ENHANCEMENT_MAX_PLAYERS) {
-        return kCStickSmashCVars[0];
-    }
-    return kCStickSmashCVars[playerIndex];
+    return PerPlayerCVar(kCStickSmashCVars, playerIndex);
 }
 
 } // namespace enhancements

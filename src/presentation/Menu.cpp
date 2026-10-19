@@ -33,7 +33,7 @@
 std::vector<ImVec2> windowTypeSizes = { {} };
 std::vector<SearchWidget> extraSearchWidgets = {};
 
-extern "C" int port_diag_safe_mode_active(void);
+#include "crash_bundle.h"
 
 namespace Ship {
 namespace {
@@ -1091,7 +1091,7 @@ void Menu::DrawDisabledRecoveryAction(WidgetInfo& widget) {
     }
     if (actionLabel != nullptr && action != nullptr) {
         ImGui::SameLine();
-        if (ImGui::SmallButton(actionLabel)) {
+        if (ImGui::SmallButton(TR(actionLabel))) {
             action();
         }
     }
@@ -1107,7 +1107,7 @@ void Menu::DrawItemEpilogue(WidgetInfo& widget) {
         mFocusHelpName = widget.name;
         const char* tip = TR(widget.options->tooltip);
         if (widget.options->disabled && !Ship_IsCStringEmpty(widget.options->disabledTooltip)) {
-            tip = widget.options->disabledTooltip;
+            tip = TR(widget.options->disabledTooltip);
         }
         mFocusHelpText = tip != nullptr ? tip : "";
     }
@@ -1154,14 +1154,14 @@ void Menu::MenuDrawItem(WidgetInfo& widget, uint32_t width, UIWidgets::Colors th
         if (!widget.activeDisables.empty()) {
             widget.options->disabled = true;
             for (auto option : widget.activeDisables) {
-                disabledTempTooltip += std::string("\n- ") + disabledMap.at(option).reason;
+                disabledTempTooltip += std::string("\n- ") + TR(disabledMap.at(option).reason);
             }
             widget.options->disabledTooltip = disabledTempTooltip.c_str();
         }
     }
     if (widget.raceDisable && raceDisableActive) {
         widget.options->disabled = true;
-        disabledTempTooltip += std::string("\n- Race Lockout Active");
+        disabledTempTooltip += std::string("\n- ") + TR("Race Lockout Active");
         widget.options->disabledTooltip = disabledTempTooltip.c_str();
     }
 

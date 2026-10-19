@@ -642,4 +642,21 @@ extern "C" int port_netlobby_ping_ms(void)
     return worst;
 }
 
+/* STUN endpoint list for the connection assistant — mirrors stun_server():
+ * the CVar override (when set) is the whole list, otherwise kStunServers. */
+extern "C" int port_netlobby_stun_server_count(void)
+{
+    const char *ov = CVarGetString("gNetplay.StunServer", "");
+    return (ov != nullptr && *ov != '\0') ? 1 : kStunServerCount;
+}
+
+extern "C" const char *port_netlobby_stun_server_at(int index)
+{
+    const char *ov = CVarGetString("gNetplay.StunServer", "");
+    if (ov != nullptr && *ov != '\0') {
+        return index == 0 ? ov : "";
+    }
+    return (index >= 0 && index < kStunServerCount) ? kStunServers[index] : "";
+}
+
 extern "C" int port_netlobby_after_match(void) { return sLobby.after_match ? 1 : 0; }

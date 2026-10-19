@@ -23,7 +23,12 @@ Usage:
     python tools/analysis/netplay_metrics.py --dir out/logs/netplay-test \
         --out out/logs/netplay-test/metrics.json
 
-Exit code: 0 always (metrics, not a gate) unless --fail-on-desync is passed.
+Exit code: 0 always (metrics, not a gate) unless --fail-on-desync or
+--gate is passed. --gate compares this run's metrics against a committed
+baseline JSON ({label: {metric: value}}): a clean baseline going red is a
+hard fail; numeric counters fail when they exceed baseline * (1+tolerance).
+Labels missing from the baseline produce a note, not a failure — the
+nightly workflow's baseline-refresh step is what pins them.
 """
 
 from __future__ import annotations
@@ -200,6 +205,13 @@ def main() -> int:
                          "and exit (dashboard feed)")
     ap.add_argument("--days", type=int, default=30,
                     help="--summarize window in days (default 30)")
+    ap.add_argument("--gate", type=Path, default=None, metavar="JSON",
+                    help="baseline file to gate this run against "
+                         "({label: {metric: value}}); labels absent from "
+                         "the baseline are noted, not failed")
+    ap.add_argument("--tolerance", type=float, default=0.25,
+                    help="numeric metric headroom over baseline before "
+                         "--gate fails (default 0.25 = +25%%)")
     a = ap.parse_args()
     if a.summarize is not None:
         return summarize(a.summarize, a.days)
@@ -231,6 +243,10 @@ def main() -> int:
         "late_inputs": max((p["late_inputs"] for p in peers.values()), default=0),
         "dropped_datagrams": max((p["dropped"] for p in peers.values()), default=0),
         "stalls": max((p["stalls"] for p in peers.values()), default=0),
+        # Frame-cost surface (only nonzero when SSB64_PERF_LOG=1 ran).
+        "frame_p50_us": max((p["frame_p50_us"] for p in peers.values()), default=0),
+        "frame_p95_us": max((p["frame_p95_us"] for p in peers.values()), default=0),
+        "frame_p99_us": max((p["frame_p99_us"] for p in peers.values()), default=0),
     }
 
     out = a.out or (a.dir / "metrics.json")
@@ -247,6 +263,9 @@ def main() -> int:
             "rollback_frames_per_tick": metrics["rollback_frames_per_tick"],
             "input_delay": metrics["input_delay"],
             "late_inputs": metrics["late_inputs"],
+            "stalls": metrics["stalls"],
+            "dropped_datagrams": metrics["dropped_datagrams"],
+            "frame_p95_us": metrics["frame_p95_us"],
         }
         with a.history.open("a", encoding="utf-8") as hf:
             hf.write(json.dumps(record) + "\n")
@@ -271,7 +290,58 @@ def main() -> int:
           f"resim/tick={metrics['rollback_frames_per_tick']:.3f}")
 
     bad = trace_result["diverged"] or any(p["desync"] for p in peers.values())
-    return 1 if (a.fail_on_desync and bad) else 0
+    if a.fail_on_desync and bad:
+        return 1
+
+    if a.gate is not None:
+        return gate(metrics, a.gate, a.label or a.dir.name, a.tolerance)
+    return 0
+
+
+# Numeric counters gated with headroom — determinism booleans gate hard.
+GATE_NUMERIC = ("worst_max_rollback", "rollback_frames_per_tick",
+                "input_delay", "late_inputs", "dropped_datagrams",
+                "stalls", "frame_p50_us", "frame_p95_us", "frame_p99_us")
+
+
+def gate(metrics: dict, baseline_path: Path, label: str,
+         tolerance: float) -> int:
+    """Compare this run's metrics to baseline[label]; 0 pass / 1 regress."""
+    try:
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        baseline = {}
+    if label not in baseline:
+        print(f"gate: no baseline entry for '{label}' — metrics recorded, "
+              f"not gated (nightly refresh pins it)")
+        return 0
+    base = baseline[label]
+    fails = []
+    # Determinism regressions are hard failures regardless of tolerance.
+    if base.get("desync_rate", 0.0) == 0.0 and metrics["desync_rate"] > 0:
+        fails.append(f"desync_rate regressed: {metrics['desync_rate']} "
+                     f"(baseline was clean)")
+    if not base.get("diverged", False) and metrics["traces"]["diverged"]:
+        fails.append(f"traces diverged (baseline was in sync, first diff "
+                     f"line {metrics['traces']['first_divergence_line']})")
+    for key in GATE_NUMERIC:
+        ref = float(base.get(key, 0) or 0)
+        cur = float(metrics.get(key, 0) or 0)
+        # A zero baseline can't gate "how much worse" — skip; the first
+        # measured value becomes the baseline at next refresh.
+        if ref <= 0:
+            continue
+        limit = ref * (1.0 + tolerance)
+        if cur > limit:
+            fails.append(f"{key}: {cur:g} > baseline {ref:g} "
+                         f"(+{tolerance:.0%} headroom = {limit:g})")
+    if fails:
+        print(f"gate FAIL [{label}]:")
+        for f in fails:
+            print(f"  - {f}")
+        return 1
+    print(f"gate PASS [{label}] (tolerance +{tolerance:.0%})")
+    return 0
 
 
 if __name__ == "__main__":

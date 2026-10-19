@@ -455,7 +455,11 @@ def main():
     if failures:
         print("menu_structure_test: FAIL")
         for f in failures:
-            print(f"  - {f}")
+            # cp1252 consoles can't encode literals like '→' — degrade.
+            try:
+                print(f"  - {f}")
+            except UnicodeEncodeError:
+                print("  - " + f.encode("ascii", "backslashreplace").decode("ascii"))
         return 1
 
     print(f"menu_structure_test: PASS "

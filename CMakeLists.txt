@@ -920,7 +920,8 @@ set(SSB64_MODULE_SCOPE_presentation
     src/rendering/textures/hires)
 set(SSB64_MODULE_SCOPE_decomp
     src/game/engine/decomp
-    src/game/engine/relocation)          # RelocFile/RelocPointerTable
+    src/game/engine/relocation          # RelocFile/RelocPointerTable
+    src/observability)                  # port_log.h — shared log sink
 set(SSB64_MODULE_SCOPE_hooks
     src/game/engine/hooks)             # list/*.h resolves via this dir
 set(SSB64_MODULE_SCOPE_update

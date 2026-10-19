@@ -262,6 +262,62 @@ async function main() {
     match_id: "1122334455667788", won: 7, duration: 10 });
   ok("out-of-range result rejected", badWon.status === 400);
 
+  // --- moderation: /report needs a claimed reporter key; three distinct
+  // reporters inside the window flag the target banned, and a banned key
+  // can no longer submit or report results ---
+  const postReport = (body) => fetch(`${lbBase}/report`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const KEY_E = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+  const KEY_F = "ffffffffffffffffff00000000000000ff";
+  await post({ name: "CarolT", key: KEY_E, rating: 1200, wins: 0, losses: 0 });
+  const rep0 = await postReport({ name: "AliceT", key: "1".repeat(32) });
+  ok("report from unknown reporter rejected", rep0.status === 400);
+  const repSelf = await postReport({ name: "AliceT", key: KEY_C });
+  ok("self-report rejected", repSelf.status === 400);
+  const rep1 = await (await postReport({ name: "AliceT", key: KEY_A })).json();
+  ok("first report counted, not banned", rep1.kind === "ok" && rep1.banned === false);
+  const rep2 = await (await postReport({ name: "AliceT", key: KEY_D })).json();
+  ok("second report counted", rep2.kind === "ok" && rep2.reports === 2);
+  const rep3 = await (await postReport({ name: "AliceT", key: KEY_E })).json();
+  ok("third distinct report bans", rep3.banned === true);
+  const repDup = await (await postReport({ name: "AliceT", key: KEY_E })).json();
+  ok("repeat reporter doesn't double-count", repDup.reports === 3);
+  const subBan = await post({ name: "AliceT", key: KEY_C, rating: 1600, wins: 5, losses: 0 });
+  ok("banned key rejected on submit", subBan.status === 400);
+  const resBan = await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
+    match_id: "9988776655443322", won: 1, duration: 10 });
+  ok("banned key rejected on result", resBan.status === 400);
+  const repNoName = await postReport({ name: "NobodyHere", key: KEY_B });
+  ok("report of unknown name rejected", repNoName.status === 400);
+  const lbB = await (await fetch(`${lbBase}/leaderboard`)).json();
+  ok("banned flag visible on board",
+     lbB.entries.find((e) => e.name === "AliceT")?.banned === true);
+
+  // --- replay sharing: POST mints an id, GET serves the bytes back ---
+  const repB64 = Buffer.from("fake-ssr-replay-bytes").toString("base64");
+  const up = await (await fetch(`${lbBase}/replay`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: repB64, by: "SecTest" }),
+  })).json();
+  ok("replay upload mints id", up.ok === true && /^[0-9a-f]{10}$/.test(up.id));
+  const got = await (await fetch(`${lbBase}/replay/${up.id}`)).json();
+  ok("replay fetch returns bytes", got.data === repB64 && got.by === "SecTest");
+  const miss = await fetch(`${lbBase}/replay/deadbeef00`);
+  ok("unknown replay id 404s", miss.status === 404);
+  const badRp = await fetch(`${lbBase}/replay`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: "not!base64!" }),
+  });
+  ok("non-base64 replay rejected", badRp.status === 400);
+
+  // --- public stats endpoint ---
+  const st = await (await fetch(`${lbBase}/stats`)).json();
+  ok("stats exposes counts",
+     typeof st.leaderboard_entries === "number" &&
+     typeof st.verified_matches === "number");
+
   host.ws.close(); c1.ws.close(); c2.ws.close(); up1.ws.close();
   host2.ws.close(); spec.ws.close(); cSpec.ws.close();
   await sleep(150);

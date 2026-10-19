@@ -65,6 +65,11 @@ int port_netlobby_is_spectator(void);
 int port_netlobby_is_relay(void);
 int port_netlobby_ping_ms(void);
 
+/* STUN endpoints the session would use (CVar override or the built-in list),
+ * exposed for the connection assistant's NAT probe. */
+int port_netlobby_stun_server_count(void);
+const char *port_netlobby_stun_server_at(int index);
+
 /* Multi-player roster (up to 4 participants; this instance is slot
  * port_netlobby_my_slot(), remote participants are the peers). */
 int port_netlobby_player_count(void);

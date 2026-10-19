@@ -74,6 +74,10 @@ jobs:
     name: Rollback suite (Windows)
     runs-on: windows-2022
     timeout-minutes: 90
+    # contents:write only serves the schedule-only baseline refresh step —
+    # every other step in this job is read-only.
+    permissions:
+      contents: write
     env:
       BASEROM_B64: ${{ secrets.BASEROM_US_Z64 }}
     steps:
@@ -168,6 +172,52 @@ jobs:
           python tools/analysis/netplay_metrics.py --dir out/logs/netplay-test `
             --out out/logs/netplay-test/metrics.json `
             --history out/logs/metrics-history.jsonl --label sync-test
+        shell: pwsh
+
+      # ── Regression gate: compare every profile against the committed
+      # baseline (tests/support/metrics-baseline.json). A label with no
+      # baseline entry is noted, not failed — the schedule-only refresh
+      # below is what pins it after a green matrix.
+      - name: Metrics regression gate
+        if: env.BASEROM_B64 != ''
+        run: |
+          $fail = 0
+          foreach ($p in @('p1','p2','p3','p4','p5','p6','p7','p8')) {
+            python tools/analysis/netplay_metrics.py --dir "out/logs/netplay-matrix/$p" `
+              --gate tests/support/metrics-baseline.json --label $p
+            if ($LASTEXITCODE -ne 0) { $fail = 1 }
+          }
+          if ($fail) { Write-Error "metrics regressed vs baseline"; exit 1 }
+        shell: pwsh
+
+      # Nightly soak: one long session (30 min) under the mid-degraded
+      # profile — catches leaks/counter drift/late-session stalls that the
+      # 60 s profiles never reach. Runner time caps the scale honestly.
+      - name: Soak test (schedule only — 30 min degraded session)
+        if: env.BASEROM_B64 != '' && github.event_name == 'schedule'
+        run: |
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 1800 `
+            -LatencyMs 100 -JitterMs 25 -LossPct 3 -DupPct 2 -ReorderPct 5 `
+            -OutDir out/logs/netplay-soak
+          if ($LASTEXITCODE -ne 0) { Write-Error "soak run desynced or crashed"; exit 1 }
+          python tools/analysis/netplay_metrics.py --dir out/logs/netplay-soak `
+            --history out/logs/metrics-history.jsonl --label soak
+        shell: pwsh
+
+      # Pin the metrics baseline after a green nightly matrix — same
+      # auto-pin pattern as coverage-baseline.txt.
+      - name: Refresh metrics baseline (schedule only)
+        if: env.BASEROM_B64 != '' && github.event_name == 'schedule'
+        run: |
+          python tools/analysis/update_metrics_baseline.py `
+            out/logs/netplay-matrix tests/support/metrics-baseline.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/support/metrics-baseline.json
+          if (git diff --cached --quiet) { Write-Output "baseline unchanged"; exit 0 }
+          git commit -m "ci: refresh netplay metrics baseline [skip ci]"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+          git push "https://x-access-token:$token@github.com/${{ github.repository }}" HEAD:${{ github.ref_name }}
         shell: pwsh
 
       # ── T3: golden gameplay — fixed input tapes vs committed state traces ──

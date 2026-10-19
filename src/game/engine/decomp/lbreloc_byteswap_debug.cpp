@@ -12,6 +12,7 @@
  */
 
 #include "lbreloc_debug.h"
+#include "port_log.h"
 
 #include <algorithm>
 #include <cstdarg>
@@ -24,7 +25,6 @@
 #include <unordered_set>
 #include <vector>
 
-extern "C" void port_log(const char *fmt, ...);
 
 #include "RelocFileTable.h"  // gRelocFileTable (generated) for audit path names
 

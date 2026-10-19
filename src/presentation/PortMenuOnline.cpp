@@ -114,7 +114,52 @@ struct ConnTest {
     std::chrono::steady_clock::time_point started{};
     std::string result;
     bool ok = false;
+    /* Phase 2 (STUN probe): kicked off as soon as the lobby handshake
+     * finishes so UDP egress + NAT behaviour are tested too. */
+    bool stun_started = false;
+    std::string stun_result;
 };
+
+static void StartStunProbe(ConnTest& test) {
+    const char* servers[PORT_UDP_STUN_MAX] = {};
+    const int n = port_netlobby_stun_server_count();
+    for (int i = 0; i < n && i < PORT_UDP_STUN_MAX; i++) {
+        servers[i] = port_netlobby_stun_server_at(i);
+    }
+    test.stun_started = true;
+    if (n <= 0 || !port_udp_stun_probe_start(servers, n)) {
+        test.stun_result = TR("UDP probe unavailable on this platform");
+        return;
+    }
+}
+
+static void PollStunProbe(ConnTest& test) {
+    if (!test.stun_started || port_udp_stun_probe_poll() != 0) {
+        return;
+    }
+    std::string endpoints[PORT_UDP_STUN_MAX];
+    const int n = port_netlobby_stun_server_count();
+    int answered = 0;
+    for (int i = 0; i < n && i < PORT_UDP_STUN_MAX && answered < PORT_UDP_STUN_MAX; i++) {
+        char buf[48];
+        if (port_udp_stun_probe_result(i, buf, sizeof(buf))) {
+            endpoints[answered++] = buf;
+        }
+    }
+    port_udp_stun_probe_close();
+    if (answered == 0) {
+        test.stun_result = TR("UDP blocked — STUN got no answer, matches will relay through the server");
+    } else if (answered == 1) {
+        test.stun_result = fmt::format(fmt::runtime(TR("Public UDP endpoint %s — direct peer-to-peer should work")),
+                                       endpoints[0].c_str());
+    } else if (endpoints[0] == endpoints[1]) {
+        test.stun_result = fmt::format(fmt::runtime(TR("Public UDP endpoint %s — NAT keeps the mapping, direct peer-to-peer should work")),
+                                       endpoints[0].c_str());
+    } else {
+        test.stun_result = fmt::format(fmt::runtime(TR("Symmetric NAT (%s vs %s) — hole punching may fail, expect relay fallback")),
+                                       endpoints[0].c_str(), endpoints[1].c_str());
+    }
+}
 
 static void StartConnTest(ConnTest& test, const char* server) {
     std::string url = (server != nullptr && server[0] != '\0') ? server : PORT_NETLOBBY_DEFAULT_SERVER;
@@ -127,6 +172,9 @@ static void StartConnTest(ConnTest& test, const char* server) {
     test.started = std::chrono::steady_clock::now();
     test.result.clear();
     test.ok = false;
+    test.stun_started = false;
+    test.stun_result.clear();
+    port_udp_stun_probe_close();   /* in case a previous probe was still pending */
 }
 
 static void PollConnTest(ConnTest& test) {
@@ -153,6 +201,10 @@ static void PollConnTest(ConnTest& test) {
         }
         port_ws_close();
         test.state = ConnTestState::Done;
+        StartStunProbe(test);   /* phase 2: UDP egress + NAT behaviour */
+    }
+    if (test.stun_started && test.stun_result.empty()) {
+        PollStunProbe(test);
     }
 }
 
@@ -491,10 +543,14 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                 if (total == 0) {
                     ImGui::TextDisabled("%s", TR("No entries yet."));
                 }
+                static char sReportName[128] = {};
+                static bool sReportPopup = false;
                 for (int i = 0; i < total; i++) {
-                    char name[32] = {};
-                    int r = 0, w = 0, l = 0, suspicious = 0;
-                    if (!port_netleaderboard_at(i, name, sizeof(name), &r, &w, &l, &suspicious)) {
+                    /* Server allows 24 Unicode chars — up to 96 bytes UTF-8. */
+                    char name[128] = {};
+                    int r = 0, w = 0, l = 0, suspicious = 0, banned = 0;
+                    if (!port_netleaderboard_at(i, name, sizeof(name), &r, &w, &l,
+                                                &suspicious, &banned)) {
                         continue;
                     }
                     const bool mine = (myRank == i + 1);
@@ -504,7 +560,13 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                     } else {
                         ImGui::Text("#%d %s", i + 1, name);
                     }
-                    if (suspicious) {
+                    if (banned) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(SemanticColors::Error, "[banned]");
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("%s", TR("Flagged by community reports."));
+                        }
+                    } else if (suspicious) {
                         ImGui::SameLine();
                         ImGui::TextColored(SemanticColors::Warning, "[?]");
                         if (ImGui::IsItemHovered()) {
@@ -514,6 +576,35 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                     }
                     ImGui::SameLine();
                     ImGui::TextDisabled("%d  ·  %d-%d", r, w, l);
+                    if (!mine && !banned) {
+                        ImGui::SameLine();
+                        ImGui::PushID(i);
+                        if (ImGui::SmallButton(TR("Report"))) {
+                            std::snprintf(sReportName, sizeof(sReportName), "%s", name);
+                            sReportPopup = true;
+                        }
+                        ImGui::PopID();
+                    }
+                }
+                if (sReportPopup) {
+                    ImGui::OpenPopup(TR("Report player?"));
+                    sReportPopup = false;
+                }
+                if (ImGui::BeginPopupModal(TR("Report player?"), nullptr,
+                                           ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::TextWrapped("%s",
+                        TR("Report %s for cheating or abuse? The flag sticks when "
+                           "several distinct players report within 24 hours."),
+                        sReportName);
+                    if (ImGui::Button(TR("Report"))) {
+                        port_netleaderboard_report(serverBuf, sReportName);
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button(TR("Cancel"))) {
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
                 }
             } else {
                 ImGui::TextDisabled("%s", TR("Press Refresh to load the board."));
@@ -546,6 +637,11 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                 ImGui::TextDisabled("%s", TR("Testing..."));
             } else if (connTest.state == ConnTestState::Done && !connTest.result.empty()) {
                 ImGui::TextColored(connTest.ok ? SemanticColors::Success : SemanticColors::Error, TR("%s"), connTest.result.c_str());
+            }
+            if (connTest.stun_started && connTest.stun_result.empty()) {
+                ImGui::TextDisabled("%s", TR("Probing UDP / NAT..."));
+            } else if (!connTest.stun_result.empty()) {
+                ImGui::TextWrapped("%s", connTest.stun_result.c_str());
             }
         }
     }

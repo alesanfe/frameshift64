@@ -21,7 +21,7 @@
 
 #include <ship/utils/binarytools/endianness.h>
 
-extern "C" void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern "C" void portStageAuditNoteRuntimeVtx(unsigned int num_vtx);
 extern "C" void portStageAuditNoteRuntimeTex(unsigned int num_bytes);
 extern "C" void portStageAuditNoteVtxDispatch(int in_reloc_file);

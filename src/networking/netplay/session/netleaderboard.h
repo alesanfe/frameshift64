@@ -36,12 +36,24 @@ void port_netleaderboard_report_result(const char *server, const char *code,
                                        int won, unsigned int duration_ticks);
 
 /* Cached rows (sorted, rating desc). Row accessors return 1 when the
- * index exists; name is NUL-truncated to `capacity`. */
+ * index exists; name is NUL-truncated to `capacity`. `banned` is the
+ * server community-moderation flag (LB_BAN_REPORTS distinct claim keys
+ * reported the name inside 24h). */
 int port_netleaderboard_count(void);
 int port_netleaderboard_at(int index, char *out_name, int capacity,
-                           int *rating, int *wins, int *losses, int *suspicious);
+                           int *rating, int *wins, int *losses,
+                           int *suspicious, int *banned);
+/* Report a board name for moderation — POST <server>/report with our
+ * claim key (the server requires the reporter's key to back an entry). */
+void port_netleaderboard_report(const char *server, const char *name);
 /* My current rank (1-based) if my claimed name is on the board, else 0. */
 int port_netleaderboard_my_rank(void);
+
+/* Replay sharing — uploads the .ssr at `path` to POST <server>/replay.
+ * share_state: 0 idle / 1 in flight / 2 ready (link in share_link) / -1 failed. */
+int port_netleaderboard_share_state(void);
+int port_netleaderboard_share_link(char *out, int capacity);
+void port_netleaderboard_share_replay(const char *server, const char *path);
 
 #ifdef __cplusplus
 }

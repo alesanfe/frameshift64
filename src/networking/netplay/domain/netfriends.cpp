@@ -5,6 +5,7 @@
 //   {"friends":[{"name":"...","added":1729...,"blocked":false}, ...]}
 
 #include "netfriends.h"
+#include "port_log.h"
 #include "atomic_write.h"
 
 #include <algorithm>
@@ -24,7 +25,6 @@
 
 #include <nlohmann/json.hpp>
 
-extern "C" void port_log(const char *fmt, ...);
 
 namespace ssb64::netfriends {
 

@@ -175,3 +175,6 @@ compile_commands.json
 roms/*
 !roms/README.md
 !roms/.gitkeep
+
+# Stray file created when a Windows-style >nul redirect runs under POSIX shells
+nul

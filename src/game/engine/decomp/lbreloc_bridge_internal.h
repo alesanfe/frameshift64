@@ -23,6 +23,7 @@
 // We define them here to avoid including the decomp's include/ directory
 // (which shadows system headers and breaks C++ standard library includes).
 #include "port_types.h"
+#include "port_log.h"
 
 #define LBRELOC_CACHE_ALIGN(x) (((x) + 0xF) & ~0xF)
 
@@ -109,7 +110,6 @@ extern "C" {
 extern void syDebugPrintf(const char *fmt, ...);
 extern void scManagerRunPrintGObjStatus(void);
 extern void portResetPackedDisplayListCache(void);
-extern void port_log(const char *fmt, ...);
 extern void gmColScriptsLinkRelocTargets(void);
 extern void scSubsysMotionLinkRelocTargets(void);
 extern void syNetRollbackNoteFileLoad(void *dst, size_t size, int is_figatree);

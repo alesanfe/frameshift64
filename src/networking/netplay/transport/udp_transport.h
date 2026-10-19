@@ -74,6 +74,17 @@ int port_udp_local_endpoint(char *out, int capacity);
 void port_udp_sleep_us(unsigned int usecs);
 unsigned int port_udp_now_ms(void);
 
+/* STUN probe for the connection assistant (RFC 5389 binding requests on a
+ * private ephemeral socket — never disturbs the live session endpoint).
+ * start() sends to each "host:port" spec; poll() every frame until it
+ * returns 0; result() gives each server's mapped "ip:port" (0 = unanswered).
+ * Two answers with different ports indicate a symmetric NAT. */
+#define PORT_UDP_STUN_MAX 4
+int port_udp_stun_probe_start(const char *const *specs, int count);
+int port_udp_stun_probe_poll(void);
+int port_udp_stun_probe_result(int index, char *out, int capacity);
+void port_udp_stun_probe_close(void);
+
 #ifdef __cplusplus
 }
 #endif

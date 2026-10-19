@@ -102,6 +102,7 @@ foreach(store netstats netfriends)
     target_include_directories(${store}_test PRIVATE
         ${CMAKE_SOURCE_DIR}/tests/support/shim
         ${CMAKE_SOURCE_DIR}/src/networking/netplay/domain
+        ${CMAKE_SOURCE_DIR}/src/observability
         ${CMAKE_SOURCE_DIR}/src/shared)
     add_test(NAME ${store}_corrupt_test COMMAND ${store}_test corrupt)
     set_tests_properties(${store}_corrupt_test PROPERTIES

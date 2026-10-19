@@ -4,6 +4,7 @@
 #ifdef __cplusplus
 #include <string> // needed for the built-in updater
 #include <vector> // needed for the shader-pack candidate list
+#include <libultraship/bridge/consolevariablebridge.h>
 extern "C" {
 #endif
 
@@ -80,6 +81,22 @@ int port_classic_coop_friendly_fire(void);
 
 namespace ssb64 {
 namespace enhancements {
+
+/* Bounds-checked per-player CVar table lookup — every per-player
+ * feature names its CVars from a k*CVars[PORT_ENHANCEMENT_MAX_PLAYERS]
+ * table; index 0 is the fallback for an out-of-range index. */
+inline const char* PerPlayerCVar(const char* const* table, int playerIndex) {
+    return table[(playerIndex >= 0 && playerIndex < PORT_ENHANCEMENT_MAX_PLAYERS)
+                     ? playerIndex : 0];
+}
+
+/* bounds + enable check in one — the in-engine input handlers all open
+ * with "out of range or the per-player CVar is off → no-op". */
+inline int PerPlayerEnabled(const char* const* table, int playerIndex) {
+    return playerIndex >= 0 && playerIndex < PORT_ENHANCEMENT_MAX_PLAYERS &&
+           CVarGetInteger(table[playerIndex], 0) != 0;
+}
+
 const char* TapJumpCVarName(int playerIndex);
 const char* HitboxViewCVarName();
 const char* StageHazardsDisabledCVarName();

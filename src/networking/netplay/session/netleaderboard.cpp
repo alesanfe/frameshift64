@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -19,6 +20,7 @@
 
 #ifdef SSB64_HAVE_CURL
 #include "http_curl.h"
+#include "base64.h"
 #include <nlohmann/json.hpp>
 #endif
 
@@ -30,6 +32,7 @@ struct LbRow {
     int wins = 0;
     int losses = 0;
     int suspicious = 0;      /* server smurf-heuristic flag */
+    int banned = 0;          /* server community-moderation flag */
 };
 
 /* Intentionally leaked: submit/fetch run on detached fire-and-forget
@@ -95,6 +98,8 @@ void parse_lb_entries(const nlohmann::json &entries, std::vector<LbRow> &rows)
         r.losses = num("losses");
         const auto susp = e.find("suspicious");
         r.suspicious = (susp != e.end() && susp->is_boolean() && susp->get<bool>()) ? 1 : 0;
+        const auto ban = e.find("banned");
+        r.banned = (ban != e.end() && ban->is_boolean() && ban->get<bool>()) ? 1 : 0;
         rows.push_back(std::move(r));
     }
 }
@@ -261,7 +266,7 @@ extern "C" int port_netleaderboard_count(void)
 
 extern "C" int port_netleaderboard_at(int index, char *out_name, int capacity,
                                       int *rating, int *wins, int *losses,
-                                      int *suspicious)
+                                      int *suspicious, int *banned)
 {
     std::lock_guard<std::mutex> lk(sLbLock);
     if (index < 0 || index >= static_cast<int>(sRows.size())) {
@@ -275,7 +280,106 @@ extern "C" int port_netleaderboard_at(int index, char *out_name, int capacity,
     if (wins) *wins = r.wins;
     if (losses) *losses = r.losses;
     if (suspicious) *suspicious = r.suspicious;
+    if (banned) *banned = r.banned;
     return 1;
+}
+
+/* Community moderation report — POSTs {name, key} where key is OUR claim
+ * key; the server requires it to back an existing entry, so we can only
+ * report once we've claimed a name. `name` arrives verbatim from the
+ * board rows — it is already server-sanitized, and re-running the
+ * client's ASCII-only filter would mangle Unicode names (server accepts
+ * \p{L}\p{N}) into a different target. Fire-and-forget: the board
+ * refreshes on the next fetch anyway. */
+extern "C" void port_netleaderboard_report(const char *server, const char *name)
+{
+#ifdef SSB64_HAVE_CURL
+    const std::string base = ssb64::HttpBaseFromWsServer(server);
+    const std::string target = (name != nullptr) ? name : "";
+    if (base.empty() || target.empty()) {
+        return;
+    }
+    char key[40];
+    port_netstats_player_key(key, sizeof(key));
+    const std::string body = nlohmann::json{
+        {"name", target}, {"key", key}}.dump();
+    std::thread([base, body] {
+        std::string resp, error;
+        ssb64::CurlPostToString(base + "/report", body, "application/json",
+                                &resp, &error, 15);
+    }).detach();
+#else
+    (void)server; (void)name;
+#endif
+}
+
+/* Replay sharing — uploads <path> (a .ssr recorded by netreplay's
+ * auto-recorder) to POST /replay and remembers the share link for the UI.
+ * share_state: 0 idle, 1 in flight, 2 ready (link in share_link), -1 failed. */
+std::atomic<int>& sShareState = *new std::atomic<int>{0};
+std::string& sShareLink = *new std::string;
+
+extern "C" int port_netleaderboard_share_state(void) { return sShareState.load(); }
+extern "C" int port_netleaderboard_share_link(char *out, int capacity)
+{
+    if (out == nullptr || capacity <= 0) return 0;
+    std::lock_guard<std::mutex> lk(sLbLock);
+    std::snprintf(out, static_cast<size_t>(capacity), "%s", sShareLink.c_str());
+    return static_cast<int>(sShareLink.size());
+}
+
+#ifdef SSB64_HAVE_CURL
+static std::string share_b64(const std::string &raw)
+{
+    return ssb64::Base64Encode(raw.data(), raw.size());
+}
+
+static int share_replay_upload(const std::string &base, const std::string &file,
+                               const std::string &by)
+{
+    std::ifstream in(file, std::ios::binary);
+    std::string raw((std::istreambuf_iterator<char>(in)),
+                    std::istreambuf_iterator<char>());
+    if (!in || raw.empty() || raw.size() > 256 * 1024) {
+        return -1;
+    }
+    const std::string body = nlohmann::json{
+        {"data", share_b64(raw)}, {"by", by}}.dump();
+    std::string resp, error;
+    if (!ssb64::CurlPostToString(base + "/replay", body,
+                                "application/json", &resp, &error, 20)) {
+        return -1;
+    }
+    const nlohmann::json doc = nlohmann::json::parse(resp, nullptr, false);
+    if (!doc.is_object() || !doc["id"].is_string()) {
+        return -1;
+    }
+    std::lock_guard<std::mutex> lk(sLbLock);
+    sShareLink = base + "/replay/" + doc["id"].get<std::string>();
+    return 2;
+}
+#endif
+
+extern "C" void port_netleaderboard_share_replay(const char *server,
+                                                 const char *path)
+{
+#ifdef SSB64_HAVE_CURL
+    const std::string base = ssb64::HttpBaseFromWsServer(server);
+    if (base.empty() || path == nullptr) {
+        return;
+    }
+    if (sShareState.exchange(1) == 1) {
+        sShareState = 0;            /* already in flight — keep idle */
+        return;
+    }
+    const std::string by = sanitize_lb_name(CVarGetString("gProfiles.Name", "Player"));
+    const std::string file(path);
+    std::thread([base, file, by] {
+        sShareState = share_replay_upload(base, file, by);
+    }).detach();
+#else
+    (void)server; (void)path;
+#endif
 }
 
 extern "C" int port_netleaderboard_my_rank(void)

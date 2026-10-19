@@ -38,6 +38,9 @@
 #include <chrono>
 #include <thread>
 #include <unordered_map>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include <unordered_set>
 #include <algorithm>
 #include <filesystem>
@@ -1022,6 +1025,19 @@ void PortPushFrame(void)
 		}
 #endif
 	}
+
+#ifdef __EMSCRIPTEN__
+	/* Yield to the browser event loop once per frame. SDL's swap and
+	 * port_pace_one_vi's sleep_for only fire on their own paths — a
+	 * tick that submits no display list and presents no cached
+	 * framebuffer would otherwise leave the while(WindowIsRunning)
+	 * loop spinning in pure wasm with no asyncify yield, freezing the
+	 * tab (evaluate/screenshot/CDP all starve). emscripten_sleep(0)
+	 * unwinds via Asyncify to the trampoline, posts a zero-delay
+	 * setTimeout, and rewinds — the event loop turns each frame
+	 * regardless of which rendering path executed. */
+	emscripten_sleep(0);
+#endif
 }
 
 void PortGameShutdown(void)

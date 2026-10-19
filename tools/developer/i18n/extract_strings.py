@@ -34,6 +34,8 @@ PATTERNS = [
     re.compile(r"\bAddWidget\([^,]+,\s*" + STR),
     re.compile(r"\.Tooltip\(\s*" + STR),
     re.compile(r"\.PlaceholderText\(\s*" + STR),
+    re.compile(r"\.DisabledAction\(\s*" + STR),
+    re.compile(r"\.disabledTooltip\s*=\s*" + STR),
     re.compile(r"\bAddMenuEntry\(\s*" + STR),
     # AddSidebarEntry(section, displayedName, cols) — the visible label is 2nd
     re.compile(r"\bAddSidebarEntry\(\s*" + STR + r"\s*,\s*" + STR),
@@ -45,7 +47,7 @@ PATTERNS = [
 ]
 COMBO_PAIR = re.compile(r"\{\s*[-\w.:+*() ]+,\s*" + STR + r"\s*\}")
 # which capture group holds the literal per pattern (AddSidebarEntry → 2)
-GROUP_IDX = [1, 1, 1, 1, 1, 2, 1, 1, 1, 1]
+GROUP_IDX = [1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1]
 
 ID_ONLY = re.compile(r"^#")
 NO_LETTERS = re.compile(r"[A-Za-z]")

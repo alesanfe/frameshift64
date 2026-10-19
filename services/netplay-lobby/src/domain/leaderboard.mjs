@@ -12,6 +12,8 @@
 export const LB_MAX_ENTRIES = 100;
 export const LB_NAME_MAX = 24;
 export const LB_KEY_MIN = 16;
+export const LB_BAN_REPORTS = 3;          // distinct reporter keys to ban
+export const LB_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /* Display names come back verbatim to every client — keep them to a
  * boring alphabet so JSON serialization and ImGui rendering can't be
@@ -27,11 +29,23 @@ export function sanitizeName(name) {
 }
 
 export class Leaderboard {
-  constructor(entries = [], pending = {}, settled = []) {
+  constructor(entries = [], pending = {}, settled = [], reports = {}) {
     this.byName = new Map();   // displayName -> {rating,wins,losses,key,updated}
     for (const e of entries) this.byName.set(e.name, e);
     this.pending = new Map(Object.entries(pending));   // match_id -> report
     this.settled = new Set(settled);                   // verified match_ids
+    // name -> Map(reporterKey -> ts) — moderation signal for /report
+    this.reports = new Map();
+    for (const [n, rs] of Object.entries(reports)) {
+      this.reports.set(n, new Map(Object.entries(rs)));
+    }
+  }
+
+  #bannedKey(key) {
+    for (const e of this.byName.values()) {
+      if (e.key === key && e.banned) return true;
+    }
+    return false;
   }
 
   /* submit({name,key,rating,wins,losses}) -> {kind:"ok",rank} |
@@ -56,6 +70,9 @@ export class Leaderboard {
     const prev = this.byName.get(name);
     if (prev && prev.key !== key) {
       return { kind: "reject", reason: "name-taken" };
+    }
+    if ((prev && prev.banned) || this.#bannedKey(key)) {
+      return { kind: "reject", reason: "banned" };
     }
     /* Preserve firstSeen/disputes across re-submits: resetting firstSeen
      * would flag veterans as "new" (false-positive suspicious), and
@@ -115,6 +132,9 @@ export class Leaderboard {
     }
     if (this.settled.has(matchId)) {
       return { kind: "reject", reason: "already-settled" };
+    }
+    if (this.#bannedKey(key)) {
+      return { kind: "reject", reason: "banned" };
     }
     const now = Date.now();
     this.#expirePending(now);
@@ -191,6 +211,50 @@ export class Leaderboard {
     }
   }
 
+  /* Player moderation report: {name, key, reporter}. `name` is the
+   * reported entry, `key` the REPORTER's own claim key — the key must
+   * already back some entry on the board, so a fresh throwaway can't
+   * mint reports. LB_BAN_REPORTS distinct keys within LB_REPORT_WINDOW_MS
+   * flag the target `banned`: banned keys are refused at submit/result
+   * time and render flagged on the board. This is account-less community
+   * moderation — a determined attacker with many claimed keys can still
+   * force a ban; documented as the trust ceiling, same as /result. */
+  report(body) {
+    if (body == null || typeof body !== "object") {
+      return { kind: "reject", reason: "bad-request" };
+    }
+    const name = sanitizeName(body.name);
+    const key = typeof body.key === "string" ? body.key : "";
+    if (name === "") return { kind: "reject", reason: "bad-name" };
+    if (key.length < LB_KEY_MIN || !/^[0-9a-f]+$/i.test(key)) {
+      return { kind: "reject", reason: "bad-key" };
+    }
+    const target = this.byName.get(name);
+    if (!target) return { kind: "reject", reason: "no-such-name" };
+    /* Reporter must own a claimed entry — reports aren't free. */
+    let reporterKnown = false;
+    for (const e of this.byName.values()) {
+      if (e.key === key) { reporterKnown = true; break; }
+    }
+    if (!reporterKnown) return { kind: "reject", reason: "unknown-reporter" };
+    if (target.key === key) {
+      return { kind: "reject", reason: "self-report" };
+    }
+
+    const now = Date.now();
+    let rs = this.reports.get(name);
+    if (!rs) { rs = new Map(); this.reports.set(name, rs); }
+    for (const [k, ts] of rs) {
+      if (now - ts > LB_REPORT_WINDOW_MS) rs.delete(k);
+    }
+    rs.set(key, now);
+    if (rs.size >= LB_BAN_REPORTS && !target.banned) {
+      target.banned = true;
+      target.bannedAt = new Date(now).toISOString();
+    }
+    return { kind: "ok", reports: rs.size, banned: !!target.banned };
+  }
+
   list() {
     const now = Date.now();
     const weekMs = 7 * 24 * 60 * 60 * 1000;
@@ -201,14 +265,15 @@ export class Leaderboard {
      *   - or >= 2 contradictory result reports (disputes) */
     return [...this.byName.values()]
       .sort((a, b) => b.rating - a.rating || b.wins - a.wins)
-      .map(({ name, rating, wins, losses, updated, disputes, firstSeen }) => {
+      .map(({ name, rating, wins, losses, updated, disputes, firstSeen,
+              banned }) => {
         const games = wins + losses;
         const ageMs = firstSeen ? now - Date.parse(firstSeen) : Infinity;
         const suspicious =
           (ageMs < weekMs && games >= 10 && wins / games > 0.80) ||
           (disputes || 0) >= 2;
         return { name, rating, wins, losses, updated,
-                 disputes: disputes || 0, suspicious };
+                 disputes: disputes || 0, suspicious, banned: !!banned };
       });
   }
 
@@ -220,6 +285,8 @@ export class Leaderboard {
       entries: [...this.byName.values()],
       pending: Object.fromEntries(this.pending),
       settled: [...this.settled],
+      reports: Object.fromEntries(
+        [...this.reports].map(([n, rs]) => [n, Object.fromEntries(rs)])),
     };
   }
   static fromJSON(data) {
@@ -227,6 +294,7 @@ export class Leaderboard {
     return new Leaderboard(
       Array.isArray(o.entries) ? o.entries : [],
       (o.pending && typeof o.pending === "object") ? o.pending : {},
-      Array.isArray(o.settled) ? o.settled : []);
+      Array.isArray(o.settled) ? o.settled : [],
+      (o.reports && typeof o.reports === "object") ? o.reports : {});
   }
 }

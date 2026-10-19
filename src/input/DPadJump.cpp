@@ -17,8 +17,7 @@ constexpr const char* kDPadJumpCVars[PORT_ENHANCEMENT_MAX_PLAYERS] = {
 extern "C" void port_enhancement_dpad_jump(int player_index, unsigned short* button_hold, unsigned short* button_tap, unsigned short tap_pre_remap) {
     using namespace ssb64::enhancements::internal;
 
-    if (player_index < 0 || player_index >= PORT_ENHANCEMENT_MAX_PLAYERS) return;
-    if (!CVarGetInteger(kDPadJumpCVars[player_index], 0)) return;
+    if (!ssb64::enhancements::PerPlayerEnabled(kDPadJumpCVars, player_index)) return;
 
     // If any D-Pad direction is pressed, inject a C-Up (Jump) into the engine.
     if (*button_hold & (U_JPAD | D_JPAD | L_JPAD | R_JPAD)) {
@@ -33,10 +32,7 @@ namespace ssb64 {
 namespace enhancements {
 
 const char* DPadJumpCVarName(int playerIndex) {
-    if (playerIndex < 0 || playerIndex >= PORT_ENHANCEMENT_MAX_PLAYERS) {
-        return kDPadJumpCVars[0];
-    }
-    return kDPadJumpCVars[playerIndex];
+    return PerPlayerCVar(kDPadJumpCVars, playerIndex);
 }
 
 } // namespace enhancements

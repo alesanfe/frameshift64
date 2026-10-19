@@ -11,6 +11,9 @@ import {
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
 import { Leaderboard } from "../../domain/leaderboard.mjs";
+import {
+  REPLAY_ID_RE, mintReplayId, validateReplayBody, evictOldest,
+} from "../../domain/replay.mjs";
 
 // Per-isolate IP join accounting (approximate — isolates aren't shared,
 // and that's fine: this bounds scanning cost, it isn't a security
@@ -27,8 +30,9 @@ export default {
     // Self-reported rating board lives on a dedicated DO (HTTP only — no
     // ws). Same stub mechanism as rooms, fixed name.
     if (url.pathname === "/leaderboard" || url.pathname === "/submit" ||
-        url.pathname === "/result" || url.pathname === "/crash" ||
-        url.pathname === "/crashes") {
+        url.pathname === "/result" || url.pathname === "/report" ||
+        url.pathname === "/crash" || url.pathname === "/crashes" ||
+        url.pathname === "/stats" || url.pathname.startsWith("/replay")) {
       const stub = env.ROOMS.get(env.ROOMS.idFromName("leaderboard-global"));
       return stub.fetch(request);
     }
@@ -144,9 +148,12 @@ export class NetplayRoom extends DurableObject {
       try { body = await request.json(); } catch { /* bad json */ }
       if (body && body.kind === "crash" &&
           typeof body.info === "string" && body.info.length <= 8192 &&
-          typeof body.log_tail === "string" && body.log_tail.length <= 8192) {
+          typeof body.log_tail === "string" && body.log_tail.length <= 8192 &&
+          (body.lus_tail === undefined ||
+           (typeof body.lus_tail === "string" && body.lus_tail.length <= 8192))) {
         const ring = (await this.ctx.storage.get("crashes")) || [];
-        ring.push({ at: Date.now(), info: body.info, log_tail: body.log_tail });
+        ring.push({ at: Date.now(), info: body.info, log_tail: body.log_tail,
+                    lus_tail: body.lus_tail || "" });
         while (ring.length > 50) ring.shift();
         await this.ctx.storage.put("crashes", ring);
         try {
@@ -163,13 +170,79 @@ export class NetplayRoom extends DurableObject {
       const ring = (await this.ctx.storage.get("crashes")) || [];
       return Response.json({ crashes: ring });
     }
+    /* Community moderation: {name, key} — `key` is the reporter's own
+     * claim key. BAN_REPORTS distinct keys in 24h flag the name banned;
+     * banned keys stop mutating the board. */
+    if (url.pathname === "/report" && request.method === "POST") {
+      let body = null;
+      try { body = await request.json(); } catch { /* bad json */ }
+      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
+      const result = lb.report(body);
+      if (result.kind !== "ok") {
+        return Response.json({ error: result.reason }, { status: 400 });
+      }
+      await this.ctx.storage.put("lb", lb.toJSON());
+      try {
+        this.env.LOBBY_ANALYTICS?.writeDataPoint({
+          blobs: ["report", result.banned ? "banned" : "counted"],
+          doubles: [result.reports, 0], indexes: [""],
+        });
+      } catch { /* telemetry never blocks */ }
+      return Response.json(result);
+    }
+    /* Public service stats — stable unauthenticated surface for the
+     * dashboard and any external API consumer. */
+    if (url.pathname === "/stats") {
+      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
+      const crashes = (await this.ctx.storage.get("crashes")) || [];
+      const replays = (await this.ctx.storage.get("replays-idx")) || [];
+      return Response.json({
+        leaderboard_entries: lb.byName.size,
+        pending_results: lb.pending.size,
+        verified_matches: lb.settled.size,
+        crash_reports: crashes.length,
+        shared_replays: replays.length,
+      });
+    }
+    /* Replay sharing — POST {data: <base64 .ssr>} mints a short id and
+     * stores it; GET /replay/<id> serves it back. Replays are a few KB;
+     * cap the index at 200 and evict oldest first. */
+    if (url.pathname === "/replay" && request.method === "POST") {
+      let body = null;
+      try { body = await request.json(); } catch { /* bad json */ }
+      const rec0 = validateReplayBody(body);
+      if (!rec0) {
+        return Response.json({ error: "bad-request" }, { status: 400 });
+      }
+      const idx = (await this.ctx.storage.get("replays-idx")) || [];
+      const id = mintReplayId();
+      const rec = { id, at: Date.now(), by: rec0.by };
+      await this.ctx.storage.put(`rp:${id}`, { ...rec, data: rec0.data });
+      idx.push(rec);
+      for (const old of evictOldest(idx)) {
+        await this.ctx.storage.delete(`rp:${old.id}`);
+      }
+      await this.ctx.storage.put("replays-idx", idx);
+      return Response.json({ ok: true, id });
+    }
+    if (url.pathname.startsWith("/replay/") && request.method === "GET") {
+      const id = url.pathname.slice("/replay/".length);
+      if (!REPLAY_ID_RE.test(id)) {
+        return Response.json({ error: "bad-id" }, { status: 400 });
+      }
+      const rec = await this.ctx.storage.get(`rp:${id}`);
+      if (!rec) return Response.json({ error: "no-such-replay" }, { status: 404 });
+      return Response.json(rec);
+    }
     return new Response("not found", { status: 404 });
   }
 
   fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/leaderboard" || url.pathname === "/submit" ||
-        url.pathname === "/result") {
+        url.pathname === "/result" || url.pathname === "/report" ||
+        url.pathname === "/crash" || url.pathname === "/crashes" ||
+        url.pathname === "/stats" || url.pathname.startsWith("/replay")) {
       return this.fetchLeaderboard(request, url);
     }
     const code = (url.searchParams.get("room") || "").toUpperCase();

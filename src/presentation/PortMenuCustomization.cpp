@@ -263,7 +263,7 @@ void RenderPostProcessShaderPicker(WidgetInfo& /*widget*/) {
 void RenderPostProcessDiagnostics(WidgetInfo& /*widget*/) {
     const Fast::PostProcessRuntimeDiagnostics diag = Fast::GetPostProcessRuntimeDiagnostics();
 
-    ImGui::TextDisabled("%s", TR("Shader runtime diagnostics"));
+    ImGui::TextDisabled("%s", TR("Shader Runtime Diagnostics"));
     if (diag.active) {
         ImGui::Text(TR("Active:  %s"), diag.name.c_str());
         ImGui::Text(TR("Flavor:  %s"), diag.flavor.c_str());

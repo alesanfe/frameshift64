@@ -3,6 +3,7 @@
  * same way saves do. The file is ours alone, never shared with the engine. */
 
 #include "netstats.h"
+#include "port_log.h"
 #include "atomic_write.h"
 
 #include <algorithm>
@@ -24,7 +25,6 @@
 
 #include <nlohmann/json.hpp>
 
-extern "C" void port_log(const char *fmt, ...);
 
 namespace {
 
@@ -552,7 +552,7 @@ extern "C" int port_netstats_rank_tier(void)
     if (sStats.history.size() < kProvisionalMatches) {
         return 0;                                    /* Unranked */
     }
-    const int r = sStats.rating;
+    const int r = static_cast<int>(sStats.rating);
     if (r >= 2200) return 7;                         /* Grandmaster */
     if (r >= 2000) return 6;                         /* Master */
     if (r >= 1800) return 5;                         /* Diamond */
