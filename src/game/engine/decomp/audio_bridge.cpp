@@ -768,7 +768,7 @@ extern "C" void portAudioLoadAssets(void)
         size_t neededBytes = 4 + (size_t)totalStructBytes;
         if (count <= 0 || neededBytes > blob_size) {
             spdlog::error("audio_bridge: fgm_unk parse rejected — count={} blob_size={} needed={}",
-                          (int)count, (size_t)blob_size, (size_t)neededBytes);
+                          (int)count, blob_size, neededBytes);
         } else {
             u8 *flat = (u8*)alHeapAlloc(&sSYAudioHeap, 1, totalStructBytes);
             for (s32 i = 0; i < count; i++) {

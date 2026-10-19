@@ -193,7 +193,7 @@ static void RenderDiagnostics(WidgetInfo&) {
             if (fs::exists(cfg, cec)) {
                 fs::copy_file(cfg, dir / "BattleShip.cfg.json", fs::copy_options::overwrite_existing, cec);
             }
-            ToastSuccess(fmt::format(fmt::runtime(TR("Bundle written: {}")), dir.string()).c_str());
+            ToastSuccess(fmt::format(fmt::runtime(TR("Bundle written: {}")), dir.string()));
             SDL_OpenURL(std::string("file:///" + fs::absolute(dir, ec).string()).c_str());
         } else {
             ssb64::ToastInfo(TR("Could not write the diagnostics bundle"));

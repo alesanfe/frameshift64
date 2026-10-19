@@ -49,7 +49,6 @@
 #include <cstring>
 #include <filesystem>
 
-namespace fs = std::filesystem;
 
 /* Navigation globals owned by Menu.cpp — a "Go to" row writes them and the
  * menu's draw path jumps to the owning sidebar, scrolls the target into

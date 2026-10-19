@@ -47,7 +47,7 @@ float LifetimeFor(ToastLevel level) {
 
 struct ToastStyle {
     const char* icon = "";
-    ImVec4 color = {};
+    ImVec4 color;
 };
 
 ToastStyle StyleFor(ToastLevel level) {

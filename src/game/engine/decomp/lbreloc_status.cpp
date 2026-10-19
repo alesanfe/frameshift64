@@ -95,7 +95,6 @@ extern "C" void port_taskman_evict_arena_caches(const void *base, size_t size)
 	if ((base == nullptr) || (size == 0)) return;
 	extern void portPackedDisplayListCacheDeleteRange(const void *base, size_t size);
 	extern void portTextureCacheDeleteRange(const void *base, size_t size);
-	extern void portEvictStructFixupsInRange(const void *base, size_t size);
 	portPackedDisplayListCacheDeleteRange(base, size);
 	portTextureCacheDeleteRange(base, size);
 	portEvictStructFixupsInRange(base, size);

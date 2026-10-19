@@ -68,7 +68,6 @@ namespace ssb64 {
 namespace enhancements {
 
 namespace {
-namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
 // Catalog

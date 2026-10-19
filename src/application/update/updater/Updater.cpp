@@ -75,15 +75,15 @@ static std::atomic<bool> s_isCheckingForUpdates{false};
 static std::atomic<bool> s_updateCheckFailed{false};
 static std::atomic<bool> s_quitForUpdate{false};
 
-static std::string s_latestVersion = "";
-static std::string s_releaseNotes = "";
-static std::string s_downloadUrl = "";
+static std::string s_latestVersion;
+static std::string s_releaseNotes;
+static std::string s_downloadUrl;
 static long long s_assetSize = 0;
-static std::string s_assetDigest = "";
-static std::string s_sumsUrl = "";  /* SHA256SUMS.txt release asset URL */
-static std::string s_sigUrl = "";   /* SHA256SUMS.txt.minisig release asset URL */
-static std::string s_updateStatus = "";
-static std::string s_downloadStatus = "";
+static std::string s_assetDigest;
+static std::string s_sumsUrl;  /* SHA256SUMS.txt release asset URL */
+static std::string s_sigUrl;   /* SHA256SUMS.txt.minisig release asset URL */
+static std::string s_updateStatus;
+static std::string s_downloadStatus;
 static std::mutex s_stringMutex;
 
 namespace {

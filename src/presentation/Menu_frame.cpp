@@ -115,7 +115,7 @@ void Menu::ApplyPopoutTransition(ElementFrame& f, bool canPopout, ImGuiWindowFla
         if (f.popout) {
             windowHeight = poppedSize.y;
             windowWidth = poppedSize.x;
-            ImGui::SetNextWindowSize({ static_cast<float>(windowWidth), static_cast<float>(windowHeight) },
+            ImGui::SetNextWindowSize({ windowWidth, windowHeight },
                                      ImGuiCond_Always);
             ImGui::SetNextWindowPos(poppedPos, ImGuiCond_Always);
         } else if (popped) {
@@ -165,7 +165,7 @@ bool Menu::BeginElement(ElementFrame& f) {
     ApplyPopoutTransition(f, allowPopout, windowFlags);
     auto windowCond = ImGuiCond_Always;
     if (!f.popout) {
-        ImGui::SetNextWindowSize({ static_cast<float>(windowWidth), static_cast<float>(windowHeight) }, windowCond);
+        ImGui::SetNextWindowSize({ windowWidth, windowHeight }, windowCond);
         ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), windowCond, { 0.5f, 0.5f });
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     }
@@ -482,7 +482,7 @@ for (auto& sidebarLabel : menuEntries.at(f.headerIndex).sidebarOrder) {
         ImGui::SameLine();
     }
     firstEntry = false;
-    std::string nextIndex = "";
+    std::string nextIndex;
     UIWidgets::PushStyleButton(menuThemeIndex);
     if (f.sectionIndex != sidebarLabel) {
         ImGui::PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 });
@@ -530,7 +530,7 @@ for (auto& sidebarLabel : menuEntries.at(f.headerIndex).sidebarOrder) {
     if (SidebarHiddenInSimple(f.sidebar->at(sidebarLabel))) {
         continue;
     }
-    std::string nextIndex = "";
+    std::string nextIndex;
     UIWidgets::PushStyleButton(menuThemeIndex);
     if (f.sectionIndex != sidebarLabel) {
         ImGui::PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 });
@@ -614,7 +614,7 @@ void Menu::DrawElementSections(ElementFrame& f) {
         ImGui::PushFont(f.fontSmall);
     }
 
-    
+
     if (f.compactLayout) {
         f.pos = ImVec2{ f.menuBlockPos.x + f.style->ItemSpacing.x * 2,
                       topY + sidebarStripH + f.style->ItemSpacing.y * 3 };

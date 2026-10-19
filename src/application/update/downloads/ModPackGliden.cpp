@@ -18,7 +18,6 @@
 namespace ssb64 {
 namespace enhancements {
 namespace mpd {
-namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
 // Pack-content validation + grammar detection

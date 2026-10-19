@@ -90,8 +90,8 @@ int __cdecl ucrtAllocHook(int allocType, void* userData, size_t size,
 			ShadowCrtHeader* h = ((ShadowCrtHeader*)userData) - 1;
 			probeLog("    zipwin free user=%p hdr=%p use=%d size=%llu req=%ld "
 			         "next=%p prev=%p\n",
-			         userData, (const void*)h, (int)h->block_use,
-			         (unsigned long long)h->data_size, (long)h->request_number,
+			         userData, (const void*)h, h->block_use,
+			         (unsigned long long)h->data_size, h->request_number,
 			         (const void*)h->next, (const void*)h->prev);
 		}
 		if (userData != nullptr) {

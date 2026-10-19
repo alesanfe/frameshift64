@@ -329,7 +329,7 @@ void ApplySectionUndo(SectionUndo& undo) {
             default:
                 break;
         }
-        ShipInit::Init(e.cvar.c_str());
+        ShipInit::Init(e.cvar);
     }
     undo.entries.clear();
 }
@@ -418,9 +418,9 @@ const char* disabledTooltip;
 bool disabledValue = false;
 
 bool navigateToWidget = false;
-std::string navigateMainEntry = "";
-std::string navigateSidebar = "";
-std::string navigateWidgetName = "";
+std::string navigateMainEntry;
+std::string navigateSidebar;
+std::string navigateWidgetName;
 bool highlightWidget = false;
 int sHighlightTtl = 0; /* frames left to find the navigation target */
 
@@ -809,14 +809,14 @@ void Menu::DrawWindowButtonWidget(WidgetInfo& widget, UIWidgets::Colors themeInd
     if (widget.windowName == nullptr || widget.windowName[0] == '\0') {
         std::string msg =
             fmt::format(fmt::runtime(TR("Error drawing window contents for {}: windowName not defined")), widget.name);
-        SPDLOG_ERROR(msg.c_str());
+        SPDLOG_ERROR(msg);
         return;
     }
     auto window = Ship::Context::GetInstance()->GetWindow()->GetGui()->GetGuiWindow(widget.windowName);
     if (!window) {
         std::string msg =
             fmt::format(fmt::runtime(TR("Error drawing window contents: windowName {} does not exist")), widget.windowName);
-        SPDLOG_ERROR(msg.c_str());
+        SPDLOG_ERROR(msg);
         return;
     }
     auto options = std::static_pointer_cast<UIWidgets::WindowButtonOptions>(widget.options);

@@ -41,7 +41,6 @@
 #include <cstring>
 #include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace ssb64 {
 

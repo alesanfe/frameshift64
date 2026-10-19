@@ -291,7 +291,6 @@ extern "C" int portRelocFixupTextureFromChain(void *file_base, size_t file_size,
 		auto it = sChainSlotAddrs.find(w0_addr);
 		if (it != sChainSlotAddrs.end())
 		{
-			extern void *portRelocTryResolvePointer(uint32_t token);
 			uint32_t w0_word = *(const uint32_t *)w0_addr;
 			if (w0_word != 0 && portRelocTryResolvePointer(w0_word) != nullptr)
 			{

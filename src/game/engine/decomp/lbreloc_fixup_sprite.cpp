@@ -297,7 +297,7 @@ extern "C" void portFixupSpriteBitmapData(void *sprite_v, void *bitmaps_v)
 			tex_dump_known_dims(sprite_file_id, off,
 			                    (int)bmfmt, (int)bmsiz, bpp,
 			                    reinterpret_cast<const uint8_t *>(buf),
-			                    (size_t)log_tex_bytes,
+			                    log_tex_bytes,
 			                    (uint32_t)width_img,
 			                    (uint32_t)actualHeight);
 		}

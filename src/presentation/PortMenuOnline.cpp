@@ -112,7 +112,7 @@ static NetStatusView NetStatusViewFor(int state) {
 enum class ConnTestState { Idle, Running, Done };
 struct ConnTest {
     ConnTestState state = ConnTestState::Idle;
-    std::chrono::steady_clock::time_point started{};
+    std::chrono::steady_clock::time_point started;
     std::string result;
     bool ok = false;
     /* Phase 2 (STUN probe): kicked off as soon as the lobby handshake

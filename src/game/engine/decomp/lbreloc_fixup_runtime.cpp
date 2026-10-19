@@ -169,7 +169,6 @@ extern "C" void portRelocFixupTextureAtRuntime(const void *addr, unsigned int nu
 	 * the GPU merely samples a few nonsense over-read texels the original
 	 * hardware also displayed as garbage-in-TMEM. */
 	{
-		extern void *portRelocTryResolvePointer(uint32_t token);
 		uintptr_t scan_end = target + num_bytes;
 		for (uintptr_t w = target; w < scan_end; w += 4)
 		{

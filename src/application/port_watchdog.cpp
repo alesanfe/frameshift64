@@ -46,7 +46,6 @@ extern "C" {
 unsigned char port_diag_get_scene_curr(void);
 unsigned char port_diag_get_scene_prev(void);
 const char *port_diag_get_scene_name(unsigned char id);
-int port_log_get_fd(void);
 }
 
 /* GFX stale-DL diag dump (libultraship public API — fast/interpreter.h).

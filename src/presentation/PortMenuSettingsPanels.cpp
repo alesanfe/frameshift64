@@ -50,7 +50,6 @@
 #include <cstring>
 #include <filesystem>
 
-namespace fs = std::filesystem;
 
 /* Navigation globals owned by Menu.cpp — a "Go to" row writes them and the
  * menu's draw path jumps to the owning sidebar, scrolls the target into
@@ -254,7 +253,7 @@ AddWidget(path, "Save current as profile", WIDGET_BUTTON)
         return;
     }
     if (port_profile_save(name) == 0) {
-        ToastSuccess(fmt::format(fmt::runtime(TR("Profile '{}' saved")), name).c_str());
+        ToastSuccess(fmt::format(fmt::runtime(TR("Profile '{}' saved")), name));
     } else {
         ToastError(TR("Could not save profile - use only letters, numbers, spaces, - and _"));
     }
@@ -297,7 +296,7 @@ AddWidget(path, "Load selected profile", WIDGET_BUTTON)
 .Callback([](WidgetInfo&) {
     const std::string name = PortProfileSelectedName();
     if (port_profile_load(name.c_str()) == 0) {
-        ToastSuccess(fmt::format(fmt::runtime(TR("Profile '{}' loaded - controllers remapped")), name).c_str());
+        ToastSuccess(fmt::format(fmt::runtime(TR("Profile '{}' loaded - controllers remapped")), name));
     } else {
         ToastError(TR("Failed to load profile"));
     }
@@ -315,7 +314,7 @@ AddWidget(path, "Delete selected profile", WIDGET_BUTTON)
 .Callback([](WidgetInfo&) {
     const std::string name = PortProfileSelectedName();
     if (port_profile_delete(name.c_str()) == 0) {
-        ToastInfo(fmt::format(fmt::runtime(TR("Profile '{}' deleted")), name).c_str());
+        ToastInfo(fmt::format(fmt::runtime(TR("Profile '{}' deleted")), name));
     } else {
         ToastError(TR("Failed to delete profile"));
     }
