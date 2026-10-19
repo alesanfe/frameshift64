@@ -11,3 +11,9 @@ scrape_configs:
         labels:
           service: netplay-lobby
           env: local
+      # In-compose lobby service (docker compose ... up lobby): scraped
+      # over the compose network instead of through the host gateway.
+      - targets: ["lobby:8799"]
+        labels:
+          service: netplay-lobby
+          env: compose
