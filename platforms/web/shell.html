@@ -9,7 +9,11 @@
                font: 14px/1.4 system-ui, sans-serif; height: 100%; }
   #stage { display: flex; flex-direction: column; align-items: center;
            justify-content: center; min-height: 100%; gap: 12px; }
-  canvas.emscripten { border: 1px solid #26303c; background: #000;
+  /* No border/padding on the canvas: SDL2's Emscripten driver probes the
+   * canvas at 1x1 and reads back its CSS box to detect external sizing —
+   * a 1px border inflates that to 3px and the game surface ends up 3x3.
+   * outline renders the same border without changing the layout box. */
+  canvas.emscripten { outline: 1px solid #26303c; background: #000;
                       max-width: 100vw; max-height: 80vh; }
   #status { white-space: pre-wrap; color: #8fa3b8; }
   #picker { display: none; }
@@ -131,7 +135,17 @@ async function stageFsAndStart(Module) {
 
   setStatus('Starting…');
   started = true;
-  Module.callMain();
+  try {
+    /* Under ASYNCIFY, callMain returns at the game's first unwind while
+     * the real main() keeps running suspended — so we can't rely on the
+     * return value to mean "game over". Clear the label either way. */
+    Module.callMain();
+    setStatus('');
+  } catch (e) {
+    /* A synchronous abort before the first unwind lands here. */
+    setStatus('Crashed: ' + e);
+    console.error('callMain threw:', e && e.stack ? e.stack : e);
+  }
 }
 
 BattleShipModule(Module).then(stageFsAndStart).catch(e => {

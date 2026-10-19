@@ -550,6 +550,7 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                 }
                 static char sReportName[128] = {};
                 static bool sReportPopup = false;
+                static int sSelectedRow = -1;
                 for (int i = 0; i < total; i++) {
                     /* Server allows 24 Unicode chars — up to 96 bytes UTF-8. */
                     char name[128] = {};
@@ -559,12 +560,22 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                         continue;
                     }
                     const bool mine = (myRank == i + 1);
-                    ImGui::Bullet();
+                    /* Clicking a row loads that player's card (rank +
+                     * recent verified matches) from /player?name=. */
+                    char rowLabel[160];
+                    std::snprintf(rowLabel, sizeof(rowLabel), "#%d %s", i + 1, name);
+                    ImGui::PushID(i);
                     if (mine) {
-                        ImGui::TextColored(SemanticColors::Success, "#%d %s", i + 1, name);
-                    } else {
-                        ImGui::Text("#%d %s", i + 1, name);
+                        ImGui::PushStyleColor(ImGuiCol_Text, SemanticColors::Success);
                     }
+                    if (ImGui::Selectable(rowLabel, sSelectedRow == i)) {
+                        sSelectedRow = i;
+                        port_netleaderboard_fetch_player(serverBuf, name);
+                    }
+                    if (mine) {
+                        ImGui::PopStyleColor();
+                    }
+                    ImGui::PopID();
                     if (banned) {
                         ImGui::SameLine();
                         ImGui::TextColored(SemanticColors::Error, "[banned]");
@@ -611,6 +622,40 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                     }
                     ImGui::EndPopup();
                 }
+                /* Player card for the selected row — /player?name=X. */
+                if (sSelectedRow >= 0 && ImGui::TreeNode(TR("Player card"))) {
+                    const int pState = port_netleaderboard_player_state();
+                    if (pState == 1) {
+                        ImGui::TextDisabled("%s", TR("Loading..."));
+                    } else if (pState == -1) {
+                        ImGui::TextColored(SemanticColors::Error, "%s",
+                                           TR("Could not load this player."));
+                    } else if (pState == 2) {
+                        char pname[128] = {};
+                        int rank = 0, pr = 0, pw = 0, pl = 0;
+                        if (port_netleaderboard_player_card(pname, sizeof(pname),
+                                                            &rank, &pr, &pw, &pl)) {
+                            ImGui::Text("%s — #%d · %d · %d-%d",
+                                        pname, rank, pr, pw, pl);
+                            const int pTotal =
+                                port_netleaderboard_player_matches_count();
+                            for (int m = 0; m < pTotal && m < 10; m++) {
+                                PortLbMatchRow row;
+                                if (!port_netleaderboard_player_match_at(m, &row)) {
+                                    continue;
+                                }
+                                if (row.draw) {
+                                    ImGui::BulletText(TR("%s drew %s"), row.a, row.b);
+                                } else {
+                                    ImGui::BulletText(TR("%s beat %s"), row.w, row.l);
+                                }
+                                ImGui::SameLine();
+                                ImGui::TextDisabled("%s", row.stamp);
+                            }
+                        }
+                    }
+                    ImGui::TreePop();
+                }
             } else {
                 ImGui::TextDisabled("%s", TR("Press Refresh to load the board."));
             }
@@ -648,6 +693,124 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
             ImGui::TextWrapped("%s", TR("Ratings update when both players report the same result — "
                                        "a casual ladder, not tournament-grade ranked."));
             ImGui::PopStyleColor();
+        }
+
+        /* Community brackets — the lobby service runs single-elimination
+         * tournaments that settle off verified leaderboard results. */
+        if (ImGui::CollapsingHeader(TR("Tournaments"))) {
+            const int tState = port_netleaderboard_tournament_state();
+            if (ImGui::SmallButton(TR("Refresh##tournaments"))) {
+                port_netleaderboard_fetch_tournaments(serverBuf);
+            }
+            static char sBracketName[64] = {};
+            static int sBracketSize = 1;   /* index into kBracketSizes */
+            static const int kBracketSizes[] = {4, 8, 16, 32};
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(140.0f);
+            ImGui::InputTextWithHint("##bracketname", TR("Bracket name"),
+                                     sBracketName, sizeof(sBracketName));
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(70.0f);
+            if (ImGui::BeginCombo("##bracketsize",
+                                  std::to_string(kBracketSizes[sBracketSize]).c_str())) {
+                for (int s = 0; s < 4; s++) {
+                    if (ImGui::Selectable(std::to_string(kBracketSizes[s]).c_str(),
+                                          sBracketSize == s)) {
+                        sBracketSize = s;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(TR("Create"))) {
+                port_netleaderboard_tournament_create(serverBuf, sBracketName,
+                                                      kBracketSizes[sBracketSize]);
+            }
+            if (tState == 1) {
+                ImGui::TextDisabled("%s", TR("Loading..."));
+            } else if (tState == -1) {
+                ImGui::TextColored(SemanticColors::Error, "%s",
+                                   TR("Could not load tournaments."));
+            } else if (tState == 2) {
+                const int tTotal = port_netleaderboard_tournament_count();
+                if (tTotal == 0) {
+                    ImGui::TextDisabled("%s", TR("No tournaments yet — create one above."));
+                }
+                for (int i = 0; i < tTotal; i++) {
+                    PortLbBracket br;
+                    if (!port_netleaderboard_tournament_at(i, &br)) {
+                        continue;
+                    }
+                    ImGui::PushID(i);
+                    char hdr[220];
+                    if (br.winner[0] != '\0') {
+                        std::snprintf(hdr, sizeof(hdr), "%s — %s %s",
+                                      br.name, TR("winner:"), br.winner);
+                    } else {
+                        std::snprintf(hdr, sizeof(hdr), "%s — %s %d/%d",
+                                      br.name, br.status, br.joined, br.size);
+                    }
+                    if (ImGui::TreeNode(hdr)) {
+                        ImGui::TextDisabled(TR("host: %s"), br.owner);
+                        if (br.joined > 0 && br.rounds == 0) {
+                            /* Open bracket — list signups */
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("·");
+                            for (int p = 0; p < br.joined; p++) {
+                                char pn[128] = {};
+                                if (port_netleaderboard_tournament_player_at(
+                                        i, p, pn, sizeof(pn))) {
+                                    ImGui::SameLine();
+                                    ImGui::TextDisabled("%s", pn);
+                                }
+                            }
+                        }
+                        const int rounds =
+                            port_netleaderboard_tournament_rounds(i);
+                        for (int r = 0; r < rounds; r++) {
+                            ImGui::TextDisabled(TR("Round %d"), r + 1);
+                            for (int s = 0; s < br.size; s++) {
+                                PortLbMatchRow pr;
+                                if (!port_netleaderboard_tournament_pairing(
+                                        i, r, s, &pr)) {
+                                    break;
+                                }
+                                if (pr.a[0] == '\0' && pr.b[0] == '\0') {
+                                    continue;   /* padded bye */
+                                }
+                                ImGui::BulletText("%s vs %s",
+                                                  pr.a[0] ? pr.a : "—",
+                                                  pr.b[0] ? pr.b : "—");
+                                ImGui::SameLine();
+                                if (pr.w[0] != '\0') {
+                                    ImGui::TextDisabled("%s %s",
+                                                        TR("winner:"), pr.w);
+                                } else {
+                                    ImGui::TextDisabled("%s", TR("open"));
+                                }
+                            }
+                        }
+                        const bool isOpen =
+                            std::strncmp(br.status, "open", 4) == 0;
+                        if (isOpen && !br.mine) {
+                            if (ImGui::SmallButton(TR("Join"))) {
+                                port_netleaderboard_tournament_join(serverBuf,
+                                                                    br.id);
+                            }
+                        } else if (isOpen && br.owner_mine) {
+                            if (ImGui::SmallButton(TR("Start"))) {
+                                port_netleaderboard_tournament_start(serverBuf,
+                                                                     br.id);
+                            }
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("%s",
+                                                TR("(you host this bracket)"));
+                        }
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+                }
+            }
         }
 
         if (ImGui::CollapsingHeader(TR("Advanced"))) {

@@ -50,4 +50,9 @@ bool CurlDownloadToFile(const std::string& url, const std::filesystem::path& des
  * crash_bundle.cpp — one of which forgot to strip the path. */
 std::string HttpBaseFromWsServer(const char* server);
 
+/* Percent-encode a query/path component per RFC 3986 unreserved rules
+ * (UTF-8 bytes outside [A-Za-z0-9._~-] become %XX). Lobby names may
+ * carry spaces/punctuation, so building ?name= URLs needs this. */
+std::string UrlEncodeComponent(const std::string& raw);
+
 } // namespace ssb64

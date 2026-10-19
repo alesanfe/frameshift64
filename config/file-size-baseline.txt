@@ -5,7 +5,7 @@ src/application/port.cpp 1400
 src/application/update/downloads/ModPackDownloader.cpp 1237
 src/networking/netplay/transport/websocket_transport.cpp 1703
 src/presentation/Menu.cpp 2119
-src/presentation/PortMenu.cpp 1898
+src/presentation/PortMenu.cpp 1954
 src/presentation/PortMenuCustomization.cpp 1331
 src/presentation/UIWidgets.cpp 1279
 src/presentation/UIWidgets.hpp 1134

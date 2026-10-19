@@ -20,6 +20,7 @@
 
 #include <libultraship/bridge/consolevariablebridge.h>
 #include "port_log.h"
+#include "build_version.h"
 
 #ifdef SSB64_HAVE_CURL
 #include "http_curl.h"
@@ -33,13 +34,6 @@
 #else
 #include <fcntl.h>
 #include <unistd.h>
-#endif
-
-#ifndef BATTLESHIP_CURRENT_VERSION
-#define BATTLESHIP_CURRENT_VERSION "dev"
-#endif
-#ifndef BATTLESHIP_BUILD_SHA
-#define BATTLESHIP_BUILD_SHA "dev"
 #endif
 
 extern "C" {

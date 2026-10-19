@@ -427,6 +427,62 @@ static void RenderReplayBrowser(WidgetInfo&) {
             ImGui::SetTooltip("%s", link);
         }
     }
+    /* Community-shared replays live on the lobby service — fetch the
+     * index on demand, download lands the .ssr in the local replays dir. */
+    if (ImGui::TreeNode(TR("Shared replays"))) {
+        const int srvState = port_netleaderboard_replays_state();
+        if (ImGui::SmallButton(TR("Refresh##sharedreplays"))) {
+            port_netleaderboard_fetch_replays(
+                CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER));
+        }
+        if (srvState == 1) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", TR("Loading..."));
+        } else if (srvState == -1) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s",
+                               TR("Could not load the shared replay list."));
+        } else if (srvState == 2) {
+            const int shared = port_netleaderboard_replays_count();
+            if (shared == 0) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", TR("none shared yet"));
+            }
+            for (int i = 0; i < shared && i < 25; i++) {
+                char id[40] = {}, by[128] = {}, stamp[24] = {};
+                if (!port_netleaderboard_replays_at(i, id, sizeof(id),
+                                                    by, sizeof(by),
+                                                    stamp, sizeof(stamp))) {
+                    continue;
+                }
+                ImGui::BulletText("%s", stamp[0] ? stamp : id);
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", by[0] ? by : "-");
+                ImGui::SameLine();
+                ImGui::PushID(i);
+                if (ImGui::SmallButton(TR("Download"))) {
+                    port_netleaderboard_replay_download(
+                        CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER),
+                        id);
+                }
+                ImGui::PopID();
+            }
+        }
+        const int dlState = port_netleaderboard_replay_dl_state();
+        if (dlState == 1) {
+            ImGui::TextDisabled("%s", TR("Downloading..."));
+        } else if (dlState == -1) {
+            ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s",
+                               TR("Download failed."));
+        } else if (dlState == 2) {
+            char dlPath[600] = {};
+            port_netleaderboard_replay_dl_path(dlPath, sizeof(dlPath));
+            ImGui::TextColored(ImVec4(0.35f, 0.9f, 0.45f, 1.0f),
+                               TR("Saved %s — pick it above after Rescan"),
+                               dlPath);
+        }
+        ImGui::TreePop();
+    }
     ImGui::TextDisabled("%s", TR("Playback runs the recorded inputs; the match ends into the results screen."));
 }
 

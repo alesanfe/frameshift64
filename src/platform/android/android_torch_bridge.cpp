@@ -14,6 +14,7 @@
 #if defined(__ANDROID__)
 
 #include "Companion.h"
+#include "rgba16_swizzle.h"
 
 #include "libvpk0/vpk0.h"
 #include "n64graphics/n64graphics.h"
@@ -36,8 +37,7 @@
 #include <vector>
 
 #define LOG_TAG "ssb64.torch"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#include "android_log.h"
 
 namespace {
 
@@ -230,18 +230,6 @@ static bool parse_bitmap(const std::vector<uint8_t> &file_data, uint32_t bm_off,
     return bm.buf_off != UINT32_MAX;
 }
 
-static void unswizzle_rgba16_strip(std::vector<uint8_t> &strip, int width, int height) {
-    const int row_bytes = width * 2;
-    for (int row = 1; row < height; row += 2) {
-        uint8_t *row_data = strip.data() + (size_t)row * row_bytes;
-        for (int off = 0; off + 7 < row_bytes; off += 8) {
-            std::swap(row_data[off + 0], row_data[off + 4]);
-            std::swap(row_data[off + 1], row_data[off + 5]);
-            std::swap(row_data[off + 2], row_data[off + 6]);
-            std::swap(row_data[off + 3], row_data[off + 7]);
-        }
-    }
-}
 
 static rgba rgba16_pixel_to_rgba(uint8_t hi, uint8_t lo) {
     const uint16_t word = (uint16_t)((uint16_t)hi << 8 | (uint16_t)lo);
@@ -370,7 +358,7 @@ static bool derive_stage_asset(const std::vector<uint8_t> &rom,
 
         std::vector<uint8_t> strip(strip_bytes);
         std::memcpy(strip.data(), file_data.data() + bm.buf_off, strip_bytes);
-        unswizzle_rgba16_strip(strip, bm.width, bm.actual_height);
+        UnswizzleRgba16Strip(strip.data(), bm.width, bm.actual_height);
 
         const int rendered_rows = std::min<int>(sp.bmheight, bm.actual_height);
         for (int row = 0; row < rendered_rows; ++row) {

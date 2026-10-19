@@ -864,12 +864,14 @@ set(SSB64_MODULE_SCOPE_platform
     src/platform src/platform/coroutine src/platform/http
     src/platform/filesystem src/platform/window src/platform/android
     src/platform/compatibility
-    src/observability)            # port_log.h — shared log sink
+    src/observability             # port_log.h — shared log sink
+    src/shared)                   # rgba16_swizzle.h — TMEM unswizzle helper
 set(SSB64_MODULE_SCOPE_engine
     src/game/engine src/game/engine/decomp src/game/engine/hooks
     src/game/engine/relocation         # RelocFile/RelocPointerTable — asset reloc ABI
     src/game/engine/css_icons          # CSS stage/arrow assets served to decomp
     src/platform/filesystem            # app_paths.h — css_icons asset lookup
+    src/shared                         # rgba16_swizzle.h — TMEM texel layout
     src/observability)
 set(SSB64_MODULE_SCOPE_gameplay
     src/game/gameplay src/game/gameplay/assists src/game/gameplay/modes

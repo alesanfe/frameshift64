@@ -785,7 +785,7 @@ extern "C" void portAudioLoadAssets(void)
                 }
             }
             dSYAudioPublicSettings.unk4C = sSYAudioCurrentSettings.unk4C = (u16)count;
-            dSYAudioPublicSettings.unk44 = sSYAudioCurrentSettings.unk44 = (uintptr_t*)flat;
+            dSYAudioPublicSettings.unk44 = sSYAudioCurrentSettings.unk44 = reinterpret_cast<uintptr_t*>(flat);
             spdlog::info("audio_bridge: fgm_unk parsed as flat envelope array ({} entries, {} bytes)",
                          (int)count, (int)totalStructBytes);
         }

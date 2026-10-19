@@ -67,4 +67,18 @@ inline void reap_after(uint32_t serial, Co* live, const Co* current)
 	}
 }
 
+/* port_coroutine_is_finished / port_coroutine_in_coroutine — the same
+ * three lines on every backend. */
+template <typename Co>
+inline int is_finished(const Co* co)
+{
+	return co == nullptr ? 1 : co->finished;
+}
+
+template <typename Co>
+inline int in_coroutine(const Co* current)
+{
+	return current != nullptr;
+}
+
 } // namespace coro

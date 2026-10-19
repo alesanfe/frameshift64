@@ -1,6 +1,7 @@
 /* See ReleaseSig.h. */
 
 #include "ReleaseSig.h"
+#include "base64.h" // ssb64::Base64Decode — shared RFC 4648 decoder
 
 #include <array>
 #include <cstdint>
@@ -13,37 +14,6 @@ extern "C" {
 
 namespace ssb64::enhancements {
 namespace {
-
-/* ── base64 decode (minisig bodies) ─────────────────────────────────────── */
-
-int B64Value(char c) {
-    if (c >= 'A' && c <= 'Z') return c - 'A';
-    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-    if (c >= '0' && c <= '9') return c - '0' + 52;
-    if (c == '+') return 62;
-    if (c == '/') return 63;
-    return -1;
-}
-
-bool Base64Decode(const std::string& in, std::vector<uint8_t>& out) {
-    out.clear();
-    int acc = 0, bits = 0;
-    for (char c : in) {
-        if (c == '=') break;
-        int v = B64Value(c);
-        if (v < 0) {
-            if (c == '\n' || c == '\r' || c == ' ' || c == '\t') continue;
-            return false;
-        }
-        acc = (acc << 6) | v;
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            out.push_back((uint8_t)((acc >> bits) & 0xFF));
-        }
-    }
-    return true;
-}
 
 bool HexDecode(const char* hex, uint8_t* out, size_t out_len) {
     auto nib = [](char c) -> int {

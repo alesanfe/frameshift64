@@ -49,10 +49,21 @@ CURL* MakeEasy(char (*errorBuf)[CURL_ERROR_SIZE]) {
     return h;
 }
 
+/* Cap in-memory response bodies: the server URL is user-configurable, so a
+ * hostile endpoint must not be able to grow the buffer without bound. The
+ * largest legitimate reply is a base64 replay (~560 KiB); 4 MiB is generous
+ * headroom for JSON APIs. Returning short aborts the transfer with
+ * CURLE_WRITE_ERROR. */
+constexpr size_t kMaxStringBody = 4u * 1024u * 1024u;
+
 size_t WriteToString(char* ptr, size_t size, size_t nmemb, void* userdata) {
     auto* s = static_cast<std::string*>(userdata);
-    s->append(ptr, size * nmemb);
-    return size * nmemb;
+    const size_t chunk = size * nmemb;
+    if (s->size() + chunk > kMaxStringBody) {
+        return 0;
+    }
+    s->append(ptr, chunk);
+    return chunk;
 }
 
 size_t WriteToFile(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -205,6 +216,26 @@ std::string HttpBaseFromWsServer(const char* server) {
         s.resize(tail);
     }
     return s.empty() ? s : "https://" + s;
+}
+
+std::string UrlEncodeComponent(const std::string& raw) {
+    static const char kHex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(raw.size());
+    for (const unsigned char c : raw) {
+        const bool unreserved =
+            (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+            c == '~' || c == '-';
+        if (unreserved) {
+            out.push_back(static_cast<char>(c));
+        } else {
+            out.push_back('%');
+            out.push_back(kHex[c >> 4]);
+            out.push_back(kHex[c & 0x0F]);
+        }
+    }
+    return out;
 }
 
 } // namespace ssb64

@@ -196,12 +196,11 @@ void port_coroutine_yield(void) {
 }
 
 int port_coroutine_is_finished(PortCoroutine *co) {
-    if (co == NULL) return 1;
-    return co->finished;
+    return coro::is_finished(co);
 }
 
 int port_coroutine_in_coroutine(void) {
-    return sCurrentCoroutine != NULL;
+    return coro::in_coroutine(sCurrentCoroutine);
 }
 
 #endif /* __SWITCH__ */

@@ -25,6 +25,7 @@ out/
 # Agents
 AGENTS.md
 /_bt*.bat
+/_dv*.bat
 /_tt.bat
 .claude/worktrees/
 .cache/

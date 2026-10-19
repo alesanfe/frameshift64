@@ -66,11 +66,70 @@ typedef struct PortLbMatchRow {
 } PortLbMatchRow;
 int port_netleaderboard_history_at(int index, PortLbMatchRow *out);
 
+/* Player card — GET <server>/player?name=X returns the board row plus
+ * rank and that player's recent verified matches. Same state convention;
+ * a 404 (unclaimed name) lands on -1 like any other failure. */
+int  port_netleaderboard_player_state(void);
+void port_netleaderboard_fetch_player(const char *server, const char *name);
+/* Fills the loaded card; returns 0 when no card is ready. */
+int  port_netleaderboard_player_card(char *name, int capacity, int *rank,
+                                     int *rating, int *wins, int *losses);
+int  port_netleaderboard_player_matches_count(void);
+int  port_netleaderboard_player_match_at(int index, PortLbMatchRow *out);
+
 /* Replay sharing — uploads the .ssr at `path` to POST <server>/replay.
  * share_state: 0 idle / 1 in flight / 2 ready (link in share_link) / -1 failed. */
 int port_netleaderboard_share_state(void);
 int port_netleaderboard_share_link(char *out, int capacity);
 void port_netleaderboard_share_replay(const char *server, const char *path);
+
+/* Shared-replay browsing — GET <server>/replays returns the index
+ * {replays: [{id, at, by}]} newest-first; GET <server>/replay/<id>
+ * returns {data: base64}. Download decodes and saves the .ssr into the
+ * local replays dir so the replay browser can play it.
+ * states: 0 idle / 1 in flight / 2 ready / -1 error. */
+int  port_netleaderboard_replays_state(void);
+void port_netleaderboard_fetch_replays(const char *server);
+int  port_netleaderboard_replays_count(void);
+int  port_netleaderboard_replays_at(int index, char *id, int idCap,
+                                    char *by, int byCap, char *stamp, int stCap);
+int  port_netleaderboard_replay_dl_state(void);
+int  port_netleaderboard_replay_dl_path(char *out, int capacity);
+void port_netleaderboard_replay_download(const char *server, const char *id);
+
+/* Tournaments — GET <server>/tournament lists every bracket view
+ * ({brackets: [{id,name,owner,size,status,winner,players,rounds}]}).
+ * join/create/start are claim-key POSTs — the player needs a submitted
+ * leaderboard name first (the server checks keyOwns). After a successful
+ * mutation the list re-fetches so the UI converges automatically. */
+int  port_netleaderboard_tournament_state(void);
+void port_netleaderboard_fetch_tournaments(const char *server);
+int  port_netleaderboard_tournament_count(void);
+
+typedef struct PortLbBracket {
+    char id[16];
+    char name[64];
+    char owner[128];
+    char status[12];      /* open | live | done */
+    char winner[128];     /* empty unless done */
+    int size;             /* pow2 bracket slots */
+    int joined;           /* players currently joined */
+    int mine;             /* owner or joined player is the local claim */
+    int owner_mine;       /* local claim owns the bracket (can start it) */
+} PortLbBracket;
+int  port_netleaderboard_tournament_at(int index, PortLbBracket *out);
+/* Bracket detail: round count and one pairing of bracket `index` —
+ * pairing reuses PortLbMatchRow with w=winner (empty while unsettled). */
+int  port_netleaderboard_tournament_rounds(int index);
+int  port_netleaderboard_tournament_pairing(int index, int round, int slot,
+                                            PortLbMatchRow *out);
+/* Joined-player names (open brackets list signups before start). */
+int  port_netleaderboard_tournament_player_at(int index, int p,
+                                              char *out, int capacity);
+void port_netleaderboard_tournament_join(const char *server, const char *id);
+void port_netleaderboard_tournament_start(const char *server, const char *id);
+void port_netleaderboard_tournament_create(const char *server,
+                                           const char *name, int size);
 
 #ifdef __cplusplus
 }

@@ -28,9 +28,9 @@ struct RelocExplicitInternSlot {
 };
 
 struct RelocExplicitExternSlot {
-    uint32_t SlotByteOff;
-    uint16_t DepFileId;       // dependency file (explicit — no positional list)
-    uint32_t DepWordOff;      // u32-word offset into the dependency's data
+    uint32_t SlotByteOff = 0;
+    uint16_t DepFileId = 0;   // dependency file (explicit — no positional list)
+    uint32_t DepWordOff = 0;  // u32-word offset into the dependency's data
 };
 
 class RelocFile final : public Ship::Resource<void> {

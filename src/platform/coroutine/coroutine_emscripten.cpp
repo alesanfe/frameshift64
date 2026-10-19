@@ -196,7 +196,7 @@ void port_coroutine_yield(void)
 		return;
 	}
 	port_watchdog_note_yield();
-	sCurrent = NULL;                /* resumer regains "not in coroutine" view */
+	sCurrent = co->caller_co;       /* resumer's identity (NULL if main fiber) */
 	emscripten_fiber_swap(&co->fiber, co->caller);
 	stack_canary_check(co, "yield-return");
 	sCurrent = co;                  /* resumed again — we are current once more */
@@ -204,12 +204,12 @@ void port_coroutine_yield(void)
 
 int port_coroutine_is_finished(PortCoroutine *co)
 {
-	return (co == NULL) || co->finished;
+	return coro::is_finished(co);
 }
 
 int port_coroutine_in_coroutine(void)
 {
-	return sCurrent != NULL;
+	return coro::in_coroutine(sCurrent);
 }
 
 uint32_t port_coroutine_serial_now(void)
