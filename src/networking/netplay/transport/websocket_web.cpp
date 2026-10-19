@@ -13,8 +13,8 @@
  * The uplink is a second connection that never reads (as on desktop):
  * browser ws sends serialize per-connection the same way.
  *
- * Guarded by __EMSCRIPTEN__; websocket_transport.cpp carries the
- * WinHTTP/BSD-socket implementations for desktop builds.
+ * Guarded by __EMSCRIPTEN__; websocket_transport_{win32,curl,fallback}.cpp
+ * carry the desktop implementations.
  */
 
 #ifdef __EMSCRIPTEN__
