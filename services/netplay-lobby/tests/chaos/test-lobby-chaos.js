@@ -20,12 +20,29 @@ const ok = (name, cond) => { cond ? pass++ : fail++;
   console.log(`${cond ? "PASS" : "FAIL"} ${name}`); };
 
 function waitForListen(srv, ms = 8000) {
+  /* Three readiness signals raced: the stdout banner (fast path), an
+   * active /health poll (covers a swallowed or interleaved banner), and
+   * early process exit. stderr is captured so a timeout dumps the real
+   * cause instead of a bare "listen timeout". */
   return new Promise((resolve, reject) => {
-    const to = setTimeout(() => reject(new Error("lobby listen timeout")), ms);
+    let stderr = "";
+    srv.stderr.on("data", (d) => { stderr += String(d); });
+    const fail = (why) => { clearTimeout(to); clearInterval(poll); reject(new Error(why)); };
+    const to = setTimeout(() =>
+      fail(`lobby listen timeout${stderr ? `\nstderr: ${stderr}` : ""}`), ms);
+    const poll = setInterval(async () => {
+      try {
+        const r = await fetch(`${BASE}/health`);
+        if (r.ok) { clearTimeout(to); clearInterval(poll); resolve(); }
+      } catch { /* not up yet */ }
+    }, 100);
     srv.stdout.on("data", (d) => {
-      if (String(d).includes("listening")) { clearTimeout(to); resolve(); }
+      if (String(d).includes("listening")) {
+        clearTimeout(to); clearInterval(poll); resolve();
+      }
     });
-    srv.on("exit", (c) => { clearTimeout(to); reject(new Error(`lobby exited ${c} before listen`)); });
+    srv.on("exit", (c) =>
+      fail(`lobby exited ${c} before listen${stderr ? `\nstderr: ${stderr}` : ""}`));
   });
 }
 

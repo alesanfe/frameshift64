@@ -43,13 +43,28 @@ async function main() {
     fs.unlinkSync(path.join(__dirname, "..", "..", "leaderboard.json"));
   } catch { /* first run or already clean */ }
   const srv = spawn("node", [path.join(__dirname, "..", "..", "src", "infrastructure", "local", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
-  /* Wait for a real bind — a fixed sleep races on a busy machine. */
+  /* Wait for a real bind — race the stdout banner against an active
+   * /health poll (a swallowed banner must not stall the suite) and
+   * early exit; stderr rides along so a timeout reports the cause. */
   await new Promise((resolve, reject) => {
-    const to = setTimeout(() => reject(new Error("lobby listen timeout")), 8000);
+    let stderr = "";
+    srv.stderr.on("data", (d) => { stderr += String(d); });
+    const fail = (why) => { clearTimeout(to); clearInterval(poll); reject(new Error(why)); };
+    const to = setTimeout(() =>
+      fail(`lobby listen timeout${stderr ? `\nstderr: ${stderr}` : ""}`), 8000);
+    const poll = setInterval(async () => {
+      try {
+        const r = await fetch(`http://127.0.0.1:${PORT}/health`);
+        if (r.ok) { clearTimeout(to); clearInterval(poll); resolve(); }
+      } catch { /* not up yet */ }
+    }, 100);
     srv.stdout.on("data", (d) => {
-      if (String(d).includes("listening")) { clearTimeout(to); resolve(); }
+      if (String(d).includes("listening")) {
+        clearTimeout(to); clearInterval(poll); resolve();
+      }
     });
-    srv.on("exit", (c) => { clearTimeout(to); reject(new Error(`lobby exited ${c} before listen`)); });
+    srv.on("exit", (c) =>
+      fail(`lobby exited ${c} before listen${stderr ? `\nstderr: ${stderr}` : ""}`));
   });
 
   // --- setup: host + 2 clients on a v2 room ---

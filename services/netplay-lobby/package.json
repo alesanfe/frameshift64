@@ -7,7 +7,7 @@
     "deploy:dry-run": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
     "start": "node src/infrastructure/local/node-lobby.mjs",
-    "test": "node tests/security/test-lobby-security.js && node tests/chaos/test-lobby-chaos.js && node tests/domain/test-leaderboard-domain.mjs && node tests/domain/test-bracket-domain.mjs && node tests/fuzz/test-lobby-fuzz.js"
+    "test": "node tests/security/test-lobby-security.js && node tests/chaos/test-lobby-chaos.js && node tests/domain/test-leaderboard-domain.mjs && node tests/domain/test-bracket-domain.mjs && node tests/fuzz/test-lobby-fuzz.js && node tests/contract/test-adapter-contract.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.17",

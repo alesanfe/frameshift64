@@ -66,6 +66,8 @@ jobs:
         run: node services/netplay-lobby/tests/chaos/test-lobby-chaos.js
       - name: Fuzz suite
         run: node services/netplay-lobby/tests/fuzz/test-lobby-fuzz.js 400
+      - name: Adapter contract suite
+        run: node services/netplay-lobby/tests/contract/test-adapter-contract.mjs
 
   hygiene:
     name: Repo hygiene
