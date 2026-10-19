@@ -483,7 +483,7 @@ def render_downloads(repo: str, mode: str) -> str:
         values = [snapshot.get(series, 0) for _tag, _day, snapshot in points]
         if not any(values):
             continue
-        upper = [base + value for base, value in zip(lower, values)]
+        upper = [base + value for base, value in zip(lower, values, strict=True)]
         upper_points = [
             (
                 x_for_release(index, len(points), plot_x, plot_w),
@@ -556,4 +556,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

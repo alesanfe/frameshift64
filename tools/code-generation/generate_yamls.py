@@ -369,13 +369,13 @@ def resolve_name(file_id, id_to_name):
 # Category rules: (category_name, match_function)
 # Order matters — first match wins.
 CATEGORIES = [
-    ("menus", lambda fid, name: name.startswith(("MN", "MNCommon"))),
-    ("transitions", lambda fid, name: "Transition" in name or "LBTransition" in name),
-    ("movies", lambda fid, name: name.startswith(("MV", "MVOpening"))),
-    ("interface", lambda fid, name: name.startswith(("IF", "IFCommon"))),
-    ("effects", lambda fid, name: name.startswith(("EF", "EFCommon"))),
-    ("stages", lambda fid, name: name.startswith(("Stage", "GR"))),
-    ("fighters_main", lambda fid, name: (
+    ("menus", lambda _fid, name: name.startswith(("MN", "MNCommon"))),
+    ("transitions", lambda _fid, name: "Transition" in name or "LBTransition" in name),
+    ("movies", lambda _fid, name: name.startswith(("MV", "MVOpening"))),
+    ("interface", lambda _fid, name: name.startswith(("IF", "IFCommon"))),
+    ("effects", lambda _fid, name: name.startswith(("EF", "EFCommon"))),
+    ("stages", lambda _fid, name: name.startswith(("Stage", "GR"))),
+    ("fighters_main", lambda _fid, name: (
         any(name.startswith(p) for p in [
             "Mario", "Fox", "Donkey", "Samus", "Luigi", "Link", "Kirby",
             "Purin", "Captain", "Ness", "Pikachu", "Yoshi", "Boss",
@@ -384,19 +384,19 @@ CATEGORIES = [
             "NYoshi", "GDonkey", "MasterHand", "DkIcon",
         ]) and not name.startswith("FT")
     )),
-    ("animations", lambda fid, name: "Anim" in name and name.startswith("FT")),
-    ("fighters_common", lambda fid, name: (
+    ("animations", lambda _fid, name: "Anim" in name and name.startswith("FT")),
+    ("fighters_common", lambda _fid, name: (
         name.startswith(("FTEmblem", "FTStocks", "FTManager"))
     )),
-    ("items", lambda fid, name: name.startswith("IT")),
-    ("scene", lambda fid, name: name.startswith("SC")),
-    ("bonus", lambda fid, name: "Bonus" in name),
-    ("congra", lambda fid, name: "Congra" in name),
-    ("misc_named", lambda fid, name: (
+    ("items", lambda _fid, name: name.startswith("IT")),
+    ("scene", lambda _fid, name: name.startswith("SC")),
+    ("bonus", lambda _fid, name: "Bonus" in name),
+    ("congra", lambda _fid, name: "Congra" in name),
+    ("misc_named", lambda _fid, name: (
         name.startswith(("N64Logo", "SCStaffroll", "SY", "CharacterNames", "GRWallpaper", "MNSoundTest", "SCExplain", "SC1PTraining"))
     )),
     # Catch-all for anything still uncategorized
-    ("misc", lambda fid, name: True),
+    ("misc", lambda _fid, name: True),
 ]
 
 def categorize_file(file_id, name):

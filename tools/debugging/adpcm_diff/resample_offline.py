@@ -230,7 +230,7 @@ def main():
 
         if ref_state != port_state:
             print("\n[DIFF] final state mismatch:")
-            for i, (r, p) in enumerate(zip(ref_state, port_state)):
+            for i, (r, p) in enumerate(zip(ref_state, port_state, strict=False)):
                 if r != p:
                     print(f"     state[{i}]: ref={r}  port={p}")
     else:

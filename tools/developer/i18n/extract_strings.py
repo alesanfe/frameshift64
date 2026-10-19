@@ -79,7 +79,7 @@ def wrappable(lit: str) -> bool:
 def extract(path: Path) -> set[str]:
     keys: set[str] = set()
     text = path.read_text(encoding="utf-8", errors="replace")
-    for pat, gidx in zip(PATTERNS, GROUP_IDX):
+    for pat, gidx in zip(PATTERNS, GROUP_IDX, strict=True):
         for m in pat.finditer(text):
             # Merge immediately adjacent literals: TR("a " "b")
             tail = text[m.end(gidx) + 1 :]

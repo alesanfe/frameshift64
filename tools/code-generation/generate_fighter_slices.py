@@ -502,7 +502,7 @@ def slice_containing(slices, off):
 
 
 def check_invariants(symbol, slices, intern_chain, extern_chain, file_size,
-                     view, original, report):
+                     view, original):
     diag = f"python tools/generate_fighter_slices.py --only {symbol} --check"
 
     # I1: exhaustive, sorted, non-overlapping tiling
@@ -579,7 +579,7 @@ SPEC_KIND = {"gfx": "DisplayList", "vtx": "Vertex", "tex": "Texture",
              "lut": "Texture", "blob": "Blob", "gap": "Blob", "pad": "Blob"}
 
 
-def provenance(args, layout, romsha):
+def provenance(layout, romsha):
     return {
         "generator": f"tools/generate_fighter_slices.py v{TOOL_VERSION}",
         "regen": f"python tools/generate_fighter_slices.py --version {layout.version}",
@@ -810,7 +810,7 @@ def process_file(symbol, category, rom, layout, prov, out_dir, check_only,
     slices, dls = build_slices(symbol, view, intern_chain, extern_chain,
                                incoming_targets, len(original), report)
     check_invariants(symbol, slices, intern_chain, extern_chain,
-                     len(original), view, original, report)
+                     len(original), view, original)
     build_reports(slices, dls, intern_chain, original, report)
 
     if check_only:
@@ -845,7 +845,7 @@ def main():
     layout = rl.RelocLayout(args.version)
     rom_path = args.rom or repo / f"baserom.{args.version}.z64"
     rom = rl.load_rom(rom_path)
-    prov = provenance(args, layout, rl.rom_sha1(rom))
+    prov = provenance(layout, rl.rom_sha1(rom))
 
     # incoming extern targets need the full deblobbed id set up front
     deblobbed_ids = set()

@@ -292,7 +292,7 @@ def run_audit(src_root):
 # Output
 # ---------------------------------------------------------------------------
 
-def render_markdown(results, reachable, all_structs, struct_file):
+def render_markdown(results, reachable):
     lines = []
     lines.append("# Reloc Struct Pointer Field Audit")
     lines.append("")
@@ -390,10 +390,10 @@ def main():
         print(f"ERROR: src directory not found: {src_root}", file=sys.stderr)
         sys.exit(1)
 
-    results, reachable, all_structs, struct_file = run_audit(src_root)
+    results, reachable, _, _ = run_audit(src_root)
     render_console(results)
 
-    md = render_markdown(results, reachable, all_structs, struct_file)
+    md = render_markdown(results, reachable)
 
     if args.output:
         out = Path(args.output)

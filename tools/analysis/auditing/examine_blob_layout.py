@@ -257,7 +257,7 @@ def parse_display_lists(words, ptr_indices, file_size_bytes):
     return dl_words, vtx_refs, tex_refs, sub_dl_refs
 
 
-def map_blob_layout(words, data_bytes, ptr_indices, dl_words, vtx_refs, tex_refs):
+def map_blob_layout(words, ptr_indices, dl_words, vtx_refs, tex_refs):
     """
     Given parsed DL refs, mark each word in the blob with a region type.
     Returns an array of region labels per word.
@@ -368,7 +368,7 @@ def main():
             parse_display_lists(words, ptr_indices, len(data))
 
         # Map layout
-        labels = map_blob_layout(words, data, ptr_indices, dl_words, vtx_refs, tex_refs)
+        labels = map_blob_layout(words, ptr_indices, dl_words, vtx_refs, tex_refs)
 
         # Count per region
         file_counts = Counter(labels)

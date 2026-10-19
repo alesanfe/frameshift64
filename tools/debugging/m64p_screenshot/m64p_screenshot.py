@@ -506,7 +506,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # --- Map captured PNGs to requested frames ---
     # m64p --testshots reaches frames in ascending order, so files sorted by
     # mtime correspond 1:1 to the sorted ``frames`` list.
-    pairs = list(zip(frames, new_files))
+    pairs = list(zip(frames, new_files, strict=True))
     captured_count = len(pairs)
 
     copied: list[Path] = []

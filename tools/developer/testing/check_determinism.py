@@ -28,7 +28,7 @@ import session_runner as sr
 
 
 def first_divergence(a: list, b: list) -> "int | None":
-    for i, (x, y) in enumerate(zip(a, b)):
+    for i, (x, y) in enumerate(zip(a, b, strict=False)):
         if x != y:
             return i
     return len(a) if len(a) != len(b) else None

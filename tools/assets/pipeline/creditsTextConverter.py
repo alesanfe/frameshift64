@@ -169,14 +169,14 @@ def getDelimiterData(text):
 	startCountPairs = []
 	currentStart = 0
 	lineBreakCounter = 0
-	for i, char in enumerate(creditsText):
+	for i, char in enumerate(text):
 	
 		if char == '\n':
 			startCountPairs.append((currentStart, (i - lineBreakCounter) - currentStart))
 	
 			lineBreakCounter += 1
 			currentStart = i + 1 - lineBreakCounter
-	startCountPairs.append((currentStart, (len(creditsText.rstrip('\n')) - lineBreakCounter) - currentStart))
+	startCountPairs.append((currentStart, (len(text.rstrip('\n')) - lineBreakCounter) - currentStart))
 	return startCountPairs
 
 

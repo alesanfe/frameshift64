@@ -54,7 +54,7 @@ def adb(serial, *args, timeout=60, check=True):
 
 
 def first_divergence(a, b):
-    for i, (x, y) in enumerate(zip(a, b)):
+    for i, (x, y) in enumerate(zip(a, b, strict=False)):
         if x != y:
             return i
     return len(a) if len(a) != len(b) else None
