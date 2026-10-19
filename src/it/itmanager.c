@@ -12,7 +12,7 @@
 #include <sys/debug.h>
 extern void *func_800269C0_275C0(u16 id);
 extern void portFixupStructU16(void *base, unsigned int byte_offset, unsigned int num_words);
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 #endif
 
 // // // // // // // // // // // //

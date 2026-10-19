@@ -1,6 +1,6 @@
 #include <ft/fighter.h>
 #ifdef PORT
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern int port_aobj_is_in_halfswapped_range(const void *p);
 extern u32 sySchedulerGetTicCount(void);
 #endif

@@ -29,7 +29,7 @@
 extern char *getenv(const char *name);
 
 extern unsigned int portRelocRegisterPointer(void *ptr);
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 
 extern s32 D_ovl1_80390DC0[]; /* mario blink subroutine */
 extern s32 D_ovl1_80390DE4[];

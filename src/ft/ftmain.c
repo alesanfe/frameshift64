@@ -4,7 +4,7 @@
 #include <gr/ground.h>
 #include <sc/scene.h>
 #ifdef PORT
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern void port_dump_backtrace(void);
 #include "fighter_registry.h"
 #include "game/engine/hooks/Events.h"

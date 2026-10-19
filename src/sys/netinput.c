@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 
 /* Temporary diagnostic: SSB64_DBG_INPUT_TICKS=lo:hi dumps every frame a
  * spectator resolves (and every remote frame it stores) in that tick

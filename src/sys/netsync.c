@@ -20,7 +20,7 @@
 #include <string.h>
 
 #ifdef PORT
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 #endif
 
 extern s32 sSYUtilsRandomSeed;

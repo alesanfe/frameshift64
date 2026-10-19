@@ -13,7 +13,7 @@
 #include <time.h>
 
 #ifdef PORT
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern void port_exit_process(int code);
 extern char *getenv(const char *name);
 extern int atoi(const char *s);

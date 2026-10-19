@@ -6,7 +6,7 @@
 #ifdef PORT
 #include <string.h>
 #include <sys/debug.h>
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 #endif
 #ifdef PORT
 extern void portFixupFTAttributes(void *attr);

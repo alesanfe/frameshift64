@@ -756,7 +756,7 @@ void sc1PTrainingModeLoadSprites(void)
  * SIGSEGV or heap corruption on stage confirm). Clamp both lookups so any
  * future gkind added to dMNMapsPageGkinds degrades to the blue training
  * wallpaper instead of faulting. */
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 
 static s32 sc1PTrainingModeWallpaperID(void)
 {

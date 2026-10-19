@@ -11,7 +11,7 @@ extern void* func_800269C0_275C0(u16);
 #ifdef PORT
 #include <stdlib.h> // abort
 #include "fighter_registry.h"
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 #endif
 
 // // // // // // // // // // // //

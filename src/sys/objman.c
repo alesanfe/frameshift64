@@ -7,7 +7,7 @@
 #include <sys/rdp.h>
 #include <stddef.h>
 
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 
 #ifdef PORT
 /* PORT diag: log GObj allocations for the kinds known to leak stale

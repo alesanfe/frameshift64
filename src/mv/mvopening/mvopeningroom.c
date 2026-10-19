@@ -10,7 +10,7 @@
 extern void func_800266A0_272A0(void);
 
 #ifdef PORT
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 #endif
 
 

@@ -7,7 +7,7 @@
 #ifdef PORT
 #include <config.h>
 extern void portFixupStructU16(void *base, unsigned int byte_offset, unsigned int num_words);
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 /* The project's shadow <stdlib.h> doesn't expose host getenv/atoi
  * (it's the decomp's slim stdlib). Forward-declare locally for the
  * SSB64_FORCE_ITEM_KIND test hook. Real prototypes per POSIX/C99. */

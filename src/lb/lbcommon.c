@@ -8,7 +8,7 @@
 extern void func_800267F4_273F4(void *arg0);
 
 #ifdef PORT
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern void portFixupSprite(void *sprite);
 extern void portFixupBitmap(void *bitmap);
 extern void portFixupBitmapArray(void *bitmaps, unsigned int count);

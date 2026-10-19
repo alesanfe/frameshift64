@@ -2,7 +2,7 @@
 #include <sc/scene.h>
 
 #ifdef PORT
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 #endif
 
 // // // // // // // // // // // //

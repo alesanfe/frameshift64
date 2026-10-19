@@ -8,7 +8,7 @@
 #ifdef PORT
 extern void portFixupStructU16(void *base, unsigned int byte_offset, unsigned int num_words);
 extern void portFixupStructU32(void *base, unsigned int byte_offset, unsigned int num_words);
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 #endif
 
 // // // // // // // // // // // //

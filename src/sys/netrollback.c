@@ -19,7 +19,7 @@
 #include <string.h>
 
 #ifdef PORT
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern const char *port_symbolize(const void *addr, u32 *offset);
 extern void port_exit_process(int code);
 extern size_t port_aobj_fixup_snapshot_size(void);

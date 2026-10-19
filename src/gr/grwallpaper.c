@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern bool portRelocDescribePointer(const void *ptr, uintptr_t *out_base, size_t *out_size, u32 *out_file_id, const char **out_path);
 extern void portDiagArmImportCapture(int n);
 extern char *getenv(const char *name);

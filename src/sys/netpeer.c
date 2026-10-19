@@ -14,7 +14,7 @@ extern char *getenv(const char *name);
 extern int atoi(const char *s);
 extern unsigned long strtoul(const char *s, char **end, int base);
 extern int snprintf(char *s, unsigned long size, const char *fmt, ...);
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 #endif
 
 #ifdef PORT

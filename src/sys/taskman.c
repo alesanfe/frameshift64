@@ -17,7 +17,7 @@
 
 #ifdef PORT
 #include <stdlib.h>
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern char *getenv(const char *name); /* decomp include/stdlib.h shadows the host header */
 #endif
 

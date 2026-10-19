@@ -14,7 +14,7 @@
 extern u32 sySchedulerGetTicCount();
 #ifdef PORT
 extern void port_coroutine_yield(void);
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 extern char *getenv(const char *name);
 #endif
 
