@@ -3,6 +3,7 @@
  * header: these are receive-path tuning internals. */
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstring>
 #include <deque>
@@ -10,11 +11,28 @@
 #include <string>
 #include <vector>
 
+#include "port_log.h"
+#include "websocket_transport.h"
+
 /* Message/queue caps: lobby text and relayed game frames are tiny, so these
  * are far above any legitimate need. They bound the damage a hostile or
  * stuck server can do - applied by each backend's receive loop. */
 constexpr size_t kMaxWsMessageBytes = 16u << 20;   /* reassembled message cap */
 constexpr size_t kMaxWsQueuedMessages = 4096;      /* pending for the game thread */
+
+/* Shared failure latch: record `why` under the queue mutex, flip the
+ * connection state, log once. Each backend's globals live file-static in
+ * its own TU; they pass them here. */
+inline void WsFail(std::mutex& mu, std::string& error,
+                   std::atomic<int>& state, const std::string& why)
+{
+    {
+        std::lock_guard<std::mutex> lock(mu);
+        error = why;
+    }
+    state = PORT_WS_FAILED;
+    port_log("SSB64 WS: %s\n", why.c_str());
+}
 
 /* Push one complete message into the backend's ingress queues under `mu`.
  * The queues were file-static per TU pre-split; each backend passes its own.

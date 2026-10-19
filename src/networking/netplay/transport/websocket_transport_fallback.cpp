@@ -93,12 +93,7 @@ unsigned int next_rand(void)
 
 void fail(const std::string &why)
 {
-    {
-        std::lock_guard<std::mutex> lock(sMutex);
-        sError = why;
-    }
-    sState = PORT_WS_FAILED;
-    port_log("SSB64 WS: %s\n", why.c_str());
+    WsFail(sMutex, sError, sState, why);
 }
 
 bool send_all(ws_sock_t s, const void *data, size_t size)

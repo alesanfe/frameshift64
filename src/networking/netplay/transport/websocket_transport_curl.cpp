@@ -76,12 +76,7 @@ constexpr auto kUpRedialMs = std::chrono::milliseconds(2000);
 
 void fail(const std::string &why)
 {
-    {
-        std::lock_guard<std::mutex> lock(sMutex);
-        sError = why;
-    }
-    sState = PORT_WS_FAILED;
-    port_log("SSB64 WS: %s\n", why.c_str());
+    WsFail(sMutex, sError, sState, why);
 }
 
 /* Whole-message send under the caller's per-handle IO mutex; retries
