@@ -1679,7 +1679,7 @@ foreach(mod IN LISTS SSB64_MODULE_DIRS)
     endif()
 endforeach()
 if (WIN32)
-    # src/observability/port_symbolize.cpp (SyncTest diagnostics), src/networking/netplay/transport/udp_transport.cpp, src/networking/netplay/transport/websocket_transport.cpp
+    # src/observability/port_symbolize.cpp (SyncTest diagnostics), src/networking/netplay/transport/udp_transport.cpp, src/networking/netplay/transport/websocket_transport_{win32,fallback}.cpp
     # sapi: §9 menu narration (src/presentation/narration.cpp)
     target_link_libraries(${PROJECT_NAME} PRIVATE dbghelp ws2_32 winhttp bcrypt sapi ole32)
 endif()
@@ -2284,7 +2284,7 @@ endif()
 
 # GLideN64->BattleShip texture-name mapping (vendored from GhostlyDark's
 # SSB-Reloaded, MIT — see docs/modding/vendor-notes.md). The in-game
-# converter (src/application/update/downloads/ModPackDownloader.cpp) renames
+# converter (src/application/update/downloads/ModPackGliden.cpp) renames
 # GLideN64/Rice-format PNG packs to the native "#hash#fmt#siz.png"
 # grammar using this table. Staged as bundled-data/gliden64-map.json;
 # independent of DISABLE_SCRIPTING since texture packs aren't script mods.

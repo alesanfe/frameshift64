@@ -121,7 +121,7 @@ def main() -> int:
     for n in names:
         if n == "host":
             continue
-        for i, (a_, b_) in enumerate(zip(ref, traces[n])):
+        for i, (a_, b_) in enumerate(zip(ref, traces[n], strict=False)):
             if len(a_.split()) < 13 or len(b_.split()) < 13:
                 continue   # torn final line: process was killed mid-write
             if a_ != b_:

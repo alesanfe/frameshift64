@@ -64,14 +64,19 @@ def spawn_game(build_dir: Path, name: str, env: dict, out_dir: Path,
                exe_dir: Path | None = None) -> subprocess.Popen:
     """Start one BattleShip instance. `env` entries are layered over the
     caller's environment; empty-string values are preserved exactly (some
-    hooks check presence, not content — mirrors the ps1 drivers)."""
+    hooks check presence, not content — mirrors the ps1 drivers).
+    stdout/stderr land in out_dir/<name>.log so a failed session leaves
+    its game log behind for diagnosis."""
     run_dir = Path(exe_dir) if exe_dir else build_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
     full_env = os.environ.copy()
     for k, v in env.items():
         full_env[k] = str(v)
-    return subprocess.Popen(
-        [str(run_dir / GAME_EXE)], cwd=run_dir, env=full_env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with open(out_dir / f"{name}.log", "wb") as log:
+        # child keeps its inherited copy after the parent's handle closes
+        return subprocess.Popen(
+            [str(run_dir / GAME_EXE)], cwd=run_dir, env=full_env,
+            stdout=log, stderr=subprocess.STDOUT)
 
 
 def stop_all(procs, grace: float = 3.0) -> None:
@@ -150,7 +155,7 @@ def compare_traces(names, out_dir: Path, ref: str = "host",
         if n == ref:
             continue
         other = traces[n]
-        for i, (a, b) in enumerate(zip(reference, other)):
+        for i, (a, b) in enumerate(zip(reference, other, strict=False)):
             if min_fields and (len(a.split()) < min_fields
                                or len(b.split()) < min_fields):
                 print(f"skipping truncated trace line {i}")
@@ -173,7 +178,7 @@ def load_profile(name: str) -> dict:
     try:
         import yaml
     except ImportError:  # pragma: no cover — dev environments have pyyaml
-        raise SystemExit("pyyaml required for --profile (pip install pyyaml)")
+        raise SystemExit("pyyaml required for --profile (pip install pyyaml)") from None
     cfg = yaml.safe_load(
         (ROOT / "tests" / "support" / "config" / "network-profiles.yml").read_text())
     prof = cfg.get("profiles", {}).get(name)

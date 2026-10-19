@@ -140,7 +140,7 @@ def trace_diff(traces: dict[str, list[str]]) -> dict:
     ref = traces[names[0]]
     result["ticks"] = min(len(t) for t in traces.values())
     for other_name in names[1:]:
-        for i, (a, b) in enumerate(zip(ref, traces[other_name])):
+        for i, (a, b) in enumerate(zip(ref, traces[other_name], strict=False)):
             if a != b:
                 result["diverged"] = True
                 result["first_divergence_line"] = i
