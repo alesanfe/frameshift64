@@ -59,6 +59,8 @@ jobs:
         run: npm ci
       - name: Lobby security suite
         run: node services/netplay-lobby/tests/security/test-lobby-security.js
+      - name: Lobby chaos suite
+        run: node services/netplay-lobby/tests/chaos/test-lobby-chaos.js
       - name: Lobby fuzz suite
         run: node services/netplay-lobby/tests/fuzz/test-lobby-fuzz.js 400
   build-macos:

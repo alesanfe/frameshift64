@@ -91,10 +91,12 @@ export class Bracket {
     }
     // seedOrder: caller-supplied rating sort (names, best first). Any
     // joined player missing from it lands at the bottom in join order.
-    const ranked = [...seedOrder.filter((n) =>
+    // A non-array hint degrades to join order rather than throwing.
+    const order = Array.isArray(seedOrder) ? seedOrder : [];
+    const ranked = [...order.filter((n) =>
                        this.players.some((p) => p.name === n)),
                     ...this.players.map((p) => p.name)
-                      .filter((n) => !seedOrder.includes(n))];
+                      .filter((n) => !order.includes(n))];
     while (ranked.length < this.size) ranked.push(null);   // byes
     const r1 = [];
     for (let i = 0; i < this.size / 2; i++) {
@@ -104,6 +106,13 @@ export class Bracket {
     }
     this.rounds = [r1];
     this.status = "live";
+    /* If round 1 auto-resolved entirely on byes (fewer joined players
+     * than size/2 real pairings), advance now — otherwise the bracket
+     * would sit "live" forever with no open pairing to settle. */
+    if (r1.every((m) => m.winner != null || (m.a == null && m.b == null))) {
+      const adv = this.#advance();
+      if (adv.kind === "done") return { kind: "ok", done: true };
+    }
     return { kind: "ok" };
   }
 

@@ -10,6 +10,21 @@
 #   prometheus: http://localhost:9090
 
 services:
+  # Self-hosted lobby backend — build from the service root:
+  #   docker compose -f observability/docker-compose.yml up -d lobby
+  # State persists in the lobby-data volume (LOBBY_DATA_DIR=/data).
+  lobby:
+    build: ..
+    image: ssb64-lobby:local
+    environment:
+      PORT: "8799"
+      LOBBY_DATA_DIR: /data
+    volumes:
+      - lobby-data:/data
+    ports:
+      - "8799:8799"
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v2.53.0
     volumes:
@@ -61,3 +76,4 @@ volumes:
   prometheus-data:
   grafana-data:
   loki-data:
+  lobby-data:

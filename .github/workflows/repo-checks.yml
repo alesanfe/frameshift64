@@ -59,7 +59,9 @@ jobs:
       - name: Security suite
         run: node services/netplay-lobby/tests/security/test-lobby-security.js
       - name: Domain property suite
-        run: node services/netplay-lobby/tests/domain/test-leaderboard-domain.mjs
+        run: |
+          node services/netplay-lobby/tests/domain/test-leaderboard-domain.mjs
+          node services/netplay-lobby/tests/domain/test-bracket-domain.mjs
       - name: Chaos suite
         run: node services/netplay-lobby/tests/chaos/test-lobby-chaos.js
       - name: Fuzz suite

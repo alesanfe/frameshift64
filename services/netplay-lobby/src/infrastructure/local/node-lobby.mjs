@@ -37,9 +37,14 @@ const writeJsonAtomic = (dest, obj) => {
   fs.renameSync(tmp, dest);
 };
 
-/* Leaderboard persisted next to the script — runtime state, not repo data. */
-const lbPath = path.join(path.dirname(fileURLToPath(import.meta.url)),
-  "..", "..", "..", "leaderboard.json");
+/* Runtime state root: LOBBY_DATA_DIR for deployments (a Docker volume
+ * lands wherever the image puts it); default keeps the beside-the-script
+ * location the tests rely on. */
+const dataDir = process.env.LOBBY_DATA_DIR ||
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+/* Leaderboard persisted under dataDir — runtime state, not repo data. */
+const lbPath = path.join(dataDir, "leaderboard.json");
 /* A torn or corrupt store must not crash-loop the service: recover to an
  * empty board rather than dying at module init (chaos test phase 3). */
 let lb = new Leaderboard();
@@ -53,8 +58,7 @@ const saveLb = () => {
 
 /* Brackets persist beside the leaderboard - one file, id -> Bracket JSON.
  * Cap live brackets so a troll can't mint unbounded state. */
-const brPath = path.join(path.dirname(fileURLToPath(import.meta.url)),
-  "..", "..", "..", "brackets.json");
+const brPath = path.join(dataDir, "brackets.json");
 const brackets = new Map();
 try {
   for (const [id, o] of Object.entries(JSON.parse(fs.readFileSync(brPath, "utf8")))) {
@@ -72,8 +76,7 @@ const allowIpJoin = makeJoinLimiter();  // cross-code scan throttle (AUD-25)
 
 /* Shared replays land next to the leaderboard store — runtime artifacts,
  * not repo data. In-memory index mirrors the worker DO's replays-idx. */
-const replayDir = path.join(path.dirname(fileURLToPath(import.meta.url)),
-  "..", "..", "..", "replays");
+const replayDir = path.join(dataDir, "replays");
 const replayIdx = [];
 try {
   for (const f of fs.readdirSync(replayDir)) {
@@ -110,7 +113,7 @@ const readJsonBody = (req, limit, cb) => {
   });
 };
 
-const port = parseInt(process.argv[2] || "8799", 10);
+const port = parseInt(process.argv[2] || process.env.PORT || "8799", 10);
 const server = http.createServer((req, res) => {
   /* Public portal page — same HTML the worker serves at GET /. */
   if (req.url === "/" && req.method === "GET") {
@@ -184,7 +187,7 @@ const server = http.createServer((req, res) => {
             typeof doc.log_tail === "string" && doc.log_tail.length <= 8192 &&
             (doc.lus_tail === undefined ||
              (typeof doc.lus_tail === "string" && doc.lus_tail.length <= 8192))) {
-          fs.appendFileSync("crashes.jsonl",
+          fs.appendFileSync(path.join(dataDir, "crashes.jsonl"),
             JSON.stringify({ at: new Date().toISOString(), ...doc }) + "\n");
           stats.crashes++;
         }
@@ -555,5 +558,26 @@ setInterval(() => {
   for (const r of rooms.values()) r.sweepIdle();
 }, IDLE_SWEEP_MS).unref();
 
-console.log(`node-lobby ws listening on :${port}`);
-console.log(`node-lobby ws listening on :${port}`);
+/* Graceful shutdown: state is already flushed on every mutation (atomic
+ * temp+rename), so shutdown only needs to stop accepting, close live
+ * sockets so clients reconnect cleanly, then exit. */
+let shuttingDown = false;
+function shutdown(sig) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`node-lobby: ${sig} — draining ${rooms.size} room(s)`);
+  server.close();
+  for (const r of rooms.values()) {
+    for (const [s] of r.sockets) {
+      try { s.close(1001, "server-shutdown"); } catch { /* gone */ }
+    }
+  }
+  /* Don't hang on half-open sockets — force out after a short drain. */
+  setTimeout(() => process.exit(0), 1500).unref();
+  server.closeAllConnections?.();
+  process.exitCode = 0;
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+console.log(`node-lobby listening on :${port} (data: ${dataDir})`);
