@@ -28,8 +28,8 @@ namespace {
  * sha256sum/shasum shell-out: the OS tools don't exist on Android and
  * the AppImage loader-override strip was fragile on Linux anyway. */
 struct Sha256Ctx {
-    uint32_t h[8];
-    uint8_t  buf[64];
+    uint32_t h[8]{};
+    uint8_t  buf[64]{};
     uint64_t totalLen = 0;
     size_t   bufLen = 0;
 };

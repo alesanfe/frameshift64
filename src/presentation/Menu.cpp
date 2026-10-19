@@ -272,7 +272,7 @@ static ImVec4 MenuTextDisabledColor(MenuBaseTheme theme) {
  * same CVarGet* types the reset writes with CVarSet*. */
 struct SectionUndoEntry {
     std::string cvar;
-    WidgetType type;
+    WidgetType type = {};
     int32_t i = 0;
     float f = 0.0f;
     std::string s;
@@ -708,8 +708,8 @@ uint32_t Menu::DrawSearchResultExtras(const std::string& menuSearchText) {
  * the few global actions players hunt for most. */
 uint32_t Menu::DrawSearchActionEntries(const std::string& menuSearchText) {
     struct SearchAction {
-        const char* name;
-        const char* terms;
+        const char* name = nullptr;
+        const char* terms = nullptr;
         std::function<void()> run;
     };
     const SearchAction kSearchActions[] = {
@@ -1197,7 +1197,7 @@ static bool freshOpen = true;
 /* §34 pending-changes: RequiresRestart widgets write their CVar at once but
  * only take effect on reset. Snapshot each such CVar on menu open and diff
  * per frame - the footer chip shows the pending count + a restart action. */
-struct PendingRestart { int32_t baseline; std::string name; };
+struct PendingRestart { int32_t baseline = 0; std::string name; };
 static std::unordered_map<std::string, PendingRestart> sRestartBaseline;
 static int sPendingRestart = 0;
 

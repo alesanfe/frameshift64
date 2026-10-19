@@ -528,6 +528,7 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
             ImGui::PopStyleColor();
             if (ImGui::SmallButton(TR("Refresh"))) {
                 port_netleaderboard_fetch(serverBuf);
+                port_netleaderboard_fetch_history(serverBuf);
             }
             const int lbState = port_netleaderboard_state();
             if (lbState == 1) {
@@ -612,6 +613,36 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
                 }
             } else {
                 ImGui::TextDisabled("%s", TR("Press Refresh to load the board."));
+            }
+            /* Verified match history rides the same Refresh — the service
+             * keeps the last LB_HISTORY_MAX corroborated results. */
+            if (ImGui::TreeNode(TR("Recent matches"))) {
+                const int hState = port_netleaderboard_history_state();
+                if (hState == 1) {
+                    ImGui::TextDisabled("%s", TR("Loading..."));
+                } else if (hState == -1) {
+                    ImGui::TextColored(SemanticColors::Error, "%s",
+                                     TR("Could not load match history."));
+                } else if (hState == 2) {
+                    const int hTotal = port_netleaderboard_history_count();
+                    if (hTotal == 0) {
+                        ImGui::TextDisabled("%s", TR("No verified matches yet."));
+                    }
+                    for (int i = 0; i < hTotal && i < 20; i++) {
+                        PortLbMatchRow m;
+                        if (!port_netleaderboard_history_at(i, &m)) {
+                            continue;
+                        }
+                        if (m.draw) {
+                            ImGui::BulletText(TR("%s drew %s"), m.a, m.b);
+                        } else {
+                            ImGui::BulletText(TR("%s beat %s"), m.w, m.l);
+                        }
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("%s", m.stamp);
+                    }
+                }
+                ImGui::TreePop();
             }
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             ImGui::TextWrapped("%s", TR("Ratings update when both players report the same result — "

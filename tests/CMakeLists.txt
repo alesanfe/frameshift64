@@ -89,9 +89,8 @@ target_include_directories(lobby_json_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 # temp dir, so load/save runs fully offline. Each binary runs twice:
 # once against a crafted fixture (default argv) and once against a
 # corrupt file (argv "corrupt") since the lazy load is one-shot per
-# process. tests/support/shim supplies the Ship::Context test double —
-# libultraship itself can't link into a test (unresolved port_* hooks,
-# static-CRT mismatch), see the shim header.
+# process. port_save_get_dir is the test seam — each test TU provides a
+# double honoring SSB64_SAVE_PATH.
 foreach(store netstats netfriends)
     smash_add_test(NAME ${store}_test TYPE unit TIMEOUT 15
         SOURCES
@@ -100,7 +99,6 @@ foreach(store netstats netfriends)
         LIBRARIES smash_test_support nlohmann_json::nlohmann_json
         LABELS netplay persistence deterministic)
     target_include_directories(${store}_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/tests/support/shim
         ${CMAKE_SOURCE_DIR}/src/networking/netplay/domain
         ${CMAKE_SOURCE_DIR}/src/observability
         ${CMAKE_SOURCE_DIR}/src/persistence

@@ -683,7 +683,7 @@ bool CommitDir(const std::filesystem::path& staged, const std::filesystem::path&
  * "close the zip / drop the .part staging file" tails. */
 struct InstallCtx {
     InstallJob job;
-    uint64_t gen;
+    uint64_t gen = 0;
     std::error_code ec;
     std::string err;
     fs::path modsDir;

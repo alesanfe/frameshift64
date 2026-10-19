@@ -8,6 +8,7 @@
 #ifdef __SWITCH__
 
 #include "coroutine.h"
+#include "coroutine_tracking.h"
 #include "port_watchdog.h"
 
 #include <stdint.h>
@@ -15,9 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CANARY_HEAD 0xDEADBEEFu
-#define CANARY_TAIL 0xCAFEBABEu
-#define MIN_STACK_SIZE 32768
+/* CANARY_HEAD/CANARY_TAIL/MIN_STACK_SIZE come from coroutine_tracking.h */
 
 /*
  * AArch64 context.  Offsets must match the stp/ldp pairs in context_switch.
@@ -54,37 +53,12 @@ static PortCoroutine *sCurrentCoroutine = NULL;
 static PortCoroutine *sLiveCoroutines = NULL;
 static uint32_t sNextCoroutineSerial = 0;
 
-static void coroutine_track(PortCoroutine *co) {
-    co->serial = ++sNextCoroutineSerial;
-    co->next_live = sLiveCoroutines;
-    sLiveCoroutines = co;
-}
-
-static void coroutine_untrack(PortCoroutine *co) {
-    PortCoroutine **pp = &sLiveCoroutines;
-    while (*pp != NULL) {
-        if (*pp == co) {
-            *pp = co->next_live;
-            break;
-        }
-        pp = &(*pp)->next_live;
-    }
-    co->next_live = NULL;
-}
-
 uint32_t port_coroutine_serial_now(void) {
     return sNextCoroutineSerial;
 }
 
 void port_coroutine_reap_after(uint32_t serial) {
-    PortCoroutine *co = sLiveCoroutines;
-    while (co != NULL) {
-        PortCoroutine *next = co->next_live;
-        if (co->serial > serial && co != sCurrentCoroutine) {
-            port_coroutine_destroy(co);
-        }
-        co = next;
-    }
+    coro::reap_after(serial, sLiveCoroutines, sCurrentCoroutine);
 }
 
 /* Defined in src/platform/switch/context_switch.s */
@@ -141,14 +115,14 @@ PortCoroutine *port_coroutine_create(void (*entry)(void *), void *arg,
     co->finished    = 0;
     co->started     = 0;
 
-    coroutine_track(co);
+    coro::track(co, sLiveCoroutines, sNextCoroutineSerial);
     return co;
 }
 
 void port_coroutine_destroy(PortCoroutine *co) {
     if (co == NULL) return;
     if (!validate_coroutine(co, "destroy")) return;
-    coroutine_untrack(co);
+    coro::untrack(co, sLiveCoroutines);
     if (co->stack_mem) { free(co->stack_mem); co->stack_mem = NULL; }
     co->canary_head = 0;
     co->canary_tail = 0;

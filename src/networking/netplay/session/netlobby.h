@@ -7,11 +7,7 @@
 
 /* Lobby server (services/netplay-lobby). Release builds bake the deployed Worker
  * in via -DSSB64_NETPLAY_SERVER=...; players can override it in the menu. */
-#ifdef SSB64_NETPLAY_SERVER
-#define PORT_NETLOBBY_DEFAULT_SERVER SSB64_NETPLAY_SERVER
-#else
-#define PORT_NETLOBBY_DEFAULT_SERVER "wss://smash-netplay.jumpcircuit.workers.dev"
-#endif
+#include "netplay_server.h"
 
 #ifdef __cplusplus
 extern "C" {

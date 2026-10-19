@@ -23,6 +23,7 @@
 #endif
 
 #include "coroutine.h"
+#include "coroutine_tracking.h"
 #include "port_watchdog.h"
 
 #include <cstddef>
@@ -33,7 +34,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define MIN_STACK_SIZE 32768
 
 extern "C" {
 
@@ -102,37 +102,12 @@ static thread_local PortCoroutine *sCurrentCoroutine = nullptr;
 static PortCoroutine *sLiveCoroutines = nullptr;
 static uint32_t sNextCoroutineSerial = 0;
 
-static void coroutine_track(PortCoroutine *co) {
-    co->serial = ++sNextCoroutineSerial;
-    co->next_live = sLiveCoroutines;
-    sLiveCoroutines = co;
-}
-
-static void coroutine_untrack(PortCoroutine *co) {
-    PortCoroutine **pp = &sLiveCoroutines;
-    while (*pp != nullptr) {
-        if (*pp == co) {
-            *pp = co->next_live;
-            break;
-        }
-        pp = &(*pp)->next_live;
-    }
-    co->next_live = nullptr;
-}
-
 uint32_t port_coroutine_serial_now(void) {
     return sNextCoroutineSerial;
 }
 
 void port_coroutine_reap_after(uint32_t serial) {
-    PortCoroutine *co = sLiveCoroutines;
-    while (co != nullptr) {
-        PortCoroutine *next = co->next_live;
-        if (co->serial > serial && co != sCurrentCoroutine) {
-            port_coroutine_destroy(co);
-        }
-        co = next;
-    }
+    coro::reap_after(serial, sLiveCoroutines, sCurrentCoroutine);
 }
 
 /* Called from the asm trampoline with PortCoroutine* in x0.
@@ -208,7 +183,7 @@ PortCoroutine *port_coroutine_create(void (*entry)(void *), void *arg, size_t st
     co->ctx.lr = (uint32_t)(uintptr_t)&port_coroutine_trampoline_armv7;
 #endif
 
-    coroutine_track(co);
+    coro::track(co, sLiveCoroutines, sNextCoroutineSerial);
     return co;
 }
 
@@ -218,7 +193,7 @@ void port_coroutine_destroy(PortCoroutine *co) {
         fprintf(stderr, "SSB64: port_coroutine_destroy on current coroutine\n");
         abort();
     }
-    coroutine_untrack(co);
+    coro::untrack(co, sLiveCoroutines);
     if (co->stack_mem) {
         munmap(co->stack_mem, co->stack_total);
     }

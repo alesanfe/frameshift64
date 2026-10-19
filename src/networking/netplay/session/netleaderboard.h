@@ -49,6 +49,23 @@ void port_netleaderboard_report(const char *server, const char *name);
 /* My current rank (1-based) if my claimed name is on the board, else 0. */
 int port_netleaderboard_my_rank(void);
 
+/* Match history — GET <server>/history (newest-first verified matches).
+ * Same fetch-state convention as the board: 0 idle, 1 fetching,
+ * 2 ready, -1 error. */
+int  port_netleaderboard_history_state(void);
+void port_netleaderboard_fetch_history(const char *server);
+int  port_netleaderboard_history_count(void);
+/* One cached match row. Names are NUL-truncated to their capacities;
+ * `draw` records a draw (w/l empty); `stamp` gets "MM-DD HH:MM" UTC.
+ * Returns 0 for an out-of-range index. */
+typedef struct PortLbMatchRow {
+    char a[128], b[128];   /* both participants */
+    char w[128], l[128];   /* winner/loser (empty on draw) */
+    char stamp[24];
+    int draw;
+} PortLbMatchRow;
+int port_netleaderboard_history_at(int index, PortLbMatchRow *out);
+
 /* Replay sharing — uploads the .ssr at `path` to POST <server>/replay.
  * share_state: 0 idle / 1 in flight / 2 ready (link in share_link) / -1 failed. */
 int port_netleaderboard_share_state(void);

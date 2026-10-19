@@ -150,7 +150,7 @@ static std::unordered_map<std::string, std::vector<uint8_t>> &pristineCache() {
 }
 
 struct WorkingEntry {
-    uintptr_t scripts_lo;
+    uintptr_t scripts_lo = 0;
     std::vector<uint8_t> script_data;
     std::vector<uint8_t> texture_data;
 };

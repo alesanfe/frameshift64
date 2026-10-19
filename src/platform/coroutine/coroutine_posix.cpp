@@ -25,6 +25,7 @@
 #endif
 
 #include "coroutine.h"
+#include "coroutine_tracking.h"
 #include "port_watchdog.h"
 
 #include <ucontext.h>
@@ -39,19 +40,18 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
-#define MIN_STACK_SIZE 32768
 
 struct PortCoroutine {
 	ucontext_t ctx;
 	ucontext_t caller_ctx;
-	void (*entry)(void *);
-	void *arg;
-	int finished;
-	char *stack_mem;   /* mmap base (guard page at the bottom) */
-	size_t stack_total; /* full mapping length incl. guard page */
-	int stack_low_warned; /* low-stack watermark warning already emitted */
-	PortCoroutine *next_live; /* registry link (AUD-27 rollback reap) */
-	uint32_t serial;
+	void (*entry)(void *) = nullptr;
+	void *arg = nullptr;
+	int finished = 0;
+	char *stack_mem = nullptr;   /* mmap base (guard page at the bottom) */
+	size_t stack_total = 0; /* full mapping length incl. guard page */
+	int stack_low_warned = 0; /* low-stack watermark warning already emitted */
+	PortCoroutine *next_live = nullptr; /* registry link (AUD-27 rollback reap) */
+	uint32_t serial = 0;
 };
 
 static thread_local PortCoroutine *sCurrentCoroutine = NULL;
@@ -64,26 +64,6 @@ static thread_local PortCoroutine *sCurrentCoroutine = NULL;
 static PortCoroutine *sLiveCoroutines = NULL;
 static uint32_t sNextCoroutineSerial = 0;
 
-static void coroutine_track(PortCoroutine *co)
-{
-	co->serial = ++sNextCoroutineSerial;
-	co->next_live = sLiveCoroutines;
-	sLiveCoroutines = co;
-}
-
-static void coroutine_untrack(PortCoroutine *co)
-{
-	PortCoroutine **pp = &sLiveCoroutines;
-	while (*pp != NULL) {
-		if (*pp == co) {
-			*pp = co->next_live;
-			break;
-		}
-		pp = &(*pp)->next_live;
-	}
-	co->next_live = NULL;
-}
-
 uint32_t port_coroutine_serial_now(void)
 {
 	return sNextCoroutineSerial;
@@ -91,14 +71,7 @@ uint32_t port_coroutine_serial_now(void)
 
 void port_coroutine_reap_after(uint32_t serial)
 {
-	PortCoroutine *co = sLiveCoroutines;
-	while (co != NULL) {
-		PortCoroutine *next = co->next_live;
-		if (co->serial > serial && co != sCurrentCoroutine) {
-			port_coroutine_destroy(co);
-		}
-		co = next;
-	}
+	coro::reap_after(serial, sLiveCoroutines, sCurrentCoroutine);
 }
 
 static size_t port_page_size(void)
@@ -203,7 +176,7 @@ PortCoroutine *port_coroutine_create(void (*entry)(void *), void *arg,
 	            (unsigned int)0);
 #endif
 
-	coroutine_track(co);
+	coro::track(co, sLiveCoroutines, sNextCoroutineSerial);
 	return co;
 }
 
@@ -216,7 +189,7 @@ void port_coroutine_destroy(PortCoroutine *co)
 		fprintf(stderr, "SSB64: port_coroutine_destroy on current coroutine\n");
 		abort();
 	}
-	coroutine_untrack(co);
+	coro::untrack(co, sLiveCoroutines);
 	if (co->stack_mem != NULL) {
 		munmap(co->stack_mem, co->stack_total);
 		co->stack_mem = NULL;

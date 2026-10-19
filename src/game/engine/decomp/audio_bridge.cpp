@@ -252,8 +252,8 @@ static inline s32 readBE32s(const u8* p) { return (s32)readBE32(p); }
 /* ========================================================================= */
 
 struct AudioBlob {
-    const uint8_t* data;
-    size_t         size;
+    const uint8_t* data = nullptr;
+    size_t         size = 0;
     std::shared_ptr<Ship::IResource> resource; // prevent release
 };
 

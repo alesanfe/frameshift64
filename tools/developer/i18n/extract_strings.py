@@ -49,7 +49,7 @@ COMBO_PAIR = re.compile(r"\{\s*[-\w.:+*() ]+,\s*" + STR + r"\s*\}")
 # disabledMap = { {DISABLE_FOR_X, {check, "reason", ..., "action"}} } —
 # the reason/action literals are TR()'d lazily at render, so they never
 # appear inside a TR(...) call for the plain patterns to see.
-DISABLED_MAP = re.compile(r"\bdisabledMap\s*=\s*\{(.*?)\n[ \t]*\};", re.S)
+DISABLED_MAP = re.compile(r"\bdisabledMap\s*=\s*\{(.*?)\n[ \t]*\};", re.DOTALL)
 STR_RE = re.compile(STR)
 # which capture group holds the literal per pattern (AddSidebarEntry → 2)
 GROUP_IDX = [1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1]

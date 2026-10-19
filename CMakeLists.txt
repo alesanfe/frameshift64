@@ -839,7 +839,8 @@ set(SSB64_MODULE_ROOT_platform      src/platform)
 # which scoped modules do not get (the lint still covers that channel).
 set(SSB64_MODULE_SCOPE_observability
     src/observability
-    src/platform/http)             # CurlPostToString — crash-bundle upload
+    src/platform/http              # CurlPostToString — crash-bundle upload
+    src/shared)                    # netplay_server.h — upload endpoint
 set(SSB64_MODULE_SCOPE_config
     src/config
     src/observability)            # port_log.h — shared log sink
@@ -913,6 +914,7 @@ set(SSB64_MODULE_SCOPE_presentation
     src/application                    # app_mods.h — mods panel
     src/config src/i18n src/persistence
     src/observability
+    src/shared                         # netplay_server.h via netlobby.h
     src/game/gameplay                  # enhancements.h
     src/networking/netplay/session src/networking/netplay/transport
     src/networking/netplay/domain      # netstats.h — rating/history panel
@@ -930,7 +932,9 @@ set(SSB64_MODULE_SCOPE_update
     src/application/update/downloads src/application/update/integrity
     src/game/gameplay                  # enhancements.h — update check entry
     src/platform/filesystem src/platform/http
-    src/observability)
+    src/observability
+    src/shared                       # build_version.h — fallback identity macros
+)
 
 set(SSB64_MODULE_OBJECTS "")
 set(SSB64_SRC_PORT_TOPLEVEL ${SSB64_SRC_PORT})
@@ -1607,6 +1611,7 @@ target_include_directories(ssb64_src_flat_includes INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/window
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/android
     ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/compatibility
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/shared
 )
 # Non-module sources (files sitting directly under src/ or its group
 # roots) compile inside the executable target — it keeps the flat set.

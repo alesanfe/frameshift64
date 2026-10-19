@@ -629,10 +629,18 @@ void PortGameInit(void)
 	 * coroutine switching. */
 	port_coroutine_init_main();
 
-	/* Create the game coroutine with a large stack (1 MB).
+	/* Create the game coroutine with a large stack (1 MB native,
+	 * 4 MB under Emscripten — SAFE_HEAP instrumentation inflates every
+	 * frame, and an overflow lands in the preceding heap block).
 	 * This will host the entire game: syMainLoop -> Thread 1 -> Thread 5
 	 * -> scheduler, controller, audio init -> scManagerRunLoop. */
-	sGameCoroutine = port_coroutine_create(game_coroutine_entry, NULL, 1024 * 1024);
+	sGameCoroutine = port_coroutine_create(game_coroutine_entry, NULL,
+#ifdef __EMSCRIPTEN__
+	                                       4 * 1024 * 1024
+#else
+	                                       1024 * 1024
+#endif
+	                                       );
 	if (sGameCoroutine == NULL) {
 		port_log("SSB64: FATAL — failed to create game coroutine\n");
 		return;
@@ -766,6 +774,14 @@ void PortScreenshotMaybeCaptureFrame(int frame)
 
 void PortPushFrame(void)
 {
+#ifdef __EMSCRIPTEN__
+	/* Persist lines queued while a fiber was running (fiber contexts
+	 * can't take locks — the main-thread futex wait is a synchronous
+	 * busy-spin). We are in the main context here, so the normal
+	 * locked path is legal. */
+	port_log_fiber_drain();
+#endif
+
 	// Process cheats safely before the frame updates
 	lbBackupApplyCheats();
 

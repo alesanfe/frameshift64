@@ -46,9 +46,17 @@ extern int atoi(const char *nptr);
 #include "port_watchdog.h"
 
 /* Default stack sizes for coroutines.  N64 stacks are tiny (1-4KB) but
- * PC calling conventions and 64-bit pointers need much more. */
+ * PC calling conventions and 64-bit pointers need much more. Emscripten
+ * builds need ~2x more: SAFE_HEAP instruments every load/store with
+ * scratch locals, fattening each frame — an overflow lands in the
+ * preceding heap block and shows up as silent FILE/lock corruption. */
+#ifdef __EMSCRIPTEN__
+#define PORT_STACK_SERVICE  (512 * 1024)  /* OS threads 1-8 */
+#define PORT_STACK_GOBJ     (256 * 1024)  /* GObj thread processes */
+#else
 #define PORT_STACK_SERVICE  (256 * 1024)  /* OS threads 1-8 */
 #define PORT_STACK_GOBJ     (64 * 1024)   /* GObj thread processes */
+#endif
 
 /* ---- Thread registry ----
  * Tracks all service threads (ID < 100) so PortPushFrame can resume them.

@@ -47,7 +47,7 @@ def load_manifest(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def gate(build_dir: Path) -> "str | None":
+def gate(build_dir: Path) -> str | None:
     """None = runnable; otherwise the reason to skip."""
     exe = build_dir / GAME_EXE
     if not exe.exists():
@@ -95,8 +95,8 @@ def snapshot_binary(build_dir: Path, snap: Path) -> Path:
 
 
 def run_case(build_dir: Path, name: str, ssr: Path, out_dir: Path,
-             verify_trace: "Path | None", capture_trace: "Path | None",
-             timeout: int) -> "tuple[int, str]":
+             verify_trace: Path | None, capture_trace: Path | None,
+             timeout: int) -> tuple[int, str]:
     """One replay playback. Returns (exit_code, log_path)."""
     log = out_dir / f"{name}.log"
     env = {

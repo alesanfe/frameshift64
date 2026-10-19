@@ -164,48 +164,10 @@ LONG CALLBACK watchVectoredHandler(PEXCEPTION_POINTERS ep) {
 	return EXCEPTION_CONTINUE_EXECUTION;
 }
 
-// Program our watch addresses on one thread's DR2/DR3.
+// Program our watch addresses on one thread's DR2/DR3 — slots 0-1 are
+// gwatch's ucrt globals; the helper leaves their DR7 fields untouched.
 int armThread(DWORD tid) {
-	const bool self = (tid == GetCurrentThreadId());
-	HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT |
-	                           THREAD_SET_CONTEXT,
-	                       FALSE, tid);
-	if (th == nullptr) {
-		return 0;
-	}
-	/* SuspendThread on the CURRENT thread suspends the caller before
-	 * SetThreadContext/ResumeThread ever run — self-deadlock, and the
-	 * reason earlier watchpoint runs froze silently right after arming.
-	 * Our own DRs can be programmed without suspending ourselves. */
-	if (!self && SuspendThread(th) == (DWORD)-1) {
-		CloseHandle(th);
-		return 0;
-	}
-	CONTEXT ctx;
-	ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-	if (GetThreadContext(th, &ctx)) {
-		/* Own only slots 2-3: clear L2/L3 enables (bits 4-7) and RW/LEN for
-		 * DR2+DR3 (bits 24-31). Slots 0-1 (gwatch's ucrt globals) and the
-		 * reserved bits pass through untouched. */
-		DWORD64 dr7 = ctx.Dr7 & ~0xFF0000F0ull;
-		for (int i = 0; i < kMaxWatch; ++i) {
-			if (gWatchAddrs[i] == 0) {
-				continue;
-			}
-			const int dr = kDrBase + i;
-			(&ctx.Dr0)[dr] = (DWORD64)gWatchAddrs[i];
-			dr7 |= (1ull << (dr * 2)) |            // Ln local enable
-			       (1ull << (16 + dr * 4)) |       // RWn = 01 write
-			       (3ull << (18 + dr * 4));        // LENn = 11 eight bytes
-		}
-		ctx.Dr7 = dr7;
-		SetThreadContext(th, &ctx);
-	}
-	if (!self) {
-		ResumeThread(th);
-	}
-	CloseHandle(th);
-	return 1;
+	return armDebugWatchOnThread(tid, gWatchAddrs, kMaxWatch, kDrBase);
 }
 
 // Dump the loaded-module map once at arm time: the stomped link values

@@ -20,6 +20,7 @@
 #include "FileHash.h" // Sha256File + DownloadedFileMatches (shared with ModPackDownloader)
 #include "ReleaseSig.h" // TD-009: signed SHA256SUMS.txt verification
 #include "http_curl.h" // CurlGetToString / CurlDownloadToFile — libcurl in-process
+#include "build_version.h" // BATTLESHIP_CURRENT_VERSION / BATTLESHIP_BUILD_SHA
 #include "port_log.h"
 
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -86,10 +87,6 @@ static std::string s_downloadStatus = "";
 static std::mutex s_stringMutex;
 
 namespace {
-
-#ifndef BATTLESHIP_CURRENT_VERSION
-#define BATTLESHIP_CURRENT_VERSION "dev"
-#endif
 
 constexpr const char* kRepo = "fatty8me2/smash-classic";
 constexpr const char* kLatestReleaseApi = "https://api.github.com/repos/fatty8me2/smash-classic/releases/latest";

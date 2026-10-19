@@ -15,7 +15,10 @@
 #include <pthread.h>
 #include <emscripten.h>           /* emscripten_force_exit */
 #include <emscripten/console.h>   /* emscripten_err — raw JS import */
-#include "coroutine.h"            /* port_coroutine_in_coroutine */
+/* coroutine.h lives in src/platform/coroutine — outside this leaf module's
+ * include scope. The ABI is a stable extern "C" int fn; declare it here
+ * rather than giving observability a module dependency for one query. */
+extern int port_coroutine_in_coroutine(void);
 #else
 #include <unistd.h>
 #include <pthread.h>
@@ -272,11 +275,6 @@ void port_log_ex(port_log_level level, const char *category, const char *fmt, ..
 
 void port_log_write(port_log_level level, const char *category, const char *msg, int n)
 {
-#ifdef __EMSCRIPTEN__
-	/* Fiber-hang bringup probe: raw stderr markers, no locks. */
-	static int sPlwProbe = 0;
-	if (sPlwProbe < 200) fprintf(stderr, "PLW%d enter\n", ++sPlwProbe);
-#endif
 	/* Format once, feed three taps: plain log, JSONL mirror, sinks.
 	 * Non-INFO records carry a textual [level/cat] prefix in the plain
 	 * log so grep still finds them without the JSONL mirror. */
@@ -314,12 +312,8 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 		}
 		return;
 	}
-	if (sPlwProbe < 200) fprintf(stderr, "PLW%d prelock\n", sPlwProbe);
 #endif
 	LOG_LOCK();
-#ifdef __EMSCRIPTEN__
-	if (sPlwProbe < 200) fprintf(stderr, "PLW%d locked\n", sPlwProbe);
-#endif
 	FILE *f = sLogFile;
 #ifdef __EMSCRIPTEN__
 	/* The log file lives in MEMFS, invisible to the browser console.
@@ -376,9 +370,6 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 		}
 	}
 	LOG_UNLOCK();
-#ifdef __EMSCRIPTEN__
-	if (sPlwProbe < 200) fprintf(stderr, "PLW%d unlocked\n", sPlwProbe);
-#endif
 	/* fflush on every call costs seconds per frame on a slow drive when
 	 * figatree watchdogs fire 28x per frame during a stuck APPEAR. Rely on
 	 * stdio's buffer + OS-on-exit flush for normal logging; crash dumps
@@ -394,10 +385,40 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 		if (sink_ex != NULL) sink_ex(level, category, msg, sSinkExUser);
 		sInSink = 0;
 	}
-#ifdef __EMSCRIPTEN__
-	if (sPlwProbe < 200) fprintf(stderr, "PLW%d done\n", sPlwProbe);
-#endif
 }
+
+#ifdef __EMSCRIPTEN__
+void port_log_fiber_drain(void)
+{
+	/* Only the main context may touch the locked write path — inside a
+	 * fiber this stays queued until the next swap boundary. */
+	if (port_coroutine_in_coroutine()) {
+		return;
+	}
+	while (sFiberLogTail != sFiberLogHead) {
+		const char *line = sFiberLogRing[sFiberLogTail];
+		sFiberLogTail = (sFiberLogTail + 1) % FIBER_LOG_CAP;
+		sDrainReplay = 1;
+		/* The stored text already carries its [warn/x] prefix. */
+		port_log_write(PORT_LOG_INFO, NULL, (char *)line, (int)strlen(line));
+		sDrainReplay = 0;
+	}
+	if (sFiberLogDropped > 0) {
+		char m[96];
+		int n = snprintf(m, sizeof(m),
+		                 "port_log: %d fiber-context lines dropped (ring full)\n",
+		                 sFiberLogDropped);
+		sFiberLogDropped = 0;
+		if (n > 0) {
+			sDrainReplay = 1;
+			port_log_write(PORT_LOG_WARN, NULL, m, n);
+			sDrainReplay = 0;
+		}
+	}
+}
+#else
+void port_log_fiber_drain(void) {}
+#endif
 
 void port_log_set_sink(port_log_sink_fn fn, void *user)
 {

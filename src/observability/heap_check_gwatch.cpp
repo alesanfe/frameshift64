@@ -119,35 +119,9 @@ LONG CALLBACK gwatchVectored(PEXCEPTION_POINTERS ep) {
 }
 
 int gwatchArmThread(DWORD tid) {
-	const bool self = (tid == GetCurrentThreadId());
-	HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT |
-	                           THREAD_SET_CONTEXT,
-	                       FALSE, tid);
-	if (th == nullptr) return 0;
-	/* Suspending our own thread deadlocks the process (the earlier
-	 * silent freezes right after "slots armed"). Self DR programming
-	 * needs no suspend. */
-	if (!self && SuspendThread(th) == (DWORD)-1) { CloseHandle(th); return 0; }
-	CONTEXT ctx;
-	ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-	if (GetThreadContext(th, &ctx)) {
-		/* Slots 0-1 only: DR2/DR3 belong to the heap_watchpoint.cpp victim
-		 * watch. Clear just L0/L1 enables (bits 0-3) and RW0/LEN0+RW1/LEN1
-		 * (bits 16-23) so the other system survives re-arms. */
-		DWORD64 dr7 = ctx.Dr7 & ~0x00FF000Full;
-		for (int i = 0; i < 2; ++i) {
-			if (gGWAddr[i] == 0) continue;
-			(&ctx.Dr0)[i] = (DWORD64)gGWAddr[i];
-			dr7 |= (1ull << (i * 2)) | (1ull << (16 + i * 4)) | (3ull << (18 + i * 4));
-		}
-		ctx.Dr7 = dr7;
-		SetThreadContext(th, &ctx);
-	}
-	if (!self) {
-		ResumeThread(th);
-	}
-	CloseHandle(th);
-	return 1;
+	/* Slots 0-1 only: DR2/DR3 belong to the heap_watchpoint.cpp victim
+	 * watch — the helper clears just our DR7 fields. */
+	return armDebugWatchOnThread(tid, gGWAddr, 2, 0);
 }
 
 } // namespace

@@ -166,7 +166,10 @@ def build_checks(args) -> list:
                    # the N64 ABI layer, brace style is mixed deliberately.
                    "--filter=-whitespace/line_length,-build/include_subdir,-whitespace/tab,-readability/casting,-runtime/int,-whitespace/braces",
                    "--exclude=build", "--exclude=build-lint", "--exclude=out",
-                   "--exclude=.venv-lint", "--exclude=node_modules",
+                   "--exclude=.venv-lint",
+                   # cpplint globs excludes from CWD without recursion —
+                   # "node_modules" alone matches nothing; name the dir.
+                   "--exclude=services/netplay-lobby/node_modules",
                    "--exclude=generated", "--exclude=.claude"]
     if not args.include_vendor:
         cpplint_cmd += ["--exclude=components", "--exclude=mods/examples"]

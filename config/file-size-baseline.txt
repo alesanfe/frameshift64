@@ -1,6 +1,6 @@
 # Per-file line-count caps for files already over the 1000-line limit.
 # Regenerate with: python tools/analysis/lint/check_file_size.py --update
-src/application/gameloop.cpp 1051
+src/application/gameloop.cpp 1067
 src/application/port.cpp 1400
 src/application/update/downloads/ModPackDownloader.cpp 1237
 src/networking/netplay/transport/websocket_transport.cpp 1703
@@ -8,4 +8,4 @@ src/presentation/Menu.cpp 2119
 src/presentation/PortMenu.cpp 1898
 src/presentation/PortMenuCustomization.cpp 1331
 src/presentation/UIWidgets.cpp 1279
-src/presentation/UIWidgets.hpp 1133
+src/presentation/UIWidgets.hpp 1134

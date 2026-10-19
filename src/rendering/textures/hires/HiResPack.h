@@ -94,9 +94,9 @@ struct DecodedTexture {
 };
 
 struct HashKey {
-    uint32_t rgba8Crc;
-    uint8_t fmt;
-    uint8_t siz;
+    uint32_t rgba8Crc = 0;
+    uint8_t fmt = 0;
+    uint8_t siz = 0;
     uint8_t pad0 = 0, pad1 = 0;
 
     bool operator==(const HashKey&) const noexcept = default;

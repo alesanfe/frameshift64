@@ -42,7 +42,7 @@ def parse_file(path):
 
     slices = {}
     for m in re.finditer(
-            r'const SSB64SyntheticSlice (\w+)\[\] = \{(.*?)\};', text, re.S):
+            r'const SSB64SyntheticSlice (\w+)\[\] = \{(.*?)\};', text, re.DOTALL):
         name, body = m.group(1), m.group(2)
         entries = re.findall(
             r'\{\s*"([^"]+)",\s*(0x[0-9A-Fa-f]+|\d+),\s*(0x[0-9A-Fa-f]+|\d+),'
@@ -53,7 +53,7 @@ def parse_file(path):
 
     interns = {}
     for m in re.finditer(
-            r'const SSB64RelocInternSlot (\w+)\[\] = \{(.*?)\};', text, re.S):
+            r'const SSB64RelocInternSlot (\w+)\[\] = \{(.*?)\};', text, re.DOTALL):
         name, body = m.group(1), m.group(2)
         entries = re.findall(
             r'\{\s*(\d+),\s*(\d+),\s*(0x[0-9A-Fa-f]+|\d+),\s*(0x[0-9A-Fa-f]+|\d+)\s*\}',
@@ -64,7 +64,7 @@ def parse_file(path):
 
     externs = {}
     for m in re.finditer(
-            r'const SSB64RelocExternSlot (\w+)\[\] = \{(.*?)\};', text, re.S):
+            r'const SSB64RelocExternSlot (\w+)\[\] = \{(.*?)\};', text, re.DOTALL):
         name, body = m.group(1), m.group(2)
         entries = re.findall(
             r'\{\s*(\d+),\s*(\d+),\s*(0x[0-9A-Fa-f]+|\d+),\s*(0x[0-9A-Fa-f]+|\d+)\s*\}',
@@ -74,7 +74,7 @@ def parse_file(path):
             for a, b, c, d in entries]
 
     specs = []
-    table = re.search(r'gSyntheticRelocSpecs\[\] = \{(.*?)\};', text, re.S)
+    table = re.search(r'gSyntheticRelocSpecs\[\] = \{(.*?)\};', text, re.DOTALL)
     if not table:
         fail(f'{path.name}: gSyntheticRelocSpecs table not found')
         return specs, slices, interns, externs
@@ -85,10 +85,10 @@ def parse_file(path):
             table.group(1)):
         (fid, parent, vsize, mhash, sarr, scnt,
          iarr, icnt, earr, ecnt) = m.groups()
-        specs.append(dict(
-            file_id=int(fid), parent=parent, vsize=parse_int(vsize),
-            mhash=mhash, sarr=sarr, scnt=int(scnt),
-            iarr=iarr, icnt=int(icnt), earr=earr, ecnt=int(ecnt)))
+        specs.append({
+            'file_id': int(fid), 'parent': parent, 'vsize': parse_int(vsize),
+            'mhash': mhash, 'sarr': sarr, 'scnt': int(scnt),
+            'iarr': iarr, 'icnt': int(icnt), 'earr': earr, 'ecnt': int(ecnt)})
     return specs, slices, interns, externs
 
 

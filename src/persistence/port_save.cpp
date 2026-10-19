@@ -238,11 +238,16 @@ extern "C" const char *port_save_get_path(void)
 
 extern "C" const char *port_save_get_dir(void)
 {
+    /* Memoized like savePath(): re-resolving per call would race the
+     * static string and could hand callers a stale c_str() pointer. */
+    static std::once_flag sDirOnce;
     static std::string dir;
-    dir = std::filesystem::path(savePath()).parent_path().string();
-    if (dir.empty()) {
-        dir = ".";
-    }
+    std::call_once(sDirOnce, [] {
+        dir = std::filesystem::path(savePath()).parent_path().string();
+        if (dir.empty()) {
+            dir = ".";
+        }
+    });
     return dir.c_str();
 }
 
@@ -283,7 +288,7 @@ extern "C" int port_save_write(uintptr_t offset, const void *src, size_t size)
 
     std::call_once(gMetaCheckOnce, checkSaveFormat);
 
-    const std::string path = savePath();
+    const std::string& path = savePath();
     const std::string tmp  = path + ".tmp";
 
     /* Read-modify-write the whole image through a temp file + rename. The

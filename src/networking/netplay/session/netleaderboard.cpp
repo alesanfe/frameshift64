@@ -390,3 +390,101 @@ extern "C" int port_netleaderboard_my_rank(void)
     }
     return 0;
 }
+
+/* ── Match history — GET /history ─────────────────────────────────────── */
+
+std::vector<PortLbMatchRow>& sHist = *new std::vector<PortLbMatchRow>;
+std::atomic<int>& sHistState = *new std::atomic<int>{0};
+
+extern "C" int port_netleaderboard_history_state(void)
+{
+    return sHistState.load();
+}
+
+/* "2026-10-19T12:34:56.789Z" -> "10-19 12:34" (UTC, trimmed for the row). */
+static void hist_stamp(const std::string &iso, char *out, size_t cap)
+{
+    out[0] = '\0';
+    if (iso.size() >= 16 && iso[4] == '-' && iso[7] == '-' &&
+        (iso[10] == 'T' || iso[10] == ' ')) {
+        std::snprintf(out, cap, "%.5s %.5s",
+                      iso.c_str() + 5, iso.c_str() + 11);
+    }
+}
+
+extern "C" void port_netleaderboard_fetch_history(const char *server)
+{
+#ifdef SSB64_HAVE_CURL
+    const std::string base = ssb64::HttpBaseFromWsServer(server);
+    if (base.empty() || sHistState.exchange(1) == 1) {
+        return;                     /* no server configured / in flight */
+    }
+    std::thread([base] {
+        std::string body, error;
+        std::vector<PortLbMatchRow> rows;
+        int state = 2;
+        if (ssb64::CurlGetToString(base + "/history", &body, &error, {}, 15)) {
+            const nlohmann::json doc =
+                nlohmann::json::parse(body, nullptr, /*exceptions*/ false);
+            if (doc.is_object() && doc["matches"].is_array()) {
+                for (const auto &m : doc["matches"]) {
+                    if (rows.size() >= 200) {
+                        break;      /* cap: hostile server memory bound */
+                    }
+                    if (!m.is_object()) {
+                        continue;
+                    }
+                    PortLbMatchRow r{};
+                    const auto str = [&m](const char *k, char *dst, size_t cap) {
+                        const auto it = m.find(k);
+                        if (it != m.end() && it->is_string()) {
+                            std::snprintf(dst, cap, "%s",
+                                          it->get<std::string>().substr(0, 96).c_str());
+                        }
+                    };
+                    str("a", r.a, sizeof(r.a));
+                    str("b", r.b, sizeof(r.b));
+                    str("w", r.w, sizeof(r.w));
+                    str("l", r.l, sizeof(r.l));
+                    r.draw = (m.contains("draw") && m["draw"].is_boolean() &&
+                              m["draw"].get<bool>()) ? 1 : 0;
+                    std::string at;
+                    const auto it = m.find("at");
+                    if (it != m.end() && it->is_string()) {
+                        at = it->get<std::string>();
+                    }
+                    hist_stamp(at, r.stamp, sizeof(r.stamp));
+                    rows.push_back(r);
+                }
+            } else {
+                state = -1;
+            }
+        } else {
+            state = -1;
+        }
+        std::lock_guard<std::mutex> lk(sLbLock);
+        if (state == 2) {
+            sHist = std::move(rows);
+        }
+        sHistState = state;
+    }).detach();
+#else
+    (void)server;
+#endif
+}
+
+extern "C" int port_netleaderboard_history_count(void)
+{
+    std::lock_guard<std::mutex> lk(sLbLock);
+    return static_cast<int>(sHist.size());
+}
+
+extern "C" int port_netleaderboard_history_at(int index, PortLbMatchRow *out)
+{
+    std::lock_guard<std::mutex> lk(sLbLock);
+    if (out == nullptr || index < 0 || index >= static_cast<int>(sHist.size())) {
+        return 0;
+    }
+    *out = sHist[index];
+    return 1;
+}

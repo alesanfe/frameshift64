@@ -100,6 +100,52 @@ inline void describeModuleAddr(const ModEntry* table, long count, uintptr_t a,
 	snprintf(out, outSize, "0x%llx", (unsigned long long)a);
 }
 
+/* Programs `count` write-watchpoints (8-byte, RWn=write) taken from
+ * `addrs` — 0 skips a slot — starting at debug register `drBase` on one
+ * thread. Only our slots' Ln enables + RWn/LENn fields are cleared, so the
+ * other watch system's DRx survive re-arms. Self-thread is programmed
+ * without suspending (suspend-self deadlocks the process).
+ * gwatch owns DR0-DR1 (ucrt list globals); watchpoint DR2-DR3 (victims). */
+inline int armDebugWatchOnThread(DWORD tid, const volatile uintptr_t* addrs,
+                                 int count, int drBase) {
+	const bool self = (tid == GetCurrentThreadId());
+	HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT |
+	                           THREAD_SET_CONTEXT,
+	                       FALSE, tid);
+	if (th == nullptr) {
+		return 0;
+	}
+	if (!self && SuspendThread(th) == (DWORD)-1) {
+		CloseHandle(th);
+		return 0;
+	}
+	CONTEXT ctx;
+	ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+	if (GetThreadContext(th, &ctx)) {
+		const DWORD64 clear =
+		    (((1ull << (count * 2)) - 1) << (drBase * 2)) |         // Ln enables
+		    (((1ull << (count * 8)) - 1) << (16 + drBase * 4));      // RWn+LENn
+		DWORD64 dr7 = ctx.Dr7 & ~clear;
+		for (int i = 0; i < count; ++i) {
+			if (addrs[i] == 0) {
+				continue;
+			}
+			const int dr = drBase + i;
+			(&ctx.Dr0)[dr] = (DWORD64)addrs[i];
+			dr7 |= (1ull << (dr * 2)) |            // Ln local enable
+			       (1ull << (16 + dr * 4)) |       // RWn = 01 write
+			       (3ull << (18 + dr * 4));        // LENn = 11 eight bytes
+		}
+		ctx.Dr7 = dr7;
+		SetThreadContext(th, &ctx);
+	}
+	if (!self) {
+		ResumeThread(th);
+	}
+	CloseHandle(th);
+	return 1;
+}
+
 /* ---- heap_check_report.cpp ---- */
 extern HANDLE gProbeLog;
 void probeLog(const char* fmt, ...);

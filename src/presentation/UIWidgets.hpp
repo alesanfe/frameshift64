@@ -188,7 +188,8 @@ struct ColorPickerOptions : WidgetOptions {
     ImVec2 padding = ImVec2(10.0f, 8.0f);
     Colors color = Colors::Gray;
     Color_RGBA8 defaultValue = { 255, 255, 255, 255 };
-    bool useAlpha, showReset, showRandom, showRainbow, showLock;
+    bool useAlpha = false, showReset = false, showRandom = false,
+         showRainbow = false, showLock = false;
 
     ColorPickerOptions& Size(ImVec2 size_) {
         size = size_;

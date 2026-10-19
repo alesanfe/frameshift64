@@ -18,10 +18,10 @@ namespace ssb64 {
 namespace {
 
 struct Toast {
-    ToastLevel level;
+    ToastLevel level = ToastLevel::Info;
     std::string message;
     std::chrono::steady_clock::time_point created;
-    float lifetime; // seconds on screen
+    float lifetime = 4.0f; // seconds on screen
 };
 
 std::deque<Toast>& Queue() {
@@ -46,8 +46,8 @@ float LifetimeFor(ToastLevel level) {
 }
 
 struct ToastStyle {
-    const char* icon;
-    ImVec4 color;
+    const char* icon = "";
+    ImVec4 color = {};
 };
 
 ToastStyle StyleFor(ToastLevel level) {

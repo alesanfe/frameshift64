@@ -40,8 +40,13 @@ const writeJsonAtomic = (dest, obj) => {
 /* Leaderboard persisted next to the script — runtime state, not repo data. */
 const lbPath = path.join(path.dirname(fileURLToPath(import.meta.url)),
   "..", "..", "..", "leaderboard.json");
-const lb = Leaderboard.fromJSON(
-  JSON.parse(fs.existsSync(lbPath) ? fs.readFileSync(lbPath, "utf8") : "[]"));
+/* A torn or corrupt store must not crash-loop the service: recover to an
+ * empty board rather than dying at module init (chaos test phase 3). */
+let lb = new Leaderboard();
+try {
+  lb = Leaderboard.fromJSON(
+    JSON.parse(fs.existsSync(lbPath) ? fs.readFileSync(lbPath, "utf8") : "[]"));
+} catch { /* corrupt store - start fresh */ }
 const saveLb = () => {
   try { writeJsonAtomic(lbPath, lb.toJSON()); } catch { /* ro fs */ }
 };

@@ -40,9 +40,9 @@ public:
     void* GetPointer() override;
     size_t GetPointerSize() override;
 
-    uint32_t FileId;
-    uint16_t RelocInternOffset;     // internal reloc chain start (in u32 words), 0xFFFF = none
-    uint16_t RelocExternOffset;     // external reloc chain start (in u32 words), 0xFFFF = none
+    uint32_t FileId = 0;
+    uint16_t RelocInternOffset = 0xFFFF; // internal reloc chain start (in u32 words), 0xFFFF = none
+    uint16_t RelocExternOffset = 0xFFFF; // external reloc chain start (in u32 words), 0xFFFF = none
     std::vector<uint16_t> ExternFileIds;   // file IDs referenced by external relocations
     std::vector<uint8_t> Data;             // decompressed file data (big-endian)
 

@@ -35,10 +35,10 @@ constexpr int32_t kPatchLiteral = -1;
 
 struct SynthDlPatch
 {
-	uint32_t word_index;   // index into SynthDl::words (the w1 word)
-	int32_t target_slice;  // slice index, or kPatchLiteral
-	uint32_t addend;       // byte offset added to the target slice's layout offset
-	bool seg0e;            // reconstruct with the 0x0E segment prefix
+	uint32_t word_index = 0;   // index into SynthDl::words (the w1 word)
+	int32_t target_slice = 0;  // slice index, or kPatchLiteral
+	uint32_t addend = 0;       // byte offset added to the target slice's layout offset
+	bool seg0e = false;        // reconstruct with the 0x0E segment prefix
 	uint32_t read_size = 1; // full referenced range, not just its first byte
 };
 

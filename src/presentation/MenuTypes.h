@@ -135,8 +135,8 @@ using OptionsVariant = std::variant<UIWidgets::ButtonOptions, UIWidgets::Checkbo
 // `sameLine` allows for specifying that the widget should be on the same line as the previous widget
 struct WidgetInfo {
     std::string name; // Used by all widgets
-    const char* cVar; // Used by all widgets except
-    WidgetType type;
+    const char* cVar = nullptr; // Used by all widgets except
+    WidgetType type = {};
     std::shared_ptr<UIWidgets::WidgetOptions> options;
     std::variant<bool*, int32_t*, float*> valuePointer;
     WidgetFunc callback = nullptr;
@@ -332,7 +332,7 @@ struct WidgetInfo {
 struct WidgetPath {
     std::string sectionName;
     std::string sidebarName;
-    SectionColumns column;
+    SectionColumns column = SECTION_COLUMN_1;
 };
 
 // `disabledInfo` holds information on reasons for hiding or disabling a widget, as well as an evaluation lambda that
@@ -343,7 +343,7 @@ struct WidgetPath {
 // hold reasons to hide widgets so that their evaluations are also only run once per frame
 struct disabledInfo {
     DisableInfoFunc evaluation;
-    const char* reason;
+    const char* reason = nullptr;
     bool active = false;
     int32_t value = 0;
     // Optional one-click recovery rendered next to the disabled control —
@@ -358,7 +358,7 @@ struct disabledInfo {
 // added to the column groups does not need to match the specified columnCount, e.g. you can have one vector added to
 // the sidebar, but still separate the window into 3 columns and display only in the first column
 struct SidebarEntry {
-    uint32_t columnCount;
+    uint32_t columnCount = 0;
     std::vector<std::vector<WidgetInfo>> columnWidgets;
 };
 
@@ -367,7 +367,7 @@ struct SidebarEntry {
 // the last viewed for that header.
 struct MainMenuEntry {
     std::string label;
-    const char* sidebarCvar;
+    const char* sidebarCvar = nullptr;
     std::unordered_map<std::string, SidebarEntry> sidebars = {};
     std::vector<std::string> sidebarOrder = {};
 };

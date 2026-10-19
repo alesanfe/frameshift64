@@ -170,18 +170,28 @@ extern "C" void port_netlobby_join(const char *server, const char *code, int fki
  * later arrivals join, so two queued players always pair up. On room-full
  * the lobby rolls to the next code (see the "error" handler).
  *
- * Rating banding (client-side, zero server changes): proven players
- * (rating >= 1500, out of provisional) start on the tail rooms QUEUE8-9
- * while everyone else starts at QUEUE2 — a populated queue then pairs
- * same-band opponents first. Sparse-queue convergence is preserved: the
- * roll-forward on room-full eventually walks the whole pool. */
+ * Banding (client-side, zero server changes): the 8 queue rooms are
+ * split into 2x2 pools by rating band and last-measured lobby RTT —
+ * proven players (rating >= 1500, out of provisional) take the upper
+ * half, and within each rating pool the higher-RTT band (>150 ms to the
+ * lobby) starts two rooms up. A populated queue then pairs same-band
+ * opponents first (ping-vs-ping, MMR-vs-MMR); sparse-queue convergence
+ * is preserved because the roll-forward on room-full walks the whole
+ * pool. First-ever sessions carry no RTT sample and land in the low
+ * band — conservative: they widen toward higher-RTT rooms rather than
+ * trapping fast players with a guessed-slow peer. */
 extern "C" void port_netlobby_quickplay(const char *server, int fkind,
                                         int stage, int stocks, int items, int delay)
 {
     port_netlobby_cancel();
     sLobby.quickplay = true;
     const int rating = port_netstats_rating();
-    sLobby.queue_idx = (rating >= 1500 && !port_netstats_provisional()) ? 6 : 0;
+    /* 2x2 band: rated pool starts at idx 4, high-RTT band shifts +2
+     * inside each pool. lobby_rtt_ms is 0 until a prior session measured
+     * the lobby-path ping — unknown latency maps to the low band. */
+    const bool rated = (rating >= 1500 && !port_netstats_provisional());
+    const bool highRtt = (sLobby.lobby_rtt_ms > 150 && sLobby.lobby_rtt_ms < 10000);
+    sLobby.queue_idx = (rated ? 4 : 0) + (highRtt ? 2 : 0);
     sLobby.is_host = false;             // the room assigns our real role in "welcome"
     sLobby.my_slot = 1;
     sLobby.my_fkind = fkind;

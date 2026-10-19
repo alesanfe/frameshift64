@@ -46,7 +46,7 @@ static void port_udp_close_socket(PortSocket s) { close(s); }
 namespace {
 
 struct PendingPacket {
-    unsigned int release_ms;
+    unsigned int release_ms = 0;
     std::vector<uint8_t> bytes;
     bool has_to = false;
     sockaddr_in to = {};
@@ -64,9 +64,9 @@ bool sHasPeer = false;
  * ingestion at wire speed; the game thread pops the queue once per tick,
  * so a slow frame delays *processing* but never *arrival*. */
 struct IngressPacket {
-    sockaddr_in from;
-    int size;
-    uint8_t bytes[2048];
+    sockaddr_in from = {};
+    int size = 0;
+    uint8_t bytes[2048]{};
 };
 constexpr size_t kIngressCap = 2048;   /* ~4 MB worst case; inputs are ~50B */
 std::deque<IngressPacket> sIngress;

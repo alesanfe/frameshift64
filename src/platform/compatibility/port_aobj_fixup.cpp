@@ -37,8 +37,8 @@ namespace {
 enum Kind { kHeads, kRejected, kFixed, kVisited, kKindNum };
 
 struct Range {
-    uintptr_t base;
-    uintptr_t end;
+    uintptr_t base = 0;
+    uintptr_t end = 0;
     std::vector<uint8_t> bits[kKindNum];
 };
 
@@ -137,9 +137,9 @@ inline void skip_token(uint32_t *&ev) {
 struct ScanCtx {
     std::vector<uint32_t *> pending;   /* u32 addresses to un-halfswap (only populated when unhalfswap=true) */
     std::unordered_set<uintptr_t> visited;
-    int total_steps;
-    bool unhalfswap;       /* interpret each command as unhalfswap(raw); collect pending addresses */
-    bool follow_recurse;   /* follow Jump/SetAnim tokens into sub-streams */
+    int total_steps = 0;
+    bool unhalfswap = false; /* interpret each command as unhalfswap(raw); collect pending addresses */
+    bool follow_recurse = false; /* follow Jump/SetAnim tokens into sub-streams */
 };
 
 bool scan(uint32_t *head, ScanCtx &ctx);

@@ -23,12 +23,8 @@
 
 #ifdef SSB64_HAVE_CURL
 #include "http_curl.h"
+#include "netplay_server.h"
 #include <nlohmann/json.hpp>
-#if defined(SSB64_NETPLAY_SERVER)
-#define PORT_NETLOBBY_DEFAULT_SERVER SSB64_NETPLAY_SERVER
-#else
-#define PORT_NETLOBBY_DEFAULT_SERVER "wss://smash-netplay.jumpcircuit.workers.dev"
-#endif
 #endif
 
 #if defined(_WIN32)

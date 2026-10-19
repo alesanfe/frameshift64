@@ -84,7 +84,7 @@ public:
 private:
     struct HookRecord {
         std::string symbol_name;
-        void       *target;
+        void       *target = nullptr;
         std::string owner_id;
     };
 
@@ -100,9 +100,9 @@ private:
      *                           fn" walks down the chain). Used during
      *                           uninstall to free the per-entry thunk. */
     struct ChainState {
-        void *fh;            /* funchook_t* for this target (one per target) */
-        void *orig_call;     /* funchook trampoline → original engine code   */
-        void *inner_thunk;   /* bottom-of-chain thunk; jumps to orig_call    */
+        void *fh = nullptr;            /* funchook_t* for this target (one per target) */
+        void *orig_call = nullptr;     /* funchook trampoline → original engine code   */
+        void *inner_thunk = nullptr;   /* bottom-of-chain thunk; jumps to orig_call    */
         std::vector<void *>       chain;
         std::vector<std::string>  chain_owners;
         std::vector<void *>       chain_trampolines;
