@@ -42,60 +42,71 @@ void SaveOnlineCvars() {
 
 /* Modal content for the report-player popup — opened via OpenPopup by the
  * caller when a row's Report button fires. */
-static void RenderBoardRows(const char *serverBuf, int total, int myRank) {
-    static char sReportName[128] = {};
-    static bool sReportPopup = false;
-    static int sSelectedRow = -1;
-    for (int i = 0; i < total; i++) {
-        /* Server allows 24 Unicode chars — up to 96 bytes UTF-8. */
-        char name[128] = {};
-        int r = 0, w = 0, l = 0, suspicious = 0, banned = 0;
-        if (!port_netleaderboard_at(i, name, sizeof(name), &r, &w, &l,
-                                    &suspicious, &banned)) {
-            continue;
+/* Moderation badges on a leaderboard row — [banned] / provisional-[?]. */
+static void RenderBoardRowFlags(int suspicious, int banned) {
+    if (banned) {
+        ImGui::SameLine();
+        ImGui::TextColored(SemanticColors::Error, "[banned]");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", TR("Flagged by community reports."));
         }
-        const bool mine = (myRank == i + 1);
-        /* Clicking a row loads that player's card (rank +
-         * recent verified matches) from /player?name=. */
-        char rowLabel[160];
-        std::snprintf(rowLabel, sizeof(rowLabel), "#%d %s", i + 1, name);
+    } else if (suspicious) {
+        ImGui::SameLine();
+        ImGui::TextColored(SemanticColors::Warning, "[?]");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", TR("New account with an unusual record — "
+                                       "treat this rating as provisional."));
+        }
+    }
+}
+
+/* Board UI state shared by RenderBoardRow/RenderBoardRows. */
+static char sReportName[128] = {};
+static bool sReportPopup = false;
+static int sSelectedRow = -1;
+
+static void RenderBoardRow(const char *serverBuf, int i, int myRank) {
+    /* Server allows 24 Unicode chars — up to 96 bytes UTF-8. */
+    char name[128] = {};
+    int r = 0, w = 0, l = 0, suspicious = 0, banned = 0;
+    if (!port_netleaderboard_at(i, name, sizeof(name), &r, &w, &l,
+                                &suspicious, &banned)) {
+        return;
+    }
+    const bool mine = (myRank == i + 1);
+    /* Clicking a row loads that player's card (rank +
+     * recent verified matches) from /player?name=. */
+    char rowLabel[160];
+    std::snprintf(rowLabel, sizeof(rowLabel), "#%d %s", i + 1, name);
+    ImGui::PushID(i);
+    if (mine) {
+        ImGui::PushStyleColor(ImGuiCol_Text, SemanticColors::Success);
+    }
+    if (ImGui::Selectable(rowLabel, sSelectedRow == i)) {
+        sSelectedRow = i;
+        port_netleaderboard_fetch_player(serverBuf, name);
+    }
+    if (mine) {
+        ImGui::PopStyleColor();
+    }
+    ImGui::PopID();
+    RenderBoardRowFlags(suspicious, banned);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%d  ·  %d-%d", r, w, l);
+    if (!mine && !banned) {
+        ImGui::SameLine();
         ImGui::PushID(i);
-        if (mine) {
-            ImGui::PushStyleColor(ImGuiCol_Text, SemanticColors::Success);
-        }
-        if (ImGui::Selectable(rowLabel, sSelectedRow == i)) {
-            sSelectedRow = i;
-            port_netleaderboard_fetch_player(serverBuf, name);
-        }
-        if (mine) {
-            ImGui::PopStyleColor();
+        if (ImGui::SmallButton(TR("Report"))) {
+            std::snprintf(sReportName, sizeof(sReportName), "%s", name);
+            sReportPopup = true;
         }
         ImGui::PopID();
-        if (banned) {
-            ImGui::SameLine();
-            ImGui::TextColored(SemanticColors::Error, "[banned]");
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s", TR("Flagged by community reports."));
-            }
-        } else if (suspicious) {
-            ImGui::SameLine();
-            ImGui::TextColored(SemanticColors::Warning, "[?]");
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s", TR("New account with an unusual record — "
-                                           "treat this rating as provisional."));
-            }
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("%d  ·  %d-%d", r, w, l);
-        if (!mine && !banned) {
-            ImGui::SameLine();
-            ImGui::PushID(i);
-            if (ImGui::SmallButton(TR("Report"))) {
-                std::snprintf(sReportName, sizeof(sReportName), "%s", name);
-                sReportPopup = true;
-            }
-            ImGui::PopID();
-        }
+    }
+}
+
+static void RenderBoardRows(const char *serverBuf, int total, int myRank) {
+    for (int i = 0; i < total; i++) {
+        RenderBoardRow(serverBuf, i, myRank);
     }
     if (sReportPopup) {
         ImGui::OpenPopup(TR("Report player?"));
@@ -410,61 +421,7 @@ void RenderOnlineTournaments(const char *serverBuf) {
                                   br.name, br.status, br.joined, br.size);
                 }
                 if (ImGui::TreeNode(hdr)) {
-                    ImGui::TextDisabled(TR("host: %s"), br.owner);
-                    const int rounds =
-                        port_netleaderboard_tournament_rounds(i);
-                    if (br.joined > 0 && rounds == 0) {
-                        /* Open bracket — list signups */
-                        ImGui::SameLine();
-                        ImGui::TextDisabled("·");
-                        for (int p = 0; p < br.joined; p++) {
-                            char pn[128] = {};
-                            if (port_netleaderboard_tournament_player_at(
-                                    i, p, pn, sizeof(pn))) {
-                                ImGui::SameLine();
-                                ImGui::TextDisabled("%s", pn);
-                            }
-                        }
-                    }
-                    for (int r = 0; r < rounds; r++) {
-                        ImGui::TextDisabled(TR("Round %d"), r + 1);
-                        for (int s = 0; s < br.size; s++) {
-                            PortLbMatchRow pr;
-                            if (!port_netleaderboard_tournament_pairing(
-                                    i, r, s, &pr)) {
-                                break;
-                            }
-                            if (pr.a[0] == '\0' && pr.b[0] == '\0') {
-                                continue;   /* padded bye */
-                            }
-                            ImGui::BulletText("%s vs %s",
-                                              pr.a[0] ? pr.a : "—",
-                                              pr.b[0] ? pr.b : "—");
-                            ImGui::SameLine();
-                            if (pr.w[0] != '\0') {
-                                ImGui::TextDisabled("%s %s",
-                                                    TR("winner:"), pr.w);
-                            } else {
-                                ImGui::TextDisabled("%s", TR("open"));
-                            }
-                        }
-                    }
-                    const bool isOpen =
-                        std::strncmp(br.status, "open", 4) == 0;
-                    if (isOpen && !br.mine) {
-                        if (ImGui::SmallButton(TR("Join"))) {
-                            port_netleaderboard_tournament_join(serverBuf,
-                                                                br.id);
-                        }
-                    } else if (isOpen && br.owner_mine) {
-                        if (ImGui::SmallButton(TR("Start"))) {
-                            port_netleaderboard_tournament_start(serverBuf,
-                                                                 br.id);
-                        }
-                        ImGui::SameLine();
-                        ImGui::TextDisabled("%s",
-                                            TR("(you host this bracket)"));
-                    }
+                    RenderBracketDetail(serverBuf, i, br);
                     ImGui::TreePop();
                 }
                 ImGui::PopID();
