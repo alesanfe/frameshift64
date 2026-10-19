@@ -289,6 +289,7 @@ async function main() {
   ok("second report counted", rep2.kind === "ok" && rep2.reports === 2);
   const rep3 = await (await postReport({ name: "AliceT", key: KEY_E })).json();
   ok("third distinct report bans", rep3.banned === true);
+  ok("shadow flag set before ban", rep3.shadow === true);
   const repDup = await (await postReport({ name: "AliceT", key: KEY_E })).json();
   ok("repeat reporter doesn't double-count", repDup.reports === 3);
   const subBan = await post({ name: "AliceT", key: KEY_C, rating: 1600, wins: 5, losses: 0 });
@@ -301,6 +302,51 @@ async function main() {
   const lbB = await (await fetch(`${lbBase}/leaderboard`)).json();
   ok("banned flag visible on board",
      lbB.entries.find((e) => e.name === "AliceT")?.banned === true);
+  ok("shadow flag visible on board",
+     lbB.entries.find((e) => e.name === "AliceT")?.shadow === true);
+
+  // --- mute: a key with >=3 disputes loses report/result rights ---
+  const KEY_M1 = "1111aaaa1111aaaa1111aaaa1111aaaa";
+  const KEY_M2 = "2222bbbb2222bbbb2222bbbb2222bbbb";
+  const KEY_M3 = "3333cccc3333cccc3333cccc3333cccc";
+  await post({ name: "MuteT", key: KEY_M1, rating: 1200, wins: 0, losses: 0 });
+  await post({ name: "VicT1", key: KEY_M2, rating: 1200, wins: 0, losses: 0 });
+  await post({ name: "VicT2", key: KEY_M3, rating: 1200, wins: 0, losses: 0 });
+  // 3 contradictory results: MuteT claims wins, opponents also claim wins
+  for (const [mid, opp, okey] of [
+      ["aaaa000011112222", "VicT1", KEY_M2],
+      ["bbbb000011112222", "VicT2", KEY_M3],
+      ["cccc000011112222", "VicT1", KEY_M2]]) {
+    await postRes({ name: "MuteT", opp_name: opp, key: KEY_M1,
+      match_id: mid, won: 1, duration: 10 });
+    await postRes({ name: opp, opp_name: "MuteT", key: okey,
+      match_id: mid, won: 1, duration: 10 });
+  }
+  const lbM = await (await fetch(`${lbBase}/leaderboard`)).json();
+  ok("disputes reach mute threshold",
+     (lbM.entries.find((e) => e.name === "MuteT")?.disputes || 0) >= 3);
+  const muteRes = await postRes({ name: "MuteT", opp_name: "VicT1",
+    key: KEY_M1, match_id: "dddd000011112222", won: 1, duration: 10 });
+  ok("muted key rejected on result", muteRes.status === 400);
+  const muteRep = await postReport({ name: "VicT1", key: KEY_M1 });
+  ok("muted key rejected on report", muteRep.status === 400);
+  const muteSub = await post({ name: "MuteT", key: KEY_M1, rating: 1200,
+    wins: 0, losses: 0 });
+  ok("muted key still may submit (mute != ban)", muteSub.status === 200);
+
+  // --- build hash: optional self-reported attestation, recorded verbatim ---
+  const KEY_H = "4444eeee4444eeee4444eeee4444eeee";
+  await post({ name: "HashT", key: KEY_H, rating: 1300, wins: 0, losses: 0,
+    build: "ff26ff6b31" });
+  const lbH = await (await fetch(`${lbBase}/leaderboard`)).json();
+  ok("build hash recorded on board",
+     lbH.entries.find((e) => e.name === "HashT")?.build === "ff26ff6b31");
+  const badHash = await post({ name: "HashT", key: KEY_H, rating: 1300,
+    wins: 0, losses: 0, build: "not!hex!but!long!enough!to!pass!len" });
+  ok("bad build hash ignored, prior kept",
+     badHash.status === 200 &&
+     (await (await fetch(`${lbBase}/leaderboard`)).json())
+       .entries.find((e) => e.name === "HashT")?.build === "ff26ff6b31");
 
   // --- replay sharing: POST mints an id, GET serves the bytes back ---
   const repB64 = Buffer.from("fake-ssr-replay-bytes").toString("base64");
@@ -313,6 +359,9 @@ async function main() {
   ok("replay fetch returns bytes", got.data === repB64 && got.by === "SecTest");
   const miss = await fetch(`${lbBase}/replay/deadbeef00`);
   ok("unknown replay id 404s", miss.status === 404);
+  const idx = await (await fetch(`${lbBase}/replays`)).json();
+  ok("replay index lists the share newest-first",
+     Array.isArray(idx.replays) && idx.replays[0]?.id === up.id);
   const badRp = await fetch(`${lbBase}/replay`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ data: "not!base64!" }),
@@ -324,6 +373,90 @@ async function main() {
   ok("stats exposes counts",
      typeof st.leaderboard_entries === "number" &&
      typeof st.verified_matches === "number");
+  ok("stats exposes moderation counters",
+     typeof st.shadowed === "number" && typeof st.muted === "number" &&
+     typeof st.banned === "number" && typeof st.distinct_builds === "number");
+  ok("stats counts this run's moderation state",
+     st.shadowed >= 1 && st.banned >= 1 && st.distinct_builds >= 1);
+
+  // --- player card: /player?name=X ---
+  const pc = await (await fetch(`${lbBase}/player?name=SecTest`)).json();
+  ok("player card has rank + matches",
+     pc.name === "SecTest" && typeof pc.rank === "number" &&
+     Array.isArray(pc.matches));
+  const pcNone = await fetch(`${lbBase}/player?name=NobodyHere`);
+  ok("player card 404 for stranger", pcNone.status === 404);
+  const pcBad = await fetch(`${lbBase}/player`);
+  ok("player card 400-ish for missing name", pcBad.status === 404);
+
+  // --- tournament bracket: create -> join -> start -> verified settle ---
+  // Dedicated clean players — AliceT is banned and MuteT muted by the
+  // moderation checks above, so neither can report results.
+  const KEY_TA = "5555aaaa5555aaaa5555aaaa5555aaaa";
+  const KEY_TB = "6666bbbb6666bbbb6666bbbb6666bbbb";
+  await post({ name: "TourA", key: KEY_TA, rating: 1500, wins: 0, losses: 0 });
+  await post({ name: "TourB", key: KEY_TB, rating: 1500, wins: 0, losses: 0 });
+  const postTour = (p, body) => fetch(`${lbBase}${p}`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const tourBad = await postTour("/tournament",
+    { name: "Cup", by: "Nobody", key: "1".repeat(32), size: 4 });
+  ok("tournament create requires claimed owner", tourBad.status === 400);
+  const tour = await (await postTour("/tournament",
+    { name: "Cup", by: "SecTest", key: KEY_A, size: 2 })).json();
+  ok("tournament create mints id", tour.ok === true && tour.size === 2);
+  const joinBad = await postTour("/tournament/join",
+    { id: tour.id, name: "TourA", key: "1".repeat(32) });
+  ok("tournament join requires own claim key", joinBad.status === 400);
+  const join1 = await postTour("/tournament/join",
+    { id: tour.id, name: "TourA", key: KEY_TA });
+  const join2 = await postTour("/tournament/join",
+    { id: tour.id, name: "TourB", key: KEY_TB });
+  ok("tournament joins accepted", join1.status === 200 && join2.status === 200);
+  // Banned/muted players can't post results — they may not join a bracket.
+  const joinBanned = await postTour("/tournament/join",
+    { id: tour.id, name: "AliceT", key: KEY_C });
+  ok("banned player can't join tournament", joinBanned.status === 400);
+  const joinMuted = await postTour("/tournament/join",
+    { id: tour.id, name: "MuteT", key: KEY_M1 });
+  ok("muted player can't join tournament", joinMuted.status === 400);
+  const startBad = await postTour("/tournament/start",
+    { id: tour.id, key: KEY_TB });
+  ok("tournament start is owner-only", startBad.status === 400);
+  const start = await postTour("/tournament/start", { id: tour.id, key: KEY_A });
+  ok("tournament starts seeded", start.status === 200);
+  const view1 = await (await fetch(`${lbBase}/tournament?id=${tour.id}`)).json();
+  ok("bracket view shows live pairing",
+     view1.status === "live" && view1.rounds.length === 1 &&
+     view1.rounds[0].some((m) => m.a && m.b));
+  // Report the bracket match through /result — same two-key corroboration
+  const tid = "f00dcafe1234abcd";
+  const pairing = view1.rounds[0].find((m) => m.a && m.b);
+  const [tA, tB] = [pairing.a, pairing.b];
+  const keyOf = (n) => n === "TourA" ? KEY_TA : KEY_TB;
+  await postRes({ name: tA, opp_name: tB, key: keyOf(tA),
+    match_id: tid, won: 1, duration: 120 });
+  const vres = await (await postRes({ name: tB, opp_name: tA,
+    key: keyOf(tB), match_id: tid, won: 0, duration: 120 })).json();
+  ok("bracket match verified via /result", vres.kind === "verified");
+  const view2 = await (await fetch(`${lbBase}/tournament?id=${tour.id}`)).json();
+  ok("bracket settled on verified result",
+     view2.status === "done" && view2.winner === tA);
+  const joinDone = await postTour("/tournament/join",
+    { id: tour.id, name: "SecTest", key: KEY_A });
+  ok("join after done rejected", joinDone.status === 400);
+  const viewAll = await (await fetch(`${lbBase}/tournament`)).json();
+  ok("tournament list returns array", Array.isArray(viewAll.brackets));
+  const viewMiss = await fetch(`${lbBase}/tournament?id=deadbeef00`);
+  ok("unknown bracket 404s", viewMiss.status === 404);
+
+  // --- public portal page: GET / serves the same API surface ---
+  const portal = await fetch(`${lbBase}/`);
+  const portalHtml = await portal.text();
+  ok("portal page served as HTML",
+     portal.status === 200 && portalHtml.includes("/leaderboard") &&
+     portal.headers.get("content-type").includes("text/html"));
 
   // --- match history: verified results are listed, ?name= filters ---
   const hist = await (await fetch(`${lbBase}/history`)).json();

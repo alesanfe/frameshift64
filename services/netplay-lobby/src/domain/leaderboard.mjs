@@ -13,8 +13,11 @@ export const LB_MAX_ENTRIES = 100;
 export const LB_NAME_MAX = 24;
 export const LB_KEY_MIN = 16;
 export const LB_BAN_REPORTS = 3;          // distinct reporter keys to ban
+export const LB_SHADOW_REPORTS = 2;       // reports → shadow (pre-ban probation)
+export const LB_MUTE_DISPUTES = 3;        // disputes → muted (report rights lost)
 export const LB_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const LB_HISTORY_MAX = 50;         // recent verified matches kept
+export const LB_BUILD_MAX = 40;           // build-hash field cap
 
 /* Display names come back verbatim to every client — keep them to a
  * boring alphabet so JSON serialization and ImGui rendering can't be
@@ -54,6 +57,36 @@ export class Leaderboard {
     return false;
   }
 
+  /* Keys whose entries accumulated LB_MUTE_DISPUTES contradictory result
+   * reports lose report/result rights — a reporter who can't keep their
+   * outcomes straight is ignored, not banned (disputes already flag the
+   * row as suspicious in list()). */
+  #mutedKey(key) {
+    for (const e of this.byName.values()) {
+      if (e.key === key && (e.disputes || 0) >= LB_MUTE_DISPUTES) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* Optional build hash the client stamps on submits — /^[0-9a-f]{4,40}$.
+   * Recorded verbatim; /stats surfaces the fleet's distinct-build count.
+   * It's attestation, not enforcement: with no server-secured build
+   * pipeline a claimed hash is self-reported like everything else. */
+  #buildHash(v) {
+    const s = typeof v === "string" ? v.trim().toLowerCase() : "";
+    return (s.length >= 4 && s.length <= LB_BUILD_MAX && /^[0-9a-f]+$/.test(s))
+      ? s : null;
+  }
+
+  /* True when `key` is the claim key for `name` — adapters use it to
+   * authorize owner-scoped ops (tournament create/join/start). */
+  keyOwns(name, key) {
+    const e = this.byName.get(name);
+    return !!e && e.key === key;
+  }
+
   /* submit({name,key,rating,wins,losses}) -> {kind:"ok",rank} |
    * {kind:"reject",reason}. First submit claims the name with `key`;
    * later submits must present the same key. */
@@ -80,15 +113,20 @@ export class Leaderboard {
     if ((prev && prev.banned) || this.#bannedKey(key)) {
       return { kind: "reject", reason: "banned" };
     }
-    /* Preserve firstSeen/disputes across re-submits: resetting firstSeen
-     * would flag veterans as "new" (false-positive suspicious), and
-     * dropping disputes would let a flagged player clear the flag by
-     * re-submitting. */
+    /* Preserve firstSeen/disputes/shadow across re-submits: resetting
+     * firstSeen would flag veterans as "new" (false-positive suspicious),
+     * and dropping disputes/shadow would let a flagged player clear the
+     * flag by re-submitting. */
+    const build = this.#buildHash(body.build);
     this.byName.set(name, {
       name, key, rating, wins, losses,
       updated: new Date().toISOString(),
       firstSeen: (prev && prev.firstSeen) || new Date().toISOString(),
       disputes: (prev && prev.disputes) || 0,
+      shadow: !!(prev && prev.shadow),
+      banned: !!(prev && prev.banned),
+      bannedAt: prev && prev.bannedAt,
+      build: build || (prev && prev.build) || null,
     });
     // Evict the tail when the board overflows — a new entry that lands
     // below the cutoff is accepted then immediately evicted, which is
@@ -141,6 +179,9 @@ export class Leaderboard {
     }
     if (this.#bannedKey(key)) {
       return { kind: "reject", reason: "banned" };
+    }
+    if (this.#mutedKey(key)) {
+      return { kind: "reject", reason: "muted" };
     }
     const now = Date.now();
     this.#expirePending(now);
@@ -251,6 +292,9 @@ export class Leaderboard {
     if (target.key === key) {
       return { kind: "reject", reason: "self-report" };
     }
+    if (this.#mutedKey(key)) {
+      return { kind: "reject", reason: "muted" };
+    }
 
     const now = Date.now();
     let rs = this.reports.get(name);
@@ -259,11 +303,19 @@ export class Leaderboard {
       if (now - ts > LB_REPORT_WINDOW_MS) rs.delete(k);
     }
     rs.set(key, now);
+    /* Shadow at LB_SHADOW_REPORTS, ban at LB_BAN_REPORTS: shadow is the
+     * pre-ban probation state — the entry stays playable but list()
+     * flags it so matchmaking UIs can pool shadowed players separately
+     * (the "shadow queue"). Ban adds the hard submit/result rejection. */
+    if (rs.size >= LB_SHADOW_REPORTS && !target.shadow) {
+      target.shadow = true;
+    }
     if (rs.size >= LB_BAN_REPORTS && !target.banned) {
       target.banned = true;
       target.bannedAt = new Date(now).toISOString();
     }
-    return { kind: "ok", reports: rs.size, banned: !!target.banned };
+    return { kind: "ok", reports: rs.size, shadow: !!target.shadow,
+             banned: !!target.banned };
   }
 
   list() {
@@ -277,15 +329,43 @@ export class Leaderboard {
     return [...this.byName.values()]
       .sort((a, b) => b.rating - a.rating || b.wins - a.wins)
       .map(({ name, rating, wins, losses, updated, disputes, firstSeen,
-              banned }) => {
+              banned, shadow, build }) => {
         const games = wins + losses;
         const ageMs = firstSeen ? now - Date.parse(firstSeen) : Infinity;
         const suspicious =
           (ageMs < weekMs && games >= 10 && wins / games > 0.80) ||
           (disputes || 0) >= 2;
         return { name, rating, wins, losses, updated,
-                 disputes: disputes || 0, suspicious, banned: !!banned };
+                 disputes: disputes || 0, suspicious, banned: !!banned,
+                 shadow: !!shadow, muted: (disputes || 0) >= LB_MUTE_DISPUTES,
+                 build: build || null };
       });
+  }
+
+  /* Public player card — everything the API can say about one claimed
+   * name: board fields plus rank and that player's recent verified
+   * matches. Returns null for unclaimed names. */
+  playerCard(name) {
+    const rows = this.list();
+    const rank = rows.findIndex((e) => e.name === name) + 1;
+    const e = rows[rank - 1];
+    if (!e) return null;
+    return { ...e, rank, matches: this.historyFor(name) };
+  }
+
+  /* Aggregate counters for /stats — distinct-build count exposes how
+   * fragmented the deployed fleet is (build is self-reported, recorded
+   * only when the client opts in by sending it). */
+  fleetStats() {
+    const builds = new Set();
+    let shadowed = 0, muted = 0, banned = 0;
+    for (const e of this.list()) {
+      if (e.build) builds.add(e.build);
+      if (e.shadow) shadowed++;
+      if (e.muted) muted++;
+      if (e.banned) banned++;
+    }
+    return { distinct_builds: builds.size, shadowed, muted, banned };
   }
 
   /* Recent verified matches, newest first. `name` (already sanitized by

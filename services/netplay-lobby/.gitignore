@@ -3,5 +3,6 @@ node_modules/
 .dev.vars
 
 leaderboard.json
+brackets.json
 crashes.jsonl
 replays/

@@ -10,11 +10,18 @@ import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
-import { Leaderboard, sanitizeName } from "../../domain/leaderboard.mjs";
+import {
+  Leaderboard, sanitizeName, LB_MUTE_DISPUTES,
+} from "../../domain/leaderboard.mjs";
 import { isValidCrashReport, crashReportRecord, CRASH_RING } from "../../domain/crash.mjs";
 import {
   REPLAY_ID_RE, mintReplayId, validateReplayBody, evictOldest,
 } from "../../domain/replay.mjs";
+import {
+  Bracket, sanitizeBracketName, BR_MAX_LIVE,
+  mintBracketId, settleLiveBrackets,
+} from "../../domain/bracket.mjs";
+import { BOARD_PAGE_HTML } from "../../domain/board_page.mjs";
 
 // Per-isolate IP join accounting (approximate — isolates aren't shared,
 // and that's fine: this bounds scanning cost, it isn't a security
@@ -28,13 +35,22 @@ export default {
     if (url.pathname === "/health") {
       return Response.json({ ok: true, service: "smash-netplay" });
     }
+    /* Public portal page — same JSON the game consumes, rendered for a
+     * browser. The HTML is static; data loads from the API endpoints. */
+    if (url.pathname === "/" && request.method === "GET") {
+      return new Response(BOARD_PAGE_HTML, {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
     // Self-reported rating board lives on a dedicated DO (HTTP only — no
     // ws). Same stub mechanism as rooms, fixed name.
     if (url.pathname === "/leaderboard" || url.pathname === "/history" ||
+        url.pathname === "/player" ||
         url.pathname === "/submit" ||
         url.pathname === "/result" || url.pathname === "/report" ||
         url.pathname === "/crash" || url.pathname === "/crashes" ||
-        url.pathname === "/stats" || url.pathname.startsWith("/replay")) {
+        url.pathname === "/stats" || url.pathname.startsWith("/replay") ||
+        url.pathname.startsWith("/tournament")) {
       const stub = env.ROOMS.get(env.ROOMS.idFromName("leaderboard-global"));
       return stub.fetch(request);
     }
@@ -140,7 +156,101 @@ export class NetplayRoom extends DurableObject {
         return Response.json({ error: result.reason }, { status: 400 });
       }
       await this.ctx.storage.put("lb", lb.toJSON());
+      /* A verified match_id settles any live bracket pairing waiting on
+       * it — tournaments ride on the same two-key corroboration. */
+      if (result.kind === "verified" && result.winner && !result.draw) {
+        const store = (await this.ctx.storage.get("brackets")) || {};
+        let dirty = false;
+        for (const [id, o] of Object.entries(store)) {
+          const b = Bracket.fromJSON(o);
+          if (b.status === "live" &&
+              b.settle(String(body.match_id || ""), result.winner, result.loser).kind !== "reject") {
+            store[id] = b.toJSON();
+            dirty = true;
+          }
+        }
+        if (dirty) await this.ctx.storage.put("brackets", store);
+      }
       return Response.json(result);
+    }
+    /* Tournaments — create/join/start/view. Bracket results aren't
+     * trusted to a single reporter: pairings settle only when the same
+     * match_id is verified through /result by distinct claim keys. */
+    if (url.pathname === "/tournament" && request.method === "POST") {
+      let body = null;
+      try { body = await request.json(); } catch { /* bad json */ }
+      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
+      const name = sanitizeBracketName(body?.name);
+      const by = sanitizeName(body?.by);
+      const key = typeof body?.key === "string" ? body.key : "";
+      if (!name || !by || !lb.keyOwns(by, key)) {
+        return Response.json({ error: "bad-request" }, { status: 400 });
+      }
+      const store = (await this.ctx.storage.get("brackets")) || {};
+      const live = Object.values(store).filter((b) => b.status !== "done").length;
+      if (live >= BR_MAX_LIVE) {
+        return Response.json({ error: "too-many-live" }, { status: 400 });
+      }
+      const id = mintBracketId();
+      const b = Bracket.create(id, name, by, body.size);
+      store[id] = b.toJSON();
+      await this.ctx.storage.put("brackets", store);
+      return Response.json({ ok: true, id, size: b.size });
+    }
+    if (url.pathname === "/tournament/join" && request.method === "POST") {
+      let body = null;
+      try { body = await request.json(); } catch { /* bad json */ }
+      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
+      const store = (await this.ctx.storage.get("brackets")) || {};
+      const b = Bracket.fromJSON(store[String(body?.id || "")]);
+      const name = sanitizeName(body?.name);
+      const key = typeof body?.key === "string" ? body.key : "";
+      /* Banned/muted players can't post results — a bracket pairing with
+       * them inside could never verify, so they may not join at all. */
+      const ent = lb.byName.get(name);
+      if (!store[b.id] || !name || !lb.keyOwns(name, key) ||
+          (ent && (ent.banned || (ent.disputes || 0) >= LB_MUTE_DISPUTES))) {
+        return Response.json({ error: "bad-request" }, { status: 400 });
+      }
+      const r = b.join(name);
+      if (r.kind !== "ok") {
+        return Response.json({ error: r.reason }, { status: 400 });
+      }
+      store[b.id] = b.toJSON();
+      await this.ctx.storage.put("brackets", store);
+      return Response.json(r);
+    }
+    if (url.pathname === "/tournament/start" && request.method === "POST") {
+      let body = null;
+      try { body = await request.json(); } catch { /* bad json */ }
+      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
+      const store = (await this.ctx.storage.get("brackets")) || {};
+      const b = Bracket.fromJSON(store[String(body?.id || "")]);
+      const key = typeof body?.key === "string" ? body.key : "";
+      if (!store[b.id] || !lb.keyOwns(b.owner, key)) {
+        return Response.json({ error: "bad-request" }, { status: 400 });
+      }
+      const r = b.start(lb.list().map((e) => e.name));
+      if (r.kind !== "ok") {
+        return Response.json({ error: r.reason }, { status: 400 });
+      }
+      store[b.id] = b.toJSON();
+      await this.ctx.storage.put("brackets", store);
+      return Response.json(b.view());
+    }
+    if (url.pathname === "/tournament" && request.method === "GET") {
+      const store = (await this.ctx.storage.get("brackets")) || {};
+      const id = url.searchParams.get("id");
+      if (id) {
+        const b = store[id];
+        if (!b) {
+          return Response.json({ error: "no-such-bracket" }, { status: 404 });
+        }
+        return Response.json(Bracket.fromJSON(b).view());
+      }
+      return Response.json({
+        brackets: Object.values(store).map((o) => Bracket.fromJSON(o).view()),
+      });
     }
     /* Opt-in crash telemetry (gCrashReports.Enabled): {kind:"crash",
      * info, log_tail} — ring of the last 50 in DO storage, counted via
@@ -199,6 +309,7 @@ export class NetplayRoom extends DurableObject {
         verified_matches: lb.settled.size,
         crash_reports: crashes.length,
         shared_replays: replays.length,
+        ...lb.fleetStats(),
       });
     }
     /* Recent verified matches — GET /history (all) or /history?name=X.
@@ -207,6 +318,17 @@ export class NetplayRoom extends DurableObject {
       const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
       const name = sanitizeName(url.searchParams.get("name") || "") || null;
       return Response.json({ matches: lb.historyFor(name) });
+    }
+    /* Player card — GET /player?name=X: board row + rank + recent
+     * verified matches. 404 for unclaimed names. */
+    if (url.pathname === "/player" && request.method === "GET") {
+      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
+      const name = sanitizeName(url.searchParams.get("name") || "");
+      const card = name ? lb.playerCard(name) : null;
+      if (!card) {
+        return Response.json({ error: "no-such-player" }, { status: 404 });
+      }
+      return Response.json(card);
     }
     /* Replay sharing — POST {data: <base64 .ssr>} mints a short id and
      * stores it; GET /replay/<id> serves it back. Replays are a few KB;
@@ -244,10 +366,12 @@ export class NetplayRoom extends DurableObject {
   fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/leaderboard" || url.pathname === "/history" ||
+        url.pathname === "/player" ||
         url.pathname === "/submit" ||
         url.pathname === "/result" || url.pathname === "/report" ||
         url.pathname === "/crash" || url.pathname === "/crashes" ||
-        url.pathname === "/stats" || url.pathname.startsWith("/replay")) {
+        url.pathname === "/stats" || url.pathname.startsWith("/replay") ||
+        url.pathname.startsWith("/tournament")) {
       return this.fetchLeaderboard(request, url);
     }
     const code = (url.searchParams.get("room") || "").toUpperCase();

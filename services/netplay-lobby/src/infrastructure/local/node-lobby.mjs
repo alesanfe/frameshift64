@@ -15,12 +15,27 @@ import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
-import { Leaderboard, sanitizeName } from "../../domain/leaderboard.mjs";
+import {
+  Leaderboard, sanitizeName, LB_MUTE_DISPUTES,
+} from "../../domain/leaderboard.mjs";
 import {
   REPLAY_ID_RE, mintReplayId, validateReplayBody, evictOldest,
 } from "../../domain/replay.mjs";
+import {
+  Bracket, sanitizeBracketName, BR_MAX_LIVE,
+  mintBracketId, settleLiveBrackets,
+} from "../../domain/bracket.mjs";
+import { BOARD_PAGE_HTML } from "../../domain/board_page.mjs";
 
 const rooms = new Map();    // code -> LobbyRoom
+
+/* Store writes go through temp+rename so a crash mid-write can't leave a
+ * torn JSON file behind (same pattern as the client's atomic_save). */
+const writeJsonAtomic = (dest, obj) => {
+  const tmp = dest + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(obj));
+  fs.renameSync(tmp, dest);
+};
 
 /* Leaderboard persisted next to the script — runtime state, not repo data. */
 const lbPath = path.join(path.dirname(fileURLToPath(import.meta.url)),
@@ -28,8 +43,26 @@ const lbPath = path.join(path.dirname(fileURLToPath(import.meta.url)),
 const lb = Leaderboard.fromJSON(
   JSON.parse(fs.existsSync(lbPath) ? fs.readFileSync(lbPath, "utf8") : "[]"));
 const saveLb = () => {
-  try { fs.writeFileSync(lbPath, JSON.stringify(lb.toJSON())); } catch { /* ro fs */ }
+  try { writeJsonAtomic(lbPath, lb.toJSON()); } catch { /* ro fs */ }
 };
+
+/* Brackets persist beside the leaderboard - one file, id -> Bracket JSON.
+ * Cap live brackets so a troll can't mint unbounded state. */
+const brPath = path.join(path.dirname(fileURLToPath(import.meta.url)),
+  "..", "..", "..", "brackets.json");
+const brackets = new Map();
+try {
+  for (const [id, o] of Object.entries(JSON.parse(fs.readFileSync(brPath, "utf8")))) {
+    brackets.set(id, Bracket.fromJSON(o));
+  }
+} catch { /* no bracket store yet */ }
+const saveBrackets = () => {
+  try {
+    writeJsonAtomic(brPath,
+      Object.fromEntries([...brackets].map(([k, b]) => [k, b.toJSON()])));
+  } catch { /* ro fs */ }
+};
+/* Bracket ids come from the shared domain mint (crypto.randomUUID - same alphabet as the Worker adapter). */
 const allowIpJoin = makeJoinLimiter();  // cross-code scan throttle (AUD-25)
 
 /* Shared replays land next to the leaderboard store — runtime artifacts,
@@ -74,6 +107,12 @@ const readJsonBody = (req, limit, cb) => {
 
 const port = parseInt(process.argv[2] || "8799", 10);
 const server = http.createServer((req, res) => {
+  /* Public portal page — same HTML the worker serves at GET /. */
+  if (req.url === "/" && req.method === "GET") {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(BOARD_PAGE_HTML);
+    return;
+  }
   if (req.url === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true, service: "smash-netplay", rooms: rooms.size }));
@@ -178,6 +217,13 @@ const server = http.createServer((req, res) => {
         return;
       }
       saveLb();
+      /* A verified match_id settles any live bracket pairing waiting on
+       * it - tournaments ride on the same two-key corroboration. */
+      if (result.kind === "verified" && result.winner && !result.draw) {
+        const changed = settleLiveBrackets(
+          brackets.values(), body.match_id, result.winner, result.loser);
+        if (changed.length) saveBrackets();
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(result));
     });
@@ -217,6 +263,7 @@ const server = http.createServer((req, res) => {
       verified_matches: lb.settled.size,
       crash_reports: stats.crashes,
       shared_replays: replayIdx.length,
+      ...lb.fleetStats(),
     }));
     return;
   }
@@ -235,8 +282,8 @@ const server = http.createServer((req, res) => {
       const rec = { id, at: new Date().toISOString(), by: rec0.by };
       try {
         fs.mkdirSync(replayDir, { recursive: true });
-        fs.writeFileSync(path.join(replayDir, `${id}.json`),
-          JSON.stringify({ ...rec, data: rec0.data }));
+        writeJsonAtomic(path.join(replayDir, `${id}.json`),
+          { ...rec, data: rec0.data });
       } catch { /* ro fs */ }
       replayIdx.push(rec);
       for (const old of evictOldest(replayIdx)) {
@@ -245,6 +292,13 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, id }));
     });
+    return;
+  }
+    /* Replay index - GET /replays lists shared replay metadata (no blob
+   * data) newest-first so the portal can render a browse list. */
+  if (req.url === "/replays" && req.method === "GET") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ replays: [...replayIdx].reverse() }));
     return;
   }
   if (req.url.startsWith("/replay/") && req.method === "GET") {
@@ -275,6 +329,115 @@ const server = http.createServer((req, res) => {
       new URL(req.url, "http://lobby").searchParams.get("name") || "") || null;
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ matches: lb.historyFor(name) }));
+    return;
+  }
+  /* Player card - GET /player?name=X: board row + rank + recent verified
+   * matches. 404 for unclaimed names. Same surface as the worker DO. */
+  if (req.method === "GET" &&
+      (req.url === "/player" || req.url.startsWith("/player?"))) {
+    const name = sanitizeName(
+      new URL(req.url, "http://lobby").searchParams.get("name") || "");
+    const card = name ? lb.playerCard(name) : null;
+    if (!card) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no-such-player" }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(card));
+    return;
+  }
+  /* Tournaments - create/join/start/view. Bracket results aren't
+   * trusted to a single reporter: pairings settle only when the same
+   * match_id is verified through /result by distinct claim keys. */
+  if (req.url === "/tournament" && req.method === "POST") {
+    readJsonBody(req, 4096, (body) => {
+      if (!body || typeof body !== "object") {
+        res.writeHead(400).end(JSON.stringify({ error: "bad-request" }));
+        return;
+      }
+      const name = sanitizeBracketName(body.name);
+      const by = sanitizeName(body.by);
+      const key = typeof body.key === "string" ? body.key : "";
+      if (!name || !by || !lb.keyOwns(by, key)) {
+        res.writeHead(400).end(JSON.stringify({ error: "bad-request" }));
+        return;
+      }
+      const live = [...brackets.values()].filter((b) => b.status !== "done").length;
+      if (live >= BR_MAX_LIVE) {
+        res.writeHead(400).end(JSON.stringify({ error: "too-many-live" }));
+        return;
+      }
+      const id = mintBracketId();
+      const b = Bracket.create(id, name, by, body.size);
+      brackets.set(id, b);
+      saveBrackets();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, id, size: b.size }));
+    });
+    return;
+  }
+  if (req.url === "/tournament/join" && req.method === "POST") {
+    readJsonBody(req, 4096, (body) => {
+      const b = brackets.get(String(body?.id || ""));
+      const name = sanitizeName(body?.name);
+      const key = typeof body?.key === "string" ? body.key : "";
+      /* Banned/muted players can't post results — a bracket pairing with
+       * them inside could never verify, so they may not join at all. */
+      const ent = lb.byName.get(name);
+      if (!b || !name || !lb.keyOwns(name, key) ||
+          (ent && (ent.banned || (ent.disputes || 0) >= LB_MUTE_DISPUTES))) {
+        res.writeHead(400).end(JSON.stringify({ error: "bad-request" }));
+        return;
+      }
+      const r = b.join(name);
+      if (r.kind !== "ok") {
+        res.writeHead(400).end(JSON.stringify({ error: r.reason }));
+        return;
+      }
+      saveBrackets();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(r));
+    });
+    return;
+  }
+  if (req.url === "/tournament/start" && req.method === "POST") {
+    readJsonBody(req, 4096, (body) => {
+      const b = brackets.get(String(body?.id || ""));
+      const key = typeof body?.key === "string" ? body.key : "";
+      if (!b || !lb.keyOwns(b.owner, key)) {
+        res.writeHead(400).end(JSON.stringify({ error: "bad-request" }));
+        return;
+      }
+      const seedOrder = lb.list().map((e) => e.name);
+      const r = b.start(seedOrder);
+      if (r.kind !== "ok") {
+        res.writeHead(400).end(JSON.stringify({ error: r.reason }));
+        return;
+      }
+      saveBrackets();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(b.view()));
+    });
+    return;
+  }
+  if (req.method === "GET" &&
+      (req.url === "/tournament" || req.url.startsWith("/tournament?"))) {
+    const id = new URL(req.url, "http://lobby").searchParams.get("id");
+    if (id) {
+      const b = brackets.get(id);
+      if (!b) {
+        res.writeHead(404).end(JSON.stringify({ error: "no-such-bracket" }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(b.view()));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      brackets: [...brackets.values()].map((b) => b.view()),
+    }));
     return;
   }
   res.writeHead(404);
