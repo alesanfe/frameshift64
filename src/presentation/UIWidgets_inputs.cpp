@@ -193,7 +193,7 @@ bool CVarColorPicker(const char* label, const char* cvarName, Color_RGBA8 defaul
             color.b = static_cast<uint8_t>(fmin(fmax(colorVec.z * 255, 0), 255));
             CVarSetColor(valueCVar.c_str(), color);
             CVarSetInteger(rainbowCVar.c_str(), 0); // On click disable rainbow mode.
-            ShipInit::Init(rainbowCVar.c_str());
+            ShipInit::Init(rainbowCVar);
             Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         }
     }
@@ -223,7 +223,7 @@ bool CVarColorPicker(const char* label, const char* cvarName, Color_RGBA8 defaul
         color.a = (uint8_t)(colorVec.w * 255.0f);
         CVarSetColor(valueCVar.c_str(), color);
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
-        ShipInit::Init(valueCVar.c_str());
+        ShipInit::Init(valueCVar);
         changed = true;
     }
 
@@ -308,110 +308,6 @@ bool CVarRadioButton(const char* text, const char* cvarName, int32_t id, const R
     }
 
     return ret;
-}
-
-void DrawFlagArray32(const std::string& name, uint32_t& flags, Colors color) {
-    ImGui::PushID(name.c_str());
-    for (int32_t flagIndex = 0; flagIndex < 32; flagIndex++) {
-        if ((flagIndex % 8) != 0) {
-            ImGui::SameLine();
-        }
-        ImGui::PushID(flagIndex);
-        uint32_t bitMask = 1u << flagIndex;
-        bool flag = (flags & bitMask) != 0;
-        PushStyleCheckbox(color);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 3.0f));
-        std::string id = fmt::format("##{}{}", name, flagIndex);
-        if (ImGui::Checkbox(id.c_str(), &flag)) {
-            if (flag) {
-                flags |= bitMask;
-            } else {
-                flags &= ~bitMask;
-            }
-        }
-        ImGui::PopStyleVar();
-        PopStyleCheckbox();
-        ImGui::PopID();
-    }
-    ImGui::PopID();
-}
-
-void DrawFlagArray16(const std::string& name, uint16_t& flags, Colors color) {
-    ImGui::PushID(name.c_str());
-    for (int16_t flagIndex = 0; flagIndex < 16; flagIndex++) {
-        if ((flagIndex % 8) != 0) {
-            ImGui::SameLine();
-        }
-        ImGui::PushID(flagIndex);
-        uint16_t bitMask = 1 << flagIndex;
-        bool flag = (flags & bitMask) != 0;
-        PushStyleCheckbox(color);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 3.0f));
-        std::string id = fmt::format("##{}{}", name, flagIndex);
-        if (ImGui::Checkbox(id.c_str(), &flag)) {
-            if (flag) {
-                flags |= bitMask;
-            } else {
-                flags &= ~bitMask;
-            }
-        }
-        ImGui::PopStyleVar();
-        PopStyleCheckbox();
-        ImGui::PopID();
-    }
-    ImGui::PopID();
-}
-
-void DrawFlagArray8(const std::string& name, uint8_t& flags, Colors color) {
-    ImGui::PushID(name.c_str());
-    for (int8_t flagIndex = 0; flagIndex < 8; flagIndex++) {
-        if ((flagIndex % 8) != 0) {
-            ImGui::SameLine();
-        }
-        ImGui::PushID(flagIndex);
-        uint8_t bitMask = 1 << flagIndex;
-        bool flag = (flags & bitMask) != 0;
-        PushStyleCheckbox(color);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 3.0f));
-        std::string id = fmt::format("##{}{}", name, flagIndex);
-        if (ImGui::Checkbox(id.c_str(), &flag)) {
-            if (flag) {
-                flags |= bitMask;
-            } else {
-                flags &= ~bitMask;
-            }
-        }
-        ImGui::PopStyleVar();
-        PopStyleCheckbox();
-        ImGui::PopID();
-    }
-    ImGui::PopID();
-}
-
-void DrawFlagArray8Mask(const std::string& name, uint8_t& flags, Colors color) {
-    ImGui::PushID(name.c_str());
-    for (int8_t flagIndex = 0; flagIndex < 8; flagIndex++) {
-        if ((flagIndex % 8) != 0) {
-            ImGui::SameLine();
-        }
-        ImGui::PushID(flagIndex);
-        uint8_t bitMask = 1 << flagIndex;
-        bool flag = (flags & bitMask) != 0;
-        PushStyleCheckbox(color);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 3.0f));
-        std::string id = fmt::format("##{}{}", name, flagIndex);
-        if (ImGui::Checkbox(id.c_str(), &flag)) {
-            if (flag) {
-                flags |= bitMask;
-            } else {
-                flags &= ~bitMask;
-            }
-        }
-        ImGui::PopStyleVar();
-        PopStyleCheckbox();
-        ImGui::PopID();
-    }
-    ImGui::PopID();
 }
 
 std::map<std::string, int32_t> buttonMap = {
