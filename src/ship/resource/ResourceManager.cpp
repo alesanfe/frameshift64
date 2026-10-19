@@ -8,6 +8,9 @@
 #include "ship/utils/Utils.h"
 #include "ship/config/ConsoleVariable.h"
 #include "ship/Context.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten/threading.h>
+#endif
 
 namespace Ship {
 
@@ -210,6 +213,17 @@ std::shared_ptr<IResource> ResourceManager::LoadResourceProcess(const std::strin
     return LoadResourceProcess({ filePath, mDefaultCacheOwner, mDefaultCacheArchive }, loadExact, initData);
 }
 
+/* The pool pauses at Init when no archive is mounted yet (nothing to
+ * load). Archives can be mounted later via ArchiveManager::AddArchive —
+ * which the ResourceManager never sees — so without a lazily-checked
+ * unpause every submit would queue into a dead pool and future.get()
+ * would hang forever. */
+void ResourceManager::EnsurePoolRunning() {
+    if (mThreadPool->is_paused() && IsLoaded()) {
+        mThreadPool->unpause();
+    }
+}
+
 std::shared_future<std::shared_ptr<IResource>>
 ResourceManager::LoadResourceAsync(const ResourceIdentifier& identifier, bool loadExact, BS::priority_t priority,
                                    std::shared_ptr<ResourceInitData> initData) {
@@ -227,6 +241,7 @@ ResourceManager::LoadResourceAsync(const ResourceIdentifier& identifier, bool lo
         return promise->get_future().share();
     }
 
+    EnsurePoolRunning();
     return mThreadPool->submit_task(
         [this, identifier, loadExact, initData]() -> std::shared_ptr<IResource> {
             return LoadResourceProcess(identifier, loadExact, initData);
@@ -242,6 +257,20 @@ ResourceManager::LoadResourceAsync(const std::string& filePath, bool loadExact, 
 
 std::shared_ptr<IResource> ResourceManager::LoadResource(const ResourceIdentifier& identifier, bool loadExact,
                                                          std::shared_ptr<ResourceInitData> initData) {
+#ifdef __EMSCRIPTEN__
+    // The browser main thread must never block on a pool future: the worker
+    // would need the main loop's proxy queue to make progress (a deadlock
+    // class that bit us in practice), and a paused pool (no archives at
+    // Init) never delivers. Run synchronous loads inline — the path is pure
+    // zip-read + parse, fully serialized by the existing mutexes.
+    if (emscripten_is_main_runtime_thread()) {
+        auto resource = LoadResourceProcess(identifier, loadExact, initData);
+        if (resource == nullptr) {
+            SPDLOG_TRACE("Failed to load resource file at path {}", identifier.Path);
+        }
+        return resource;
+    }
+#endif
     auto resource = LoadResourceAsync(identifier, loadExact, BS::pr::highest, initData).get();
     if (resource == nullptr) {
         SPDLOG_TRACE("Failed to load resource file at path {}", identifier.Path);
@@ -361,10 +390,18 @@ std::shared_ptr<std::vector<std::shared_ptr<IResource>>> ResourceManager::LoadRe
 }
 
 std::shared_ptr<std::vector<std::shared_ptr<IResource>>> ResourceManager::LoadResources(const ResourceFilter& filter) {
+#ifdef __EMSCRIPTEN__
+    // Same main-thread rule as LoadResource(): never block the browser main
+    // thread on a pool future — run the batch inline.
+    if (emscripten_is_main_runtime_thread()) {
+        return LoadResourcesProcess(filter);
+    }
+#endif
     return LoadResourcesAsync(filter, BS::pr::highest).get();
 }
 
 void ResourceManager::DirtyResources(const ResourceFilter& filter) {
+    EnsurePoolRunning();
     mThreadPool->submit_task([this, filter]() -> void {
         auto list = GetArchiveManager()->ListFiles(filter.IncludeMasks, filter.ExcludeMasks);
 
@@ -389,6 +426,7 @@ void ResourceManager::UnloadResourcesAsync(const std::string& searchMask, BS::pr
 }
 
 void ResourceManager::UnloadResourcesAsync(const ResourceFilter& filter, BS::priority_t priority) {
+    EnsurePoolRunning();
     mThreadPool->submit_task([this, filter]() -> void { UnloadResourcesProcess(filter); }, priority);
 }
 

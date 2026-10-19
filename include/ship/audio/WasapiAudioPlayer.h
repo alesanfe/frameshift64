@@ -7,6 +7,7 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <mutex>
+#include <chrono>
 
 using namespace Microsoft::WRL;
 
@@ -44,6 +45,7 @@ class WasapiAudioPlayer : public AudioPlayer, public IMMNotificationClient {
     UINT32 mBufferFrameCount = 0;
     bool mInitialized = false;
     bool mStarted = false;
+    std::chrono::steady_clock::time_point mNextSetupRetry{};
     int32_t mNumChannels = 2;
     std::mutex mMutex;
 };

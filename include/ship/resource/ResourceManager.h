@@ -132,6 +132,10 @@ class ResourceManager {
     std::shared_ptr<IResource> GetCachedResource(std::variant<ResourceLoadError, std::shared_ptr<IResource>> cacheLine);
 
   private:
+    /* The pool pauses at Init when no archive is mounted; unpause lazily at
+     * each submit once IsLoaded() reports archives — AddArchive bypasses
+     * this class, so no other site learns the pool can run again. */
+    void EnsurePoolRunning();
     std::unordered_map<ResourceIdentifier, std::variant<ResourceLoadError, std::shared_ptr<IResource>>,
                        ResourceIdentifierHash>
         mResourceCache;

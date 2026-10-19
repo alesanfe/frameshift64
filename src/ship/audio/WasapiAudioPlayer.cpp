@@ -24,8 +24,23 @@ void WasapiAudioPlayer::ThrowIfFailed(HRESULT res) {
 }
 
 bool WasapiAudioPlayer::SetupStream() {
+    /* DoPlay/Buffered call this on every submit while no endpoint exists.
+     * A missing render device is an expected condition (E_NOTFOUND), not an
+     * exceptional one — throwing HRESULTs on the audio hot path repeatedly
+     * faulted inside exception dispatch (0xC0000409) when it ran on a
+     * coroutine fiber. Check HRESULTs directly and rate-limit retries;
+     * OnDefaultDeviceChanged resets mNextSetupRetry so a device appearing
+     * later still reconnects on the next submit. */
+    const auto now = std::chrono::steady_clock::now();
+    if (now < mNextSetupRetry) {
+        return false;
+    }
+    mNextSetupRetry = now + std::chrono::seconds(2);
+
     try {
-        ThrowIfFailed(mDeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &mDevice));
+        if (FAILED(mDeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &mDevice))) {
+            return false;
+        }
         ThrowIfFailed(mDevice->Activate(IID_IAudioClient, CLSCTX_ALL, nullptr, IID_PPV_ARGS_Helper(&mClient)));
 
         // Use GetNumOutputChannels() to determine stereo vs surround
@@ -172,6 +187,7 @@ HRESULT STDMETHODCALLTYPE WasapiAudioPlayer::OnDefaultDeviceChanged(EDataFlow fl
         // This callback runs on a separate thread, so we need to protect mInitialized
         std::lock_guard<std::mutex> lock(mMutex);
         mInitialized = false;
+        mNextSetupRetry = {};
     }
     return S_OK;
 }
