@@ -59,8 +59,7 @@ def strip_comments(text):
     # Block comments
     text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.DOTALL)
     # Line comments
-    text = re.sub(r'//[^\n]*', '', text)
-    return text
+    return re.sub(r'//[^\n]*', '', text)
 
 
 def extract_structs(text):

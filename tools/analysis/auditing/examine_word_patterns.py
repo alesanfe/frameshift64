@@ -16,22 +16,18 @@ and likely vertex data regions (patterns of s16 coordinate values).
 Usage: python tools/examine_word_patterns.py [path-to-baserom.us.z64]
 """
 
-import ctypes
 import math
 import os
-import shutil
 import struct
-import subprocess
 import sys
-import tempfile
 from collections import Counter
+from pathlib import Path
 
-# ROM constants
-RELOC_TABLE_ROM_ADDR   = 0x001AC870
-RELOC_FILE_COUNT       = 2132
-RELOC_TABLE_ENTRY_SIZE = 12
-RELOC_TABLE_SIZE       = (RELOC_FILE_COUNT + 1) * RELOC_TABLE_ENTRY_SIZE
-RELOC_DATA_START       = RELOC_TABLE_ROM_ADDR + RELOC_TABLE_SIZE
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "code-generation"))
+import ssb64_reloc_lib as rl
+
+# US reloc-table geometry via the shared lib (JP: rl.RelocLayout("jp"))
+LAYOUT = rl.RelocLayout("us")
 
 # F3DEX2 GBI opcodes (high byte of Gfx.w0)
 # See gbi.h — these are the most common ones
@@ -231,109 +227,6 @@ def detect_vtx_regions(words, pointer_indices, gfx_regions):
     return regions
 
 
-def parse_reloc_table(rom):
-    entries = []
-    for i in range(RELOC_FILE_COUNT + 1):
-        offset = RELOC_TABLE_ROM_ADDR + i * RELOC_TABLE_ENTRY_SIZE
-        data = rom[offset:offset + RELOC_TABLE_ENTRY_SIZE]
-        first_word, reloc_intern, compressed_size, reloc_extern, decompressed_size = \
-            struct.unpack(">IHHHH", data)
-        entries.append({
-            "id": i,
-            "is_compressed": bool(first_word & 0x80000000),
-            "data_offset": first_word & 0x7FFFFFFF,
-            "reloc_intern": reloc_intern,
-            "compressed_size": compressed_size,
-            "reloc_extern": reloc_extern,
-            "decompressed_size": decompressed_size,
-        })
-    return entries
-
-
-def get_file_raw_bytes(rom, entries, file_id):
-    e = entries[file_id]
-    data_addr = RELOC_DATA_START + e["data_offset"]
-    compressed_bytes = e["compressed_size"] * 4
-    return rom[data_addr:data_addr + compressed_bytes]
-
-
-def build_vpk0_decompressor():
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    vpk0_c = os.path.join(repo_root, "torch", "lib", "libvpk0", "vpk0.c")
-    if not os.path.exists(vpk0_c):
-        return None
-
-    tmp_dir = tempfile.mkdtemp(prefix="vpk0_exam_")
-
-    if sys.platform == "win32":
-        dll_path = os.path.join(tmp_dir, "vpk0.dll")
-        def_path = os.path.join(tmp_dir, "vpk0.def")
-        bat_path = os.path.join(tmp_dir, "build.bat")
-        with open(def_path, "w") as df:
-            df.write("EXPORTS\n    vpk0_decode\n    vpk0_decoded_size\n")
-        with open(bat_path, "w") as bf:
-            bf.write('@echo off\n')
-            bf.write('call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1\n')
-            bf.write(f'cl /O2 /LD /Fe:"{dll_path}" "{vpk0_c}" /link /DEF:"{def_path}" >nul 2>&1\n')
-        subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, cwd=tmp_dir, check=False)
-    else:
-        dll_path = os.path.join(tmp_dir, "vpk0.so")
-        for compiler in ["gcc", "clang", "cc"]:
-            try:
-                subprocess.run(
-                    [compiler, "-O2", "-shared", "-fPIC", "-o", dll_path, vpk0_c],
-                    check=True, capture_output=True
-                )
-                break
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                continue
-
-    if not os.path.exists(dll_path):
-        return None
-    return dll_path, tmp_dir
-
-
-def decompress_file(vpk0_lib, raw_bytes, expected_size):
-    if raw_bytes[:4] != b"vpk0":
-        return None
-    src = ctypes.create_string_buffer(bytes(raw_bytes), len(raw_bytes))
-    dst = ctypes.create_string_buffer(expected_size)
-    vpk0_lib.vpk0_decode.restype = ctypes.c_uint32
-    vpk0_lib.vpk0_decode.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
-                                      ctypes.c_void_p, ctypes.c_size_t]
-    result = vpk0_lib.vpk0_decode(src, len(raw_bytes), dst, expected_size)
-    if result == 0:
-        return None
-    return dst.raw[:expected_size]
-
-
-def walk_reloc_chain(data_words, start_offset):
-    slots = set()
-    current = start_offset
-    while current != 0xFFFF and current < len(data_words):
-        word = data_words[current]
-        next_reloc = (word >> 16) & 0xFFFF
-        slots.add(current)
-        current = next_reloc
-    return slots
-
-
-def get_decompressed_data(rom, entries, vpk0_lib, file_id):
-    """Get decompressed bytes for a file."""
-    e = entries[file_id]
-    decompressed_bytes = e["decompressed_size"] * 4
-    if decompressed_bytes == 0:
-        return None
-
-    raw = get_file_raw_bytes(rom, entries, file_id)
-    if e["is_compressed"]:
-        if vpk0_lib is None:
-            return None
-        return decompress_file(vpk0_lib, raw, decompressed_bytes)
-    else:
-        return raw[:decompressed_bytes]
-
-
 def main():
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     rom_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(repo_root, "baserom.us.z64")
@@ -342,15 +235,8 @@ def main():
         print(f"Error: ROM not found at {rom_path}")
         return 1
 
-    with open(rom_path, "rb") as f:
-        rom = f.read()
+    rom = rl.load_rom(rom_path)
 
-    entries = parse_reloc_table(rom)
-
-    print("Building VPK0 decompressor...")
-    result = build_vpk0_decompressor()
-    vpk0_lib = ctypes.CDLL(result[0]) if result else None
-    tmp_dir = result[1] if result else None
 
     # Global counters
     global_word_classes = Counter()
@@ -367,26 +253,13 @@ def main():
     # "data_only" if no relocs
     file_types = Counter()
 
-    print(f"Analyzing word patterns in {RELOC_FILE_COUNT} files...\n")
+    print(f"Analyzing word patterns in {LAYOUT.file_count} files...\n")
 
-    for fid in range(RELOC_FILE_COUNT):
-        e = entries[fid]
-        data = get_decompressed_data(rom, entries, vpk0_lib, fid)
-        if data is None:
-            continue
-
-        num_words = len(data) // 4
-        if num_words == 0:
-            continue
-
-        words = struct.unpack(f">{num_words}I", data[:num_words * 4])
+    for fid, e, data, words in rl.iter_file_words(rom, LAYOUT):
+        num_words = len(words)
 
         # Walk reloc chains
-        ptr_indices = set()
-        if e["reloc_intern"] != 0xFFFF:
-            ptr_indices |= walk_reloc_chain(words, e["reloc_intern"])
-        if e["reloc_extern"] != 0xFFFF:
-            ptr_indices |= walk_reloc_chain(words, e["reloc_extern"])
+        ptr_indices = rl.file_chain_indices(words, e)
 
         # Detect GFX display list regions
         gfx_regions = detect_gfx_regions(words, ptr_indices)
@@ -398,7 +271,7 @@ def main():
         # Detect vertex regions
         vtx_regions = detect_vtx_regions(words, ptr_indices, gfx_regions)
         vtx_word_set = set()
-        for start, end, count in vtx_regions:
+        for start, end, _count in vtx_regions:
             for k in range(start, end):
                 vtx_word_set.add(k)
 
@@ -481,8 +354,6 @@ def main():
         print(f"  {ftype:>35s}: {count:4d} files")
 
     # Cleanup
-    if tmp_dir:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return 0
 

@@ -13,111 +13,18 @@ byte-swapping strategy is needed for the PC port.
 Usage: python tools/examine_reloc_files.py [path-to-baserom.us.z64]
 """
 
-import ctypes
 import os
-import shutil
 import struct
-import subprocess
 import sys
-import tempfile
 from collections import Counter
+from pathlib import Path
 
-# ROM constants (shared with other tools)
-RELOC_TABLE_ROM_ADDR   = 0x001AC870
-RELOC_FILE_COUNT       = 2132
-RELOC_TABLE_ENTRY_SIZE = 12
-RELOC_TABLE_SIZE       = (RELOC_FILE_COUNT + 1) * RELOC_TABLE_ENTRY_SIZE
-RELOC_DATA_START       = RELOC_TABLE_ROM_ADDR + RELOC_TABLE_SIZE
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "code-generation"))
 
+import ssb64_reloc_lib as rl
 
-def parse_reloc_table(rom):
-    """Parse the full reloc table including sentinel entry."""
-    entries = []
-    for i in range(RELOC_FILE_COUNT + 1):
-        offset = RELOC_TABLE_ROM_ADDR + i * RELOC_TABLE_ENTRY_SIZE
-        data = rom[offset:offset + RELOC_TABLE_ENTRY_SIZE]
-        first_word, reloc_intern, compressed_size, reloc_extern, decompressed_size = \
-            struct.unpack(">IHHHH", data)
-        entries.append({
-            "id": i,
-            "is_compressed": bool(first_word & 0x80000000),
-            "data_offset": first_word & 0x7FFFFFFF,
-            "reloc_intern": reloc_intern,       # in u32 words, 0xFFFF = none
-            "compressed_size": compressed_size,  # in u32 words
-            "reloc_extern": reloc_extern,        # in u32 words, 0xFFFF = none
-            "decompressed_size": decompressed_size,  # in u32 words
-        })
-    return entries
-
-
-def get_file_raw_bytes(rom, entries, file_id):
-    """Get the raw (possibly compressed) bytes for a file from ROM."""
-    e = entries[file_id]
-    data_addr = RELOC_DATA_START + e["data_offset"]
-    compressed_bytes = e["compressed_size"] * 4
-    return rom[data_addr:data_addr + compressed_bytes]
-
-
-def build_vpk0_decompressor():
-    """Build the VPK0 decompressor as a shared library."""
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    vpk0_c = os.path.join(repo_root, "torch", "lib", "libvpk0", "vpk0.c")
-
-    if not os.path.exists(vpk0_c):
-        return None
-
-    tmp_dir = tempfile.mkdtemp(prefix="vpk0_exam_")
-
-    if sys.platform == "win32":
-        dll_path = os.path.join(tmp_dir, "vpk0.dll")
-        bat_path = os.path.join(tmp_dir, "build.bat")
-        # Write a .def file to export the symbols
-        def_path = os.path.join(tmp_dir, "vpk0.def")
-        with open(def_path, "w") as df:
-            df.write("EXPORTS\n")
-            df.write("    vpk0_decode\n")
-            df.write("    vpk0_decoded_size\n")
-        with open(bat_path, "w") as bf:
-            bf.write('@echo off\n')
-            bf.write('call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1\n')
-            bf.write(f'cl /O2 /LD /Fe:"{dll_path}" "{vpk0_c}" /link /DEF:"{def_path}" >nul 2>&1\n')
-        subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, cwd=tmp_dir, check=False)
-    else:
-        dll_path = os.path.join(tmp_dir, "vpk0.so")
-        for compiler in ["gcc", "clang", "cc"]:
-            try:
-                subprocess.run(
-                    [compiler, "-O2", "-shared", "-fPIC", "-o", dll_path, vpk0_c],
-                    check=True, capture_output=True
-                )
-                break
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                continue
-
-    if not os.path.exists(dll_path):
-        return None
-
-    return dll_path, tmp_dir
-
-
-def decompress_file(vpk0_lib, raw_bytes, expected_size):
-    """Decompress a VPK0-compressed file."""
-    if raw_bytes[:4] != b"vpk0":
-        return None
-
-    src = ctypes.create_string_buffer(bytes(raw_bytes), len(raw_bytes))
-    dst = ctypes.create_string_buffer(expected_size)
-
-    # uint32_t vpk0_decode(const uint8_t *src, size_t src_size, uint8_t *dst, size_t dst_size)
-    vpk0_lib.vpk0_decode.restype = ctypes.c_uint32
-    vpk0_lib.vpk0_decode.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
-                                      ctypes.c_void_p, ctypes.c_size_t]
-
-    result = vpk0_lib.vpk0_decode(src, len(raw_bytes), dst, expected_size)
-    if result == 0:
-        return None
-
-    return dst.raw[:expected_size]
+# US reloc-table geometry via the shared lib (JP: rl.RelocLayout("jp"))
+LAYOUT = rl.RelocLayout("us")
 
 
 def walk_reloc_chain(data_words, start_offset):
@@ -188,26 +95,14 @@ def main():
         return 1
 
     print(f"Loading ROM: {rom_path}")
-    with open(rom_path, "rb") as f:
-        rom = f.read()
+    rom = rl.load_rom(rom_path)
 
-    entries = parse_reloc_table(rom)
-    print(f"Parsed {RELOC_FILE_COUNT} reloc table entries")
+    entries = rl.read_all_entries(rom, LAYOUT)
+    print(f"Parsed {LAYOUT.file_count} reloc table entries")
 
-    # Build VPK0 decompressor
-    print("Building VPK0 decompressor...")
-    result = build_vpk0_decompressor()
-    if result is None:
-        print("WARNING: Could not build VPK0 decompressor. Compressed files will be skipped.")
-        vpk0_lib = None
-        tmp_dir = None
-    else:
-        dll_path, tmp_dir = result
-        vpk0_lib = ctypes.CDLL(dll_path)
-        print(f"  Built: {dll_path}")
 
     # Analyze all files
-    print(f"\nAnalyzing {RELOC_FILE_COUNT} files...\n")
+    print(f"\nAnalyzing {LAYOUT.file_count} files...\n")
 
     stats = {
         "total": 0,
@@ -228,9 +123,8 @@ def main():
     size_buckets = Counter()  # bucket → count
     ptr_density_buckets = Counter()  # "X%" → count
 
-    for fid in range(RELOC_FILE_COUNT):
-        e = entries[fid]
-        decompressed_bytes = e["decompressed_size"] * 4
+    for fid, e in enumerate(entries):
+        decompressed_bytes = e["decompressed_bytes"]
 
         if decompressed_bytes == 0:
             stats["empty"] += 1
@@ -239,31 +133,24 @@ def main():
 
         stats["total"] += 1
 
-        # Get decompressed data
-        raw = get_file_raw_bytes(rom, entries, fid)
-
+        try:
+            _info, data = rl.extract_file(rom, LAYOUT, fid)
+        except ValueError:
+            stats["skipped"] += 1
+            file_results.append({"id": fid, "status": "decompress_failed"})
+            continue
         if e["is_compressed"]:
             stats["compressed"] += 1
-            if vpk0_lib is None:
-                stats["skipped"] += 1
-                file_results.append({"id": fid, "status": "skipped_no_decompressor"})
-                continue
-            data = decompress_file(vpk0_lib, raw, decompressed_bytes)
-            if data is None:
-                stats["skipped"] += 1
-                file_results.append({"id": fid, "status": "decompress_failed"})
-                continue
         else:
             stats["uncompressed"] += 1
-            data = raw[:decompressed_bytes]
 
-        analysis = analyze_file(data, e["reloc_intern"], e["reloc_extern"])
+        analysis = analyze_file(data, e["reloc_intern_offset"], e["reloc_extern_offset"])
         if analysis is None:
             file_results.append({"id": fid, "status": "analyze_failed"})
             continue
 
-        has_intern = e["reloc_intern"] != 0xFFFF
-        has_extern = e["reloc_extern"] != 0xFFFF
+        has_intern = e["reloc_intern_offset"] != 0xFFFF
+        has_extern = e["reloc_extern_offset"] != 0xFFFF
 
         if has_intern:
             stats["has_intern_reloc"] += 1
@@ -315,7 +202,7 @@ def main():
     print("=" * 60)
     print("RELOC FILE ANALYSIS SUMMARY")
     print("=" * 60)
-    print(f"  Total files:      {RELOC_FILE_COUNT}")
+    print(f"  Total files:      {LAYOUT.file_count}")
     print(f"  Empty files:      {stats['empty']}")
     print(f"  Compressed:       {stats['compressed']}")
     print(f"  Uncompressed:     {stats['uncompressed']}")
@@ -367,11 +254,6 @@ def main():
     print(f"\nCSV written to: {csv_path}")
 
     # Cleanup
-    if tmp_dir:
-        try:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        except Exception:
-            pass
 
     return 0
 

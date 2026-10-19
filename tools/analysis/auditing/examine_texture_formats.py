@@ -15,22 +15,18 @@ every file, what swap width is needed (none/u16/u32).
 Usage: python tools/examine_texture_formats.py [path-to-baserom.us.z64]
 """
 
-import ctypes
 import math
 import os
-import shutil
 import struct
-import subprocess
 import sys
-import tempfile
 from collections import Counter
+from pathlib import Path
 
-# ROM constants
-RELOC_TABLE_ROM_ADDR   = 0x001AC870
-RELOC_FILE_COUNT       = 2132
-RELOC_TABLE_ENTRY_SIZE = 12
-RELOC_TABLE_SIZE       = (RELOC_FILE_COUNT + 1) * RELOC_TABLE_ENTRY_SIZE
-RELOC_DATA_START       = RELOC_TABLE_ROM_ADDR + RELOC_TABLE_SIZE
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "code-generation"))
+import ssb64_reloc_lib as rl
+
+# US reloc-table geometry via the shared lib (JP: rl.RelocLayout("jp"))
+LAYOUT = rl.RelocLayout("us")
 
 # F3DEX2 opcodes
 OP_VTX       = 0x01
@@ -64,102 +60,6 @@ BPP = {0: 4, 1: 8, 2: 16, 3: 32}
 # 32bpp: pixels are u32 -> u32 swap
 # Palettes: always u16 (RGBA5551) -> u16 swap
 SWAP_FOR_SIZ = {0: "none", 1: "none", 2: "u16", 3: "u32"}
-
-
-def parse_reloc_table(rom):
-    entries = []
-    for i in range(RELOC_FILE_COUNT + 1):
-        offset = RELOC_TABLE_ROM_ADDR + i * RELOC_TABLE_ENTRY_SIZE
-        data = rom[offset:offset + RELOC_TABLE_ENTRY_SIZE]
-        first_word, reloc_intern, compressed_size, reloc_extern, decompressed_size = \
-            struct.unpack(">IHHHH", data)
-        entries.append({
-            "is_compressed": bool(first_word & 0x80000000),
-            "data_offset": first_word & 0x7FFFFFFF,
-            "reloc_intern": reloc_intern,
-            "compressed_size": compressed_size,
-            "reloc_extern": reloc_extern,
-            "decompressed_size": decompressed_size,
-        })
-    return entries
-
-
-def build_vpk0():
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    vpk0_c = os.path.join(repo_root, "torch", "lib", "libvpk0", "vpk0.c")
-    if not os.path.exists(vpk0_c):
-        return None
-    tmp_dir = tempfile.mkdtemp(prefix="vpk0_exam_")
-    if sys.platform == "win32":
-        dll_path = os.path.join(tmp_dir, "vpk0.dll")
-        def_path = os.path.join(tmp_dir, "vpk0.def")
-        bat_path = os.path.join(tmp_dir, "build.bat")
-        with open(def_path, "w") as df:
-            df.write("EXPORTS\n    vpk0_decode\n    vpk0_decoded_size\n")
-        with open(bat_path, "w") as bf:
-            bf.write('@echo off\n')
-            bf.write('call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1\n')
-            bf.write(f'cl /O2 /LD /Fe:"{dll_path}" "{vpk0_c}" /link /DEF:"{def_path}" >nul 2>&1\n')
-        subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, cwd=tmp_dir, check=False)
-    else:
-        dll_path = os.path.join(tmp_dir, "vpk0.so")
-        for cc in ["gcc", "clang", "cc"]:
-            try:
-                subprocess.run([cc, "-O2", "-shared", "-fPIC", "-o", dll_path, vpk0_c],
-                               check=True, capture_output=True)
-                break
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                continue
-    if not os.path.exists(dll_path):
-        return None
-    return ctypes.CDLL(dll_path), tmp_dir
-
-
-def decompress_file(vpk0_lib, raw_bytes, expected_size):
-    if raw_bytes[:4] != b"vpk0":
-        return None
-    src = ctypes.create_string_buffer(bytes(raw_bytes), len(raw_bytes))
-    dst = ctypes.create_string_buffer(expected_size)
-    vpk0_lib.vpk0_decode.restype = ctypes.c_uint32
-    vpk0_lib.vpk0_decode.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
-                                      ctypes.c_void_p, ctypes.c_size_t]
-    result = vpk0_lib.vpk0_decode(src, len(raw_bytes), dst, expected_size)
-    return dst.raw[:expected_size] if result else None
-
-
-def get_data(rom, entries, vpk0_lib, fid):
-    e = entries[fid]
-    dec_bytes = e["decompressed_size"] * 4
-    if dec_bytes == 0:
-        return None
-    data_addr = RELOC_DATA_START + e["data_offset"]
-    raw = rom[data_addr:data_addr + e["compressed_size"] * 4]
-    if e["is_compressed"]:
-        return decompress_file(vpk0_lib, raw, dec_bytes) if vpk0_lib else None
-    return raw[:dec_bytes]
-
-
-def walk_reloc_chain(words, start):
-    slots = set()
-    cur = start
-    while cur != 0xFFFF and cur < len(words):
-        w = words[cur]
-        nxt = (w >> 16) & 0xFFFF
-        slots.add(cur)
-        cur = nxt
-    return slots
-
-
-def walk_reloc_chain_targets(words, start):
-    results = []
-    cur = start
-    while cur != 0xFFFF and cur < len(words):
-        w = words[cur]
-        nxt = (w >> 16) & 0xFFFF
-        target = w & 0xFFFF
-        results.append((cur, target))
-        cur = nxt
-    return results
 
 
 def is_float(word):
@@ -264,7 +164,7 @@ def analyze_file(words, num_words, ptr_indices, file_size):
 
     # Texture format stats
     fmt_siz_counts = Counter()
-    for (off, fmt, siz) in tex_refs:
+    for (_off, fmt, siz) in tex_refs:
         key = f"{FMT_NAMES.get(fmt, '?')}{SIZ_NAMES.get(siz, '?')}"
         fmt_siz_counts[key] += 1
 
@@ -279,15 +179,8 @@ def main():
         print(f"Error: ROM not found at {rom_path}")
         return 1
 
-    with open(rom_path, "rb") as f:
-        rom = f.read()
+    rom = rl.load_rom(rom_path)
 
-    entries = parse_reloc_table(rom)
-
-    print("Building VPK0 decompressor...")
-    vpk0_result = build_vpk0()
-    vpk0_lib = vpk0_result[0] if vpk0_result else None
-    tmp_dir = vpk0_result[1] if vpk0_result else None
 
     # Global swap budget
     swap_budget = Counter()  # "u32" / "u16" / "none" / "ptr" / "ambiguous" -> word count
@@ -300,25 +193,12 @@ def main():
     # Files with ambiguous data
     ambiguous_files = []
 
-    print(f"Full swap analysis of {RELOC_FILE_COUNT} files...\n")
+    print(f"Full swap analysis of {LAYOUT.file_count} files...\n")
 
-    for fid in range(RELOC_FILE_COUNT):
-        e = entries[fid]
-        data = get_data(rom, entries, vpk0_lib, fid)
-        if data is None:
-            continue
+    for fid, e, data, words in rl.iter_file_words(rom, LAYOUT):
+        num_words = len(words)
 
-        num_words = len(data) // 4
-        if num_words == 0:
-            continue
-
-        words = struct.unpack(f">{num_words}I", data[:num_words * 4])
-
-        ptr_indices = set()
-        if e["reloc_intern"] != 0xFFFF:
-            ptr_indices |= walk_reloc_chain(words, e["reloc_intern"])
-        if e["reloc_extern"] != 0xFFFF:
-            ptr_indices |= walk_reloc_chain(words, e["reloc_extern"])
+        ptr_indices = rl.file_chain_indices(words, e)
 
         swap_map, fmt_counts, tex_refs, _vtx_refs = \
             analyze_file(words, num_words, ptr_indices, len(data))
@@ -428,8 +308,6 @@ def main():
   format info to determine per-region swap width at extraction time.
 """)
 
-    if tmp_dir:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
     return 0
 
 

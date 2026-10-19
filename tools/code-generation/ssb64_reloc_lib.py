@@ -48,6 +48,17 @@ class RelocLayout:
         self.table_size = (self.file_count + 1) * RELOC_TABLE_ENTRY_SIZE
         self.data_start = self.table_rom_addr + self.table_size
 
+    # N64 header country-code byte → VERSIONS key.
+    @classmethod
+    def for_rom(cls, rom):
+        if len(rom) <= 0x3E:
+            raise ValueError("ROM is too small to contain an N64 country code")
+        country = rom[0x3E]
+        version = {ord("E"): "us", ord("J"): "jp"}.get(country)
+        if version is None:
+            raise ValueError(f"unsupported ROM country code 0x{country:02X}")
+        return cls(version)
+
 
 def rom_sha1(rom_bytes):
     return hashlib.sha1(rom_bytes, usedforsecurity=False).hexdigest()
@@ -89,6 +100,13 @@ def read_table_entry(rom, layout, file_id):
         "decompressed_bytes": decompressed_words * 4,
         "next_data_offset": next_first_word & 0x7FFFFFFF,
     }
+
+
+def read_all_entries(rom, layout):
+    """Every table entry in file order — the list shape the tools/analysis/
+    auditing/examine_*.py tools need (each entry already carries
+    next_data_offset, so no sentinel row is required)."""
+    return [read_table_entry(rom, layout, i) for i in range(layout.file_count)]
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +278,44 @@ def walk_chain(data, start_word_offset):
         cur = nxt
 
     return entries
+
+
+def walk_chain_indices(words, start):
+    """Lenient chain walk over an already-unpacked u32 word list — stops at
+    0xFFFF or an out-of-range slot (audit tools tolerate truncated chains
+    where the strict byte-level walk_chain above raises)."""
+    slots = set()
+    cur = start
+    while cur != 0xFFFF and cur < len(words):
+        slots.add(cur)
+        cur = (words[cur] >> 16) & 0xFFFF
+    return slots
+
+
+def file_chain_indices(words, entry):
+    """Union of a table entry's intern+extern chain slot word indices."""
+    slots = set()
+    if entry["reloc_intern_offset"] != 0xFFFF:
+        slots |= walk_chain_indices(words, entry["reloc_intern_offset"])
+    if entry["reloc_extern_offset"] != 0xFFFF:
+        slots |= walk_chain_indices(words, entry["reloc_extern_offset"])
+    return slots
+
+
+def iter_file_words(rom, layout):
+    """Yield (file_id, entry, data, words) for every non-empty,
+    decompressible reloc file — words is the file data as a big-endian
+    u32 tuple."""
+    for fid, e in enumerate(read_all_entries(rom, layout)):
+        if e["decompressed_bytes"] == 0:
+            continue
+        try:
+            _info, data = extract_file(rom, layout, fid)
+        except ValueError:
+            continue
+        num_words = len(data) // 4
+        if num_words:
+            yield fid, e, data, struct.unpack(f">{num_words}I", data[:num_words * 4])
 
 
 def make_relocated_view(data, intern_chain):
