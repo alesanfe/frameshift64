@@ -224,19 +224,8 @@ void run(std::string url)
         const bool done = (meta == nullptr || meta->bytesleft == 0) &&
                           (flags & CURLWS_CONT) == 0;
         if (done) {
-            bool overflow = false;
-            {
-                std::lock_guard<std::mutex> lock(sMutex);
-                overflow = sTextQueue.size() + sBinaryQueue.size() >= kMaxWsQueuedMessages;
-                if (!overflow) {
-                    if (message_kind == 0x1) {
-                        sTextQueue.emplace_back(message.begin(), message.end());
-                    } else {
-                        sBinaryQueue.push_back(message);
-                    }
-                }
-            }
-            if (overflow) {
+            if (!WsEnqueueBounded(sMutex, sTextQueue, sBinaryQueue,
+                                  message, message_kind == 0x1)) {
                 fail("message queue overflow");
                 break;
             }
@@ -322,12 +311,7 @@ extern "C" int port_ws_connect(const char *url)
     port_ws_close();
     port_ws_uplink_close();
     sStop = false;
-    {
-        std::lock_guard<std::mutex> lock(sMutex);
-        sError.clear();
-        sTextQueue.clear();
-        sBinaryQueue.clear();
-    }
+    WsClearIngress(sMutex, sError, sTextQueue, sBinaryQueue);
     sState = PORT_WS_CONNECTING;
     sThread = std::thread(run, std::string(url != nullptr ? url : ""));
     return 1;
@@ -393,31 +377,12 @@ extern "C" int port_ws_send_binary(const void *data, int size)
 
 extern "C" int port_ws_poll_text(char *out, int capacity)
 {
-    std::lock_guard<std::mutex> lock(sMutex);
-    if (sTextQueue.empty() || capacity <= 0) {
-        return 0;
-    }
-    std::string text = std::move(sTextQueue.front());
-    sTextQueue.pop_front();
-    size_t n = (text.size() < static_cast<size_t>(capacity - 1)) ? text.size() : static_cast<size_t>(capacity - 1);
-    std::memcpy(out, text.data(), n);
-    out[n] = '\0';
-    return 1;
+    return WsPollText(sMutex, sTextQueue, out, capacity);
 }
 
 extern "C" int port_ws_poll_binary(void *out, int capacity)
 {
-    std::lock_guard<std::mutex> lock(sMutex);
-    if (sBinaryQueue.empty()) {
-        return 0;
-    }
-    std::vector<unsigned char> data = std::move(sBinaryQueue.front());
-    sBinaryQueue.pop_front();
-    if (static_cast<int>(data.size()) > capacity) {
-        return 0;
-    }
-    std::memcpy(out, data.data(), data.size());
-    return static_cast<int>(data.size());
+    return WsPollBinary(sMutex, sBinaryQueue, out, capacity);
 }
 
 extern "C" int port_ws_uplink_connect(const char *url)
