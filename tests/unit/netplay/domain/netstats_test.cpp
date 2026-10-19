@@ -11,12 +11,13 @@
  * mode runs against a private temp dir — no game state, no network. */
 
 #include "netstats.h"
+#include "port_save.h"
 #include "smash_test/check.h"
 #include "smash_test/env.h"
-#include <ship/Context.h>   /* test double (tests/support/shim) */
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -32,12 +33,17 @@
 
 extern "C" void port_log(const char *fmt, ...) { (void)fmt; }
 
-/* tests/support/shim/ship/Context.h shadows the real header in this TU's
- * sibling (netstats.cpp); the env override makes this unreachable, but the
- * symbol must still link. */
-std::string Ship::Context::GetPathRelativeToAppDirectory(const std::string path,
-                                                         std::string) {
-    return path;
+/* Test double for port_save_get_dir (netstats.cpp no longer resolves the
+ * save dir itself). Honors the SSB64_SAVE_PATH seam the suites use; when
+ * unset, falls back to "." like the real fallback chain does. */
+extern "C" const char *port_save_get_dir(void) {
+    static std::string dir;
+    if (const char *o = std::getenv("SSB64_SAVE_PATH")) {
+        dir = std::filesystem::path(o).parent_path().string();
+    } else {
+        dir = ".";
+    }
+    return dir.c_str();
 }
 
 namespace {

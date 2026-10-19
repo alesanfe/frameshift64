@@ -28,6 +28,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "heap_check_internal.h"
+
 namespace {
 
 // Victim signature seen across runs: a long-lived block allocated early —
@@ -82,49 +84,17 @@ void watchLog(const char* fmt, ...) {
 /* Module table snapshotted once — describeAddr runs inside the vectored
  * handler where GetModuleFileName is unsafe (loader lock while
  * armAllThreads may hold a DLL-loading thread suspended → deadlock). */
-struct WMod { uintptr_t base, end; char name[64]; };
-static WMod gWModTable[64];
+static ModEntry gWModTable[kModTableMax];
 static volatile long gWModCount = 0;
 static uintptr_t gUcrtBase = 0, gUcrtEnd = 0;
 
 void snapshotWModules() {
-	long n = 0;
-	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
-	if (snap == INVALID_HANDLE_VALUE) return;
-	MODULEENTRY32W me;
-	me.dwSize = sizeof(me);
-	if (Module32FirstW(snap, &me)) {
-		do {
-			if (n >= 64) break;
-			gWModTable[n].base = (uintptr_t)me.modBaseAddr;
-			gWModTable[n].end = (uintptr_t)me.modBaseAddr + me.modBaseSize;
-			int i = 0;
-			for (; i < 62 && me.szModule[i]; ++i) {
-				wchar_t c = me.szModule[i];
-				gWModTable[n].name[i] = (c < 128) ? (char)c : '?';
-			}
-			gWModTable[n].name[i] = 0;
-			if (wcsstr(me.szModule, L"ucrtbased") != nullptr) {
-				gUcrtBase = gWModTable[n].base;
-				gUcrtEnd = gWModTable[n].end;
-			}
-			++n;
-		} while (Module32NextW(snap, &me));
-	}
-	CloseHandle(snap);
-	gWModCount = n;
+	gWModCount = snapshotModules(gWModTable, &gUcrtBase, &gUcrtEnd);
 }
 
 // Resolve an address to "module+0xoff" from the cached table — no locks.
 void describeAddr(uintptr_t a, char* out, size_t outSize) {
-	for (long i = 0; i < gWModCount; ++i) {
-		if (a >= gWModTable[i].base && a < gWModTable[i].end) {
-			snprintf(out, outSize, "%s+0x%llx", gWModTable[i].name,
-			         (unsigned long long)(a - gWModTable[i].base));
-			return;
-		}
-	}
-	snprintf(out, outSize, "0x%llx", (unsigned long long)a);
+	describeModuleAddr(gWModTable, gWModCount, a, out, outSize);
 }
 
 // STATUS_SINGLE_STEP: a write watchpoint fired. DR6 B0-B3 say which.

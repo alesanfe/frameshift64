@@ -37,7 +37,7 @@
 
 #include "mixer.h"
 
-extern void port_log(const char *fmt, ...);
+#include "port_log.h"
 
 /* ------------------------------------------------------------------ */
 /*  Rounding helpers                                                  */

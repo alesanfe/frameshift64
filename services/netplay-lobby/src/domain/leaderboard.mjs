@@ -14,6 +14,7 @@ export const LB_NAME_MAX = 24;
 export const LB_KEY_MIN = 16;
 export const LB_BAN_REPORTS = 3;          // distinct reporter keys to ban
 export const LB_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const LB_HISTORY_MAX = 50;         // recent verified matches kept
 
 /* Display names come back verbatim to every client — keep them to a
  * boring alphabet so JSON serialization and ImGui rendering can't be
@@ -29,7 +30,8 @@ export function sanitizeName(name) {
 }
 
 export class Leaderboard {
-  constructor(entries = [], pending = {}, settled = [], reports = {}) {
+  constructor(entries = [], pending = {}, settled = [], reports = {},
+              history = []) {
     this.byName = new Map();   // displayName -> {rating,wins,losses,key,updated}
     for (const e of entries) this.byName.set(e.name, e);
     this.pending = new Map(Object.entries(pending));   // match_id -> report
@@ -39,6 +41,10 @@ export class Leaderboard {
     for (const [n, rs] of Object.entries(reports)) {
       this.reports.set(n, new Map(Object.entries(rs)));
     }
+    /* Verified match records, oldest-first, capped at LB_HISTORY_MAX —
+     * powers the public /history endpoint (match history per name is a
+     * filter on top of this ring). */
+    this.history = Array.isArray(history) ? history.slice(-LB_HISTORY_MAX) : [];
   }
 
   #bannedKey(key) {
@@ -174,6 +180,11 @@ export class Leaderboard {
     this.#applyResult(prior.won === 1 ? prior.name : (prior.won === 0 ? name : prior.name),
                       prior.won === 1 ? name : (prior.won === 0 ? prior.name : name),
                       prior.won === -1 ? 0.5 : 1.0);
+    /* a/b = both participants (w/l alone can't name a draw — both null). */
+    this.history.push({ id: matchId, a: prior.name, b: name, w: wName,
+                        l: lName, draw: prior.won === -1,
+                        at: new Date(now).toISOString() });
+    while (this.history.length > LB_HISTORY_MAX) this.history.shift();
     return { kind: "verified", winner: wName, loser: lName, draw: prior.won === -1 };
   }
 
@@ -277,6 +288,15 @@ export class Leaderboard {
       });
   }
 
+  /* Recent verified matches, newest first. `name` (already sanitized by
+   * the caller path) filters to matches that name played. */
+  historyFor(name) {
+    const rows = name == null
+      ? this.history
+      : this.history.filter((m) => m.a === name || m.b === name);
+    return [...rows].reverse();
+  }
+
   toJSON() {
     /* Persist the raw entries — going through list() would drop
      * firstSeen (killing the smurf heuristic across DO hibernation)
@@ -287,6 +307,7 @@ export class Leaderboard {
       settled: [...this.settled],
       reports: Object.fromEntries(
         [...this.reports].map(([n, rs]) => [n, Object.fromEntries(rs)])),
+      history: this.history,
     };
   }
   static fromJSON(data) {
@@ -295,6 +316,7 @@ export class Leaderboard {
       Array.isArray(o.entries) ? o.entries : [],
       (o.pending && typeof o.pending === "object") ? o.pending : {},
       Array.isArray(o.settled) ? o.settled : [],
-      (o.reports && typeof o.reports === "object") ? o.reports : {});
+      (o.reports && typeof o.reports === "object") ? o.reports : {},
+      Array.isArray(o.history) ? o.history : []);
   }
 }

@@ -885,6 +885,7 @@ set(SSB64_MODULE_SCOPE_netplay
     src/networking/netplay/transport src/networking/netplay/rollback
     src/platform/http                  # CurlPostToString/CurlGetToString — leaderboard submit/fetch
     src/shared                         # atomic_write.h — crash-safe stats persist
+    src/persistence                    # port_save.h — save dir for stats/friends stores
     src/game/modding                   # ModRegistry.h — mod-loaded check
     src/i18n src/observability)
 set(SSB64_MODULE_SCOPE_social

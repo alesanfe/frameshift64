@@ -13,7 +13,6 @@
 #include "ModRegistry.h"
 #endif
 
-#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -222,14 +221,14 @@ std::string local_player_name() {
     std::string out;
     for (const char c : name) {
         const unsigned char u = static_cast<unsigned char>(c);
-        if (std::isalnum(u) || c == '_' || c == '-' || c == '.') {
+        if (wire_name_char(u)) {
             out += c;
         }
     }
     if (out.empty()) {
         out = "Player";
     }
-    out.resize(15);
+    out.resize(kWireNameMax);
     return out;
 }
 

@@ -18,7 +18,6 @@
 #endif
 
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -284,9 +283,8 @@ static void handle_game_message(Peer &p, const std::vector<std::string> &args)
                  * oversized or quote/newline-laden label into the log/menu
                  * or, if it is ever persisted, into the JSON stores. */
                 for (const char c : args[8]) {
-                    const unsigned char u = static_cast<unsigned char>(c);
-                    if ((std::isalnum(u) || c == '_' || c == '-' || c == '.') &&
-                        p.name.size() < 15) {
+                    if (wire_name_char(static_cast<unsigned char>(c)) &&
+                        p.name.size() < kWireNameMax) {
                         p.name += c;
                     }
                 }

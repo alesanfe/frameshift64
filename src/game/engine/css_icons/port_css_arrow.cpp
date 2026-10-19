@@ -70,6 +70,7 @@ using ssb64::css::put_s16;
 using ssb64::css::put_u16;
 using ssb64::css::put_u32;
 using ssb64::css::put_f32;
+using ssb64::css::put_sprite_head;
 
 /* One cache slot per variant: [0] = right, [1] = left.  Same Sprite layout. */
 enum ArrowVariant { kArrowRight = 0, kArrowLeft = 1, kArrowVariantCount = 2 };
@@ -99,19 +100,8 @@ static Sprite *buildSpriteFor(int variant, const uint8_t *pixels)
     Bitmap *bm = reinterpret_cast<Bitmap *>(bm_raw);
 
     /* Sprite */
-    put_s16(sp_raw, 0x00, 0);
-    put_s16(sp_raw, 0x02, 0);
-    put_s16(sp_raw, 0x04, (int16_t)kArrowWidth);
-    put_s16(sp_raw, 0x06, (int16_t)kArrowHeight);
-    put_f32(sp_raw, 0x08, 1.0f);
-    put_f32(sp_raw, 0x0C, 1.0f);
-    put_s16(sp_raw, 0x10, 0); put_s16(sp_raw, 0x12, 0);
-    put_u16(sp_raw, 0x14, 0); put_s16(sp_raw, 0x16, 0);
-    sp_raw[0x18] = 0xFF; sp_raw[0x19] = 0xFF;
-    sp_raw[0x1A] = 0xFF; sp_raw[0x1B] = 0xFF;
-    put_s16(sp_raw, 0x1C, 0); put_s16(sp_raw, 0x1E, 0);
-    put_u32(sp_raw, 0x20, portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x24, 0); put_s16(sp_raw, 0x26, 1);
+    put_sprite_head(sp_raw, kArrowWidth, kArrowHeight,
+                        portRelocRegisterPointer(nullptr));
     put_s16(sp_raw, 0x28, (int16_t)kArrowNBitmaps);
     put_s16(sp_raw, 0x2A, (int16_t)kArrowHeight);    /* ndisplist = height */
     put_s16(sp_raw, 0x2C, (int16_t)kArrowHeight);

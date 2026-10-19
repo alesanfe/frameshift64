@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-#include <ship/Context.h>
+#include "port_save.h"
 
 #include <nlohmann/json.hpp>
 
@@ -66,24 +66,11 @@ struct Stats {
 Stats sStats;
 std::mutex sStatsLock;
 
-/* Resolve netstats.json next to the SRAM file — same precedence as
- * port_save.cpp (env override, then the app-directory convention). */
+/* netstats.json lives next to the SRAM image — port_save owns the
+ * directory convention (env override → app-dir → SDL pref → cwd). */
 std::string stats_path()
 {
-    std::string save;
-    if (const char *override = std::getenv("SSB64_SAVE_PATH")) {
-        save = override;
-    } else {
-        try {
-            save = Ship::Context::GetPathRelativeToAppDirectory("ssb64_save.bin");
-        } catch (...) {
-            save.clear();
-        }
-    }
-    std::filesystem::path p = save.empty()
-        ? std::filesystem::path("netstats.json")
-        : std::filesystem::path(save).parent_path() / "netstats.json";
-    return p.string();
+    return (std::filesystem::path(port_save_get_dir()) / "netstats.json").string();
 }
 
 /* Tolerant field readers over a parsed doc — older files wrote a few fields

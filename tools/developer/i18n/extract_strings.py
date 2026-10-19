@@ -32,10 +32,10 @@ STR = r'"((?:[^"\\]|\\.)*)"'
 PATTERNS = [
     re.compile(r"\bTR\(\s*" + STR),
     re.compile(r"\bAddWidget\([^,]+,\s*" + STR),
-    re.compile(r"\.Tooltip\(\s*" + STR),
-    re.compile(r"\.PlaceholderText\(\s*" + STR),
-    re.compile(r"\.DisabledAction\(\s*" + STR),
-    re.compile(r"\.disabledTooltip\s*=\s*" + STR),
+    re.compile(r"[.>]Tooltip\(\s*" + STR),
+    re.compile(r"[.>]PlaceholderText\(\s*" + STR),
+    re.compile(r"[.>]DisabledAction\(\s*" + STR),
+    re.compile(r"[.>]disabledTooltip\s*=\s*" + STR),
     re.compile(r"\bAddMenuEntry\(\s*" + STR),
     # AddSidebarEntry(section, displayedName, cols) — the visible label is 2nd
     re.compile(r"\bAddSidebarEntry\(\s*" + STR + r"\s*,\s*" + STR),
@@ -46,6 +46,11 @@ PATTERNS = [
     re.compile(r":\s*" + STR + r"\s*;"),
 ]
 COMBO_PAIR = re.compile(r"\{\s*[-\w.:+*() ]+,\s*" + STR + r"\s*\}")
+# disabledMap = { {DISABLE_FOR_X, {check, "reason", ..., "action"}} } —
+# the reason/action literals are TR()'d lazily at render, so they never
+# appear inside a TR(...) call for the plain patterns to see.
+DISABLED_MAP = re.compile(r"\bdisabledMap\s*=\s*\{(.*?)\n[ \t]*\};", re.S)
+STR_RE = re.compile(STR)
 # which capture group holds the literal per pattern (AddSidebarEntry → 2)
 GROUP_IDX = [1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1]
 
@@ -98,6 +103,12 @@ def extract(path: Path) -> set[str]:
     for m in COMBO_PAIR.finditer(text):
         if wrappable(m.group(1)):
             keys.add(unescape(m.group(1)))
+    for m in DISABLED_MAP.finditer(text):
+        for s in STR_RE.finditer(m.group(1)):
+            # ".Enabled"-style CVar suffixes also appear in these blocks —
+            # dotted fragments are identifiers, never display text.
+            if not s.group(1).startswith(".") and wrappable(s.group(1)):
+                keys.add(unescape(s.group(1)))
     return keys
 
 

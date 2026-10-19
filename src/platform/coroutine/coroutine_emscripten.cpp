@@ -24,8 +24,22 @@
 #include "port_watchdog.h"
 
 #include <emscripten/fiber.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Bringup tracing: raw stderr writes (no port_log / no locks) so they
+ * still fire from inside a fiber context while the main thread never
+ * reaches the event loop. Rate-limited — fibers swap every frame. */
+static int sCoroTraceCount;
+#define CORO_TRACE(...)                                                   \
+	do {                                                                  \
+		if (sCoroTraceCount < 80) {                                       \
+			sCoroTraceCount++;                                            \
+			fprintf(stderr, "CORO%d ", sCoroTraceCount);                  \
+			fprintf(stderr, __VA_ARGS__);                                 \
+		}                                                                 \
+	} while (0)
 
 struct PortCoroutine {
 	emscripten_fiber_t fiber;
@@ -74,6 +88,7 @@ static void coroutine_trampoline(void *arg)
 {
 	PortCoroutine *co = (PortCoroutine *)arg;
 
+	CORO_TRACE("tramp co=%p entry=%p\n", (void *)co, (void *)co->entry);
 	co->entry(co->arg);
 	co->finished = 1;
 	sCurrent = NULL;
@@ -148,7 +163,10 @@ void port_coroutine_resume(PortCoroutine *co)
 	resumer = (sCurrent != NULL) ? &sCurrent->fiber : &sMainFiber;
 	co->caller = resumer;
 	sCurrent = co;
+	CORO_TRACE("resume co=%p resumer=%s\n", (void *)co,
+	           (resumer == &sMainFiber) ? "main" : "fiber");
 	emscripten_fiber_swap(resumer, &co->fiber);
+	CORO_TRACE("resume returned co=%p\n", (void *)co);
 	/* Control returns here when `co` yields or finishes. sCurrent is cleared
 	 * by whichever side handed control back (yield sets it via the caller's
 	 * own resume path; the trampoline clears it on finish). */
@@ -166,7 +184,9 @@ void port_coroutine_yield(void)
 	}
 	port_watchdog_note_yield();
 	sCurrent = NULL;                /* resumer regains "not in coroutine" view */
+	CORO_TRACE("yield co=%p\n", (void *)co);
 	emscripten_fiber_swap(&co->fiber, co->caller);
+	CORO_TRACE("yield returned co=%p\n", (void *)co);
 	sCurrent = co;                  /* resumed again — we are current once more */
 }
 

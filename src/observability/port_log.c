@@ -13,7 +13,9 @@
 #elif defined(__EMSCRIPTEN__)
 #include <unistd.h>
 #include <pthread.h>
-#include <emscripten.h>  /* emscripten_force_exit */
+#include <emscripten.h>           /* emscripten_force_exit */
+#include <emscripten/console.h>   /* emscripten_err — raw JS import */
+#include "coroutine.h"            /* port_coroutine_in_coroutine */
 #else
 #include <unistd.h>
 #include <pthread.h>
@@ -216,6 +218,34 @@ int port_log_get_fd(void)
 
 void port_log_write(port_log_level level, const char *category, const char *msg, int n);
 
+#ifdef __EMSCRIPTEN__
+/* Ring of lines emitted while a fiber was running. Fibers are
+ * cooperative on the main thread, so producers can never overlap each
+ * other; the only consumer is the main context between swaps, and real
+ * pthread workers never take this path (in_coroutine is thread-local —
+ * a worker always sees NULL). A plain counter ring is therefore enough. */
+#define FIBER_LOG_CAP 96
+#define FIBER_LOG_LINE 1152
+static char sFiberLogRing[FIBER_LOG_CAP][FIBER_LOG_LINE];
+static int sFiberLogHead;        /* next write slot */
+static int sFiberLogTail;        /* next drain slot */
+static int sFiberLogDropped;     /* lines lost to a full ring */
+static _Thread_local int sDrainReplay; /* suppress the stderr tee during replay */
+
+static void port_log_fiber_enqueue(const char *line, size_t len)
+{
+	int next = (sFiberLogHead + 1) % FIBER_LOG_CAP;
+	if (next == sFiberLogTail) {
+		sFiberLogDropped++;
+		return;
+	}
+	size_t n = (len < FIBER_LOG_LINE - 1) ? len : FIBER_LOG_LINE - 1;
+	memcpy(sFiberLogRing[sFiberLogHead], line, n);
+	sFiberLogRing[sFiberLogHead][n] = '\0';
+	sFiberLogHead = next;
+}
+#endif
+
 void port_log(const char *fmt, ...)
 {
 	char msg[4096];
@@ -242,6 +272,11 @@ void port_log_ex(port_log_level level, const char *category, const char *fmt, ..
 
 void port_log_write(port_log_level level, const char *category, const char *msg, int n)
 {
+#ifdef __EMSCRIPTEN__
+	/* Fiber-hang bringup probe: raw stderr markers, no locks. */
+	static int sPlwProbe = 0;
+	if (sPlwProbe < 200) fprintf(stderr, "PLW%d enter\n", ++sPlwProbe);
+#endif
 	/* Format once, feed three taps: plain log, JSONL mirror, sinks.
 	 * Non-INFO records carry a textual [level/cat] prefix in the plain
 	 * log so grep still finds them without the JSONL mirror. */
@@ -261,16 +296,43 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 		}
 	}
 
+#ifdef __EMSCRIPTEN__
+	/* Inside an emscripten_fiber, ANY contended lock is fatal: the
+	 * main-thread futex wait is a synchronous busy-spin that never
+	 * yields to the event loop, and a lock held by a suspended context
+	 * (or briefly held by a pthread worker) parks the whole runtime.
+	 * Emit straight to the console through a raw JS import and queue
+	 * the line so the main context can persist it on the normal path. */
+	if (port_coroutine_in_coroutine()) {
+		char fline[FIBER_LOG_LINE];
+		int fl = snprintf(fline, sizeof(fline), "%.*s", (int)olen, out);
+		if (fl > 0) {
+			size_t fn = ((size_t)fl < sizeof(fline)) ? (size_t)fl
+			                                        : sizeof(fline) - 1;
+			emscripten_err(fline);
+			port_log_fiber_enqueue(fline, fn);
+		}
+		return;
+	}
+	if (sPlwProbe < 200) fprintf(stderr, "PLW%d prelock\n", sPlwProbe);
+#endif
 	LOG_LOCK();
+#ifdef __EMSCRIPTEN__
+	if (sPlwProbe < 200) fprintf(stderr, "PLW%d locked\n", sPlwProbe);
+#endif
 	FILE *f = sLogFile;
 #ifdef __EMSCRIPTEN__
 	/* The log file lives in MEMFS, invisible to the browser console.
 	 * Tee everything to stderr -> Module.printErr so boot/hang
 	 * diagnostics are observable live. stderr writes are synchronous
 	 * imports — they still fire while wasm never yields to the event
-	 * loop, which is exactly when we need them. */
-	fwrite(out, 1, olen, stderr);
-	fflush(stderr);
+	 * loop, which is exactly when we need them.
+	 * sDrainReplay: lines queued from a fiber already echoed live via
+	 * emscripten_err; the drain replay skips the tee to avoid doubles. */
+	if (!sDrainReplay) {
+		fwrite(out, 1, olen, stderr);
+		fflush(stderr);
+	}
 #endif
 	if (f != NULL) {
 #ifdef __SWITCH__
@@ -314,6 +376,9 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 		}
 	}
 	LOG_UNLOCK();
+#ifdef __EMSCRIPTEN__
+	if (sPlwProbe < 200) fprintf(stderr, "PLW%d unlocked\n", sPlwProbe);
+#endif
 	/* fflush on every call costs seconds per frame on a slow drive when
 	 * figatree watchdogs fire 28x per frame during a stuck APPEAR. Rely on
 	 * stdio's buffer + OS-on-exit flush for normal logging; crash dumps
@@ -329,6 +394,9 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 		if (sink_ex != NULL) sink_ex(level, category, msg, sSinkExUser);
 		sInSink = 0;
 	}
+#ifdef __EMSCRIPTEN__
+	if (sPlwProbe < 200) fprintf(stderr, "PLW%d done\n", sPlwProbe);
+#endif
 }
 
 void port_log_set_sink(port_log_sink_fn fn, void *user)

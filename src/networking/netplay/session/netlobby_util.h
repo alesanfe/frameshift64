@@ -40,4 +40,14 @@ int local_tap_jump_off();
 void host_rules(int* autoz, int* comp, int* neutral, int* hazards_off);
 std::string local_player_name();
 
+/* Wire name alphabet ([alnum._-], spaceless — the protocol is space-
+ * delimited) and the display-name cap. Both the sender (local_player_name)
+ * and the receiver (PICK parse) must agree, so the check lives here.
+ * Matches std::isalnum under the C locale without the locale lookup. */
+inline bool wire_name_char(unsigned char u) {
+    return (u >= '0' && u <= '9') || (u >= 'A' && u <= 'Z') ||
+           (u >= 'a' && u <= 'z') || u == '_' || u == '-' || u == '.';
+}
+inline constexpr std::size_t kWireNameMax = 15;
+
 } // namespace ssb64::netlobby

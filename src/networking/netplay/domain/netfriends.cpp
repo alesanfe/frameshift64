@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-#include <ship/Context.h>
+#include "port_save.h"
 
 #include <nlohmann/json.hpp>
 
@@ -40,21 +40,10 @@ std::vector<Friend> sFriends;
 std::mutex sFriendsMutex;
 bool sLoaded = false;
 
-/* Same directory convention as netstats.json / the SRAM image: the
- * SSB64_SAVE_PATH override, then the app-directory save. */
+/* Same directory convention as netstats.json / the SRAM image — port_save
+ * owns the resolution (env override → app-dir → SDL pref → cwd). */
 std::filesystem::path FriendsPath() {
-    std::string save;
-    if (const char* override = std::getenv("SSB64_SAVE_PATH")) {
-        save = override;
-    } else {
-        try {
-            save = Ship::Context::GetPathRelativeToAppDirectory("ssb64_save.bin");
-        } catch (...) {
-            save.clear();
-        }
-    }
-    return save.empty() ? std::filesystem::path("netfriends.json")
-                        : std::filesystem::path(save).parent_path() / "netfriends.json";
+    return std::filesystem::path(port_save_get_dir()) / "netfriends.json";
 }
 
 int NameCompare(const std::string& a, const char* b) {

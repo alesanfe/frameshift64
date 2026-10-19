@@ -419,8 +419,19 @@ fs::path StageTorchWorkDir(const fs::path& targetPath,
                            std::string& error)
 {
     std::error_code ec;
-    fs::create_directories(targetPath.parent_path());
-    const fs::path workDir = fs::absolute(targetPath.parent_path() / "torch-work");
+    fs::create_directories(targetPath.parent_path(), ec);
+    if (ec) {
+        port_log("first_run: ERROR could not create %s: %s\n",
+                 targetPath.parent_path().string().c_str(), ec.message().c_str());
+        error = "Could not create target directory: " + ec.message();
+        return {};
+    }
+    const fs::path workDir = fs::absolute(targetPath.parent_path() / "torch-work", ec);
+    if (ec) {
+        port_log("first_run: ERROR resolving work dir: %s\n", ec.message().c_str());
+        error = "Could not resolve torch work directory: " + ec.message();
+        return {};
+    }
     fs::remove_all(workDir, ec);
     ec.clear();
     fs::create_directories(workDir, ec);

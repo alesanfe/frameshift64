@@ -163,19 +163,8 @@ static Sprite *buildBackgroundSprite(const StageEntry &se,
 
     Bitmap *bm0 = reinterpret_cast<Bitmap *>(bm_raw);
 
-    put_s16(sp_raw, 0x00, 0);
-    put_s16(sp_raw, 0x02, 0);
-    put_s16(sp_raw, 0x04, (int16_t)w);
-    put_s16(sp_raw, 0x06, (int16_t)h);
-    put_f32(sp_raw, 0x08, 1.0f);
-    put_f32(sp_raw, 0x0C, 1.0f);
-    put_s16(sp_raw, 0x10, 0); put_s16(sp_raw, 0x12, 0);
-    put_u16(sp_raw, 0x14, 0); put_s16(sp_raw, 0x16, 0);
-    sp_raw[0x18] = 0xFF; sp_raw[0x19] = 0xFF;
-    sp_raw[0x1A] = 0xFF; sp_raw[0x1B] = 0xFF;
-    put_s16(sp_raw, 0x1C, 0); put_s16(sp_raw, 0x1E, 0);
-    put_u32(sp_raw, 0x20, portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x24, 0); put_s16(sp_raw, 0x26, 1);
+    put_sprite_head(sp_raw, w, h,
+                        portRelocRegisterPointer(nullptr));
     put_s16(sp_raw, 0x28, (int16_t)nbitmaps);
     put_s16(sp_raw, 0x2A, (int16_t)ndisplist);
     put_s16(sp_raw, 0x2C, (int16_t)bm_h);
@@ -227,19 +216,8 @@ static Sprite *buildIconSprite(uint8_t *rgba16_buf, CacheEntry *entry)
 
     Bitmap *bm = reinterpret_cast<Bitmap *>(bm_raw);
 
-    put_s16(sp_raw, 0x00, 0);
-    put_s16(sp_raw, 0x02, 0);
-    put_s16(sp_raw, 0x04, (int16_t)w);
-    put_s16(sp_raw, 0x06, (int16_t)h);
-    put_f32(sp_raw, 0x08, 1.0f);
-    put_f32(sp_raw, 0x0C, 1.0f);
-    put_s16(sp_raw, 0x10, 0); put_s16(sp_raw, 0x12, 0);
-    put_u16(sp_raw, 0x14, 0); put_s16(sp_raw, 0x16, 0);
-    sp_raw[0x18] = 0xFF; sp_raw[0x19] = 0xFF;
-    sp_raw[0x1A] = 0xFF; sp_raw[0x1B] = 0xFF;
-    put_s16(sp_raw, 0x1C, 0); put_s16(sp_raw, 0x1E, 0);
-    put_u32(sp_raw, 0x20, portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x24, 0); put_s16(sp_raw, 0x26, 1);
+    put_sprite_head(sp_raw, w, h,
+                        portRelocRegisterPointer(nullptr));
     put_s16(sp_raw, 0x28, (int16_t)nbitmaps);
     put_s16(sp_raw, 0x2A, (int16_t)ndisplist);
     put_s16(sp_raw, 0x2C, (int16_t)h);
@@ -310,19 +288,8 @@ static Sprite *buildNameSprite(uint8_t *rgba16_buf, CacheEntry *entry)
 
     Bitmap *bm = reinterpret_cast<Bitmap *>(bm_raw);
 
-    put_s16(sp_raw, 0x00, 0);
-    put_s16(sp_raw, 0x02, 0);
-    put_s16(sp_raw, 0x04, (int16_t)w);
-    put_s16(sp_raw, 0x06, (int16_t)h);
-    put_f32(sp_raw, 0x08, 1.0f);
-    put_f32(sp_raw, 0x0C, 1.0f);
-    put_s16(sp_raw, 0x10, 0); put_s16(sp_raw, 0x12, 0);
-    put_u16(sp_raw, 0x14, 0); put_s16(sp_raw, 0x16, 0);
-    sp_raw[0x18] = 0xFF; sp_raw[0x19] = 0xFF;
-    sp_raw[0x1A] = 0xFF; sp_raw[0x1B] = 0xFF;
-    put_s16(sp_raw, 0x1C, 0); put_s16(sp_raw, 0x1E, 0);
-    put_u32(sp_raw, 0x20, portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x24, 0); put_s16(sp_raw, 0x26, 1);
+    put_sprite_head(sp_raw, w, h,
+                        portRelocRegisterPointer(nullptr));
     put_s16(sp_raw, 0x28, (int16_t)nbitmaps);
     put_s16(sp_raw, 0x2A, (int16_t)ndisplist);
     put_s16(sp_raw, 0x2C, (int16_t)h);
@@ -394,19 +361,8 @@ static Sprite *buildEmblemSprite(uint8_t *ia4_buf, CacheEntry *entry)
 
     Bitmap *bm = reinterpret_cast<Bitmap *>(bm_raw);
 
-    put_s16(sp_raw, 0x00, 0);
-    put_s16(sp_raw, 0x02, 0);
-    put_s16(sp_raw, 0x04, (int16_t)w);
-    put_s16(sp_raw, 0x06, (int16_t)h);
-    put_f32(sp_raw, 0x08, 1.0f);
-    put_f32(sp_raw, 0x0C, 1.0f);
-    put_s16(sp_raw, 0x10, 0); put_s16(sp_raw, 0x12, 0);
-    put_u16(sp_raw, 0x14, 0); put_s16(sp_raw, 0x16, 0);
-    sp_raw[0x18] = 0xFF; sp_raw[0x19] = 0xFF;
-    sp_raw[0x1A] = 0xFF; sp_raw[0x1B] = 0xFF;
-    put_s16(sp_raw, 0x1C, 0); put_s16(sp_raw, 0x1E, 0);
-    put_u32(sp_raw, 0x20, portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x24, 0); put_s16(sp_raw, 0x26, 1);
+    put_sprite_head(sp_raw, w, h,
+                        portRelocRegisterPointer(nullptr));
     put_s16(sp_raw, 0x28, (int16_t)nbitmaps);
     put_s16(sp_raw, 0x2A, (int16_t)ndisplist);
     put_s16(sp_raw, 0x2C, (int16_t)h);

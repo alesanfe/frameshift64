@@ -185,6 +185,12 @@ def build_checks(args) -> list:
               [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
                                    "check_complexity.py")],
               "complexity.txt", required=True),
+        # File-size ratchet: no new file over 1000 lines; existing giants
+        # are pinned at their current size via config/file-size-baseline.txt.
+        Check("file-size",
+              [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
+                                   "check_file_size.py")],
+              "file-size.txt", required=True),
         Check("cmake-lint", [resolve("cmake-lint")] + find_cmake_files() +
               ["-c", ".cmakelintrc"],
               "cmake-lint.txt", required=False),

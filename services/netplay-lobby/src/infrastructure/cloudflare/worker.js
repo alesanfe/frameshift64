@@ -10,7 +10,8 @@ import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
-import { Leaderboard } from "../../domain/leaderboard.mjs";
+import { Leaderboard, sanitizeName } from "../../domain/leaderboard.mjs";
+import { isValidCrashReport, crashReportRecord, CRASH_RING } from "../../domain/crash.mjs";
 import {
   REPLAY_ID_RE, mintReplayId, validateReplayBody, evictOldest,
 } from "../../domain/replay.mjs";
@@ -29,7 +30,8 @@ export default {
     }
     // Self-reported rating board lives on a dedicated DO (HTTP only — no
     // ws). Same stub mechanism as rooms, fixed name.
-    if (url.pathname === "/leaderboard" || url.pathname === "/submit" ||
+    if (url.pathname === "/leaderboard" || url.pathname === "/history" ||
+        url.pathname === "/submit" ||
         url.pathname === "/result" || url.pathname === "/report" ||
         url.pathname === "/crash" || url.pathname === "/crashes" ||
         url.pathname === "/stats" || url.pathname.startsWith("/replay")) {
@@ -146,15 +148,10 @@ export class NetplayRoom extends DurableObject {
     if (url.pathname === "/crash" && request.method === "POST") {
       let body = null;
       try { body = await request.json(); } catch { /* bad json */ }
-      if (body && body.kind === "crash" &&
-          typeof body.info === "string" && body.info.length <= 8192 &&
-          typeof body.log_tail === "string" && body.log_tail.length <= 8192 &&
-          (body.lus_tail === undefined ||
-           (typeof body.lus_tail === "string" && body.lus_tail.length <= 8192))) {
+      if (isValidCrashReport(body)) {
         const ring = (await this.ctx.storage.get("crashes")) || [];
-        ring.push({ at: Date.now(), info: body.info, log_tail: body.log_tail,
-                    lus_tail: body.lus_tail || "" });
-        while (ring.length > 50) ring.shift();
+        ring.push({ at: Date.now(), ...crashReportRecord(body) });
+        while (ring.length > CRASH_RING) ring.shift();
         await this.ctx.storage.put("crashes", ring);
         try {
           this.env.LOBBY_ANALYTICS?.writeDataPoint({
@@ -204,6 +201,13 @@ export class NetplayRoom extends DurableObject {
         shared_replays: replays.length,
       });
     }
+    /* Recent verified matches — GET /history (all) or /history?name=X.
+     * Public read surface; the records are already public via the board. */
+    if (url.pathname === "/history" && request.method === "GET") {
+      const lb = Leaderboard.fromJSON(await this.ctx.storage.get("lb"));
+      const name = sanitizeName(url.searchParams.get("name") || "") || null;
+      return Response.json({ matches: lb.historyFor(name) });
+    }
     /* Replay sharing — POST {data: <base64 .ssr>} mints a short id and
      * stores it; GET /replay/<id> serves it back. Replays are a few KB;
      * cap the index at 200 and evict oldest first. */
@@ -239,7 +243,8 @@ export class NetplayRoom extends DurableObject {
 
   fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === "/leaderboard" || url.pathname === "/submit" ||
+    if (url.pathname === "/leaderboard" || url.pathname === "/history" ||
+        url.pathname === "/submit" ||
         url.pathname === "/result" || url.pathname === "/report" ||
         url.pathname === "/crash" || url.pathname === "/crashes" ||
         url.pathname === "/stats" || url.pathname.startsWith("/replay")) {

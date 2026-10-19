@@ -10,10 +10,11 @@
  * Same SSB64_SAVE_PATH seam as netstats — private temp dir per mode. */
 
 #include "netfriends.h"
+#include "port_save.h"
 #include "smash_test/check.h"
 #include "smash_test/env.h"
-#include <ship/Context.h>   /* test double (tests/support/shim) */
 
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -29,12 +30,16 @@
 
 extern "C" void port_log(const char *fmt, ...) { (void)fmt; }
 
-/* tests/support/shim/ship/Context.h shadows the real header in this TU's
- * sibling (netfriends.cpp); the env override makes this unreachable, but
- * the symbol must still link. */
-std::string Ship::Context::GetPathRelativeToAppDirectory(const std::string path,
-                                                         std::string) {
-    return path;
+/* Test double for port_save_get_dir (netfriends.cpp no longer resolves
+ * the save dir itself). Honors the SSB64_SAVE_PATH seam; "." fallback. */
+extern "C" const char *port_save_get_dir(void) {
+    static std::string dir;
+    if (const char *o = std::getenv("SSB64_SAVE_PATH")) {
+        dir = std::filesystem::path(o).parent_path().string();
+    } else {
+        dir = ".";
+    }
+    return dir.c_str();
 }
 
 namespace {

@@ -43,7 +43,14 @@ async function main() {
     fs.unlinkSync(path.join(__dirname, "..", "..", "leaderboard.json"));
   } catch { /* first run or already clean */ }
   const srv = spawn("node", [path.join(__dirname, "..", "..", "src", "infrastructure", "local", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
-  await sleep(700);
+  /* Wait for a real bind — a fixed sleep races on a busy machine. */
+  await new Promise((resolve, reject) => {
+    const to = setTimeout(() => reject(new Error("lobby listen timeout")), 8000);
+    srv.stdout.on("data", (d) => {
+      if (String(d).includes("listening")) { clearTimeout(to); resolve(); }
+    });
+    srv.on("exit", (c) => { clearTimeout(to); reject(new Error(`lobby exited ${c} before listen`)); });
+  });
 
   // --- setup: host + 2 clients on a v2 room ---
   const host = await connect("room=ABCDEF&role=host&v=2");
@@ -317,6 +324,18 @@ async function main() {
   ok("stats exposes counts",
      typeof st.leaderboard_entries === "number" &&
      typeof st.verified_matches === "number");
+
+  // --- match history: verified results are listed, ?name= filters ---
+  const hist = await (await fetch(`${lbBase}/history`)).json();
+  const hRec = (hist.matches || []).find(
+    (m) => m.w === "AliceT" && m.l === "BobT" && m.draw === false);
+  ok("history lists the verified match", !!hRec && typeof hRec.at === "string");
+  const histAlice = await (await fetch(`${lbBase}/history?name=AliceT`)).json();
+  ok("history ?name= filters to played matches",
+     (histAlice.matches || []).length === 1 && histAlice.matches[0].w === "AliceT");
+  const histNobody = await (await fetch(`${lbBase}/history?name=NobodyHere`)).json();
+  ok("history ?name= for stranger is empty",
+     Array.isArray(histNobody.matches) && histNobody.matches.length === 0);
 
   host.ws.close(); c1.ws.close(); c2.ws.close(); up1.ws.close();
   host2.ws.close(); spec.ws.close(); cSpec.ws.close();

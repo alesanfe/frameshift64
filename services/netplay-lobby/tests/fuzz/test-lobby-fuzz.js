@@ -28,11 +28,23 @@ const TEXT_VECTORS = [
   () => rbytes(3000).toString("hex"),                      // over MAX_TEXT_BYTES
 ];
 
+/* Wait for the spawned lobby to actually bind — a fixed sleep races on a
+ * busy machine and the first socket hits ECONNREFUSED. */
+function waitForListen(srv, ms = 8000) {
+  return new Promise((resolve, reject) => {
+    const to = setTimeout(() => reject(new Error("lobby listen timeout")), ms);
+    srv.stdout.on("data", (d) => {
+      if (String(d).includes("listening")) { clearTimeout(to); resolve(); }
+    });
+    srv.on("exit", (c) => { clearTimeout(to); reject(new Error(`lobby exited ${c} before listen`)); });
+  });
+}
+
 async function main() {
   const srv = spawn("node", [path.join(__dirname, "..", "..", "src", "infrastructure", "local", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
   let srvDead = false;
   srv.on("exit", (code) => { srvDead = true; console.log(`lobby exited code=${code}`); });
-  await sleep(700);
+  await waitForListen(srv);
 
   // Control room: must stay healthy through the whole fuzz.
   const ctl = new WebSocket(`${BASE}?room=CTRL42&role=host&v=2`);

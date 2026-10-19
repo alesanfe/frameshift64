@@ -32,6 +32,8 @@ jobs:
         run: python tools/analysis/lint/check_module_deps.py
       - name: Retired-path regression guard
         run: python tools/analysis/lint/check_retired_paths.py
+      - name: File-size ratchet (no new file over 1000 lines)
+        run: python tools/analysis/lint/check_file_size.py
       - name: Menu structure / usability invariants
         run: python tests/unit/presentation/menu_structure_test.py
       - name: CVar schema coverage (TD-005)

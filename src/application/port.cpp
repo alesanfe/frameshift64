@@ -1151,8 +1151,11 @@ int main(int argc, char* argv[]) {
 			const size_t smSep = logPath.find_last_of("/\\");
 			const std::string smDir = (smSep == std::string::npos) ? "." : logPath.substr(0, smSep);
 			const std::string smReq = smDir + "/safemode.request";
-			const bool requested = std::filesystem::exists(smReq) &&
-				(std::filesystem::remove(smReq), true);
+			/* error_code overloads — a read-only log dir must not throw
+			 * inside the crash-recovery path itself. */
+			std::error_code smEc;
+			const bool requested = std::filesystem::exists(smReq, smEc) &&
+				(std::filesystem::remove(smReq, smEc), true);
 			port_diag_set_safe_mode((!bundle.empty() || forced || requested) ? 1 : 0);
 			if (port_diag_safe_mode_active()) {
 				port_log("SSB64: safe mode active (%s) — mods and hi-res packs skipped this launch\n",

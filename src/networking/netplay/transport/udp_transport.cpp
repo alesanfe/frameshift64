@@ -821,12 +821,35 @@ void stun_send_all(void)
     }
 }
 
+/* Binding response header: type 0x0101, magic cookie, matching txid. */
+int stun_header_ok(const uint8_t *msg, int size)
+{
+    return size >= 20 && msg[0] == 0x01 && msg[1] == 0x01 &&
+        msg[4] == 0x21 && msg[5] == 0x12 && msg[6] == 0xA4 && msg[7] == 0x42 &&
+        std::memcmp(msg + 8, sStunTxid, 12) == 0;
+}
+
+/* Decodes one (XOR-)MAPPED-ADDRESS attribute value into "ip:port". */
+int stun_attr_mapped(const uint8_t *v, int type, int alen, char *out, int cap)
+{
+    if ((type != 0x0020 && type != 0x0001) || alen < 8 || v[1] != 0x01) {
+        return 0;
+    }
+    uint16_t port = static_cast<uint16_t>((v[2] << 8) | v[3]);
+    uint32_t addr = (static_cast<uint32_t>(v[4]) << 24) | (v[5] << 16) | (v[6] << 8) | v[7];
+    if (type == 0x0020) {
+        port ^= static_cast<uint16_t>(0x2112);
+        addr ^= 0x2112A442u;
+    }
+    std::snprintf(out, static_cast<size_t>(cap), "%u.%u.%u.%u:%u",
+                  addr >> 24, (addr >> 16) & 0xFF, (addr >> 8) & 0xFF, addr & 0xFF, port);
+    return 1;
+}
+
 /* Parses a binding response's (XOR-)MAPPED-ADDRESS into "ip:port". */
 int stun_parse_mapped(const uint8_t *msg, int size, char *out, int cap)
 {
-    if (size < 20 || msg[0] != 0x01 || msg[1] != 0x01 ||
-        msg[4] != 0x21 || msg[5] != 0x12 || msg[6] != 0xA4 || msg[7] != 0x42 ||
-        std::memcmp(msg + 8, sStunTxid, 12) != 0) {
+    if (!stun_header_ok(msg, size)) {
         return 0;
     }
     const int length = (msg[2] << 8) | msg[3];
@@ -834,19 +857,10 @@ int stun_parse_mapped(const uint8_t *msg, int size, char *out, int cap)
     for (int at = 20; at + 4 <= end;) {
         const int type = (msg[at] << 8) | msg[at + 1];
         const int alen = (msg[at + 2] << 8) | msg[at + 3];
-        const uint8_t *v = msg + at + 4;
         if (at + 4 + alen > end) {
             break;
         }
-        if ((type == 0x0020 || type == 0x0001) && alen >= 8 && v[1] == 0x01) {
-            uint16_t port = static_cast<uint16_t>((v[2] << 8) | v[3]);
-            uint32_t addr = (static_cast<uint32_t>(v[4]) << 24) | (v[5] << 16) | (v[6] << 8) | v[7];
-            if (type == 0x0020) {
-                port ^= static_cast<uint16_t>(0x2112);
-                addr ^= 0x2112A442u;
-            }
-            std::snprintf(out, static_cast<size_t>(cap), "%u.%u.%u.%u:%u",
-                          addr >> 24, (addr >> 16) & 0xFF, (addr >> 8) & 0xFF, addr & 0xFF, port);
+        if (stun_attr_mapped(msg + at + 4, type, alen, out, cap)) {
             return 1;
         }
         at += 4 + ((alen + 3) & ~3);

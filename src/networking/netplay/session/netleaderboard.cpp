@@ -329,11 +329,6 @@ extern "C" int port_netleaderboard_share_link(char *out, int capacity)
 }
 
 #ifdef SSB64_HAVE_CURL
-static std::string share_b64(const std::string &raw)
-{
-    return ssb64::Base64Encode(raw.data(), raw.size());
-}
-
 static int share_replay_upload(const std::string &base, const std::string &file,
                                const std::string &by)
 {
@@ -344,7 +339,8 @@ static int share_replay_upload(const std::string &base, const std::string &file,
         return -1;
     }
     const std::string body = nlohmann::json{
-        {"data", share_b64(raw)}, {"by", by}}.dump();
+        {"data", ssb64::Base64Encode(raw.data(), raw.size())},
+        {"by", by}}.dump();
     std::string resp, error;
     if (!ssb64::CurlPostToString(base + "/replay", body,
                                 "application/json", &resp, &error, 20)) {
@@ -369,8 +365,7 @@ extern "C" void port_netleaderboard_share_replay(const char *server,
         return;
     }
     if (sShareState.exchange(1) == 1) {
-        sShareState = 0;            /* already in flight — keep idle */
-        return;
+        return;                     /* already in flight — stay busy */
     }
     const std::string by = sanitize_lb_name(CVarGetString("gProfiles.Name", "Player"));
     const std::string file(path);

@@ -177,32 +177,36 @@ static void StartConnTest(ConnTest& test, const char* server) {
     port_udp_stun_probe_close();   /* in case a previous probe was still pending */
 }
 
+static bool ConnTestFinished(int ws, int elapsedMs) {
+    return ws == PORT_WS_OPEN || ws == PORT_WS_FAILED || ws == PORT_WS_CLOSED ||
+           elapsedMs > 10000 /* hard timeout */;
+}
+
 static void PollConnTest(ConnTest& test) {
-    if (test.state != ConnTestState::Running) {
-        return;
-    }
-    const auto elapsedMs = static_cast<int>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - test.started)
-            .count());
-    const int ws = port_ws_state();
-    if (ws == PORT_WS_OPEN || ws == PORT_WS_FAILED || ws == PORT_WS_CLOSED ||
-        elapsedMs > 10000 /* hard timeout */) {
-        const char* err = port_ws_error();
-        const bool httpReply = (err != nullptr) && (std::strncmp(err, "server answered HTTP", 20) == 0);
-        if (ws == PORT_WS_OPEN || httpReply) {
-            test.result = fmt::format(fmt::runtime(TR("Server reachable — handshake answered in {} ms")), elapsedMs);
-            test.ok = true;
-        } else if (elapsedMs > 10000) {
-            test.result = TR("Timed out — the server did not answer within 10 seconds");
-            test.ok = false;
-        } else {
-            test.result = fmt::format(fmt::runtime(TR("Unreachable — {}")), (err != nullptr && err[0] != '\0') ? err : "no error detail");
-            test.ok = false;
+    if (test.state == ConnTestState::Running) {
+        const auto elapsedMs = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - test.started)
+                .count());
+        const int ws = port_ws_state();
+        if (ConnTestFinished(ws, elapsedMs)) {
+            const char* err = port_ws_error();
+            const bool httpReply = (err != nullptr) && (std::strncmp(err, "server answered HTTP", 20) == 0);
+            if (ws == PORT_WS_OPEN || httpReply) {
+                test.result = fmt::format(fmt::runtime(TR("Server reachable — handshake answered in {} ms")), elapsedMs);
+                test.ok = true;
+            } else if (elapsedMs > 10000) {
+                test.result = TR("Timed out — the server did not answer within 10 seconds");
+                test.ok = false;
+            } else {
+                test.result = fmt::format(fmt::runtime(TR("Unreachable — {}")), (err != nullptr && err[0] != '\0') ? err : "no error detail");
+                test.ok = false;
+            }
+            port_ws_close();
+            test.state = ConnTestState::Done;
+            StartStunProbe(test);   /* phase 2: UDP egress + NAT behaviour */
         }
-        port_ws_close();
-        test.state = ConnTestState::Done;
-        StartStunProbe(test);   /* phase 2: UDP egress + NAT behaviour */
     }
+    /* The STUN probe keeps running after the WS phase finishes. */
     if (test.stun_started && test.stun_result.empty()) {
         PollStunProbe(test);
     }

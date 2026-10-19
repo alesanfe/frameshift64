@@ -73,6 +73,15 @@ void port_log_set_session(const char *session_id);
  * (render/audio threads are mid-frame). */
 void port_exit_process(int code);
 
+/* Emscripten: replay the ring of lines emitted from inside a coroutine
+ * (fiber) context, where taking any lock is unsafe — the main-thread
+ * futex wait is a synchronous busy-spin and a lock held by a suspended
+ * context never releases. Fiber writes go straight to the console via a
+ * raw JS import and queue here for file/sink persistence. The main
+ * context drains once per frame and after each coroutine resume.
+ * No-op on native builds. */
+void port_log_fiber_drain(void);
+
 #ifdef __cplusplus
 }
 #endif

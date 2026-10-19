@@ -15,44 +15,16 @@ namespace {
  * the vectored handler where GetModuleFileName/VirtualQuery are unsafe:
  * they take the loader lock, and armAllThreads may have a DLL-loading
  * thread suspended at that instant → self-inflicted deadlock. */
-struct GWMod { uintptr_t base, end; char name[64]; };
-static GWMod gModTable[64];
+static ModEntry gModTable[kModTableMax];
 static volatile long gModCount = 0;
 
 void snapshotModuleTable() {
-	long n = 0;
-	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
-	if (snap == INVALID_HANDLE_VALUE) return;
-	MODULEENTRY32W me;
-	me.dwSize = sizeof(me);
-	if (Module32FirstW(snap, &me)) {
-		do {
-			if (n >= 64) break;
-			gModTable[n].base = (uintptr_t)me.modBaseAddr;
-			gModTable[n].end = (uintptr_t)me.modBaseAddr + me.modBaseSize;
-			int i = 0;
-			for (; i < 62 && me.szModule[i]; ++i) {
-				wchar_t c = me.szModule[i];
-				gModTable[n].name[i] = (c < 128) ? (char)c : '?';
-			}
-			gModTable[n].name[i] = 0;
-			++n;
-		} while (Module32NextW(snap, &me));
-	}
-	CloseHandle(snap);
-	gModCount = n;
+	gModCount = snapshotModules(gModTable);
 }
 } // namespace
 
 void gwatchDescribeAddr(uintptr_t a, char* out, size_t outSize) {
-	for (long i = 0; i < gModCount; ++i) {
-		if (a >= gModTable[i].base && a < gModTable[i].end) {
-			snprintf(out, outSize, "%s+0x%llx", gModTable[i].name,
-			         (unsigned long long)(a - gModTable[i].base));
-			return;
-		}
-	}
-	snprintf(out, outSize, "0x%llx", (unsigned long long)a);
+	describeModuleAddr(gModTable, gModCount, a, out, outSize);
 }
 
 namespace {

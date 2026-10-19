@@ -15,7 +15,7 @@ import {
   CODE_RE, VALID_ROLES, IDLE_SWEEP_MS, makeJoinLimiter,
 } from "../../domain/protocol.mjs";
 import { LobbyRoom } from "../../domain/room.mjs";
-import { Leaderboard } from "../../domain/leaderboard.mjs";
+import { Leaderboard, sanitizeName } from "../../domain/leaderboard.mjs";
 import {
   REPLAY_ID_RE, mintReplayId, validateReplayBody, evictOldest,
 } from "../../domain/replay.mjs";
@@ -60,6 +60,17 @@ function rttBucket(ms) {
   if (ms < 250) return "lt250";
   return "rest";
 }
+
+/* Reads a JSON body with a size cap; cb(null) on parse failure or destroy. */
+const readJsonBody = (req, limit, cb) => {
+  let raw = "";
+  req.on("data", (c) => { raw += c; if (raw.length > limit) req.destroy(); });
+  req.on("end", () => {
+    let body = null;
+    try { body = JSON.parse(raw); } catch { /* bad json */ }
+    cb(body);
+  });
+};
 
 const port = parseInt(process.argv[2] || "8799", 10);
 const server = http.createServer((req, res) => {
@@ -126,7 +137,9 @@ const server = http.createServer((req, res) => {
         const doc = JSON.parse(raw);
         if (doc && doc.kind === "crash" &&
             typeof doc.info === "string" && doc.info.length <= 8192 &&
-            typeof doc.log_tail === "string" && doc.log_tail.length <= 8192) {
+            typeof doc.log_tail === "string" && doc.log_tail.length <= 8192 &&
+            (doc.lus_tail === undefined ||
+             (typeof doc.lus_tail === "string" && doc.lus_tail.length <= 8192))) {
           fs.appendFileSync("crashes.jsonl",
             JSON.stringify({ at: new Date().toISOString(), ...doc }) + "\n");
           stats.crashes++;
@@ -143,11 +156,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.url === "/submit" && req.method === "POST") {
-    let raw = "";
-    req.on("data", (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
-    req.on("end", () => {
-      let body = null;
-      try { body = JSON.parse(raw); } catch { /* bad json */ }
+    readJsonBody(req, 4096, (body) => {
       const result = lb.submit(body);
       if (result.kind !== "ok") {
         res.writeHead(400, { "content-type": "application/json" });
@@ -161,11 +170,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.url === "/result" && req.method === "POST") {
-    let raw = "";
-    req.on("data", (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
-    req.on("end", () => {
-      let body = null;
-      try { body = JSON.parse(raw); } catch { /* bad json */ }
+    readJsonBody(req, 4096, (body) => {
       const result = lb.reportResult(body);
       if (result.kind === "reject") {
         res.writeHead(400, { "content-type": "application/json" });
@@ -180,11 +185,7 @@ const server = http.createServer((req, res) => {
   }
   /* Community moderation report — same domain semantics as the worker. */
   if (req.url === "/report" && req.method === "POST") {
-    let raw = "";
-    req.on("data", (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
-    req.on("end", () => {
-      let body = null;
-      try { body = JSON.parse(raw); } catch { /* bad json */ }
+    readJsonBody(req, 4096, (body) => {
       const result = lb.report(body);
       if (result.kind !== "ok") {
         res.writeHead(400, { "content-type": "application/json" });
@@ -223,11 +224,7 @@ const server = http.createServer((req, res) => {
    * /replay/<id> serves it back. Stored as files under replays/ next to
    * leaderboard.json; ring capped at 200. */
   if (req.url === "/replay" && req.method === "POST") {
-    let raw = "";
-    req.on("data", (c) => { raw += c; if (raw.length > 600 * 1024) req.destroy(); });
-    req.on("end", () => {
-      let body = null;
-      try { body = JSON.parse(raw); } catch { /* bad json */ }
+    readJsonBody(req, 600 * 1024, (body) => {
       const rec0 = validateReplayBody(body);
       if (!rec0) {
         res.writeHead(400, { "content-type": "application/json" });
@@ -268,6 +265,16 @@ const server = http.createServer((req, res) => {
     }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(rec));
+    return;
+  }
+    /* Recent verified matches - GET /history (all) or /history?name=X
+   * filtered to that player. Same surface as the worker DO. */
+  if (req.method === "GET" &&
+      (req.url === "/history" || req.url.startsWith("/history?"))) {
+    const name = sanitizeName(
+      new URL(req.url, "http://lobby").searchParams.get("name") || "") || null;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ matches: lb.historyFor(name) }));
     return;
   }
   res.writeHead(404);
@@ -380,4 +387,5 @@ setInterval(() => {
   for (const r of rooms.values()) r.sweepIdle();
 }, IDLE_SWEEP_MS).unref();
 
+console.log(`node-lobby ws listening on :${port}`);
 console.log(`node-lobby ws listening on :${port}`);
