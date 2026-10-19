@@ -80,6 +80,17 @@ static void port_register_service_thread(OSThread *t)
 
 static s32 sResumeDebugCount = 0;
 
+/* Thread whose coroutine currently executes on this host thread —
+ * set around every coroutine resume (service loop + osStartThread),
+ * NULL while the game coroutine or bare main context is running.
+ * Lets blocking-queue logs identify WHO waits on WHAT. */
+static OSThread *sPortCurrentThread = NULL;
+
+static s32 port_current_thread_id(void)
+{
+	return (sPortCurrentThread != NULL) ? (s32)sPortCurrentThread->id : -1;
+}
+
 /* Called by PortPushFrame to resume all service thread coroutines
  * that have messages waiting in their blocked queues. */
 void port_resume_service_threads(void)
@@ -172,7 +183,12 @@ void port_resume_service_threads(void)
 			/* Resume this thread — it will run until it yields again. */
 			t->state = OS_STATE_RUNNING;
 			port_watchdog_note_resume_start((int)t->id);
-			port_coroutine_resume((PortCoroutine *)t->port_coroutine);
+			{
+				OSThread *prev = sPortCurrentThread;
+				sPortCurrentThread = t;
+				port_coroutine_resume((PortCoroutine *)t->port_coroutine);
+				sPortCurrentThread = prev;
+			}
 			port_watchdog_note_resume_end((int)t->id);
 			if (port_coroutine_is_finished((PortCoroutine *)t->port_coroutine)) {
 				t->state = OS_STATE_STOPPED;
@@ -237,8 +253,11 @@ void osStartThread(OSThread *t)
 	/* Resume the coroutine.  It will run until it yields (at an
 	 * osRecvMesg BLOCK or osStopThread) then return here. */
 	if (t->port_coroutine != NULL) {
+		OSThread *prev = sPortCurrentThread;
+		sPortCurrentThread = t;
 		t->state = OS_STATE_RUNNING;
 		port_coroutine_resume((PortCoroutine *)t->port_coroutine);
+		sPortCurrentThread = prev;
 		if (port_coroutine_is_finished((PortCoroutine *)t->port_coroutine)) {
 			t->state = OS_STATE_STOPPED;
 		} else {
@@ -355,11 +374,29 @@ s32 osRecvMesg(OSMesgQueue *mq, OSMesg *msg, s32 flag)
 		if (flag == OS_MESG_NOBLOCK) {
 			return -1;
 		}
-		/* OS_MESG_BLOCK: yield until a message arrives. */
-		if (sRecvDebugCount < 50) {
-			port_log("SSB64: osRecvMesg BLOCK on mq=%p (valid=%d cap=%d) — yielding\n",
-			         (void *)mq, (int)mq->validCount, (int)mq->msgCount);
-			sRecvDebugCount++;
+		/* OS_MESG_BLOCK: yield until a message arrives. Log each
+		 * distinct (thread,queue) block site once — deduplicated so a
+		 * parked thread doesn't spam, but every NEW site is visible. */
+		{
+			static struct { s32 id; const void *mq; } sBlockSeen[32];
+			static int sBlockSeenN;
+			s32 tid = port_current_thread_id();
+			int seen = 0;
+			for (int i = 0; i < sBlockSeenN; i++) {
+				if (sBlockSeen[i].id == tid && sBlockSeen[i].mq == (const void *)mq) {
+					seen = 1; break;
+				}
+			}
+			if (!seen) {
+				if (sBlockSeenN < 32) {
+					sBlockSeen[sBlockSeenN].id = tid;
+					sBlockSeen[sBlockSeenN].mq = (const void *)mq;
+					sBlockSeenN++;
+				}
+				port_log("SSB64: osRecvMesg BLOCK: thread %d waits on mq=%p "
+				         "(valid=%d cap=%d)\n",
+				         (int)tid, (void *)mq, (int)mq->validCount, (int)mq->msgCount);
+			}
 		}
 		while (mq->validCount == 0) {
 			if (port_coroutine_in_coroutine()) {
@@ -370,10 +407,6 @@ s32 osRecvMesg(OSMesgQueue *mq, OSMesg *msg, s32 flag)
 				port_mesg_warn_no_coroutine("osRecvMesg", mq);
 				return -1;
 			}
-		}
-		if (sRecvDebugCount < 50) {
-			port_log("SSB64: osRecvMesg BLOCK on mq=%p — woke up (valid=%d)\n",
-			         (void *)mq, (int)mq->validCount);
 		}
 	}
 
