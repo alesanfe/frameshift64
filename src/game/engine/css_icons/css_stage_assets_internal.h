@@ -14,6 +14,8 @@
 #include <mutex>
 #include <string>
 
+#include "icon_scale.h"
+
 /* PR/sp.h uses _Static_assert (C11) and cannot be included from C++.
  * Opaque type tags. */
 struct sprite;
@@ -135,8 +137,11 @@ inline constexpr StageEntry STAGE_TABLE[] = {
 inline constexpr int kStageCount = (int)(sizeof(STAGE_TABLE) / sizeof(STAGE_TABLE[0]));
 
 // Icon dimensions — same for all stages (matches N64 CSS format).
-inline constexpr int      kIconW  = 48;
-inline constexpr int      kIconH  = 36;
+// Canonical values live in src/shared/icon_scale.h (shared with the
+// Android runtime deriver); these aliases keep the css_icons call sites
+// short.
+inline constexpr int      kIconW  = ssb64::kCssStageIconW;
+inline constexpr int      kIconH  = ssb64::kCssStageIconH;
 inline constexpr uint8_t  kFmtRGBA16 = 0; /* G_IM_FMT_RGBA */
 inline constexpr uint8_t  kFmtIA     = 4; /* G_IM_FMT_IA   — emblems, nameplates */
 inline constexpr uint8_t  kSiz16b    = 2; /* G_IM_SIZ_16b  */

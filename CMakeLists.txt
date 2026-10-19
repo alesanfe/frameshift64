@@ -2226,6 +2226,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     add_library(torch_runner SHARED src/platform/android/android_torch_bridge.cpp)
     target_include_directories(torch_runner PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/components/game-runtime/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/shared
     )
     # The extractor + its FetchContent'd deps (yaml-cpp, tinyxml2, libgfxd,
     # BinaryTools, N64Graphics, spdlog, GSL, ...). All are static libs from

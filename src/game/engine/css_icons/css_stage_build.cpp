@@ -19,6 +19,7 @@
 
 #include "app_paths.h"
 #include "lbreloc_byteswap.h"
+#include "icon_scale.h"
 #include "rgba16_swizzle.h"
 #include "RelocFile.h"
 #include "RelocFileTable.h"
@@ -191,15 +192,16 @@ static Sprite *buildBackgroundSprite(const StageEntry &se,
 }
 
 // ---------------------------------------------------------------------------
-// Build a single-bitmap icon Sprite (48x36).
+// Build a synthetic single-bitmap Sprite. Shared body for the icon (48x36
+// RGBA16), nameplate (96x10 RGBA16), and emblem (64x48 IA4) sprites — they
+// differ only in dims, ndisplist, pixel format, and texel byte size.
 // ---------------------------------------------------------------------------
 
-static Sprite *buildIconSprite(uint8_t *rgba16_buf, CacheEntry *entry)
+static Sprite *buildSingleBitmapSprite(int w, int h, int ndisplist,
+                                       uint8_t fmt, uint8_t siz, size_t buf_bytes,
+                                       uint8_t *buf, CacheEntry *entry)
 {
-    const int w         = kIconW;
-    const int h         = kIconH;
     const int nbitmaps  = 1;
-    const int ndisplist = h;
 
     uint8_t *sp_raw = static_cast<uint8_t *>(std::malloc(68));
     uint8_t *bm_raw = static_cast<uint8_t *>(std::malloc(16));
@@ -211,7 +213,7 @@ static Sprite *buildIconSprite(uint8_t *rgba16_buf, CacheEntry *entry)
     put_s16(bm_raw, 0x02, (int16_t)w);
     put_s16(bm_raw, 0x04, 0);
     put_s16(bm_raw, 0x06, 0);
-    put_u32(bm_raw, 0x08, portRelocRegisterPointer(rgba16_buf));
+    put_u32(bm_raw, 0x08, portRelocRegisterPointer(buf));
     put_s16(bm_raw, 0x0C, (int16_t)h);
     put_s16(bm_raw, 0x0E, 0);
 
@@ -223,8 +225,8 @@ static Sprite *buildIconSprite(uint8_t *rgba16_buf, CacheEntry *entry)
     put_s16(sp_raw, 0x2A, (int16_t)ndisplist);
     put_s16(sp_raw, 0x2C, (int16_t)h);
     put_s16(sp_raw, 0x2E, (int16_t)h);
-    sp_raw[0x30] = kFmtRGBA16; sp_raw[0x31] = kSiz16b;
-    sp_raw[0x32] = 0;          sp_raw[0x33] = 0;
+    sp_raw[0x30] = fmt; sp_raw[0x31] = siz;
+    sp_raw[0x32] = 0;   sp_raw[0x33] = 0;
     put_u32(sp_raw, 0x34, portRelocRegisterPointer(bm));
     put_u32(sp_raw, 0x38, portRelocRegisterPointer(nullptr));
     put_u32(sp_raw, 0x3C, portRelocRegisterPointer(nullptr));
@@ -232,16 +234,24 @@ static Sprite *buildIconSprite(uint8_t *rgba16_buf, CacheEntry *entry)
 
     Sprite *sp = reinterpret_cast<Sprite *>(sp_raw);
 
-    void *buf_ptrs[1] = { rgba16_buf };
+    void *buf_ptrs[1] = { buf };
     portMarkSyntheticSprite(sp, bm, (unsigned int)nbitmaps, buf_ptrs);
 
-    gfxRegisterTrustedLowVARange(rgba16_buf, (size_t)w * h * 2);
+    gfxRegisterTrustedLowVARange(buf, buf_bytes);
 
     entry->sprite     = sp;
     entry->bitmaps    = bm;
-    entry->rgba16_buf = rgba16_buf;
+    entry->rgba16_buf = buf;
     entry->nbitmaps   = nbitmaps;
     return sp;
+}
+
+static Sprite *buildIconSprite(uint8_t *rgba16_buf, CacheEntry *entry)
+{
+    // Icon ndisplist = height (one strip per row).
+    return buildSingleBitmapSprite(kIconW, kIconH, kIconH,
+                                   kFmtRGBA16, kSiz16b, (size_t)kIconW * kIconH * 2,
+                                   rgba16_buf, entry);
 }
 
 // ---------------------------------------------------------------------------
@@ -267,53 +277,10 @@ static_assert(kNameBattlefieldWidth == kNameW && kNameBattlefieldHeight == kName
 
 static Sprite *buildNameSprite(uint8_t *rgba16_buf, CacheEntry *entry)
 {
-    const int w         = kNameW;
-    const int h         = kNameH;
-    const int nbitmaps  = 1;
     // ndisplist=36 matches ROM nameplate sprites (PeachsCastleText etc.)
-    const int ndisplist = 36;
-
-    uint8_t *sp_raw = static_cast<uint8_t *>(std::malloc(68));
-    uint8_t *bm_raw = static_cast<uint8_t *>(std::malloc(16));
-    if (!sp_raw || !bm_raw) { std::free(sp_raw); std::free(bm_raw); return nullptr; }
-    std::memset(sp_raw, 0, 68);
-    std::memset(bm_raw, 0, 16);
-
-    put_s16(bm_raw, 0x00, (int16_t)w);
-    put_s16(bm_raw, 0x02, (int16_t)w);
-    put_s16(bm_raw, 0x04, 0);
-    put_s16(bm_raw, 0x06, 0);
-    put_u32(bm_raw, 0x08, portRelocRegisterPointer(rgba16_buf));
-    put_s16(bm_raw, 0x0C, (int16_t)h);
-    put_s16(bm_raw, 0x0E, 0);
-
-    Bitmap *bm = reinterpret_cast<Bitmap *>(bm_raw);
-
-    put_sprite_head(sp_raw, w, h,
-                        portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x28, (int16_t)nbitmaps);
-    put_s16(sp_raw, 0x2A, (int16_t)ndisplist);
-    put_s16(sp_raw, 0x2C, (int16_t)h);
-    put_s16(sp_raw, 0x2E, (int16_t)h);
-    sp_raw[0x30] = kFmtRGBA16; sp_raw[0x31] = kSiz16b;
-    sp_raw[0x32] = 0;          sp_raw[0x33] = 0;
-    put_u32(sp_raw, 0x34, portRelocRegisterPointer(bm));
-    put_u32(sp_raw, 0x38, portRelocRegisterPointer(nullptr));
-    put_u32(sp_raw, 0x3C, portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x40, 0); put_s16(sp_raw, 0x42, 0);
-
-    Sprite *sp = reinterpret_cast<Sprite *>(sp_raw);
-
-    void *buf_ptrs[1] = { rgba16_buf };
-    portMarkSyntheticSprite(sp, bm, (unsigned int)nbitmaps, buf_ptrs);
-
-    gfxRegisterTrustedLowVARange(rgba16_buf, (size_t)w * h * 2);
-
-    entry->sprite     = sp;
-    entry->bitmaps    = bm;
-    entry->rgba16_buf = rgba16_buf;
-    entry->nbitmaps   = nbitmaps;
-    return sp;
+    return buildSingleBitmapSprite(kNameW, kNameH, 36,
+                                   kFmtRGBA16, kSiz16b, (size_t)kNameW * kNameH * 2,
+                                   rgba16_buf, entry);
 }
 
 // ---------------------------------------------------------------------------
@@ -340,53 +307,11 @@ static constexpr int kEmblemH  = 48;
 
 static Sprite *buildEmblemSprite(uint8_t *ia4_buf, CacheEntry *entry)
 {
-    const int w         = kEmblemW;
-    const int h         = kEmblemH;
-    const int nbitmaps  = 1;
-    const int ndisplist = 36; // matches ROM FT emblems exactly
-
-    uint8_t *sp_raw = static_cast<uint8_t *>(std::malloc(68));
-    uint8_t *bm_raw = static_cast<uint8_t *>(std::malloc(16));
-    if (!sp_raw || !bm_raw) { std::free(sp_raw); std::free(bm_raw); return nullptr; }
-    std::memset(sp_raw, 0, 68);
-    std::memset(bm_raw, 0, 16);
-
-    // Bitmap struct (single bitmap covers the full sprite).
-    put_s16(bm_raw, 0x00, (int16_t)w);
-    put_s16(bm_raw, 0x02, (int16_t)w);
-    put_s16(bm_raw, 0x04, 0);
-    put_s16(bm_raw, 0x06, 0);
-    put_u32(bm_raw, 0x08, portRelocRegisterPointer(ia4_buf));
-    put_s16(bm_raw, 0x0C, (int16_t)h);
-    put_s16(bm_raw, 0x0E, 0);
-
-    Bitmap *bm = reinterpret_cast<Bitmap *>(bm_raw);
-
-    put_sprite_head(sp_raw, w, h,
-                        portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x28, (int16_t)nbitmaps);
-    put_s16(sp_raw, 0x2A, (int16_t)ndisplist);
-    put_s16(sp_raw, 0x2C, (int16_t)h);
-    put_s16(sp_raw, 0x2E, (int16_t)h);
-    sp_raw[0x30] = kFmtIA;     sp_raw[0x31] = kSiz4b;
-    sp_raw[0x32] = 0;          sp_raw[0x33] = 0;
-    put_u32(sp_raw, 0x34, portRelocRegisterPointer(bm));
-    put_u32(sp_raw, 0x38, portRelocRegisterPointer(nullptr));
-    put_u32(sp_raw, 0x3C, portRelocRegisterPointer(nullptr));
-    put_s16(sp_raw, 0x40, 0); put_s16(sp_raw, 0x42, 0);
-
-    Sprite *sp = reinterpret_cast<Sprite *>(sp_raw);
-
-    void *buf_ptrs[1] = { ia4_buf };
-    portMarkSyntheticSprite(sp, bm, (unsigned int)nbitmaps, buf_ptrs);
-
-    gfxRegisterTrustedLowVARange(ia4_buf, (size_t)w * h / 2);
-
-    entry->sprite     = sp;
-    entry->bitmaps    = bm;
-    entry->rgba16_buf = ia4_buf;   // field name is historical; holds the IA4 packed buffer
-    entry->nbitmaps   = nbitmaps;
-    return sp;
+    // ndisplist=36 matches ROM FT emblems exactly. entry->rgba16_buf keeps its
+    // historical name; it holds the packed IA4 buffer here.
+    return buildSingleBitmapSprite(kEmblemW, kEmblemH, 36,
+                                   kFmtIA, kSiz4b, (size_t)kEmblemW * kEmblemH / 2,
+                                   ia4_buf, entry);
 }
 
 // ---------------------------------------------------------------------------
@@ -628,52 +553,11 @@ static std::vector<uint8_t> expandRGBA16BEToRGBA8888(const uint8_t *rgba16, size
 }
 
 // Center-crop to the icon aspect ratio, then bilinear-downscale to 48x36.
-// Same crop/filter behavior as the Android runtime deriver
-// (port/android_torch_bridge.cpp make_icon_bilinear).
+// The filter lives in src/shared/icon_scale.h so the Android runtime
+// deriver (android_torch_bridge.cpp) produces identical pixels.
 static std::vector<uint8_t> downscaleIconBilinear(const std::vector<uint8_t> &src,
                                                   int src_w, int src_h) {
-    std::vector<uint8_t> dst((size_t)kIconW * kIconH * 4);
-    int crop_x = 0, crop_y = 0, crop_w = src_w, crop_h = src_h;
-    const float src_aspect  = (float)src_w / (float)src_h;
-    const float icon_aspect = (float)kIconW / (float)kIconH;
-
-    if (src_aspect > icon_aspect) {
-        crop_w = (int)((float)src_h * icon_aspect);
-        crop_x = (src_w - crop_w) / 2;
-    } else if (src_aspect < icon_aspect) {
-        crop_h = (int)((float)src_w / icon_aspect);
-        crop_y = (src_h - crop_h) / 2;
-    }
-
-    const float scale_x = (float)crop_w / (float)kIconW;
-    const float scale_y = (float)crop_h / (float)kIconH;
-
-    for (int y = 0; y < kIconH; ++y) {
-        const float sy = (float)crop_y + ((float)y + 0.5f) * scale_y - 0.5f;
-        const int y0 = std::max(0, std::min(src_h - 1, (int)sy));
-        const int y1 = std::max(0, std::min(src_h - 1, y0 + 1));
-        const float fy = std::max(0.0f, std::min(1.0f, sy - (float)y0));
-
-        for (int x = 0; x < kIconW; ++x) {
-            const float sx = (float)crop_x + ((float)x + 0.5f) * scale_x - 0.5f;
-            const int x0 = std::max(0, std::min(src_w - 1, (int)sx));
-            const int x1 = std::max(0, std::min(src_w - 1, x0 + 1));
-            const float fx = std::max(0.0f, std::min(1.0f, sx - (float)x0));
-
-            for (int c = 0; c < 4; ++c) {
-                const float p00 = src[((size_t)y0 * src_w + x0) * 4 + c];
-                const float p10 = src[((size_t)y0 * src_w + x1) * 4 + c];
-                const float p01 = src[((size_t)y1 * src_w + x0) * 4 + c];
-                const float p11 = src[((size_t)y1 * src_w + x1) * 4 + c];
-                const float top = p00 * (1.0f - fx) + p10 * fx;
-                const float bot = p01 * (1.0f - fx) + p11 * fx;
-                const float v = top * (1.0f - fy) + bot * fy;
-                dst[((size_t)y * kIconW + x) * 4 + c] =
-                    (uint8_t)std::max(0.0f, std::min(255.0f, v + 0.5f));
-            }
-        }
-    }
-    return dst;
+    return ssb64::IconDownscaleBilinear(src.data(), src_w, src_h, kIconW, kIconH);
 }
 
 // Derive the background or icon pixel buffer (RGBA16 BE, malloc'd — same
