@@ -131,6 +131,19 @@ void port_netleaderboard_tournament_start(const char *server, const char *id);
 void port_netleaderboard_tournament_create(const char *server,
                                            const char *name, int size);
 
+/* Service stats — GET <server>/stats returns fleet/board counters
+ * {leaderboard_entries, verified_matches, shared_replays, distinct_builds,
+ * pending_results, crash_reports, ...}. Self-hosted lobbies also report
+ * live WS presence (players/spectators/rooms); the Cloudflare adapter has
+ * no session map so those fields are absent there.
+ * states: 0 idle / 1 fetching / 2 ready / -1 error. */
+void port_netleaderboard_fetch_stats(const char *server);
+/* Copies the last stats snapshot; returns 1 when one is loaded. Out
+ * params may be NULL. `players` is -1 when the server doesn't report
+ * live presence. */
+int  port_netleaderboard_stats(int *players, int *entries, int *matches,
+                               int *replays, int *builds);
+
 #ifdef __cplusplus
 }
 #endif

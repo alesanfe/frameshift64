@@ -407,3 +407,58 @@ extern "C" int port_netleaderboard_history_at(int index, PortLbMatchRow *out)
     *out = sHist[index];
     return 1;
 }
+/* ── Service stats (GET /stats) ──────────────────────────────────────── */
+
+namespace {
+struct LbStats {
+    int players = -1;   /* live WS presence — self-hosted adapter only */
+    int entries = 0;
+    int matches = 0;
+    int replays = 0;
+    int builds = 0;
+};
+}
+static LbStats& sStats = *new LbStats;
+static std::atomic<int>& sStatsState = *new std::atomic<int>{0};
+
+extern "C" void port_netleaderboard_fetch_stats(const char *server)
+{
+#ifdef SSB64_HAVE_CURL
+    const std::string base = ssb64::HttpBaseFromWsServer(server);
+    if (base.empty() || sStatsState.exchange(1) == 1) {
+        return;
+    }
+    port_lb::lb_fetch(base + "/stats", sStatsState, sStats,
+        [](const nlohmann::json &doc, LbStats &out) {
+            if (!doc.is_object()) {
+                return false;
+            }
+            /* "players" is self-hosted only — absent keeps the -1
+             * sentinel so the UI can hide the live-presence field. */
+            out.players = port_lb::json_int_or(doc, "players", -1);
+            out.entries = port_lb::json_int_or(doc, "leaderboard_entries", 0);
+            out.matches = port_lb::json_int_or(doc, "verified_matches", 0);
+            out.replays = port_lb::json_int_or(doc, "shared_replays", 0);
+            out.builds  = port_lb::json_int_or(doc, "distinct_builds", 0);
+            return true;
+        });
+#else
+    (void)server;
+#endif
+}
+
+extern "C" int port_netleaderboard_stats(int *players, int *entries,
+                                         int *matches, int *replays,
+                                         int *builds)
+{
+    std::lock_guard<std::mutex> lk(port_lb::SharedLock());
+    if (sStatsState.load() != 2) {
+        return 0;
+    }
+    if (players) *players = sStats.players;
+    if (entries) *entries = sStats.entries;
+    if (matches) *matches = sStats.matches;
+    if (replays) *replays = sStats.replays;
+    if (builds)  *builds  = sStats.builds;
+    return 1;
+}
