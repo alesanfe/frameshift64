@@ -85,6 +85,15 @@ smash_add_test(NAME lobby_json_test TYPE unit TIMEOUT 15
     LABELS netplay protocol deterministic)
 target_include_directories(lobby_json_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# Shared WS ingress bounds (src/networking/netplay/transport/
+# websocket_transport_internal.h) — header-inline helpers, compiles
+# standalone; pins the queue-cap contract all backends rely on.
+smash_add_test(NAME ws_ingress_test TYPE unit TIMEOUT 15
+    SOURCES unit/netplay/transport/ws_ingress_test.cpp
+    LIBRARIES smash_test_support
+    LABELS netplay transport deterministic)
+target_include_directories(ws_ingress_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # Persistence stores — SSB64_SAVE_PATH redirects them into a per-process
 # temp dir, so load/save runs fully offline. Each binary runs twice:
 # once against a crafted fixture (default argv) and once against a
