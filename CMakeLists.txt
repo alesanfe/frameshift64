@@ -1763,7 +1763,13 @@ endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE ed25519_verify)
 target_link_libraries(ssb64_port_options INTERFACE ed25519_verify)
 
-add_dependencies(ssb64_game GenerateCreditsAssets)
+# PrepareBuildInputs covers GenerateCreditsAssets + GenerateRelocArtifacts.
+# Both decomp C TUs (<reloc_data.h> -> reloc_data.<ver>.h) and port TUs
+# (RelocFileTable.<ver>.h) read generated headers, so the targets that
+# compile them must order after the codegen — otherwise a clean-tree build
+# races (masked in dirty trees where the headers already exist on disk).
+add_dependencies(ssb64_game PrepareBuildInputs)
+add_dependencies(${PROJECT_NAME} PrepareBuildInputs)
 if (NOT DISABLE_SCRIPTING)
     # funchook hook backend (libultraship is already linked above).
     target_link_libraries(${PROJECT_NAME} PRIVATE funchook-static)
