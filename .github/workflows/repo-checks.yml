@@ -58,6 +58,8 @@ jobs:
         run: npm ci
       - name: Security suite
         run: node services/netplay-lobby/tests/security/test-lobby-security.js
+      - name: Domain property suite
+        run: node services/netplay-lobby/tests/domain/test-leaderboard-domain.mjs
       - name: Fuzz suite
         run: node services/netplay-lobby/tests/fuzz/test-lobby-fuzz.js 400
 

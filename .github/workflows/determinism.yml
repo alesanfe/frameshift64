@@ -29,6 +29,11 @@ on:
         required: false
         default: ""
         type: string
+      soak_minutes:
+        description: "Soak-test session length in minutes (schedule default 30; raise for 24h/48h/72h runs)"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -160,11 +165,20 @@ jobs:
           ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
             -LatencyMs 100 -JitterMs 50 -LossPct 50 -DupPct 10 -ReorderPct 30 -CorruptPct 5 `
             -OutDir out/logs/netplay-matrix/p8
+          # P9: transatlantic-satellite band between P5 and P6 — 750 ms.
+          # P10: jitter-isolation run — modest latency/loss but 300 ms
+          # jitter storms, which stress the reorder window, not the RTT.
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 750 -JitterMs 150 -LossPct 12 -DupPct 5 -ReorderPct 25 `
+            -OutDir out/logs/netplay-matrix/p9
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 60 `
+            -LatencyMs 120 -JitterMs 300 -LossPct 5 -DupPct 5 -ReorderPct 40 `
+            -OutDir out/logs/netplay-matrix/p10
         shell: pwsh
       - name: Desync/rollback metrics per profile
         if: env.BASEROM_B64 != ''
         run: |
-          foreach ($p in @('p1','p2','p3','p4','p5','p6','p7','p8')) {
+          foreach ($p in @('p1','p2','p3','p4','p5','p6','p7','p8','p9','p10')) {
             python tools/analysis/netplay_metrics.py --dir "out/logs/netplay-matrix/$p" `
               --out "out/logs/netplay-matrix/$p/metrics.json" `
               --history out/logs/metrics-history.jsonl --label $p
@@ -182,7 +196,7 @@ jobs:
         if: env.BASEROM_B64 != ''
         run: |
           $fail = 0
-          foreach ($p in @('p1','p2','p3','p4','p5','p6','p7','p8')) {
+          foreach ($p in @('p1','p2','p3','p4','p5','p6','p7','p8','p9','p10')) {
             python tools/analysis/netplay_metrics.py --dir "out/logs/netplay-matrix/$p" `
               --gate tests/support/metrics-baseline.json --label $p
             if ($LASTEXITCODE -ne 0) { $fail = 1 }
@@ -190,13 +204,21 @@ jobs:
           if ($fail) { Write-Error "metrics regressed vs baseline"; exit 1 }
         shell: pwsh
 
-      # Nightly soak: one long session (30 min) under the mid-degraded
-      # profile — catches leaks/counter drift/late-session stalls that the
-      # 60 s profiles never reach. Runner time caps the scale honestly.
-      - name: Soak test (schedule only — 30 min degraded session)
-        if: env.BASEROM_B64 != '' && github.event_name == 'schedule'
+      # Nightly soak: one long session under the mid-degraded profile —
+      # catches leaks/counter drift/late-session stalls that the 60 s
+      # profiles never reach. workflow_dispatch can raise the duration
+      # (24h/48h/72h) — the runner timeout still caps the honest scale.
+      - name: Soak test (schedule only — degraded session)
+        if: env.BASEROM_B64 != '' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        env:
+          SOAK_MINUTES_INPUT: ${{ github.event.inputs.soak_minutes }}
         run: |
-          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds 1800 `
+          $mins = 30
+          if ("$env:SOAK_MINUTES_INPUT" -match '^\d+$') {
+            $mins = [int]$env:SOAK_MINUTES_INPUT
+          }
+          $secs = $mins * 60
+          ./scripts/testing/netplay_localtest.ps1 -BuildDir build/Release -Seconds $secs `
             -LatencyMs 100 -JitterMs 25 -LossPct 3 -DupPct 2 -ReorderPct 5 `
             -OutDir out/logs/netplay-soak
           if ($LASTEXITCODE -ne 0) { Write-Error "soak run desynced or crashed"; exit 1 }
@@ -216,8 +238,11 @@ jobs:
           git add tests/support/metrics-baseline.json
           if (git diff --cached --quiet) { Write-Output "baseline unchanged"; exit 0 }
           git commit -m "ci: refresh netplay metrics baseline [skip ci]"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
-          git push "https://x-access-token:$token@github.com/${{ github.repository }}" HEAD:${{ github.ref_name }}
+          git push "https://x-access-token:$env:GH_PUSH_TOKEN@github.com/$env:GH_PUSH_REPO" "HEAD:$env:GH_PUSH_REF"
+        env:
+          GH_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PUSH_REPO: ${{ github.repository }}
+          GH_PUSH_REF: ${{ github.ref_name }}
         shell: pwsh
 
       # ── T3: golden gameplay — fixed input tapes vs committed state traces ──
@@ -236,9 +261,12 @@ jobs:
       # the gated run bounded; scale = dispatch input > repo var > 10.
       - name: Golden gameplay scale run (nightly)
         if: env.BASEROM_B64 != '' && github.event_name != 'pull_request'
+        env:
+          GOLDEN_RUNS_INPUT: ${{ github.event.inputs.golden_runs }}
+          GOLDEN_RUNS_VAR: ${{ vars.GOLDEN_SCALE_RUNS }}
         run: |
-          $runs = "${{ github.event.inputs.golden_runs }}"
-          if (-not $runs) { $runs = "${{ vars.GOLDEN_SCALE_RUNS }}" }
+          $runs = "$env:GOLDEN_RUNS_INPUT"
+          if (-not $runs) { $runs = "$env:GOLDEN_RUNS_VAR" }
           if (-not $runs) { $runs = "10" }
           Write-Output "golden scale: --repeat $runs"
           python tests/e2e/golden/golden_gameplay_test.py --build-dir build/Release `
