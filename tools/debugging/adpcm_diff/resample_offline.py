@@ -88,8 +88,7 @@ def resample(flags: int, pitch: int, nbytes: int, in_off: int, out_off: int,
     dmem = bytearray(dmem_bytes)
 
     def s16_at(byte_off):
-        v = struct.unpack_from('<h', dmem, byte_off)[0]
-        return v
+        return struct.unpack_from('<h', dmem, byte_off)[0]
 
     def write_s16_at(byte_off, v):
         struct.pack_into('<h', dmem, byte_off, v & 0xffff)
@@ -123,7 +122,7 @@ def resample(flags: int, pitch: int, nbytes: int, in_off: int, out_off: int,
     out = []
     nbytes_remain = nbytes  # output bytes to produce
     while nbytes_remain > 0:
-        for i in range(8):
+        for _i in range(8):
             tbl = RESAMPLE_TABLE[(pitch_acc * 64) >> 16]
             in0 = s16_at(in_byte_off + 0)
             in1 = s16_at(in_byte_off + 2)

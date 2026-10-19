@@ -396,7 +396,7 @@ CATEGORIES = [
         name.startswith(("N64Logo", "SCStaffroll", "SY", "CharacterNames", "GRWallpaper", "MNSoundTest", "SCExplain", "SC1PTraining"))
     )),
     # Catch-all for anything still uncategorized
-    ("misc", lambda _fid, name: True),
+    ("misc", lambda _fid, _name: True),
 ]
 
 def categorize_file(file_id, name):

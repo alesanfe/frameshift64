@@ -441,7 +441,7 @@ def main():
     else:
         exclude = set() if args.include_all else set(args.exclude.split(','))
         files = []
-        for root, dirs, filenames in os.walk(args.dir):
+        for root, _dirs, filenames in os.walk(args.dir):
             # Filter excluded subdirs
             rel = os.path.relpath(root, args.dir)
             parts = Path(rel).parts
@@ -453,7 +453,7 @@ def main():
 
     # Also scan include/ for header issues
     if not args.file and os.path.isdir('include'):
-        for root, dirs, filenames in os.walk('include'):
+        for root, _dirs, filenames in os.walk('include'):
             for fn in filenames:
                 if fn.endswith('.h'):
                     files.append(os.path.join(root, fn))

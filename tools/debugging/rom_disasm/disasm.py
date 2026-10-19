@@ -31,7 +31,7 @@ LOAD_INSTRS = {"lw", "lh", "lhu", "lb", "lbu", "ld", "lwc1", "ldc1"}
 
 
 def vram_to_rom(vram: int) -> int:
-    for name, rom, vstart, size in SEGMENTS:
+    for _name, rom, vstart, size in SEGMENTS:
         if vstart <= vram < vstart + size:
             return rom + (vram - vstart)
     raise SystemExit(f"VRAM {vram:#010x} not in any known segment")

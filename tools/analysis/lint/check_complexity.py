@@ -50,9 +50,7 @@ def collect_violations() -> dict[str, list[tuple[str, int, int]]]:
     # -l cpp restricts to C/C++ (vendored Java/JS/Python stay out); relative
     # dirs keep the item names repo-relative for stable baseline keys.
     dirs = [d for d in SCAN_DIRS if (ROOT / d).exists()]
-    subprocess.run([lizard_exe(), "-l", "cpp", "--xml", "-C", str(CCN_LIMIT),
-                    "-L", str(NLOC_LIMIT), "-x", "*/node_modules/*",
-                    "-o", xml_path] + dirs,
+    subprocess.run([lizard_exe(), "-l", "cpp", "--xml", "-C", str(CCN_LIMIT), "-L", str(NLOC_LIMIT), "-x", "*/node_modules/*", "-o", xml_path, *dirs],
                    check=True, capture_output=True, cwd=ROOT)
     violations: dict[str, list[tuple[str, int, int]]] = {}
     for item in ET.parse(xml_path).getroot().iter("item"):  # nosec B314 - parses lizard's own -o output, not untrusted input

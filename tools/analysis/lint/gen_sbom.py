@@ -45,7 +45,7 @@ def submodules():
 
 def fetchcontent():
     comps = []
-    texts = [ROOT / "CMakeLists.txt"] + list((ROOT / "cmake").glob("*.cmake"))
+    texts = [ROOT / "CMakeLists.txt", *list((ROOT / "cmake").glob("*.cmake"))]
     for f in texts:
         if not f.exists():
             continue

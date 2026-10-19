@@ -153,7 +153,7 @@ class Sprite:
 
         # Resolve LUT (may be 0 for non-CI sprites)
         slot_lut = sprite_off + 32
-        self.lut_off = slot_to_target.get(slot_lut, None)
+        self.lut_off = slot_to_target.get(slot_lut)
 
     def bpp(self):
         return {SIZ_4b: 4, SIZ_8b: 8, SIZ_16b: 16, SIZ_32b: 32}.get(self.bmsiz, 0)
@@ -547,9 +547,9 @@ def main():
     args = ap.parse_args()
     if args.cmd == "letter":
         return cmd_letter(args)
-    elif args.cmd == "portrait":
+    if args.cmd == "portrait":
         return cmd_portrait(args)
-    elif args.cmd == "charname":
+    if args.cmd == "charname":
         return cmd_charname(args)
     return 2
 

@@ -42,7 +42,7 @@ def make_cases(archive):
             "same-size-dl": ({DL_PATH: dl([(0, 0)] * 53 + reference + [(0xDF000000, 0)])}, True, 0x1B8),
             "longer-dl": ({DL_PATH: dl([(0, 0)] * 56 + reference + [(0xDF000000, 0)])}, True, 0x1D0),
             "same-size-vertex": ({vertex_path: vertex}, True, None),
-            "invalid-vtx-offset": ({DL_PATH: dl(broken + [(0xDF000000, 0)])}, False, None),
+            "invalid-vtx-offset": ({DL_PATH: dl([*broken, (3741319168, 0)])}, False, None),
             "truncated-dl": ({DL_PATH: original[:100]}, False, None),
         }
         mesh, verts = "custom/probe/mesh", "custom/probe/vertices"

@@ -181,7 +181,7 @@ def parse_sprite(file_data: bytes, sprite_off: int) -> dict:
     """
     d = file_data
     o = sprite_off
-    sp = {
+    return {
         "x":         _be_s16(d, o + 0x00),
         "y":         _be_s16(d, o + 0x02),
         "width":     _be_s16(d, o + 0x04),
@@ -194,14 +194,13 @@ def parse_sprite(file_data: bytes, sprite_off: int) -> dict:
         "bmsiz":     _be_u8(d, o + 0x31),
         "sprite_off": sprite_off,
     }
-    return sp
 
 
 def parse_bitmap(file_data: bytes, bm_off: int) -> dict:
     """Parse one Bitmap struct at bm_off (big-endian)."""
     d = file_data
     o = bm_off
-    bm = {
+    return {
         "width":        _be_s16(d, o + 0x00),
         "width_img":    _be_s16(d, o + 0x02),
         "s":            _be_s16(d, o + 0x04),
@@ -211,7 +210,6 @@ def parse_bitmap(file_data: bytes, bm_off: int) -> dict:
         "LUToffset":    _be_s16(d, o + 0x0E),
         "off": o,
     }
-    return bm
 
 
 # ---------------------------------------------------------------------------

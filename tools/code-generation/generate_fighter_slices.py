@@ -223,7 +223,7 @@ def parse_dl(view, start, boundaries, slot_offsets, extern_slot_offsets):
                 open_tex["width"] = ((w1 >> 12) & 0xFFF) // 4 + 1
                 open_tex["height"] = (w1 & 0xFFF) // 4 + 1
                 open_tex = None
-        elif op == G_MOVEMEM or op == G_MTX:
+        elif op in (G_MOVEMEM, G_MTX):
             enc, tgt = classify_ref(w1, off + 4, slot_offsets, file_size)
             if enc:
                 refs.append(DlRef(off, op, enc, tgt))
@@ -292,10 +292,7 @@ def flat_scan(data):
                 regions.append(("vtx", tgt, n * 16))
         elif op == G_SETTIMG:
             seg = (w1 >> 24) & 0xFF
-            if seg == FILE_SEGMENT_ID:
-                pending = (w1 & 0x00FFFFFF, (w0 >> 19) & 0x03)
-            else:
-                pending = None
+            pending = (w1 & 16777215, w0 >> 19 & 3) if seg == FILE_SEGMENT_ID else None
         elif op == G_LOADBLOCK and pending is not None:
             tgt, siz = pending
             texels = ((w1 >> 12) & 0xFFF) + 1
@@ -358,7 +355,7 @@ def build_slices(symbol, view, intern_chain, extern_chain, incoming_targets,
         for ref in refs:
             if ref.opcode == G_VTX:
                 vtx_runs.append((ref.target, ref.target + ref.vtx_count * 16))
-        for kind, tgt, enc, meta in tex_events:
+        for kind, tgt, _enc, meta in tex_events:
             if tgt in tex_slices:
                 continue
             if kind == "tlut":

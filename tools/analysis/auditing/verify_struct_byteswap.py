@@ -53,7 +53,7 @@ def read_reloc_resource(zf, entry_name):
     reloc_extern = struct.unpack_from("<H", raw, off)[0]; off += 2
     num_extern = struct.unpack_from("<I", raw, off)[0]; off += 4
     extern_ids = []
-    for i in range(num_extern):
+    for _i in range(num_extern):
         extern_ids.append(struct.unpack_from("<H", raw, off)[0]); off += 2
     data_size = struct.unpack_from("<I", raw, off)[0]; off += 4
     data = raw[off:off+data_size]

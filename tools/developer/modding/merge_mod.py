@@ -76,11 +76,11 @@ class TextureTypeUtils:
         pixels = width * height
         if tex_type == TextureType.RGBA32bpp:
             return pixels * 4
-        elif tex_type in (TextureType.RGBA16bpp, TextureType.GrayscaleAlpha16bpp):
+        if tex_type in (TextureType.RGBA16bpp, TextureType.GrayscaleAlpha16bpp):
             return pixels * 2
-        elif tex_type in (TextureType.Palette8bpp, TextureType.Grayscale8bpp, TextureType.GrayscaleAlpha8bpp):
+        if tex_type in (TextureType.Palette8bpp, TextureType.Grayscale8bpp, TextureType.GrayscaleAlpha8bpp):
             return pixels
-        elif tex_type in (TextureType.Palette4bpp, TextureType.Grayscale4bpp, TextureType.GrayscaleAlpha4bpp):
+        if tex_type in (TextureType.Palette4bpp, TextureType.Grayscale4bpp, TextureType.GrayscaleAlpha4bpp):
             return (pixels + 1) // 2
         return 0
 
@@ -202,7 +202,7 @@ class N64Graphics:
                     pos = ((y * w) + x) // 2
                     l1, a1 = pixels[x, y]
                     l2, a2 = pixels[x + 1, y] if x + 1 < w else (0, 0)
-                    
+
                     alpha_bit1 = 1 if a1 != 0 else 0
                     alpha_bit2 = 1 if a2 != 0 else 0
 
@@ -409,7 +409,7 @@ def preprocess_asset(bytes_data: bytes, filename: str) -> bytes:
     if file.lower().endswith('.bin'):
         return bytes_data
 
-    elif file.endswith('.png'):
+    if file.endswith('.png'):
         if 'rgba16' in file:
             tex_type = TextureType.RGBA16bpp
         elif 'rgba32' in file:
@@ -438,8 +438,7 @@ def preprocess_asset(bytes_data: bytes, filename: str) -> bytes:
         )
 
         return otr_header + tex_header + data.tex_data
-    else:
-        raise ValueError(f"Unsupported asset file type for {filename}")
+    raise ValueError(f"Unsupported asset file type for {filename}")
 
 def preprocess_embed(bytes_data: bytes, filename: str) -> bytes:
     # If you want bytes to be embedded directly into the C file, you can preprocess them here.

@@ -177,9 +177,7 @@ def build_checks(args) -> list:
     checks.append(Check("cpplint", cpplint_cmd, "cpplint.txt", required=False))
 
     checks += [
-        Check("lizard", [resolve("lizard"), "-l", "cpp", "-C", "15",
-                         "-L", "120", "-a", "6", "-w",
-                         "-x", "*/node_modules/*"] + dirs,
+        Check("lizard", [resolve("lizard"), "-l", "cpp", "-C", "15", "-L", "120", "-a", "6", "-w", "-x", "*/node_modules/*", *dirs],
               "lizard.txt", required=False),
         # Complexity ratchet: per-file quota vs config/complexity-baseline.txt.
         # Blocks growth of CCN>=15 / NLOC>=100 functions; the lizard report
@@ -194,8 +192,7 @@ def build_checks(args) -> list:
               [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
                                    "check_file_size.py")],
               "file-size.txt", required=True),
-        Check("cmake-lint", [resolve("cmake-lint")] + find_cmake_files() +
-              ["-c", ".cmakelintrc"],
+        Check("cmake-lint", [resolve("cmake-lint"), *find_cmake_files(), "-c", ".cmakelintrc"],
               "cmake-lint.txt", required=False),
         Check("codespell", [resolve("codespell"), ".", "--config", ".codespellrc"],
               "codespell.txt", required=False),
@@ -244,7 +241,7 @@ def build_checks(args) -> list:
               [resolve("zizmor"), "--format", "plain", ".github/workflows"],
               "zizmor.txt", required=False),
         Check("shellcheck",
-              [resolve("shellcheck"), "-S", "warning"] + find_shell_files(),
+              [resolve("shellcheck"), "-S", "warning", *find_shell_files()],
               "shellcheck.txt", required=False),
         Check("vulture",
               [resolve("vulture"), "tools", "tests", "--min-confidence", "80"],
@@ -258,7 +255,7 @@ def build_checks(args) -> list:
     sem = ROOT / "config" / "analysis" / "semgrep" / "smash-classic.yml"
     if sem.exists():
         checks.append(Check("semgrep-smash",
-            [resolve("semgrep"), "scan", "--config", str(sem)] + dirs,
+            [resolve("semgrep"), "scan", "--config", str(sem), *dirs],
             "semgrep.txt", required=False))
     return checks
 

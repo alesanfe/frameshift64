@@ -342,7 +342,7 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
     if args.baseline:
-        for name, dest in produced:
+        for _name, dest in produced:
             shutil.copy2(dest, args.baseline / dest.name)
         print(f"baseline updated: {len(produced)} -> {args.baseline}")
 

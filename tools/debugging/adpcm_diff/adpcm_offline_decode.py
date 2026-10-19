@@ -66,7 +66,7 @@ def decode_adpcm(flags: int, nbytes: int, book, loop_state, prior_state, input_b
         tbl = book[table_index]   # tbl[0..1][0..7]
 
         # Two 8-sample sub-frames per ADPCM frame
-        for sub in range(2):
+        for _sub in range(2):
             prev1 = out[-1]
             prev2 = out[-2]
 
