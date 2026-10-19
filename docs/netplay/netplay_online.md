@@ -48,7 +48,7 @@ Release builds default to the deployed Worker. Override it at configure time wit
 |---|---|
 | Lobby server (room codes, endpoint exchange, relay) | `services/netplay-lobby/src/infrastructure/cloudflare/worker.js` |
 | Lobby state machine (STUN, create/join, hole punch, picks, START/GO) | `src/networking/netplay/session/netlobby.cpp` |
-| WebSocket client (WinHTTP, wss://) | `src/networking/netplay/transport/websocket_transport.cpp` |
+| WebSocket client (WinHTTP, wss://) | `src/networking/netplay/transport/websocket_transport_win32.cpp` |
 | UDP endpoint (Winsock/BSD, relay hooks, network simulator) | `src/networking/netplay/transport/udp_transport.cpp` |
 | Match transport, pacing, time sync, desync check | `components/decomp/src/sys/netpeer.c` |
 | Input delay, prediction, misprediction detection | `components/decomp/src/sys/netinput.c` |

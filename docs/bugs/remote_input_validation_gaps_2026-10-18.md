@@ -1,12 +1,12 @@
 # Remote-input validation gaps — WS frame length, download URL injection, escaping hash pointer
 
-**FIXED 2026-10-18** (port `websocket_transport.cpp`, `download_service.cpp`, `http_download.cpp`; libultraship `ArchiveManager`)
+**FIXED 2026-10-18** (port `websocket_transport_fallback.cpp`, `download_service.cpp`, `http_download.cpp`; libultraship `ArchiveManager`)
 
 Repository audit pass ("busca bugs, deuda técnica, cosas a medio implementar") that went past the lint-clean state into remote-facing input paths. Three confirmed defects, all in code that consumes bytes from the network or the user.
 
 ## 1. WebSocket frame length cap missed the masked-frame branch (recv-thread crash)
 
-`recv_frame()` in `src/networking/netplay/transport/websocket_transport.cpp` decoded the 8-byte extended length, then for a **masked** server frame ran `out->assign(len, 0)` *before* the `len > 4MiB` guard — which only lived on the unmasked path. A hostile or buggy server sending a masked frame with `len = 0xFFFFFFFFFFFFFFFF` pushed the vector past `max_size()` → `std::length_error` thrown on the receive thread → uncaught → `std::terminate`. A large-but-allocatable len (e.g. 8 GiB) instead stalled the reader forever on bytes that never arrive.
+`recv_frame()` in `src/networking/netplay/transport/websocket_transport_fallback.cpp` decoded the 8-byte extended length, then for a **masked** server frame ran `out->assign(len, 0)` *before* the `len > 4MiB` guard — which only lived on the unmasked path. A hostile or buggy server sending a masked frame with `len = 0xFFFFFFFFFFFFFFFF` pushed the vector past `max_size()` → `std::length_error` thrown on the receive thread → uncaught → `std::terminate`. A large-but-allocatable len (e.g. 8 GiB) instead stalled the reader forever on bytes that never arrive.
 
 - Affects the portable BSD-socket backend — i.e. **Linux / macOS / Switch** and any `SSB64_PORTABLE_WS` build. The Windows WinHTTP backend doesn't decode frame lengths itself, so it couldn't hit the same fault (its own accumulation issue below still applied).
 - Exploitability: requires the client to reach a hostile lobby server (fake server, MITM on plain `ws://`, or a compromised relay). Crash-only, no memory write.

@@ -1,7 +1,9 @@
 /* See websocket_transport.h - BSD-socket fallback for targets without
  * WinHTTP or libcurl websockets (e.g. Switch, curl <7.86). Plain ws:// only;
- * wss:// reports that it needs TLS. */
-#if !defined(SSB64_HAVE_CURL_WS) && (!defined(_WIN32) || defined(SSB64_PORTABLE_WS))
+ * wss:// reports that it needs TLS. Emscripten is excluded: its transport is
+ * websocket_web.cpp (emscripten_websocket_*), which always defines these
+ * symbols. */
+#if !defined(SSB64_HAVE_CURL_WS) && !defined(__EMSCRIPTEN__) && (!defined(_WIN32) || defined(SSB64_PORTABLE_WS))
 
 #include "websocket_transport.h"
 #include "websocket_transport_internal.h"
