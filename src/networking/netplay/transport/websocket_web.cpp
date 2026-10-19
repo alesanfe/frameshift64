@@ -20,6 +20,7 @@
 #ifdef __EMSCRIPTEN__
 
 #include "websocket_transport.h"
+#include "websocket_transport_internal.h"
 
 #include <emscripten.h>
 #include <emscripten/websocket.h>
@@ -74,8 +75,14 @@ EM_BOOL on_error(int /*type*/, const EmscriptenWebSocketErrorEvent */*ev*/, void
 EM_BOOL on_close(int /*type*/, const EmscriptenWebSocketCloseEvent *ev, void *user)
 {
 	PortWsState *state = static_cast<PortWsState *>(user);
-	*state = (ev->wasClean || *state == PORT_WS_OPEN) ? PORT_WS_CLOSED : PORT_WS_FAILED;
-	if (user == &sState && ev->code != 1000 && ev->code != 1005) {
+	/* A state we already marked FAILED (error/overflow) stays FAILED even
+	 * if the close handshake itself reports clean — the failure is the
+	 * terminal signal the lobby surfaces, not the close code. */
+	const bool was_failed = (*state == PORT_WS_FAILED);
+	if (!was_failed) {
+		*state = (ev->wasClean || *state == PORT_WS_OPEN) ? PORT_WS_CLOSED : PORT_WS_FAILED;
+	}
+	if (user == &sState && !was_failed && ev->code != 1000 && ev->code != 1005) {
 		char buf[96];
 		std::snprintf(buf, sizeof(buf), "closed: code=%u %.*s", ev->code,
 		              static_cast<int>(sizeof(ev->reason)), ev->reason);
@@ -86,6 +93,17 @@ EM_BOOL on_close(int /*type*/, const EmscriptenWebSocketCloseEvent *ev, void *us
 
 EM_BOOL on_message(int /*type*/, const EmscriptenWebSocketMessageEvent *ev, void */*user*/)
 {
+	/* Same ingress bounds as the threaded backends (WsEnqueueBounded):
+	 * a hostile/stalled server must not grow the queues while the game
+	 * loop is suspended. Single-threaded, so no mutex — overflow fails
+	 * the connection with 1009 (message too big) just like the others. */
+	if (ev->numBytes > kMaxWsMessageBytes ||
+	    sQueues.text.size() + sQueues.binary.size() >= kMaxWsQueuedMessages) {
+		sError = "inbound message/queue overflow";
+		sState = PORT_WS_FAILED;
+		emscripten_websocket_close(sWs, 1009, "overflow");
+		return EM_TRUE;
+	}
 	if (ev->isText) {
 		/* numText bytes are NOT NUL-terminated; copy with an explicit 0. */
 		sQueues.text.emplace_back(reinterpret_cast<const char *>(ev->data),
