@@ -265,13 +265,13 @@ endef
         clean clean-build clean-logs clean-reports clean-tests clean-dependencies \
         clean-generated distclean reset \
         print-% guard-region guard-preset guard-configured guard-rom guard-exe \
-        guard-decomp guard-allow-update guard-shard \
+        guard-decomp guard-allow-update \
         help-all help-json help-build help-test help-netplay help-quality \
         help-security help-package help-release help-workflow \
         dev dev-clean dev-run pre-commit pre-push ci-local all default \
         doctor-full verify-all \
         test-netplay test-lobby test-lobby-contract test-lobby-chaos \
-        test-lobby-fuzz test-workerd \
+        test-lobby-fuzz test-workerd protocol-check \
         test-websocket test-websocket-leaks test-websocket-tls \
         test-websocket-loopback test-netplay-mutation test-netplay-soak \
         netplay-server netplay-matrix \
@@ -283,7 +283,21 @@ endef
         makefile-check makefile-lint makefile-docs-check \
         makefile-targets-check makefile-dry-run \
         architecture-check complexity-check complexity-report \
-        file-size-check encoding-check baseline-check quality-report
+        file-size-check encoding-check baseline-check quality-report \
+        schemas-check abi-surface \
+        guard-decomp guard-allow-update guard-emsdk guard-tsan-preset \
+        platform-info build-host package-host test-host \
+        debug build-release relwithdebinfo minsizerel \
+        build-target list-targets build-clean compile-commands \
+        emscripten emscripten-st emscripten-test emscripten-serve \
+        switch switch-check package-switch \
+        tsan test-asan test-ubsan test-tsan sanitizer-matrix test-sanitizers \
+        asset-repro-check package-repro-check clean-room-check \
+        reproducibility-check reproduce \
+        package-current package-all package-checksums package-sbom \
+        package-verify package-clean package-smoke-test \
+        release release-prepare release-build release-verify release-notes \
+        status versions environment graph-deps graph-targets logs-tail report
 
 # ------------------------------------------------------------------------------
 # Guards

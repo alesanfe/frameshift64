@@ -103,6 +103,11 @@ verify `strings(release binary)` does not contain its name.
 | `SSB64_PERF_LOG` | emit one `SSB64 Perf:` line per ~10 s window with frame-cost P50/P95/P99/max (µs) — parsed by `tools/analysis/netplay_metrics.py` into the same metrics pipeline as netplay counters |
 | `SSB64_HEAP_FRAMES` | MSVC Debug only: opt-in to per-frame debug-block-list walks. Off by default because walking the live list while resource workers mutate it faults on recycled nodes and each first-chance AV dumps ~50 MB via the vectored handler. |
 | `SSB64_I18N_DIAG` | log the first 8 `TR()` lookups per run (key, lang, table size, HIT/MISS) — translation-drift debugging |
+| `SSB64_VJOY`, `SSB64_VJOY_SCRIPT`, `SSB64_VJOY_EXIT` | virtual-gamepad test hook (`SSB64_TEST_HOOKS` builds only): `VJOY=1` attaches an SDL virtual joystick through the normal binding path, `VJOY_SCRIPT="F:B[:H],…"` presses button B at frame F held H frames, `VJOY_EXIT=N` exits at frame N |
+| `SSB64_COROTRACE` | Emscripten only: coroutine trampoline trace to console (`coroutine_emscripten.cpp`) |
+| `SSB64_OSTRACE` | Emscripten only: `osSendMesg`-thread resume/exit trace (`n64_stubs.c`) |
+| `SSB64_MQSEND` | Emscripten only: scheduler-task message-queue send trace (`n64_stubs.c`) |
+| `SSB64_SCHEDTRACE` | Emscripten only: decomp scheduler exec trace (`components/decomp/src/sys/scheduler.c`) — wasm audio/scheduling debugging |
 
 *Policy:* gating rule = "does setting this mutate gameplay, let a
 packet/peer/session be accepted that correct validation would reject, inject

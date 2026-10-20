@@ -31,4 +31,7 @@ default: help ## [Workflow] Show help
 
 doctor-full: doctor env-check submodules-check worktree-check ## [Workflow] Full environment diagnostic
 
-verify-all: verify security abi-check worktree-check ## [Workflow] Exhaustive verification (verify + security + ABI + worktree)
+# verify-all is the exhaustive gate — it requires a clean tree
+# (worktree-check is part of reproducibility). For day-to-day iteration on
+# a dirty tree use verify / verify-fast.
+verify-all: verify security abi-check reproducibility-check ## [Workflow] Exhaustive gate (needs clean tree: repro + ABI + security)

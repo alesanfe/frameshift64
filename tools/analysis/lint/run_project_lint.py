@@ -131,7 +131,12 @@ def configure_cmake(args) -> int:
     if args.generator:
         cmd += ["-G", args.generator]
     print("\nConfiguring build-lint:\n" + render_command(cmd))
-    return subprocess.run(cmd, cwd=ROOT, check=False).returncode
+    try:
+        return subprocess.run(cmd, cwd=ROOT, check=False).returncode
+    except OSError:
+        print("error: cmake not found on PATH — install CMake or pass "
+              "--skip-configure", file=sys.stderr)
+        return 2
 
 
 def build_checks(args) -> list:
@@ -228,6 +233,19 @@ def build_checks(args) -> list:
               [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
                                    "check_public_api.py")],
               "public-api.txt", required=True),
+        # ABI surface: decomp-facing headers' exported symbols vs
+        # config/abi-surface-baseline.txt — a diff IS the ABI bump review.
+        Check("abi-surface",
+              [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
+                                   "check_abi_surface.py")],
+              "abi-surface.txt", required=True),
+        # JSON Schema contracts: every specs/schemas/*.schema.json
+        # meta-validates, accepts its valid fixture, rejects the invalid
+        # one. The executable contract behind specs/.
+        Check("json-schemas",
+              [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
+                                   "check_json_schemas.py")],
+              "json-schemas.txt", required=True),
         Check("test-policy",
               [sys.executable, str(ROOT / "tools" / "analysis" / "lint" /
                                    "check_test_policy.py")],

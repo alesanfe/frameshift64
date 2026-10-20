@@ -9,13 +9,17 @@
 # ==============================================================================
 
 .PHONY: test-netplay test-lobby test-lobby-contract test-lobby-chaos \
-        test-lobby-fuzz test-workerd \
+        test-lobby-fuzz test-workerd protocol-check \
         test-websocket test-websocket-leaks test-websocket-tls \
         test-websocket-loopback test-netplay-mutation test-netplay-soak \
         netplay-server netplay-matrix
 
 test-netplay: ## [Netplay] Native netplay suite (protocol + transport + loopback)
 	@$(CTEST) --test-dir "$(BUILD_DIR)" -L netplay $(CTEST_PARALLEL) \
+	  $(CTEST_VERBOSE)
+
+protocol-check: ## [Netplay] Packet-format/handshake protocol tests (CTest label)
+	@$(CTEST) --test-dir "$(BUILD_DIR)" -L protocol $(CTEST_PARALLEL) \
 	  $(CTEST_VERBOSE)
 
 test-lobby: lobby-test test-workerd ## [Netplay] Lobby domain/security/fuzz + workerd

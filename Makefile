@@ -18,10 +18,12 @@ include make/quality.mk       # lint/module-deps/env/docs/cvar/golden + docs-ser
 include make/security.mk      # semgrep/dependency-audit/sbom/release-binary-check
 include make/abi.mk           # port_* ABI version/exports/compat gates
 include make/decomp.mk        # facade over components/decomp Makefile
-include make/reproducibility.mk # clean-worktree / generated-source gates
-include make/packaging.mk     # package/package-<os>
-include make/release.mk       # release-check/release-dry-run
+include make/reproducibility.mk # clean-worktree / generated-source / repro gates
+include make/platforms.mk     # platform-info/emscripten/switch/tsan/config builds
+include make/packaging.mk     # package/package-<os>/package-verify
+include make/release.mk       # release/release-dry-run/release-notes
 include make/workflows.mk     # dev/pre-commit/pre-push/verify-all composites
+include make/diagnostics.mk   # status/versions/environment/graph/report
 include make/makefile.mk      # self-validation of the facade
 include make/help.mk          # categorized help (help/help-all/help-*)
 include make/platforms/android.mk

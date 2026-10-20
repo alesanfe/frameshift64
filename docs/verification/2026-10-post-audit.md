@@ -69,7 +69,8 @@ run (883 checks, small warm-up noise documented in
 - Submodule dirty diffs (decomp 296 / game-runtime 125 / libultraship
   317 lines) belong to parallel work — preserved under
   `out/audit-capture/`, not incorporated.
-- `services/netplay-lobby/tmp_probe/` — untracked probe output.
+- services/netplay-lobby probe output (tmp_probe/, untracked — removed
+  after the audit).
 
 ## Known limitations
 

@@ -8,7 +8,7 @@ verify-fast: layout-check format-check module-deps retired-paths-check test ## [
 quick-check: module-deps retired-paths-check test  ## [Quality] Fast local gate
 check: layout-check lint module-deps env-check docs-check retired-paths-check \
        cvar-check gen-headers-check complexity-check file-size-check \
-       encoding-check makefile-check \
+       encoding-check makefile-check schemas-check \
        test-suite ## [Quality] Main static quality gate
 	@$(MAKE) --no-print-directory TEST_SUITE=pull-request test-suite
 	@$(call success,Quality gate passed)
@@ -55,6 +55,9 @@ static-analysis: configure  ## [Quality] CMake static-analysis target, if regist
 
 module-deps:  ## [Quality] Architectural dependency rules vs baseline
 	@$(PYTHON) "$(MODULE_DEPS_SCRIPT)"
+
+schemas-check:  ## [Quality] Validate specs/schemas/*.schema.json + fixtures
+	@$(PYTHON) tools/analysis/lint/check_json_schemas.py
 
 env-check:  ## [Quality] env_vars.md catalog coverage
 	@$(PYTHON) "$(ENV_VARS_SCRIPT)"

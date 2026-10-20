@@ -37,6 +37,9 @@ makefile-dry-run: ## [Makefile] Dry-run leaf workflows (catches undefined vars/r
 	@$(MAKE) -n verify-fast >/dev/null
 	@$(MAKE) -n netplay-matrix >/dev/null
 	@$(MAKE) -n help-all >/dev/null
+	@$(MAKE) -n reproducibility-check >/dev/null
+	@$(MAKE) -n release VERSION=0.0.0 >/dev/null
+	@$(MAKE) -n report >/dev/null
 	@$(call success,workflow dry-runs parsed)
 
 makefile-check: makefile-lint makefile-docs-check makefile-targets-check \

@@ -14,9 +14,9 @@ ABI_BASELINE := config/abi/exports.json
 ABI_DIR     := config/abi
 
 .PHONY: abi-check abi-version abi-exports abi-baseline abi-compat abi-report \
-        abi-consumer-c abi-consumer-cpp guard-allow-update
+        abi-consumer-c abi-consumer-cpp abi-surface guard-allow-update
 
-abi-check: abi-version abi-exports abi-compat ## [ABI] Run every ABI check
+abi-check: abi-version abi-exports abi-compat abi-surface ## [ABI] Run every ABI check
 
 abi-version: ## [ABI] Validate PORT_ABI_* constants and public headers
 	@$(PROJECT_PYTHON) $(ABI_TOOLS)/check_abi_version.py
@@ -27,10 +27,17 @@ abi-exports: guard-exe ## [ABI] Diff exported port_* symbols against the baselin
 	  --baseline "$(ABI_BASELINE)" \
 	  --report "$(REPORT_DIR)/abi-exports.json"
 
-abi-baseline: guard-allow-update guard-exe ## [ABI] Rewrite the baseline (needs ALLOW_UPDATE=1)
+# abi-surface audits the SOURCE-level contract (declared signatures +
+# C++ leakage across the decomp boundary) — no binary needed, so it runs
+# even before a build exists.
+abi-surface: ## [ABI] Audit the declared decomp<->port ABI surface
+	@$(PROJECT_PYTHON) tools/analysis/lint/check_abi_surface.py
+
+abi-baseline: guard-allow-update guard-exe ## [ABI] Rewrite BOTH baselines (needs ALLOW_UPDATE=1)
 	@$(PROJECT_PYTHON) $(ABI_TOOLS)/check_exports.py \
 	  --binary "$(EXE_DIR)" \
 	  --baseline "$(ABI_BASELINE)" --update
+	@$(PROJECT_PYTHON) tools/analysis/lint/check_abi_surface.py --update
 
 abi-compat: guard-exe ## [ABI] Enforce semver vs the last released ABI
 	@$(PROJECT_PYTHON) $(ABI_TOOLS)/check_compatibility.py \
