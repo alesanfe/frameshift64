@@ -1,0 +1,102 @@
+name: Sanitizers
+
+# Dynamic-analysis gate for the netplay transport layer. Two jobs on
+# Ubuntu/GCC (matches the toolchain validated locally on WSL):
+#
+#   asan-ubsan — AddressSanitizer + UndefinedBehaviorSanitizer
+#   tsan       — ThreadSanitizer (needs ADDR_NO_RANDOMIZE off via setarch)
+#
+# Only the transport/protocol test subset is built: the real production
+# backend TUs compile into the test binaries, so ASan/UBSan see real
+# socket+thread churn and TSan sees real lock interleavings — the fake-
+# backend unit test can't reach those paths. Full-game instrumentation is
+# out of scope (the decomp TUs are not sanitizer-clean upstream).
+#
+# The loopback leak tests spawn the Python RFC6455 server — python3 is
+# preinstalled on the runner image. ws_curl_* targets only register when
+# the discovered libcurl is >= 7.86 (ubuntu-22.04's 7.81 isn't, so they
+# skip silently here; the x64-windows job covers the curl backend).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sanitizers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  asan-ubsan:
+    name: ASan+UBSan (gcc)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      SAN_FLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+          fetch-depth: 0
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc g++ python3
+      - name: Configure
+        run: |
+          cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DNON_PORTABLE=ON -DSSB64_BUILD_TESTING=ON \
+            -DCMAKE_C_FLAGS="$SAN_FLAGS" \
+            -DCMAKE_CXX_FLAGS="$SAN_FLAGS" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build netplay test subset
+        run: |
+          cmake --build build-asan --target \
+            ws_uplink_test ws_web_test ws_ingress_test netpacket_test \
+            ws_fallback_leak_test lobby_json_test \
+            netstats_test netfriends_test -j"$(nproc)"
+      - name: Test
+        run: |
+          ctest --test-dir build-asan -L netplay --output-on-failure
+
+  tsan:
+    name: TSan (gcc)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      SAN_FLAGS: "-fsanitize=thread -fno-omit-frame-pointer"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+          fetch-depth: 0
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc g++ python3
+      - name: Configure
+        run: |
+          cmake -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DNON_PORTABLE=ON -DSSB64_BUILD_TESTING=ON \
+            -DCMAKE_C_FLAGS="$SAN_FLAGS" \
+            -DCMAKE_CXX_FLAGS="$SAN_FLAGS" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+      - name: Build concurrency test subset
+        run: |
+          cmake --build build-tsan --target \
+            ws_uplink_test ws_web_test ws_ingress_test \
+            ws_fallback_leak_test -j"$(nproc)"
+      - name: Test
+        # TSan's shadow-memory map collides with ASLR on newer kernels
+        # ("unexpected memory mapping"); setarch -R disables randomization
+        # for the test processes. Run it unconditionally — it is a
+        # no-op-safe personality flag on runners that don't need it.
+        run: |
+          setarch -R ctest --test-dir build-tsan \
+            -L "concurrency|leak" --output-on-failure
