@@ -1,3 +1,4 @@
+// @ts-check
 // board_page.mjs — self-contained public portal page served at GET / by
 // both the worker and node-lobby. Pure template: no storage access — the
 // page fetches the service's own JSON endpoints (/leaderboard, /history,

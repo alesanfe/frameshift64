@@ -39,7 +39,7 @@ import {
 import {
   isValidCrashReport, crashReportRecord,
 } from "../../domain/crash.mjs";
-import { BOARD_PAGE_HTML } from "../../domain/board_page.mjs";
+import { BOARD_PAGE_HTML } from "../../interfaces/web/board_page.mjs";
 
 const json = (c, obj, status = 200) => c.json(obj, status);
 

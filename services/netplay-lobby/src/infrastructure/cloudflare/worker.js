@@ -1,3 +1,4 @@
+// @ts-check
 // BattleShip netplay lobby — Cloudflare Worker entrypoint.
 //
 // Thin adapter over the shared lobby surface: HTTP routes live in
@@ -17,7 +18,7 @@ import { LobbyRoom } from "../../domain/room.mjs";
 import { Leaderboard } from "../../domain/leaderboard.mjs";
 import { Bracket } from "../../domain/bracket.mjs";
 import { CRASH_RING } from "../../domain/crash.mjs";
-import { BOARD_PAGE_HTML } from "../../domain/board_page.mjs";
+import { BOARD_PAGE_HTML } from "../../interfaces/web/board_page.mjs";
 import { createLobbyApp } from "../../interfaces/http/app.mjs";
 
 /* Paths served by the leaderboard Durable Object (HTTP only — no ws).

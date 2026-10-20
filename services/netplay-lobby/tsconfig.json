@@ -1,0 +1,27 @@
+{
+  // Stage 1 of the JS→TS migration (see docs/decisions direction):
+  // incremental, opt-in per file — checkJs stays off globally so the
+  // check is green today, and each .mjs gains `// @ts-check` as it is
+  // migrated to strict types (or renamed to .ts). As of the adoption
+  // commit, worker.js / node-lobby.mjs / board_page.mjs are opted in;
+  // the domain files carry ~240 strict errors and migrate per-file:
+  // contracts → domain → application → interfaces → infrastructure.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": ["ES2022", "WebWorker"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.mjs", "src/**/*.ts", "tests/**/*.mjs", "tests/**/*.ts"],
+  "exclude": ["node_modules", "tmp_probe"]
+}
