@@ -272,6 +272,21 @@ foreach(store netstats netfriends)
         LABELS "unit;netplay;persistence;deterministic" TIMEOUT 15)
 endforeach()
 
+# ── unit/abi ───────────────────────────────────────────────────────────
+# Real C consumer of the port_* ABI (post-audit item 44): the test file is
+# .c — a C++ token in the public headers or a missing extern "C" guard on
+# port_abi_version fails compile/link, which is exactly what a signature
+# audit cannot see. Links the real implementation TU so the binary checks
+# header-version vs linked-runtime agreement.
+add_executable(port_api_consumer_test
+    unit/abi/port_api_consumer_test.c
+    ${CMAKE_SOURCE_DIR}/src/game/engine/port_api/port_api.cpp)
+target_include_directories(port_api_consumer_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/game/engine/port_api)
+add_test(NAME port_api_consumer_test COMMAND port_api_consumer_test)
+set_tests_properties(port_api_consumer_test PROPERTIES
+    LABELS "unit;abi;deterministic" TIMEOUT 15)
+
 # ── unit/presentation ──────────────────────────────────────────────────
 # Static structural check over the PortMenu widget registry (§52/§53):
 # no empty sidebars, no ImGui label collisions, every interactive widget
