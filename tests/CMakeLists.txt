@@ -85,6 +85,19 @@ smash_add_test(NAME lobby_json_test TYPE unit TIMEOUT 15
     LABELS netplay protocol deterministic)
 target_include_directories(lobby_json_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# ── abi ────────────────────────────────────────────────────────────────
+# C11 consumer of the port_api contract headers (tests/abi/) — proves the
+# decomp-facing ABI compiles as plain C and that the version negotiation
+# round-trips. Any C++ type leaking into the contract headers fails here.
+smash_add_test(NAME port_abi_consumer_test TYPE unit TIMEOUT 15
+    SOURCES
+        abi/port_abi_consumer.c
+        ${CMAKE_SOURCE_DIR}/src/game/engine/port_api/port_api.cpp
+    LIBRARIES smash_test_support
+    LABELS abi deterministic)
+target_include_directories(port_abi_consumer_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/game/engine/port_api)
+
 # Shared WS ingress bounds (src/networking/netplay/transport/
 # websocket_transport_internal.h) — header-inline helpers, compiles
 # standalone; pins the queue-cap contract all backends rely on.
@@ -271,21 +284,6 @@ foreach(store netstats netfriends)
     set_tests_properties(${store}_corrupt_test PROPERTIES
         LABELS "unit;netplay;persistence;deterministic" TIMEOUT 15)
 endforeach()
-
-# ── unit/abi ───────────────────────────────────────────────────────────
-# Real C consumer of the port_* ABI (post-audit item 44): the test file is
-# .c — a C++ token in the public headers or a missing extern "C" guard on
-# port_abi_version fails compile/link, which is exactly what a signature
-# audit cannot see. Links the real implementation TU so the binary checks
-# header-version vs linked-runtime agreement.
-add_executable(port_api_consumer_test
-    unit/abi/port_api_consumer_test.c
-    ${CMAKE_SOURCE_DIR}/src/game/engine/port_api/port_api.cpp)
-target_include_directories(port_api_consumer_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/game/engine/port_api)
-add_test(NAME port_api_consumer_test COMMAND port_api_consumer_test)
-set_tests_properties(port_api_consumer_test PROPERTIES
-    LABELS "unit;abi;deterministic" TIMEOUT 15)
 
 # ── unit/presentation ──────────────────────────────────────────────────
 # Static structural check over the PortMenu widget registry (§52/§53):

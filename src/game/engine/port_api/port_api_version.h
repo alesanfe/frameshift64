@@ -34,6 +34,15 @@ extern "C" {
  * caller-supplied version for safety checks, always call this. */
 unsigned int port_abi_version(void);
 
+/* Negotiation: a consumer built against `consumer_version` asks whether
+ * the linked runtime can serve it. Returns 0 (PORT_OK) when
+ * consumer MAJOR == runtime MAJOR and consumer MINOR <= runtime MINOR;
+ * PORT_ERR_UNSUPPORTED otherwise. `consumer_struct_size` is reserved
+ * for the future size-tagged negotiation of the top-level API struct;
+ * pass sizeof(PortAbiInfo) from the consumer's headers. */
+unsigned int port_abi_check_compatibility(unsigned int consumer_version,
+                                          unsigned int consumer_struct_size);
+
 /* Compile-time guard a consumer can use to refuse an older header:
  *     static_assert(PORT_ABI_CURRENT >= 0x0100, "port ABI too old"); */
 
