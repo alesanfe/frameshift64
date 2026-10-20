@@ -1,3 +1,4 @@
+// @ts-check
 /* Shared crash-report policy for the Cloudflare worker and the local
  * node lobby — both frontends MUST enforce identical field validation or
  * a report accepted locally gets dropped in production. Keep the field
@@ -9,6 +10,7 @@ export const CRASH_RING = 50;          // stored reports before eviction (worker
 
 /* isValidCrashReport(body) -> bool. `lus_tail` is optional (older clients
  * only sent info + log_tail); everything else is required. */
+/** @param {import("../contracts/replay.js").CrashReportBody} body */
 export function isValidCrashReport(body) {
   return body != null && typeof body === "object" &&
     body.kind === "crash" &&
@@ -20,10 +22,14 @@ export function isValidCrashReport(body) {
 
 /* Fields to persist — never spread the raw client doc into storage:
  * unknown keys could smuggle unbounded junk past the validation above. */
+/** @param {import("../contracts/replay.js").CrashReportBody} body
+ *  @returns {import("../contracts/replay.js").CrashReportRecord} */
 export function crashReportRecord(body) {
+  // Callers must run isValidCrashReport first — the casts encode that
+  // precondition (a validated body's fields are the declared strings).
   return {
-    info: body.info,
-    log_tail: body.log_tail,
-    lus_tail: body.lus_tail || "",
+    info: /** @type {string} */ (body.info),
+    log_tail: /** @type {string} */ (body.log_tail),
+    lus_tail: /** @type {string} */ (body.lus_tail || ""),
   };
 }

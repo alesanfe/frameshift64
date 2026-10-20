@@ -1,3 +1,4 @@
+// @ts-check
 /* Shared replay-share policy for the Cloudflare worker and the local
  * node lobby — both frontends MUST enforce identical limits or a pack
  * accepted locally gets rejected in production. Keep every magic number
@@ -15,6 +16,8 @@ export function mintReplayId() {
 
 /* validateReplayBody(body) -> {data, by} | null. `data` is the verified
  * base64 blob; `by` is the uploader name truncated to display bounds. */
+/** @param {import("../contracts/replay.js").ReplayUploadBody} body
+ *  @returns {import("../contracts/replay.js").ValidatedReplayBody | null} */
 export function validateReplayBody(body) {
   if (body == null || typeof body !== "object" ||
       typeof body.data !== "string" ||
@@ -28,6 +31,7 @@ export function validateReplayBody(body) {
 
 /* evictOldest(index) -> evicted records. Caller drops each one's
  * backing store (DO key, file, …). */
+/** @param {import("../contracts/replay.js").ReplayIndexEntry[]} index */
 export function evictOldest(index) {
   const gone = [];
   while (index.length > REPLAY_RING) gone.push(index.shift());

@@ -1,3 +1,4 @@
+// @ts-check
 // Lobby protocol domain — shared constants and pure helpers.
 //
 // Consumed by BOTH lobby adapters so they can't drift:
@@ -44,7 +45,9 @@ export function newUpkey() {
  * (approximate — isolates aren't shared, and that's fine: it bounds
  * scanning cost, it isn't a security boundary); on Node it's process-wide. */
 export function makeJoinLimiter() {
+  /** @type {Map<string, number[]>} */
   const hits = new Map();  // key -> timestamps[]
+  /** @param {string} key */
   return function allow(key) {
     const now = Date.now();
     const ts = (hits.get(key) || []).filter((t) => now - t < JOIN_WINDOW_MS);
