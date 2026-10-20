@@ -16,6 +16,9 @@ const { chromium } = require('playwright');
 
 const BASE = 'http://localhost:8931/BattleShip.html';
 const LOBBY = 'ws://localhost:8799';
+// Web is relay-only (no UDP in browsers): FORCE_RELAY skips the 3s
+// direct-punch grace so the smoke exercises the intended path immediately.
+const RELAY = '&SSB64_LOBBY_FORCE_RELAY=1';
 const BOOT_MS = 120000; // wasm boot + o2r restore can be slow
 const LOBBY_MS = 45000;
 
@@ -38,7 +41,7 @@ function watch(page, tag, logs) {
   const pageA = await ctxA.newPage();
   watch(pageA, 'A', logsA);
   console.log('[A] open host tab');
-  await pageA.goto(`${BASE}?autostart=1&lobby_host=${encodeURIComponent(LOBBY)}`);
+  await pageA.goto(`${BASE}?autostart=1&lobby_host=${encodeURIComponent(LOBBY)}${RELAY}`);
 
   // wait for the room code — published to window.__ssb64_lobby_code by
   // auto_code_write on Emscripten once the host reaches WAITING
@@ -63,7 +66,7 @@ function watch(page, tag, logs) {
   const pageB = await ctxB.newPage();
   watch(pageB, 'B', logsB);
   console.log(`[B] open join tab code=${code}`);
-  await pageB.goto(`${BASE}?autostart=1&lobby_join=${encodeURIComponent(LOBBY)}&lobby_code=${code}`);
+  await pageB.goto(`${BASE}?autostart=1&lobby_join=${encodeURIComponent(LOBBY)}&lobby_code=${code}${RELAY}`);
 
   // wait until both tabs log a connected-state lobby line
   const waitConnected = async (logs, tag) => {

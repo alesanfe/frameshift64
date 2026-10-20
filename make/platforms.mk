@@ -12,7 +12,7 @@ EMSDK_DIR := out/emsdk
 .PHONY: platform-info build-host package-host test-host \
         debug build-release relwithdebinfo minsizerel \
         emscripten emscripten-st emscripten-test emscripten-serve \
-        guard-web-build \
+        guard-web-build guard-web-node guard-web-python \
         test-web test-web-picker test-web-privacy test-web-matrix \
         test-web-gamepad test-web-kb test-web-lobby test-web-lobby-public \
         switch switch-check switch-sdk-install package-switch \
@@ -112,9 +112,33 @@ WEB_BUILD_DIR := $(OUT_DIR)/build/web-wasm
 WEB_PORT      ?= 8931
 WEB_DIR       := platforms/web
 
+# Node playwright is not a repo dependency — the scripts resolve it from
+# wherever Node can find it. Override when it lives in another project:
+#   make test-web-gamepad PW_NODE_PATH=C:/path/to/node_modules
+PW_NODE_PATH ?= $(NODE_PATH)
+
 guard-web-build:
 	@if [[ ! -f "$(WEB_BUILD_DIR)/BattleShip.html" ]]; then \
 	  $(call failure,web build missing — run: make emscripten); exit 1; fi
+
+guard-web-node:
+	@if ! NODE_PATH="$(PW_NODE_PATH)" $(NODE) -e \
+	    "require.resolve('playwright')" 2>/dev/null; then \
+	  $(call failure,node cannot resolve 'playwright'); \
+	  printf "  install it or point at an existing one:\n" >&2; \
+	  printf "    npm i -D playwright\n" >&2; \
+	  printf "    make %s PW_NODE_PATH=<dir-with>/node_modules\n" \
+	    "test-web-<name>" >&2; \
+	  exit 1; fi
+
+guard-web-python:
+	@if ! $(PROJECT_PYTHON) -c "import playwright" 2>/dev/null; then \
+	  $(call failure,python 'playwright' package missing); \
+	  printf "  install into the project venv (or whichever python PROJECT_PYTHON resolves):\n" \
+	    >&2; \
+	  printf "    pip install playwright && python -m playwright install\n" \
+	    >&2; \
+	  exit 1; fi
 
 # serve a build dir, run a node playwright script against it, tear down.
 # Usage: $(call web-served-test,<script>,<build-dir>)
@@ -122,40 +146,45 @@ define web-served-test
 	@rv=0; \
 	$(PROJECT_PYTHON) $(WEB_DIR)/serve.py "$(2)" "$(WEB_PORT)" >/dev/null 2>&1 & \
 	srv=$$!; sleep 2; \
-	$(NODE) "$(WEB_DIR)/$(1)" || rv=$$?; \
-	kill $$srv 2>/dev/null; wait $$srv 2>/dev/null; exit $$rv
+	NODE_PATH="$(PW_NODE_PATH)" $(NODE) "$(WEB_DIR)/$(1)" || rv=$$?; \
+	kill $$srv 2>/dev/null || true; wait $$srv 2>/dev/null || true; \
+	exit $$rv
 endef
 
 test-web: test-web-picker test-web-privacy test-web-matrix \
           test-web-gamepad test-web-kb ## [Platform] All ROM-free web E2Es (needs playwright)
 
-test-web-picker: guard-web-build ## [Platform] ROM-picker pipeline E2E (fake ROM, no extraction)
+# For the single-thread variant point WEB_BUILD_DIR at the ST dir:
+#   make test-web WEB_BUILD_DIR=out/build/web-wasm-st
+test-web-picker: guard-web-build guard-web-python ## [Platform] ROM-picker pipeline E2E (fake ROM, no extraction)
 	@$(PROJECT_PYTHON) $(WEB_DIR)/pw_rom_picker.py "$(WEB_BUILD_DIR)"
 
-test-web-privacy: guard-web-build ## [Platform] ROM-privacy E2E (no bytes leave the page)
+test-web-privacy: guard-web-build guard-web-python ## [Platform] ROM-privacy E2E (no bytes leave the page)
 	@$(PROJECT_PYTHON) $(WEB_DIR)/pw_rom_privacy.py "$(WEB_BUILD_DIR)"
 
-test-web-matrix: guard-web-build ## [Platform] Browser-matrix boot smoke (chromium/firefox/webkit)
+test-web-matrix: guard-web-build guard-web-python ## [Platform] Browser-matrix boot smoke (chromium/firefox/webkit)
 	@$(PROJECT_PYTHON) $(WEB_DIR)/pw_browser_matrix.py "$(WEB_BUILD_DIR)"
 
-test-web-gamepad: guard-web-build ## [Platform] Simulated-gamepad E2E (consumed pad state)
+test-web-gamepad: guard-web-build guard-web-node ## [Platform] Simulated-gamepad E2E (consumed pad state)
 	$(call web-served-test,pw_gamepad_sim.js,$(WEB_BUILD_DIR))
 
-test-web-kb: guard-web-build ## [Platform] Soft-keyboard viewport E2E
+test-web-kb: guard-web-build guard-web-node ## [Platform] Soft-keyboard viewport E2E
 	$(call web-served-test,pw_kb_viewport.js,$(WEB_BUILD_DIR))
 
 # The lobby smokes need a running lobby too — test-web-lobby composes
 # serve + node-lobby + the two-tab ws:// flow.
-test-web-lobby: guard-web-build ## [Platform] Two-tab lobby smoke over local lobby (:8799)
+test-web-lobby: guard-web-build guard-web-node ## [Platform] Two-tab lobby smoke over local lobby (:8799)
 	@rv=0; \
-	( cd "$(LOBBY_DIR)" && $(NODE) src/infrastructure/local/node-lobby.mjs \
-	    >/dev/null 2>&1 ) & lobby=$$!; \
+	( cd "$(LOBBY_DIR)" && exec $(NODE) \
+	    src/infrastructure/local/node-lobby.mjs >/dev/null 2>&1 ) & \
+	lobby=$$!; \
 	$(PROJECT_PYTHON) $(WEB_DIR)/serve.py "$(WEB_BUILD_DIR)" "$(WEB_PORT)" \
 	    >/dev/null 2>&1 & srv=$$!; sleep 3; \
-	$(NODE) "$(WEB_DIR)/pw_lobby_smoke.js" || rv=$$?; \
-	kill $$srv $$lobby 2>/dev/null; wait 2>/dev/null; exit $$rv
+	NODE_PATH="$(PW_NODE_PATH)" $(NODE) "$(WEB_DIR)/pw_lobby_smoke.js" || rv=$$?; \
+	kill $$srv $$lobby 2>/dev/null || true; wait 2>/dev/null || true; \
+	exit $$rv
 
-test-web-lobby-public: guard-web-build ## [Platform] Public-lobby match smoke
+test-web-lobby-public: guard-web-build guard-web-node ## [Platform] Public-lobby match smoke
 	$(call web-served-test,pw_lobby_public_smoke.js,$(WEB_BUILD_DIR))
 
 # ------------------------------------------------------------------------------
