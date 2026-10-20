@@ -195,6 +195,15 @@ std::string LowerExt(const std::string& name) {
 
 /* mods/ installable dir/file name derived from a URL basename or local
  * path stem: [A-Za-z0-9 ._-], spaces preserved, capped at 64 chars. */
+static void TrimNameEdges(std::string& out) {
+    while (!out.empty() && (out.front() == ' ' || out.front() == '.')) {
+        out.erase(out.begin());
+    }
+    while (!out.empty() && (out.back() == ' ' || out.back() == '.')) {
+        out.pop_back();
+    }
+}
+
 std::string SanitizeInstallName(std::string in) {
     std::string out;
     out.reserve(in.size());
@@ -207,12 +216,7 @@ std::string SanitizeInstallName(std::string in) {
         }
         if (out.size() >= 64) break;
     }
-    while (!out.empty() && (out.front() == ' ' || out.front() == '.')) {
-        out.erase(out.begin());
-    }
-    while (!out.empty() && (out.back() == ' ' || out.back() == '.')) {
-        out.pop_back();
-    }
+    TrimNameEdges(out);
     return out.empty() ? "custom-pack" : out;
 }
 

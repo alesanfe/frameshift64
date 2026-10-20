@@ -439,10 +439,9 @@ static inline uint32_t relocPtrToFileOff(const uint8_t *p) {
 // is a straight memcpy stitch of each strip's rendered rows — byte-identity
 // with the source texels is structural, not a property of a conversion
 // round-trip. Returns nullptr on any validation failure.
-static uint8_t *deriveWallpaperRGBA16(const StageEntry &se) {
-    if (se.wp_file_id >= RELOC_FILE_COUNT) {
-        return nullptr;
-    }
+// Load the stage's reloc file resource and return its decoded bytes.
+// Returns nullptr on any failure (missing ctx/resource, wrong resource type).
+static std::shared_ptr<RelocFile> loadWallpaperRelocFile(const StageEntry &se) {
     auto ctx = Ship::Context::GetInstance();
     if (!ctx) {
         return nullptr;
@@ -462,67 +461,114 @@ static uint8_t *deriveWallpaperRGBA16(const StageEntry &se) {
                  se.name, gRelocFileTable[se.wp_file_id]);
         return nullptr;
     }
-    const std::vector<uint8_t> &data = relocFile->Data;
+    return relocFile;
+}
 
+struct WallpaperSpriteHeader {
+    int w;
+    int h;
+    int nbitmaps;
+    int bm_h;
+    uint8_t fmt;
+    uint8_t siz;
+};
+
+// Parse + validate the Sprite header at wp_sprite_off against the stage's
+// expected geometry. Returns false (and logs) on any mismatch.
+static bool parseWallpaperHeader(const StageEntry &se, const std::vector<uint8_t> &data,
+                                 WallpaperSpriteHeader *hdr, const uint8_t **sp) {
     const size_t so = se.wp_sprite_off;
     if (so + 68 > data.size()) {
         port_log("CSS stage assets: %s — sprite offset 0x%zX out of range (file %zu bytes)\n",
                  se.name, so, data.size());
-        return nullptr;
+        return false;
     }
-    const uint8_t *sp = data.data() + so;
-    const int w        = be_s16(sp + 0x04);
-    const int h        = be_s16(sp + 0x06);
-    const int nbitmaps = be_s16(sp + 0x28);
-    const int bm_h     = be_s16(sp + 0x2C);
-    const uint8_t fmt  = sp[0x30];
-    const uint8_t siz  = sp[0x31];
+    *sp = data.data() + so;
+    hdr->w        = be_s16(*sp + 0x04);
+    hdr->h        = be_s16(*sp + 0x06);
+    hdr->nbitmaps = be_s16(*sp + 0x28);
+    hdr->bm_h     = be_s16(*sp + 0x2C);
+    hdr->fmt      = (*sp)[0x30];
+    hdr->siz      = (*sp)[0x31];
 
-    if (w != se.bg_w || h != se.bg_h || nbitmaps != se.bg_nbitmaps ||
-        bm_h != se.bg_bm_h || fmt != kFmtRGBA16 || siz != kSiz16b) {
+    if (hdr->w != se.bg_w || hdr->h != se.bg_h || hdr->nbitmaps != se.bg_nbitmaps ||
+        hdr->bm_h != se.bg_bm_h || hdr->fmt != kFmtRGBA16 || hdr->siz != kSiz16b) {
         port_log("CSS stage assets: %s — wallpaper sprite geometry mismatch "
                  "(%dx%d nbm=%d bmh=%d fmt=%d siz=%d); skipping derivation\n",
-                 se.name, w, h, nbitmaps, bm_h, fmt, siz);
+                 se.name, hdr->w, hdr->h, hdr->nbitmaps, hdr->bm_h, hdr->fmt, hdr->siz);
+        return false;
+    }
+    return true;
+}
+
+// Unswizzle + copy one bitmap strip's rendered rows into out[*out_off].
+// Returns false (and logs) on any range/geometry error.
+static bool stitchWallpaperStrip(const StageEntry &se, const std::vector<uint8_t> &data,
+                                 int i, uint32_t bm_array, const WallpaperSpriteHeader &hdr,
+                                 uint8_t *out, size_t out_bytes, size_t *out_off) {
+    const size_t bm_off = (size_t)bm_array + (size_t)i * 16;
+    if (bm_off + 16 > data.size()) {
+        return false;
+    }
+    const uint8_t *bm = data.data() + bm_off;
+    const int bm_w    = be_s16(bm + 0x00);
+    const int bm_rows = be_s16(bm + 0x0C); // actualHeight (rendered + fringe)
+    const uint32_t buf_off = relocPtrToFileOff(bm + 0x08);
+
+    const size_t strip_bytes = (size_t)bm_w * (size_t)bm_rows * 2u;
+    const int rendered = std::min(hdr.bm_h, bm_rows);
+    const size_t rendered_bytes = (size_t)bm_w * (size_t)rendered * 2u;
+    if (bm_w != hdr.w || bm_rows <= 0 ||
+        (size_t)buf_off + strip_bytes > data.size() ||
+        *out_off + rendered_bytes > out_bytes) {
+        port_log("CSS stage assets: %s — bitmap[%d] out of range/mismatch\n",
+                 se.name, i);
+        return false;
+    }
+
+    std::vector<uint8_t> strip(data.data() + buf_off, data.data() + buf_off + strip_bytes);
+    UnswizzleRgba16Strip(strip.data(), bm_w, bm_rows);
+
+    std::memcpy(out + *out_off, strip.data(), rendered_bytes);
+    *out_off += rendered_bytes;
+    return true;
+}
+
+// Decode the stage's o2r wallpaper Sprite into the final full-image RGBA16 BE
+// buffer (se.bg_w x se.bg_h, malloc'd — same contract as loadPNGAsRGBA16BE).
+// The unswizzled strip rows already ARE the target format, so the background
+// is a straight memcpy stitch of each strip's rendered rows — byte-identity
+// with the source texels is structural, not a property of a conversion
+// round-trip. Returns nullptr on any validation failure.
+static uint8_t *deriveWallpaperRGBA16(const StageEntry &se) {
+    if (se.wp_file_id >= RELOC_FILE_COUNT) {
+        return nullptr;
+    }
+    auto relocFile = loadWallpaperRelocFile(se);
+    if (!relocFile) {
+        return nullptr;
+    }
+    const std::vector<uint8_t> &data = relocFile->Data;
+
+    WallpaperSpriteHeader hdr;
+    const uint8_t *sp = nullptr;
+    if (!parseWallpaperHeader(se, data, &hdr, &sp)) {
         return nullptr;
     }
 
     const uint32_t bm_array = relocPtrToFileOff(sp + 0x34);
-    const size_t out_bytes = (size_t)w * h * 2u;
+    const size_t out_bytes = (size_t)hdr.w * hdr.h * 2u;
     uint8_t *out = static_cast<uint8_t *>(std::malloc(out_bytes));
     if (!out) {
         return nullptr;
     }
     size_t out_off = 0;
 
-    std::vector<uint8_t> strip;
-    for (int i = 0; i < nbitmaps; ++i) {
-        const size_t bm_off = (size_t)bm_array + (size_t)i * 16;
-        if (bm_off + 16 > data.size()) {
+    for (int i = 0; i < hdr.nbitmaps; ++i) {
+        if (!stitchWallpaperStrip(se, data, i, bm_array, hdr, out, out_bytes, &out_off)) {
             std::free(out);
             return nullptr;
         }
-        const uint8_t *bm = data.data() + bm_off;
-        const int bm_w    = be_s16(bm + 0x00);
-        const int bm_rows = be_s16(bm + 0x0C); // actualHeight (rendered + fringe)
-        const uint32_t buf_off = relocPtrToFileOff(bm + 0x08);
-
-        const size_t strip_bytes = (size_t)bm_w * (size_t)bm_rows * 2u;
-        const int rendered = std::min(bm_h, bm_rows);
-        const size_t rendered_bytes = (size_t)bm_w * (size_t)rendered * 2u;
-        if (bm_w != w || bm_rows <= 0 ||
-            (size_t)buf_off + strip_bytes > data.size() ||
-            out_off + rendered_bytes > out_bytes) {
-            port_log("CSS stage assets: %s — bitmap[%d] out of range/mismatch\n",
-                     se.name, i);
-            std::free(out);
-            return nullptr;
-        }
-
-        strip.assign(data.data() + buf_off, data.data() + buf_off + strip_bytes);
-        UnswizzleRgba16Strip(strip.data(), bm_w, bm_rows);
-
-        std::memcpy(out + out_off, strip.data(), rendered_bytes);
-        out_off += rendered_bytes;
     }
 
     if (out_off != out_bytes) {
@@ -600,6 +646,85 @@ std::mutex  sCacheMutex;
 // Core getter implementation.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// getSprite helpers
+// ---------------------------------------------------------------------------
+
+struct SpritePlan {
+    const char *suffix;
+    int expected_w;
+    int expected_h;
+};
+
+static SpritePlan spritePlanFor(AssetKind asset_kind, const StageEntry &se) {
+    if (asset_kind == kBackground) {
+        return { "_background.png", se.bg_w, se.bg_h };
+    }
+    if (asset_kind == kName) {
+        return { "_name.png", kNameW, kNameH };
+    }
+    if (asset_kind == kEmblem) {
+        return { "_emblem.png", kEmblemW, kEmblemH };
+    }
+    return { "_small.png", kIconW, kIconH };
+}
+
+// A PNG override exists on disk: it is authoritative. If it fails to load
+// (corrupt, wrong size — already logged above), return NULL so the question
+// mark surfaces the broken override instead of silently substituting the
+// ROM-derived image under a modder's art.
+static uint8_t *pixelsFromPng(AssetKind asset_kind, const std::string &full_path,
+                              const SpritePlan &plan) {
+    return (asset_kind == kEmblem)
+               ? loadPNGAsIA4(full_path, plan.expected_w, plan.expected_h)
+               : loadPNGAsRGBA16BE(full_path, plan.expected_w, plan.expected_h);
+}
+
+// No PNG anywhere (the normal case on release builds, which cannot ship
+// ROM-derived files) — derive from the o2r wallpaper sprite, or fall back to
+// the compiled-in nameplate. Returns nullptr when nothing can be produced.
+static uint8_t *pixelsFromFallback(const StageEntry &se, AssetKind asset_kind,
+                                   CacheEntry &entry, std::string *full_path) {
+    if ((asset_kind == kBackground || asset_kind == kIcon) &&
+        !entry.derive_failed) {
+        uint8_t *pixels = deriveFromArchive(se, asset_kind);
+        if (pixels) {
+            *full_path = std::string(gRelocFileTable[se.wp_file_id]) + " (o2r-derived)";
+            return pixels;
+        }
+        entry.derive_failed = true;
+        return nullptr;
+    }
+    if (asset_kind == kName && se.baked_name != nullptr) {
+        // No PNG override — use the compiled-in nameplate (rendered from a
+        // text string at build time; the normal case on release builds).
+        // Heap copy so the cache owns a mutable, high-VA buffer like every
+        // other pixel source.
+        const size_t nbytes = (size_t)kNameW * kNameH * 2;
+        uint8_t *pixels = static_cast<uint8_t *>(std::malloc(nbytes));
+        if (pixels) {
+            std::memcpy(pixels, se.baked_name, nbytes);
+            *full_path = std::string(se.name) + "_name (baked)";
+        }
+        return pixels;
+    }
+    return nullptr;
+}
+
+static Sprite *buildSpriteFor(AssetKind asset_kind, const StageEntry &se,
+                              uint8_t *pixels, CacheEntry *entry) {
+    if (asset_kind == kBackground) {
+        return buildBackgroundSprite(se, pixels, entry);
+    }
+    if (asset_kind == kName) {
+        return buildNameSprite(pixels, entry);
+    }
+    if (asset_kind == kEmblem) {
+        return buildEmblemSprite(pixels, entry);
+    }
+    return buildIconSprite(pixels, entry);
+}
+
 Sprite *getSprite(int gkind, AssetKind asset_kind) {
     // Find the stage table entry.
     int stage_idx = -1;
@@ -624,71 +749,26 @@ Sprite *getSprite(int gkind, AssetKind asset_kind) {
     // Cache miss: load the PNG.
     const StageEntry &se = STAGE_TABLE[stage_idx];
 
-    // For nameplate sprites: return NULL immediately if this stage has no PNG.
+    // For nameplate/emblem sprites: return NULL immediately if this stage has no PNG.
     if (asset_kind == kName && !se.has_name_png) {
         return nullptr;
     }
-
-    // For emblem sprites: return NULL immediately if this stage has no PNG.
     if (asset_kind == kEmblem && !se.has_emblem_png) {
         return nullptr;
     }
 
-    const char *suffix;
-    int expected_w, expected_h;
-    if (asset_kind == kBackground) {
-        suffix     = "_background.png";
-        expected_w = se.bg_w;
-        expected_h = se.bg_h;
-    } else if (asset_kind == kName) {
-        suffix     = "_name.png";
-        expected_w = kNameW;
-        expected_h = kNameH;
-    } else if (asset_kind == kEmblem) {
-        suffix     = "_emblem.png";
-        expected_w = kEmblemW;
-        expected_h = kEmblemH;
-    } else {
-        suffix     = "_small.png";
-        expected_w = kIconW;
-        expected_h = kIconH;
-    }
+    const SpritePlan plan = spritePlanFor(asset_kind, se);
 
-    std::string rel_path = std::string("assets/css_icons/") + se.name + suffix;
+    std::string rel_path = std::string("assets/css_icons/") + se.name + plan.suffix;
     std::string full_path = locateCssAssetPNG(rel_path);
 
     // Emblems use the ROM's IA4 single-bitmap format (alpha-mask source); all
     // other CSS sprites use RGBA16. Pick the converter accordingly.
     uint8_t *pixels = nullptr;
     if (!full_path.empty()) {
-        // A PNG override exists on disk: it is authoritative. If it fails to
-        // load (corrupt, wrong size — already logged above), return NULL so
-        // the question mark surfaces the broken override instead of silently
-        // substituting the ROM-derived image under a modder's art.
-        pixels = (asset_kind == kEmblem)
-                     ? loadPNGAsIA4(full_path, expected_w, expected_h)
-                     : loadPNGAsRGBA16BE(full_path, expected_w, expected_h);
-    } else if ((asset_kind == kBackground || asset_kind == kIcon) &&
-               !entry.derive_failed) {
-        // No PNG anywhere (the normal case on release builds, which cannot
-        // ship ROM-derived files) — derive from the o2r wallpaper sprite.
-        pixels = deriveFromArchive(se, asset_kind);
-        if (pixels) {
-            full_path = std::string(gRelocFileTable[se.wp_file_id]) + " (o2r-derived)";
-        } else {
-            entry.derive_failed = true;
-        }
-    } else if (asset_kind == kName && se.baked_name != nullptr) {
-        // No PNG override — use the compiled-in nameplate (rendered from a
-        // text string at build time; the normal case on release builds).
-        // Heap copy so the cache owns a mutable, high-VA buffer like every
-        // other pixel source.
-        const size_t nbytes = (size_t)kNameW * kNameH * 2;
-        pixels = static_cast<uint8_t *>(std::malloc(nbytes));
-        if (pixels) {
-            std::memcpy(pixels, se.baked_name, nbytes);
-            full_path = std::string(se.name) + "_name (baked)";
-        }
+        pixels = pixelsFromPng(asset_kind, full_path, plan);
+    } else {
+        pixels = pixelsFromFallback(se, asset_kind, entry, &full_path);
     }
     if (!pixels) {
         // Nothing to load or derive — return NULL so caller falls back to
@@ -696,16 +776,7 @@ Sprite *getSprite(int gkind, AssetKind asset_kind) {
         return nullptr;
     }
 
-    Sprite *sp = nullptr;
-    if (asset_kind == kBackground) {
-        sp = buildBackgroundSprite(se, pixels, &entry);
-    } else if (asset_kind == kName) {
-        sp = buildNameSprite(pixels, &entry);
-    } else if (asset_kind == kEmblem) {
-        sp = buildEmblemSprite(pixels, &entry);
-    } else {
-        sp = buildIconSprite(pixels, &entry);
-    }
+    Sprite *sp = buildSpriteFor(asset_kind, se, pixels, &entry);
 
     if (!sp) {
         std::free(pixels);
@@ -714,7 +785,7 @@ Sprite *getSprite(int gkind, AssetKind asset_kind) {
     }
 
     port_log("CSS stage assets: loaded %s (%dx%d, %d bitmaps)\n",
-             full_path.c_str(), expected_w, expected_h, entry.nbitmaps);
+             full_path.c_str(), plan.expected_w, plan.expected_h, entry.nbitmaps);
     return sp;
 }
 

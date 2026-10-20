@@ -846,7 +846,8 @@ set(SSB64_MODULE_SCOPE_config
     src/observability)            # port_log.h — shared log sink
 set(SSB64_MODULE_SCOPE_persistence
     src/persistence
-    src/observability)
+    src/observability
+    src/platform/coroutine)      # coroutine.h — port_save_write defers in-fiber
 set(SSB64_MODULE_SCOPE_i18n
     src/i18n
     src/observability             # port_log.h
@@ -909,6 +910,7 @@ set(SSB64_MODULE_SCOPE_rendering
     src/rendering/cosmetics
     src/rendering/interpolation
     src/rendering/shaders src/rendering/textures/hires
+    src/shared                         # fnv1a.h — HashKeyHasher canonical hash
     src/game/gameplay                  # enhancements.h
     src/observability)
 set(SSB64_MODULE_SCOPE_presentation

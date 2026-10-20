@@ -378,32 +378,12 @@ void flush_sim_queue(void)
     }
 }
 
-/* Shared send path for port_udp_send / port_udp_link_send: applies the
- * simulated network conditions, then routes to an endpoint or relay link.
- * In order: loss drops, corruption flips one random byte (integrity checks
- * downstream are expected to reject it), duplication schedules a twin, and
- * reorder holds the packet long enough to overtake later sends — all driven
- * by the seeded sim rng so runs are reproducible. */
-int send_routed(const uint8_t *bytes, int size, const sockaddr_in *to, int relay_link)
+/* Enqueue a delayed/duplicated packet in release_ms order (jitter/reorder
+ * may reorder packets, exactly like a real network), log high-water marks,
+ * then release everything due. */
+static void sim_enqueue(const uint8_t *payload, int size, const sockaddr_in *to,
+                        int relay_link, unsigned int delay, bool duplicate)
 {
-    if (sSimLossPct != 0 && (sSimRng() % 100u) < sSimLossPct) {
-        return size;
-    }
-    std::vector<uint8_t> corrupted;
-    const uint8_t *payload = bytes;
-    if (sSimCorruptPct != 0 && size > 0 && (sSimRng() % 100u) < sSimCorruptPct) {
-        corrupted.assign(bytes, bytes + size);
-        corrupted[sSimRng() % corrupted.size()] ^= static_cast<uint8_t>(1u + (sSimRng() % 0xFFu));
-        payload = corrupted.data();
-    }
-    unsigned int delay = sSimLatencyMs + ((sSimJitterMs != 0) ? (sSimRng() % (sSimJitterMs + 1)) : 0);
-    if (sSimReorderPct != 0 && (sSimRng() % 100u) < sSimReorderPct) {
-        delay += 1 + (sSimRng() % sSimReorderWindowMs);
-    }
-    const bool duplicate = (sSimDupPct != 0) && (sSimRng() % 100u) < sSimDupPct;
-    if (delay == 0 && !duplicate) {
-        return route_send(payload, size, to, relay_link);
-    }
     PendingPacket packet;
     packet.release_ms = port_udp_now_ms() + delay;
     packet.bytes.assign(payload, payload + size);
@@ -432,8 +412,39 @@ int send_routed(const uint8_t *bytes, int size, const sockaddr_in *to, int relay
         }
     }
     flush_sim_queue();
+}
+
+/* Shared send path for port_udp_send / port_udp_link_send: applies the
+ * simulated network conditions, then routes to an endpoint or relay link.
+ * In order: loss drops, corruption flips one random byte (integrity checks
+ * downstream are expected to reject it), duplication schedules a twin, and
+ * reorder holds the packet long enough to overtake later sends — all driven
+ * by the seeded sim rng so runs are reproducible. */
+int send_routed(const uint8_t *bytes, int size, const sockaddr_in *to, int relay_link)
+{
+    if (sSimLossPct != 0 && (sSimRng() % 100u) < sSimLossPct) {
+        return size;
+    }
+    std::vector<uint8_t> corrupted;
+    const uint8_t *payload = bytes;
+    if (sSimCorruptPct != 0 && size > 0 && (sSimRng() % 100u) < sSimCorruptPct) {
+        corrupted.assign(bytes, bytes + size);
+        corrupted[sSimRng() % corrupted.size()] ^= static_cast<uint8_t>(1u + (sSimRng() % 0xFFu));
+        payload = corrupted.data();
+    }
+    unsigned int delay = sSimLatencyMs + ((sSimJitterMs != 0) ? (sSimRng() % (sSimJitterMs + 1)) : 0);
+    if (sSimReorderPct != 0 && (sSimRng() % 100u) < sSimReorderPct) {
+        delay += 1 + (sSimRng() % sSimReorderWindowMs);
+    }
+    const bool duplicate = (sSimDupPct != 0) && (sSimRng() % 100u) < sSimDupPct;
+    if (delay == 0 && !duplicate) {
+        return route_send(payload, size, to, relay_link);
+    }
+    sim_enqueue(payload, size, to, relay_link, delay, duplicate);
     return size;
 }
+
+
 
 } // namespace
 
@@ -676,6 +687,28 @@ extern "C" int port_udp_link_send(int link, const void *data, int size)
  * is only trusted as far as the link table allows: a relayed frame that
  * claims a slot with no active relay-backed link is dropped rather than
  * routed to a link the attacker picked. */
+/* First active relay link, or -1. */
+static int first_relay_link()
+{
+    for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
+        if (sLinks[i].active && sLinks[i].relay) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Link index whose endpoint matches `from` (non-relay links only). */
+static int link_by_endpoint(const sockaddr_in *from)
+{
+    for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
+        if (sLinks[i].active && !sLinks[i].relay && same_endpoint(*from, sLinks[i].addr)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 int link_of(const sockaddr_in *from, int kind, const uint8_t *bytes, int size)
 {
     if (kind == 1) {
@@ -683,19 +716,22 @@ int link_of(const sockaddr_in *from, int kind, const uint8_t *bytes, int size)
             const int link = (size >= 1 && bytes[0] < PORT_UDP_LINK_MAX) ? bytes[0] : -1;
             return (link >= 0 && sLinks[link].active && sLinks[link].relay) ? link : -1;
         }
-        for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
-            if (sLinks[i].active && sLinks[i].relay) {
-                return i;
-            }
-        }
-        return -1;
+        return first_relay_link();
     }
-    for (int i = 0; i < PORT_UDP_LINK_MAX; i++) {
-        if (sLinks[i].active && !sLinks[i].relay && same_endpoint(*from, sLinks[i].addr)) {
-            return i;
-        }
+    return link_by_endpoint(from);
+}
+
+static void udp_log_unrouteable(int kind, const sockaddr_in *from, int link,
+                                int size, const uint8_t *bytes)
+{
+    static unsigned int sUnrouteable = 0;
+    if ((++sUnrouteable % 300u) == 1u || sUnrouteable < 4u) {
+        char ip[INET_ADDRSTRLEN] = "?";
+        inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
+        port_log("SSB64 UDP: unrouteable #%u kind=%d from=%s:%u link=%d size=%d head=%02X%02X\n",
+                 sUnrouteable, kind, ip, static_cast<unsigned>(ntohs(from->sin_port)),
+                 link, size, size > 0 ? bytes[0] : 0, size > 1 ? bytes[1] : 0);
     }
-    return -1;
 }
 
 extern "C" int port_udp_link_recv(int *out_link, void *buffer, int capacity)
@@ -718,14 +754,7 @@ extern "C" int port_udp_link_recv(int *out_link, void *buffer, int capacity)
         int payload = (kind == 1 && sRelayFramed) ? size - 1 : size;
 
         if (link < 0 || payload <= 0 || payload > capacity) {
-            static unsigned int sUnrouteable = 0;
-            if ((++sUnrouteable % 300u) == 1u || sUnrouteable < 4u) {
-                char ip[INET_ADDRSTRLEN] = "?";
-                inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
-                port_log("SSB64 UDP: unrouteable #%u kind=%d from=%s:%u link=%d size=%d head=%02X%02X\n",
-                         sUnrouteable, kind, ip, static_cast<unsigned>(ntohs(from.sin_port)),
-                         link, size, size > 0 ? bytes[0] : 0, size > 1 ? bytes[1] : 0);
-            }
+            udp_log_unrouteable(kind, &from, link, size, bytes);
             continue;   /* stray, oversized or unrouteable: keep draining */
         }
         std::memmove(buffer, bytes + (size - payload), payload);
@@ -733,6 +762,8 @@ extern "C" int port_udp_link_recv(int *out_link, void *buffer, int capacity)
         return payload;
     }
 }
+
+
 
 extern "C" int port_udp_local_endpoint(char *out, int capacity)
 {

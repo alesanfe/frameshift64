@@ -35,6 +35,11 @@ int port_save_read(uintptr_t offset, void *dst, size_t size);
 // Returns 0 on success, -1 on I/O error.
 int port_save_write(uintptr_t offset, const void *src, size_t size);
 
+// Flush deferred SRAM writes to disk. Call once per frame from the main
+// context — writes issued inside coroutines are cached and only applied
+// to the file here (fd_sync/fsync cannot run inside an Emscripten fiber).
+void port_save_drain(void);
+
 #ifdef __cplusplus
 }
 #endif

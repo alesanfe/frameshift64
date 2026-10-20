@@ -3,31 +3,7 @@
 // cache, and portBuildSyntheticRelocResource. Split from SyntheticReloc.cpp.
 // ---------------------------------------------------------------------------
 
-#include "SyntheticReloc.h"
-#include "RelocFile.h"
-#include "RelocFileTable.h"
-#include "ssb64_reloc_rebuild.h"
 #include "synth_reloc_internal.h"
-
-#include <cstring>
-#include <algorithm>
-#include <deque>
-#include <filesystem>
-#include <functional>
-#include <mutex>
-#include <unordered_map>
-#include <vector>
-
-#include <spdlog/spdlog.h>
-
-#include <ship/Context.h>
-#include <ship/resource/ResourceManager.h>
-#include <ship/resource/archive/ArchiveManager.h>
-#include <ship/resource/type/Blob.h>
-#include <ship/utils/StrHash64.h>
-#include <fast/resource/type/DisplayList.h>
-#include <fast/resource/type/Texture.h>
-#include <fast/resource/type/Vertex.h>
 
 
 // ---------------------------------------------------------------------------
@@ -236,6 +212,534 @@ static bool portRemapDepWordOffset(uint16_t dep_file_id, uint32_t dep_word_off, 
 	return true;
 }
 
+// Build state shared across the passes of portBuildSyntheticRelocResource.
+// The builder was split into per-phase helpers over this context without
+// changing any arithmetic, logging, or early-exit order.
+struct SynthBuildCtx
+{
+	explicit SynthBuildCtx(const SSB64SyntheticRelocSpec &base)
+	    : baseSpec(&base), spec(base),
+	      slices(base.slices, base.slices + base.slice_count),
+	      resources(base.slice_count), actual_sizes(base.slice_count, 0),
+	      dl_scratch(base.slice_count), overridden(base.slice_count, false)
+	{
+		// Extend the original slices with the transitive closure of new mod
+		// assets. These have no vanilla address and are packed after the base.
+		spec.slices = slices.data();
+		// hash -> slice index map for DL reference resolution
+		hashToSlice.reserve(spec.slice_count);
+		for (uint32_t i = 0; i < spec.slice_count; i++)
+		{
+			hashToSlice.emplace(CRC64(spec.slices[i].path), i);
+		}
+	}
+
+	const SSB64SyntheticRelocSpec *baseSpec;
+	SSB64SyntheticRelocSpec spec;
+	std::vector<SSB64SyntheticSlice> slices;
+	std::deque<std::string> extra_paths; // c_str pointers survive append
+	std::unordered_map<uint64_t, uint32_t> hashToSlice;
+	std::vector<std::shared_ptr<Ship::IResource>> resources;
+	std::vector<uint32_t> actual_sizes;
+	std::vector<SynthDl> dl_scratch;
+	std::vector<bool> overridden;
+	bool any_override = false;
+	bool relayout = false;
+	SynthCacheEntry entry;
+	std::shared_ptr<Ship::ResourceManager> rm;
+	std::shared_ptr<Ship::ArchiveManager> am;
+	std::shared_ptr<Ship::Archive> baseArchive;
+};
+
+// Recursion guard for cross-file remaps (portRemapDepWordOffset may
+// build a dependency bundle mid-build).
+struct BuildStackGuard
+{
+	BuildStackGuard(uint32_t id) { sSynthBuildStack.push_back(id); }
+	~BuildStackGuard() { sSynthBuildStack.pop_back(); }
+};
+
+static bool SynthResolveReference(SynthBuildCtx &B, uint64_t hash, int32_t &target)
+{
+	const auto found = B.hashToSlice.find(hash);
+	if (found != B.hashToSlice.end())
+	{
+		target = static_cast<int32_t>(found->second);
+		return true;
+	}
+	const auto path = B.am->HashToString(hash);
+	if (!path || B.slices.size() >= B.baseSpec->slice_count + 4096) return false;
+	std::shared_ptr<Ship::IResource> resource;
+	try { resource = B.rm->LoadResource(*path); }
+	catch (const std::exception &e)
+	{
+		spdlog::error("[deblob] new asset '{}' failed to parse: {}", *path, e.what());
+		return false;
+	}
+	SSB64SyntheticSliceKind kind;
+	if (std::dynamic_pointer_cast<Fast::DisplayList>(resource)) kind = SSB64SyntheticSliceKind::DisplayList;
+	else if (std::dynamic_pointer_cast<Fast::Vertex>(resource)) kind = SSB64SyntheticSliceKind::Vertex;
+	else if (std::dynamic_pointer_cast<Fast::Texture>(resource)) kind = SSB64SyntheticSliceKind::Texture;
+	else if (std::dynamic_pointer_cast<Ship::Blob>(resource)) kind = SSB64SyntheticSliceKind::Blob;
+	else return false;
+	target = static_cast<int32_t>(B.slices.size());
+	B.extra_paths.push_back(*path);
+	B.slices.push_back({B.extra_paths.back().c_str(), B.spec.vanilla_data_size, 0, kind});
+	B.spec.slices = B.slices.data();
+	B.spec.slice_count = static_cast<uint32_t>(B.slices.size());
+	B.hashToSlice.emplace(hash, target);
+	B.resources.push_back(resource);
+	B.actual_sizes.push_back(0);
+	B.dl_scratch.emplace_back();
+	B.overridden.push_back(true);
+	B.any_override = true;
+	return true;
+}
+
+// Derive the byte size of one loaded slice resource and, for display
+// lists, the un-OTR'd scratch program. Fails on a kind/resource mismatch.
+static bool SynthMeasureSlice(SynthBuildCtx &B, uint32_t i,
+                              const SSB64SyntheticSlice &slice,
+                              const std::shared_ptr<Ship::IResource> &resource)
+{
+	switch (slice.kind)
+	{
+	case SSB64SyntheticSliceKind::Blob:
+	{
+		auto blob = std::dynamic_pointer_cast<Ship::Blob>(resource);
+		if (!blob)
+		{
+			spdlog::error("[deblob] slice '{}' is not a Blob", slice.path);
+			return false;
+		}
+		// LUS's Blob factory appends kBlobPadding (16) zero bytes for
+		// N64 overread tolerance (ship BlobFactory.cpp) — the payload
+		// is Data.size() minus that pad.
+		constexpr uint32_t kLusBlobPadding = 16;
+		B.actual_sizes[i] = (uint32_t)blob->Data.size() >= kLusBlobPadding
+		                        ? (uint32_t)blob->Data.size() - kLusBlobPadding
+		                        : (uint32_t)blob->Data.size();
+		break;
+	}
+	case SSB64SyntheticSliceKind::Texture:
+	{
+		auto texture = std::dynamic_pointer_cast<Fast::Texture>(resource);
+		if (!texture)
+		{
+			spdlog::error("[deblob] slice '{}' is not a Texture", slice.path);
+			return false;
+		}
+		B.actual_sizes[i] = texture->ImageDataSize;
+		break;
+	}
+	case SSB64SyntheticSliceKind::Vertex:
+	{
+		auto vertex = std::dynamic_pointer_cast<Fast::Vertex>(resource);
+		if (!vertex)
+		{
+			spdlog::error("[deblob] slice '{}' is not a Vertex", slice.path);
+			return false;
+		}
+		B.actual_sizes[i] = (uint32_t)(vertex->VertexList.size() * sizeof(Vtx));
+		break;
+	}
+	case SSB64SyntheticSliceKind::DisplayList:
+	{
+		auto dl = std::dynamic_pointer_cast<Fast::DisplayList>(resource);
+		if (!dl)
+		{
+			spdlog::error("[deblob] slice '{}' is not a DisplayList", slice.path);
+			return false;
+		}
+		SynthDl scratch;
+		auto resolveReference = [&B](uint64_t hash, int32_t &target) -> bool {
+			return SynthResolveReference(B, hash, target);
+		};
+		if (!portUnOtrDisplayList(*dl, B.spec, resolveReference, slice.path,
+		                          slice.vanilla_size, !B.overridden[i], scratch))
+		{
+			return false;
+		}
+		B.dl_scratch[i] = std::move(scratch);
+		B.actual_sizes[i] = (uint32_t)(B.dl_scratch[i].words.size() * sizeof(uint32_t));
+		break;
+	}
+	}
+	return true;
+}
+
+// --- pass 0: load slices, derive actual sizes, un-OTR display lists ---
+static bool SynthLoadSlices(SynthBuildCtx &B)
+{
+	for (uint32_t i = 0; i < B.spec.slice_count; i++)
+	{
+		const auto slice = B.spec.slices[i];
+		std::shared_ptr<Ship::IResource> resource = B.resources[i];
+		try
+		{
+			if (!resource) resource = B.rm->LoadResource(slice.path);
+		}
+		catch (const std::exception &e)
+		{
+			// A factory parse failure surfaces here through the async
+			// loader's future; one bad slice must degrade this bundle,
+			// never kill the process.
+			spdlog::error("[deblob] slice '{}' failed to parse: {} (parent '{}')",
+			              slice.path, e.what(), B.spec.parent_path);
+			return false;
+		}
+		if (!resource)
+		{
+			spdlog::error("[deblob] missing slice '{}' for parent '{}'"
+			              " — diagnose: unzip -l BattleShip.o2r | grep {}",
+			              slice.path, B.spec.parent_path, B.spec.parent_path);
+			return false;
+		}
+		B.resources[i] = resource;
+		// Pinned LUS does not populate ResourceInitData::Parent. Resolve the
+		// actual factory path (including alt/ and .meta redirects) in the VFS.
+		const auto init = resource->GetInitData();
+		const std::string resource_path = init ? init->Path : slice.path;
+		const auto meta_archive = B.am->GetArchiveFromFile(std::string(slice.path) + ".meta");
+		B.overridden[i] = i >= B.baseSpec->slice_count || B.am->GetArchiveFromFile(resource_path) != B.baseArchive ||
+		                  (meta_archive && meta_archive != B.baseArchive);
+		B.any_override = B.any_override || B.overridden[i];
+
+		if (!SynthMeasureSlice(B, i, slice, resource))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+// --- layout ---
+// Fast path: every actual size matches the vanilla layout -> vanilla
+// offsets verbatim (I5 byte-exact). Otherwise RELAYOUT: keep vanilla
+// offsets up to the first resized slice, then pack forward with
+// 16-byte alignment (satisfies Gfx=8, Vtx=16, TMEM DMA sources, and
+// word-granular chain targets). Determinism note: vanilla inter-slice
+// padding before the first resize is preserved so the forced-relayout
+// gate (I6) can compare against the fast path.
+static uint32_t SynthComputeLayout(SynthBuildCtx &B)
+{
+	B.entry.layout_offsets.resize(B.spec.slice_count);
+	B.entry.actual_sizes = B.actual_sizes;
+	uint32_t cursor = 0;
+	for (uint32_t i = 0; i < B.spec.slice_count; i++)
+	{
+		if (!B.relayout)
+		{
+			B.entry.layout_offsets[i] = B.spec.slices[i].vanilla_offset;
+			if (B.actual_sizes[i] != B.spec.slices[i].vanilla_size)
+			{
+				B.relayout = true;
+				spdlog::info("[deblob] relayout: '{}' size 0x{:X} != vanilla 0x{:X} — "
+				             "repacking '{}' from slice {}",
+				             B.spec.slices[i].path, B.actual_sizes[i],
+				             B.spec.slices[i].vanilla_size, B.spec.parent_path, i);
+			}
+			cursor = B.entry.layout_offsets[i] + B.actual_sizes[i];
+		}
+		else
+		{
+			cursor = (cursor + 15u) & ~15u;
+			B.entry.layout_offsets[i] = cursor;
+			cursor += B.actual_sizes[i];
+		}
+	}
+	return B.relayout ? ((cursor + 7u) & ~7u)
+	                  : B.spec.vanilla_data_size;
+}
+
+// I9 structural policy for resized slices: a reference or slot that
+// lands at delta > 0 inside a slice is only meaningful when the
+// replacement preserved that prefix — allow with a warning while the
+// delta still fits, fail loudly when it does not.
+static bool SynthCheckDelta(const SynthBuildCtx &B, uint32_t slice_idx, uint32_t delta,
+                            const char *what, uint32_t width = 1)
+{
+	if (delta < B.actual_sizes[slice_idx] && width <= B.actual_sizes[slice_idx] - delta)
+	{
+		if (B.relayout && delta != 0 && B.spec.slices[slice_idx].vanilla_size != 0 &&
+		    B.actual_sizes[slice_idx] != B.spec.slices[slice_idx].vanilla_size)
+		{
+			spdlog::warn("[deblob] {} at +0x{:X} into resized slice '{}' — "
+			             "only valid for prefix-preserving replacements",
+			             what, delta, B.spec.slices[slice_idx].path);
+		}
+		return true;
+	}
+	spdlog::error("[deblob] I9 violated: {} at +0x{:X} exceeds resized slice"
+	              " '{}' (new size 0x{:X}) — diagnose: SSB64_SYNTH_INSPECT={}",
+	              what, delta, B.spec.slices[slice_idx].path,
+	              B.actual_sizes[slice_idx], B.spec.file_id);
+	return false;
+}
+
+// Emit one slice's payload into the packed image at its layout offset.
+static void SynthBlitSlice(SynthBuildCtx &B, RelocFile &out, uint32_t i,
+                         const SSB64SyntheticSlice &slice)
+{
+	const uint32_t off = B.entry.layout_offsets[i];
+	switch (slice.kind)
+	{
+	case SSB64SyntheticSliceKind::Blob:
+	{
+		auto blob = std::static_pointer_cast<Ship::Blob>(B.resources[i]);
+		std::memcpy(out.Data.data() + off, blob->Data.data(), B.actual_sizes[i]);
+		break;
+	}
+	case SSB64SyntheticSliceKind::Texture:
+	{
+		auto texture = std::static_pointer_cast<Fast::Texture>(B.resources[i]);
+		std::memcpy(out.Data.data() + off, texture->ImageData, B.actual_sizes[i]);
+		break;
+	}
+	case SSB64SyntheticSliceKind::Vertex:
+	{
+		auto vertex = std::static_pointer_cast<Fast::Vertex>(B.resources[i]);
+		size_t writeCursor = off;
+		for (const auto &v : vertex->VertexList)
+		{
+			portWriteBE16(out.Data, writeCursor + 0x0, (uint16_t)v.v.ob[0]);
+			portWriteBE16(out.Data, writeCursor + 0x2, (uint16_t)v.v.ob[1]);
+			portWriteBE16(out.Data, writeCursor + 0x4, (uint16_t)v.v.ob[2]);
+			portWriteBE16(out.Data, writeCursor + 0x6, v.v.flag);
+			portWriteBE16(out.Data, writeCursor + 0x8, (uint16_t)v.v.tc[0]);
+			portWriteBE16(out.Data, writeCursor + 0xA, (uint16_t)v.v.tc[1]);
+			out.Data[writeCursor + 0xC] = v.v.cn[0];
+			out.Data[writeCursor + 0xD] = v.v.cn[1];
+			out.Data[writeCursor + 0xE] = v.v.cn[2];
+			out.Data[writeCursor + 0xF] = v.v.cn[3];
+			writeCursor += sizeof(Vtx);
+		}
+		break;
+	}
+	case SSB64SyntheticSliceKind::DisplayList:
+		break; // handled by SynthPatchAndBlitDisplayList
+	}
+}
+
+// apply patches: target slice layout offset (+ addend), with
+// the seg-0x0E prefix restored for literal segment refs
+static bool SynthPatchDisplayList(SynthBuildCtx &B, uint32_t i)
+{
+	auto &scratch = B.dl_scratch[i];
+	const auto &slice = B.spec.slices[i];
+	for (const auto &p : scratch.patches)
+	{
+		const uint8_t opcode = scratch.words[p.word_index - 1] >> 24;
+		const auto kind = B.spec.slices[p.target_slice].kind;
+		if (B.overridden[i] &&
+		    ((opcode == 0x01 && kind != SSB64SyntheticSliceKind::Vertex) ||
+		     (opcode == 0xDE && kind != SSB64SyntheticSliceKind::DisplayList) ||
+		     (opcode == 0xFD && kind != SSB64SyntheticSliceKind::Texture && kind != SSB64SyntheticSliceKind::Blob)))
+		{
+			spdlog::error("[deblob] wrong resource type for command 0x{:02X} in '{}'", opcode, slice.path);
+			return false;
+		}
+		if (!SynthCheckDelta(B, (uint32_t)p.target_slice, p.addend, "DL reference",
+		                     opcode == 0xDE ? 8 : p.read_size))
+		{
+			return false;
+		}
+		uint32_t value = B.entry.layout_offsets[p.target_slice] + p.addend;
+		if (p.seg0e)
+		{
+			value = ((uint32_t)kSeg0E << 24) | (value & 0x00FFFFFF);
+		}
+		scratch.words[p.word_index] = value;
+	}
+	return true;
+}
+
+// --- pass 2: blit + patch ---
+static bool SynthBlitAndPatch(SynthBuildCtx &B, RelocFile &out)
+{
+	for (uint32_t i = 0; i < B.spec.slice_count; i++)
+	{
+		const auto &slice = B.spec.slices[i];
+		if (slice.kind == SSB64SyntheticSliceKind::DisplayList)
+		{
+			auto &scratch = B.dl_scratch[i];
+			if (!SynthPatchDisplayList(B, i))
+			{
+				return false;
+			}
+			const uint32_t off = B.entry.layout_offsets[i];
+			for (size_t w = 0; w < scratch.words.size(); w++)
+			{
+				portWriteBE32(out.Data, off + w * sizeof(uint32_t), scratch.words[w]);
+			}
+		}
+		else
+		{
+			SynthBlitSlice(B, out, i, slice);
+		}
+	}
+	return true;
+}
+
+// A named DL can reference another new DL. Reject cycles before those
+// references become an endless renderer call/branch chain.
+static bool SynthValidateDlAcyclic(const SynthBuildCtx &B)
+{
+	std::vector<uint8_t> visiting(B.spec.slice_count, 0);
+	std::function<bool(uint32_t)> visit = [&](uint32_t i) {
+		if (visiting[i] == 1) return false;
+		if (visiting[i] == 2) return true;
+		visiting[i] = 1;
+		for (const auto &p : B.dl_scratch[i].patches)
+		{
+			if (!p.seg0e && B.dl_scratch[i].words[p.word_index - 1] >> 24 == 0xDE &&
+			    !visit(static_cast<uint32_t>(p.target_slice))) return false;
+		}
+		visiting[i] = 2;
+		return true;
+	};
+	for (uint32_t i = 0; i < B.spec.slice_count; i++)
+	{
+		if (!visit(i))
+		{
+			spdlog::error("[deblob] cyclic display-list references in '{}'", B.spec.parent_path);
+			return false;
+		}
+	}
+	return true;
+}
+
+// explicit slot lists in layout coordinates
+static bool SynthEmitInternSlots(SynthBuildCtx &B, RelocFile &out)
+{
+	out.ExplicitInternSlots.reserve(B.spec.intern_slot_count);
+	for (uint32_t i = 0; i < B.spec.intern_slot_count; i++)
+	{
+		const auto &s = B.spec.intern_slots[i];
+		// A replacement DL owns its command stream. Vanilla slot positions
+		// describe the old program and must never be applied to the new one.
+		if (B.overridden[s.slot_slice] &&
+		    B.spec.slices[s.slot_slice].kind == SSB64SyntheticSliceKind::DisplayList) continue;
+		if (!SynthCheckDelta(B, s.slot_slice, s.slot_offset_in_slice, "intern slot position", 4) ||
+		    !SynthCheckDelta(B, s.target_slice, s.target_offset_in_slice, "intern slot target"))
+		{
+			return false;
+		}
+		RelocExplicitInternSlot slot;
+		slot.SlotByteOff = B.entry.layout_offsets[s.slot_slice] + s.slot_offset_in_slice;
+		slot.TargetByteOff = B.entry.layout_offsets[s.target_slice] + s.target_offset_in_slice;
+		out.ExplicitInternSlots.push_back(slot);
+		B.entry.intern_pairs.push_back(slot.SlotByteOff);
+		B.entry.intern_pairs.push_back(slot.TargetByteOff);
+	}
+	for (uint32_t i = 0; i < B.spec.slice_count; i++)
+	{
+		if (!B.overridden[i]) continue;
+		for (const auto &p : B.dl_scratch[i].patches)
+		{
+			if (p.seg0e) continue; // segmented references are resolved by the renderer
+			RelocExplicitInternSlot slot{
+				B.entry.layout_offsets[i] + p.word_index * 4,
+				B.entry.layout_offsets[p.target_slice] + p.addend};
+			out.ExplicitInternSlots.push_back(slot);
+			B.entry.intern_pairs.push_back(slot.SlotByteOff);
+			B.entry.intern_pairs.push_back(slot.TargetByteOff);
+		}
+	}
+	return true;
+}
+
+static bool SynthEmitExternSlots(SynthBuildCtx &B, RelocFile &out)
+{
+	out.ExplicitExternSlots.reserve(B.spec.extern_slot_count);
+	out.ExternFileIds.reserve(B.spec.extern_slot_count);
+	for (uint32_t i = 0; i < B.spec.extern_slot_count; i++)
+	{
+		const auto &s = B.spec.extern_slots[i];
+		if (B.overridden[s.slot_slice] &&
+		    B.spec.slices[s.slot_slice].kind == SSB64SyntheticSliceKind::DisplayList) continue;
+		if (!SynthCheckDelta(B, s.slot_slice, s.slot_offset_in_slice, "extern slot position", 4))
+		{
+			return false;
+		}
+		RelocExplicitExternSlot slot;
+		slot.SlotByteOff = B.entry.layout_offsets[s.slot_slice] + s.slot_offset_in_slice;
+		slot.DepFileId = s.dep_file_id;
+		// Cross-file fidelity: a dependency that is itself a relayouted
+		// deblobbed bundle moved its contents — remap the vanilla word
+		// offset through the dep's layout. Identity for unmodded deps.
+		if (!portRemapDepWordOffset(s.dep_file_id, s.dep_word_offset, slot.DepWordOff)) return false;
+		out.ExplicitExternSlots.push_back(slot);
+		// chain order == extern id order: lbRelocGetExternBytesNum walks
+		// this list to predict dependency allocation sizes
+		out.ExternFileIds.push_back(s.dep_file_id);
+	}
+	return true;
+}
+
+// Overridden DLs can address extern-file words through unpatchable
+// segmented encodings; each becomes an explicit extern slot.
+static bool SynthEmitDlExternSlots(SynthBuildCtx &B, RelocFile &out)
+{
+	for (uint32_t i = 0; i < B.spec.slice_count; i++)
+	{
+		if (!B.overridden[i] || B.spec.slices[i].kind != SSB64SyntheticSliceKind::DisplayList) continue;
+		const auto &scratch = B.dl_scratch[i];
+		for (uint32_t w = 1; w < scratch.words.size(); w += 2)
+		{
+			const uint32_t op = scratch.words[w - 1] >> 24;
+			if (op != 0x01 && op != 0xDE && op != 0xFD && op != 0xDC) continue;
+			if (std::any_of(scratch.patches.begin(), scratch.patches.end(),
+			                [w](const auto &p) { return p.word_index == w; })) continue;
+			const auto *external = portFindExternalDescriptor(B.spec, B.spec.slices[i].path, scratch.words[w]);
+			if (!external) continue; // validated segmented references need no relocation
+			RelocExplicitExternSlot slot;
+			slot.SlotByteOff = B.entry.layout_offsets[i] + w * 4;
+			slot.DepFileId = external->dep_file_id;
+			if (!portRemapDepWordOffset(slot.DepFileId, external->dep_word_offset, slot.DepWordOff)) return false;
+			out.ExplicitExternSlots.push_back(slot);
+			out.ExternFileIds.push_back(slot.DepFileId);
+		}
+	}
+	return true;
+}
+
+// I5 applies to resources from the extracted archive. An override can
+// legitimately change content while preserving every size and offset.
+static std::shared_ptr<RelocFile> SynthFinalize(SynthBuildCtx &B,
+                                                const std::shared_ptr<RelocFile> &relocFile,
+                                                uint32_t file_id, uint32_t data_size)
+{
+	B.entry.reloc = relocFile;
+	portDumpSynthInspect(B.spec, B.entry, B.actual_sizes, B.dl_scratch);
+	portDumpSynthBytesIfRequested(B.spec, *relocFile);
+
+	if (!B.any_override)
+	{
+		// Overridden bundles are validated structurally above.
+		uint32_t crc = portCrc32(relocFile->Data.data(), relocFile->Data.size());
+		if (crc != B.spec.relocated_view_crc32)
+		{
+			// Wrong bytes corrupt rendering and gameplay downstream; fail
+			// the build so the caller's fallback (archived parent) runs.
+			spdlog::error("[deblob] I5 violated: synthesized '{}' crc 0x{:08X} != spec 0x{:08X}"
+			              " — diagnose: SSB64_DUMP_SYNTH_RELOC_FILE_ID={} then compare with"
+			              " tools/generate_fighter_slices.py --only <Symbol> --check",
+			              B.spec.parent_path, crc, B.spec.relocated_view_crc32, B.spec.file_id);
+			return nullptr;
+		}
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(sSynthCacheMutex);
+		sSynthCache.emplace(file_id, std::move(B.entry));
+	}
+	spdlog::info("[deblob] synthesized '{}' from {} slices ({} bytes{})",
+	             B.spec.parent_path, B.spec.slice_count, data_size,
+	             B.any_override ? ", override" : ", crc ok");
+	return relocFile;
+}
+
 std::shared_ptr<RelocFile> portBuildSyntheticRelocResource(uint32_t file_id)
 {
 	const auto *specPtr = portGetSyntheticRelocSpec(file_id);
@@ -243,13 +747,6 @@ std::shared_ptr<RelocFile> portBuildSyntheticRelocResource(uint32_t file_id)
 	{
 		return nullptr;
 	}
-	// Extend the original slices with the transitive closure of new mod
-	// assets. These have no vanilla address and are packed after the base.
-	auto spec = *specPtr;
-	std::vector<SSB64SyntheticSlice> slices(spec.slices, spec.slices + spec.slice_count);
-	std::deque<std::string> extra_paths; // c_str pointers survive append
-	spec.slices = slices.data();
-
 	{
 		std::lock_guard<std::mutex> lock(sSynthCacheMutex);
 		auto it = sSynthCache.find(file_id);
@@ -265,458 +762,51 @@ std::shared_ptr<RelocFile> portBuildSyntheticRelocResource(uint32_t file_id)
 		spdlog::error("[deblob] no Ship::Context for synthetic file_id {}", file_id);
 		return nullptr;
 	}
-	auto rm = ctx->GetResourceManager();
-	auto am = rm->GetArchiveManager();
-	auto baseArchive = sBaseArchive.lock();
-	if (!baseArchive)
+
+	SynthBuildCtx B(*specPtr);
+	B.rm = ctx->GetResourceManager();
+	B.am = B.rm->GetArchiveManager();
+	B.baseArchive = sBaseArchive.lock();
+	if (!B.baseArchive)
 	{
 		spdlog::error("[deblob] base archive provenance was not registered");
 		return nullptr;
 	}
-
-	// Recursion guard for cross-file remaps (portRemapDepWordOffset may
-	// build a dependency bundle mid-build).
-	struct BuildStackGuard
-	{
-		BuildStackGuard(uint32_t id) { sSynthBuildStack.push_back(id); }
-		~BuildStackGuard() { sSynthBuildStack.pop_back(); }
-	} build_guard(file_id);
-
-	// hash -> slice index map for DL reference resolution
-	std::unordered_map<uint64_t, uint32_t> hashToSlice;
-	hashToSlice.reserve(spec.slice_count);
-	for (uint32_t i = 0; i < spec.slice_count; i++)
-	{
-		hashToSlice.emplace(CRC64(spec.slices[i].path), i);
-	}
+	BuildStackGuard build_guard(file_id);
 
 	// --- pass 0: load slices, derive actual sizes, un-OTR display lists ---
-	std::vector<std::shared_ptr<Ship::IResource>> resources(spec.slice_count);
-	std::vector<uint32_t> actual_sizes(spec.slice_count, 0);
-	std::vector<SynthDl> dl_scratch(spec.slice_count);
-	std::vector<bool> overridden(spec.slice_count, false);
-	bool any_override = false;
-	auto resolveReference = [&](uint64_t hash, int32_t &target) -> bool {
-		const auto found = hashToSlice.find(hash);
-		if (found != hashToSlice.end())
-		{
-			target = static_cast<int32_t>(found->second);
-			return true;
-		}
-		const auto path = am->HashToString(hash);
-		if (!path || slices.size() >= specPtr->slice_count + 4096) return false;
-		std::shared_ptr<Ship::IResource> resource;
-		try { resource = rm->LoadResource(*path); }
-		catch (const std::exception &e)
-		{
-			spdlog::error("[deblob] new asset '{}' failed to parse: {}", *path, e.what());
-			return false;
-		}
-		SSB64SyntheticSliceKind kind;
-		if (std::dynamic_pointer_cast<Fast::DisplayList>(resource)) kind = SSB64SyntheticSliceKind::DisplayList;
-		else if (std::dynamic_pointer_cast<Fast::Vertex>(resource)) kind = SSB64SyntheticSliceKind::Vertex;
-		else if (std::dynamic_pointer_cast<Fast::Texture>(resource)) kind = SSB64SyntheticSliceKind::Texture;
-		else if (std::dynamic_pointer_cast<Ship::Blob>(resource)) kind = SSB64SyntheticSliceKind::Blob;
-		else return false;
-		target = static_cast<int32_t>(slices.size());
-		extra_paths.push_back(*path);
-		slices.push_back({extra_paths.back().c_str(), spec.vanilla_data_size, 0, kind});
-		spec.slices = slices.data();
-		spec.slice_count = static_cast<uint32_t>(slices.size());
-		hashToSlice.emplace(hash, target);
-		resources.push_back(resource);
-		actual_sizes.push_back(0);
-		dl_scratch.emplace_back();
-		overridden.push_back(true);
-		any_override = true;
-		return true;
-	};
-
-	for (uint32_t i = 0; i < spec.slice_count; i++)
+	if (!SynthLoadSlices(B))
 	{
-		const auto slice = spec.slices[i];
-		std::shared_ptr<Ship::IResource> resource = resources[i];
-		try
-		{
-			if (!resource) resource = rm->LoadResource(slice.path);
-		}
-		catch (const std::exception &e)
-		{
-			// A factory parse failure surfaces here through the async
-			// loader's future; one bad slice must degrade this bundle,
-			// never kill the process.
-			spdlog::error("[deblob] slice '{}' failed to parse: {} (parent '{}')",
-			              slice.path, e.what(), spec.parent_path);
-			return nullptr;
-		}
-		if (!resource)
-		{
-			spdlog::error("[deblob] missing slice '{}' for parent '{}'"
-			              " — diagnose: unzip -l BattleShip.o2r | grep {}",
-			              slice.path, spec.parent_path, spec.parent_path);
-			return nullptr;
-		}
-		resources[i] = resource;
-		// Pinned LUS does not populate ResourceInitData::Parent. Resolve the
-		// actual factory path (including alt/ and .meta redirects) in the VFS.
-		const auto init = resource->GetInitData();
-		const std::string resource_path = init ? init->Path : slice.path;
-		const auto meta_archive = am->GetArchiveFromFile(std::string(slice.path) + ".meta");
-		overridden[i] = i >= specPtr->slice_count || am->GetArchiveFromFile(resource_path) != baseArchive ||
-		                (meta_archive && meta_archive != baseArchive);
-		any_override = any_override || overridden[i];
-
-		switch (slice.kind)
-		{
-		case SSB64SyntheticSliceKind::Blob:
-		{
-			auto blob = std::dynamic_pointer_cast<Ship::Blob>(resource);
-			if (!blob)
-			{
-				spdlog::error("[deblob] slice '{}' is not a Blob", slice.path);
-				return nullptr;
-			}
-			// LUS's Blob factory appends kBlobPadding (16) zero bytes for
-			// N64 overread tolerance (ship BlobFactory.cpp) — the payload
-			// is Data.size() minus that pad.
-			constexpr uint32_t kLusBlobPadding = 16;
-			actual_sizes[i] = (uint32_t)blob->Data.size() >= kLusBlobPadding
-			                      ? (uint32_t)blob->Data.size() - kLusBlobPadding
-			                      : (uint32_t)blob->Data.size();
-			break;
-		}
-		case SSB64SyntheticSliceKind::Texture:
-		{
-			auto texture = std::dynamic_pointer_cast<Fast::Texture>(resource);
-			if (!texture)
-			{
-				spdlog::error("[deblob] slice '{}' is not a Texture", slice.path);
-				return nullptr;
-			}
-			actual_sizes[i] = texture->ImageDataSize;
-			break;
-		}
-		case SSB64SyntheticSliceKind::Vertex:
-		{
-			auto vertex = std::dynamic_pointer_cast<Fast::Vertex>(resource);
-			if (!vertex)
-			{
-				spdlog::error("[deblob] slice '{}' is not a Vertex", slice.path);
-				return nullptr;
-			}
-			actual_sizes[i] = (uint32_t)(vertex->VertexList.size() * sizeof(Vtx));
-			break;
-		}
-		case SSB64SyntheticSliceKind::DisplayList:
-		{
-			auto dl = std::dynamic_pointer_cast<Fast::DisplayList>(resource);
-			if (!dl)
-			{
-				spdlog::error("[deblob] slice '{}' is not a DisplayList", slice.path);
-				return nullptr;
-			}
-			SynthDl scratch;
-			if (!portUnOtrDisplayList(*dl, spec, resolveReference, slice.path,
-			                          slice.vanilla_size, !overridden[i], scratch))
-			{
-				return nullptr;
-			}
-			dl_scratch[i] = std::move(scratch);
-			actual_sizes[i] = (uint32_t)(dl_scratch[i].words.size() * sizeof(uint32_t));
-			break;
-		}
-		}
+		return nullptr;
 	}
 	// Bound the packed image before offset arithmetic or allocation. The
 	// original game uses 24-bit segmented addresses for file-local data.
-	uint64_t total_size = spec.vanilla_data_size;
-	for (uint32_t size : actual_sizes) total_size += static_cast<uint64_t>(size) + 16;
+	uint64_t total_size = B.spec.vanilla_data_size;
+	for (uint32_t size : B.actual_sizes) total_size += static_cast<uint64_t>(size) + 16;
 	if (total_size > 0x01000000)
 	{
-		spdlog::error("[deblob] bundle '{}' exceeds the 24-bit address space", spec.parent_path);
+		spdlog::error("[deblob] bundle '{}' exceeds the 24-bit address space", B.spec.parent_path);
 		return nullptr;
 	}
 
-	// --- layout ---
-	// Fast path: every actual size matches the vanilla layout -> vanilla
-	// offsets verbatim (I5 byte-exact). Otherwise RELAYOUT: keep vanilla
-	// offsets up to the first resized slice, then pack forward with
-	// 16-byte alignment (satisfies Gfx=8, Vtx=16, TMEM DMA sources, and
-	// word-granular chain targets). Determinism note: vanilla inter-slice
-	// padding before the first resize is preserved so the forced-relayout
-	// gate (I6) can compare against the fast path.
-	SynthCacheEntry entry;
-	entry.layout_offsets.resize(spec.slice_count);
-	entry.actual_sizes = actual_sizes;
-	bool relayout = false;
-	uint32_t cursor = 0;
-	for (uint32_t i = 0; i < spec.slice_count; i++)
-	{
-		if (!relayout)
-		{
-			entry.layout_offsets[i] = spec.slices[i].vanilla_offset;
-			if (actual_sizes[i] != spec.slices[i].vanilla_size)
-			{
-				relayout = true;
-				spdlog::info("[deblob] relayout: '{}' size 0x{:X} != vanilla 0x{:X} — "
-				             "repacking '{}' from slice {}",
-				             spec.slices[i].path, actual_sizes[i],
-				             spec.slices[i].vanilla_size, spec.parent_path, i);
-			}
-			cursor = entry.layout_offsets[i] + actual_sizes[i];
-		}
-		else
-		{
-			cursor = (cursor + 15u) & ~15u;
-			entry.layout_offsets[i] = cursor;
-			cursor += actual_sizes[i];
-		}
-	}
-	const uint32_t data_size = relayout ? ((cursor + 7u) & ~7u)
-	                                    : spec.vanilla_data_size;
-
-	// I9 structural policy for resized slices: a reference or slot that
-	// lands at delta > 0 inside a slice is only meaningful when the
-	// replacement preserved that prefix — allow with a warning while the
-	// delta still fits, fail loudly when it does not.
-	auto check_delta = [&](uint32_t slice_idx, uint32_t delta, const char *what, uint32_t width = 1) -> bool {
-		if (delta < actual_sizes[slice_idx] && width <= actual_sizes[slice_idx] - delta)
-		{
-			if (relayout && delta != 0 && spec.slices[slice_idx].vanilla_size != 0 &&
-			    actual_sizes[slice_idx] != spec.slices[slice_idx].vanilla_size)
-			{
-				spdlog::warn("[deblob] {} at +0x{:X} into resized slice '{}' — "
-				             "only valid for prefix-preserving replacements",
-				             what, delta, spec.slices[slice_idx].path);
-			}
-			return true;
-		}
-		spdlog::error("[deblob] I9 violated: {} at +0x{:X} exceeds resized slice"
-		              " '{}' (new size 0x{:X}) — diagnose: SSB64_SYNTH_INSPECT={}",
-		              what, delta, spec.slices[slice_idx].path,
-		              actual_sizes[slice_idx], spec.file_id);
-		return false;
-	};
+	const uint32_t data_size = SynthComputeLayout(B);
 
 	// --- pass 2: blit + patch ---
 	auto relocFile = std::make_shared<RelocFile>(std::shared_ptr<Ship::ResourceInitData>());
-	relocFile->FileId = spec.file_id;
+	relocFile->FileId = B.spec.file_id;
 	relocFile->RelocInternOffset = 0xFFFF;  // chains are gone; explicit lists only
 	relocFile->RelocExternOffset = 0xFFFF;
 	relocFile->Data.assign(data_size, 0);
 	relocFile->HasExplicitRelocation = true;
 
-	for (uint32_t i = 0; i < spec.slice_count; i++)
+	if (!SynthBlitAndPatch(B, *relocFile) ||
+	    (B.any_override && !SynthValidateDlAcyclic(B)) ||
+	    !SynthEmitInternSlots(B, *relocFile) ||
+	    !SynthEmitExternSlots(B, *relocFile) ||
+	    !SynthEmitDlExternSlots(B, *relocFile))
 	{
-		const auto &slice = spec.slices[i];
-		const uint32_t off = entry.layout_offsets[i];
-
-		switch (slice.kind)
-		{
-		case SSB64SyntheticSliceKind::Blob:
-		{
-			auto blob = std::static_pointer_cast<Ship::Blob>(resources[i]);
-			std::memcpy(relocFile->Data.data() + off, blob->Data.data(), actual_sizes[i]);
-			break;
-		}
-		case SSB64SyntheticSliceKind::Texture:
-		{
-			auto texture = std::static_pointer_cast<Fast::Texture>(resources[i]);
-			std::memcpy(relocFile->Data.data() + off, texture->ImageData, actual_sizes[i]);
-			break;
-		}
-		case SSB64SyntheticSliceKind::Vertex:
-		{
-			auto vertex = std::static_pointer_cast<Fast::Vertex>(resources[i]);
-			size_t writeCursor = off;
-			for (const auto &v : vertex->VertexList)
-			{
-				portWriteBE16(relocFile->Data, writeCursor + 0x0, (uint16_t)v.v.ob[0]);
-				portWriteBE16(relocFile->Data, writeCursor + 0x2, (uint16_t)v.v.ob[1]);
-				portWriteBE16(relocFile->Data, writeCursor + 0x4, (uint16_t)v.v.ob[2]);
-				portWriteBE16(relocFile->Data, writeCursor + 0x6, v.v.flag);
-				portWriteBE16(relocFile->Data, writeCursor + 0x8, (uint16_t)v.v.tc[0]);
-				portWriteBE16(relocFile->Data, writeCursor + 0xA, (uint16_t)v.v.tc[1]);
-				relocFile->Data[writeCursor + 0xC] = v.v.cn[0];
-				relocFile->Data[writeCursor + 0xD] = v.v.cn[1];
-				relocFile->Data[writeCursor + 0xE] = v.v.cn[2];
-				relocFile->Data[writeCursor + 0xF] = v.v.cn[3];
-				writeCursor += sizeof(Vtx);
-			}
-			break;
-		}
-		case SSB64SyntheticSliceKind::DisplayList:
-		{
-			auto &scratch = dl_scratch[i];
-			// apply patches: target slice layout offset (+ addend), with
-			// the seg-0x0E prefix restored for literal segment refs
-			for (const auto &p : scratch.patches)
-			{
-				const uint8_t opcode = scratch.words[p.word_index - 1] >> 24;
-				const auto kind = spec.slices[p.target_slice].kind;
-				if (overridden[i] &&
-				    ((opcode == 0x01 && kind != SSB64SyntheticSliceKind::Vertex) ||
-				     (opcode == 0xDE && kind != SSB64SyntheticSliceKind::DisplayList) ||
-				     (opcode == 0xFD && kind != SSB64SyntheticSliceKind::Texture && kind != SSB64SyntheticSliceKind::Blob)))
-				{
-					spdlog::error("[deblob] wrong resource type for command 0x{:02X} in '{}'", opcode, slice.path);
-					return nullptr;
-				}
-				if (!check_delta((uint32_t)p.target_slice, p.addend, "DL reference",
-				                 opcode == 0xDE ? 8 : p.read_size))
-				{
-					return nullptr;
-				}
-				uint32_t value = entry.layout_offsets[p.target_slice] + p.addend;
-				if (p.seg0e)
-				{
-					value = ((uint32_t)kSeg0E << 24) | (value & 0x00FFFFFF);
-				}
-				scratch.words[p.word_index] = value;
-			}
-			for (size_t w = 0; w < scratch.words.size(); w++)
-			{
-				portWriteBE32(relocFile->Data, off + w * sizeof(uint32_t), scratch.words[w]);
-			}
-			break;
-		}
-		}
-	}
-	// A named DL can reference another new DL. Reject cycles before those
-	// references become an endless renderer call/branch chain.
-	std::vector<uint8_t> visiting(spec.slice_count, 0);
-	std::function<bool(uint32_t)> visit = [&](uint32_t i) {
-		if (visiting[i] == 1) return false;
-		if (visiting[i] == 2) return true;
-		visiting[i] = 1;
-		for (const auto &p : dl_scratch[i].patches)
-		{
-			if (!p.seg0e && dl_scratch[i].words[p.word_index - 1] >> 24 == 0xDE &&
-			    !visit(static_cast<uint32_t>(p.target_slice))) return false;
-		}
-		visiting[i] = 2;
-		return true;
-	};
-	if (any_override)
-	{
-		for (uint32_t i = 0; i < spec.slice_count; i++)
-		{
-			if (!visit(i))
-			{
-				spdlog::error("[deblob] cyclic display-list references in '{}'", spec.parent_path);
-				return nullptr;
-			}
-		}
+		return nullptr;
 	}
 
-	// explicit slot lists in layout coordinates
-	relocFile->ExplicitInternSlots.reserve(spec.intern_slot_count);
-	for (uint32_t i = 0; i < spec.intern_slot_count; i++)
-	{
-		const auto &s = spec.intern_slots[i];
-		// A replacement DL owns its command stream. Vanilla slot positions
-		// describe the old program and must never be applied to the new one.
-		if (overridden[s.slot_slice] &&
-		    spec.slices[s.slot_slice].kind == SSB64SyntheticSliceKind::DisplayList) continue;
-		if (!check_delta(s.slot_slice, s.slot_offset_in_slice, "intern slot position", 4) ||
-		    !check_delta(s.target_slice, s.target_offset_in_slice, "intern slot target"))
-		{
-			return nullptr;
-		}
-		RelocExplicitInternSlot slot;
-		slot.SlotByteOff = entry.layout_offsets[s.slot_slice] + s.slot_offset_in_slice;
-		slot.TargetByteOff = entry.layout_offsets[s.target_slice] + s.target_offset_in_slice;
-		relocFile->ExplicitInternSlots.push_back(slot);
-		entry.intern_pairs.push_back(slot.SlotByteOff);
-		entry.intern_pairs.push_back(slot.TargetByteOff);
-	}
-	for (uint32_t i = 0; i < spec.slice_count; i++)
-	{
-		if (!overridden[i]) continue;
-		for (const auto &p : dl_scratch[i].patches)
-		{
-			if (p.seg0e) continue; // segmented references are resolved by the renderer
-			RelocExplicitInternSlot slot{
-				entry.layout_offsets[i] + p.word_index * 4,
-				entry.layout_offsets[p.target_slice] + p.addend};
-			relocFile->ExplicitInternSlots.push_back(slot);
-			entry.intern_pairs.push_back(slot.SlotByteOff);
-			entry.intern_pairs.push_back(slot.TargetByteOff);
-		}
-	}
-	relocFile->ExplicitExternSlots.reserve(spec.extern_slot_count);
-	relocFile->ExternFileIds.reserve(spec.extern_slot_count);
-	for (uint32_t i = 0; i < spec.extern_slot_count; i++)
-	{
-		const auto &s = spec.extern_slots[i];
-		if (overridden[s.slot_slice] &&
-		    spec.slices[s.slot_slice].kind == SSB64SyntheticSliceKind::DisplayList) continue;
-		if (!check_delta(s.slot_slice, s.slot_offset_in_slice, "extern slot position", 4))
-		{
-			return nullptr;
-		}
-		RelocExplicitExternSlot slot;
-		slot.SlotByteOff = entry.layout_offsets[s.slot_slice] + s.slot_offset_in_slice;
-		slot.DepFileId = s.dep_file_id;
-		// Cross-file fidelity: a dependency that is itself a relayouted
-		// deblobbed bundle moved its contents — remap the vanilla word
-		// offset through the dep's layout. Identity for unmodded deps.
-		if (!portRemapDepWordOffset(s.dep_file_id, s.dep_word_offset, slot.DepWordOff)) return nullptr;
-		relocFile->ExplicitExternSlots.push_back(slot);
-		// chain order == extern id order: lbRelocGetExternBytesNum walks
-		// this list to predict dependency allocation sizes
-		relocFile->ExternFileIds.push_back(s.dep_file_id);
-	}
-
-	for (uint32_t i = 0; i < spec.slice_count; i++)
-	{
-		if (!overridden[i] || spec.slices[i].kind != SSB64SyntheticSliceKind::DisplayList) continue;
-		const auto &scratch = dl_scratch[i];
-		for (uint32_t w = 1; w < scratch.words.size(); w += 2)
-		{
-			const uint32_t op = scratch.words[w - 1] >> 24;
-			if (op != 0x01 && op != 0xDE && op != 0xFD && op != 0xDC) continue;
-			if (std::any_of(scratch.patches.begin(), scratch.patches.end(),
-			                [w](const auto &p) { return p.word_index == w; })) continue;
-			const auto *external = portFindExternalDescriptor(spec, spec.slices[i].path, scratch.words[w]);
-			if (!external) continue; // validated segmented references need no relocation
-			RelocExplicitExternSlot slot;
-			slot.SlotByteOff = entry.layout_offsets[i] + w * 4;
-			slot.DepFileId = external->dep_file_id;
-			if (!portRemapDepWordOffset(slot.DepFileId, external->dep_word_offset, slot.DepWordOff)) return nullptr;
-			relocFile->ExplicitExternSlots.push_back(slot);
-			relocFile->ExternFileIds.push_back(slot.DepFileId);
-		}
-	}
-
-	// I5 applies to resources from the extracted archive. An override can
-	// legitimately change content while preserving every size and offset.
-	entry.reloc = relocFile;
-	portDumpSynthInspect(spec, entry, actual_sizes, dl_scratch);
-	portDumpSynthBytesIfRequested(spec, *relocFile);
-
-	if (!any_override)
-	{
-		// Overridden bundles are validated structurally above.
-		uint32_t crc = portCrc32(relocFile->Data.data(), relocFile->Data.size());
-		if (crc != spec.relocated_view_crc32)
-		{
-			// Wrong bytes corrupt rendering and gameplay downstream; fail
-			// the build so the caller's fallback (archived parent) runs.
-			spdlog::error("[deblob] I5 violated: synthesized '{}' crc 0x{:08X} != spec 0x{:08X}"
-			              " — diagnose: SSB64_DUMP_SYNTH_RELOC_FILE_ID={} then compare with"
-			              " tools/generate_fighter_slices.py --only <Symbol> --check",
-			              spec.parent_path, crc, spec.relocated_view_crc32, spec.file_id);
-			return nullptr;
-		}
-	}
-
-	{
-		std::lock_guard<std::mutex> lock(sSynthCacheMutex);
-		sSynthCache.emplace(file_id, std::move(entry));
-	}
-	spdlog::info("[deblob] synthesized '{}' from {} slices ({} bytes{})",
-	             spec.parent_path, spec.slice_count, data_size,
-	             any_override ? ", override" : ", crc ok");
-	return relocFile;
+	return SynthFinalize(B, relocFile, file_id, data_size);
 }

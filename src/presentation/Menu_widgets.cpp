@@ -40,59 +40,64 @@ static inline void FireWidgetCallback(WidgetInfo& widget) {
     }
 }
 
+/* Shared colored-text body for the SEPARATOR_TEXT and TEXT cases —
+ * they differ only in which ImGui call renders the name. */
+static void DrawColoredTextWidget(WidgetInfo& widget, bool separator) {
+    auto options = std::static_pointer_cast<UIWidgets::TextOptions>(widget.options);
+    const bool hasColor = options->color != UIWidgets::Colors::NoColor;
+    if (hasColor) {
+        ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(options->color));
+    }
+    if (separator) {
+        ImGui::SeparatorText(TR(widget.name.c_str()));
+    } else {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextWrapped(TR("%s"), TR(widget.name.c_str()));
+    }
+    if (hasColor) {
+        ImGui::PopStyleColor();
+    }
+}
+
+/* WIDGET_BUTTON: theme-stamped options + callback on press. */
+static void DrawThemedButtonWidget(WidgetInfo& widget, UIWidgets::Colors themeIndex) {
+    auto options = std::static_pointer_cast<UIWidgets::ButtonOptions>(widget.options);
+    options->color = themeIndex;
+    if (UIWidgets::Button(TR(widget.name.c_str()), *options)) {
+        FireWidgetCallback(widget);
+    }
+}
+
 Menu::WidgetDrawResult Menu::DrawMiscWidget(WidgetInfo& widget, uint32_t /*width*/,
                                                     UIWidgets::Colors themeIndex) {
     switch (widget.type) {
             case WIDGET_AUDIO_BACKEND:
-            case WIDGET_VIDEO_BACKEND: {
-                if (!DrawBackendSelector(widget, themeIndex)) {
-                    return WidgetDrawResult::NotMine;
-                }
-            } return WidgetDrawResult::Done;
-            case WIDGET_SEPARATOR: {
+            case WIDGET_VIDEO_BACKEND:
+                return DrawBackendSelector(widget, themeIndex) ? WidgetDrawResult::Done
+                                                               : WidgetDrawResult::NotMine;
+            case WIDGET_SEPARATOR:
                 ImGui::Separator();
-            } return WidgetDrawResult::Done;
-            case WIDGET_SEPARATOR_TEXT: {
-                auto options = std::static_pointer_cast<UIWidgets::TextOptions>(widget.options);
-                if (options->color != UIWidgets::Colors::NoColor) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(options->color));
-                }
-                ImGui::SeparatorText(TR(widget.name.c_str()));
-                if (options->color != UIWidgets::Colors::NoColor) {
-                    ImGui::PopStyleColor();
-                }
-            } return WidgetDrawResult::Done;
-            case WIDGET_TEXT: {
-                auto options = std::static_pointer_cast<UIWidgets::TextOptions>(widget.options);
-                if (options->color != UIWidgets::Colors::NoColor) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(options->color));
-                }
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextWrapped(TR("%s"), TR(widget.name.c_str()));
-                if (options->color != UIWidgets::Colors::NoColor) {
-                    ImGui::PopStyleColor();
-                }
-            } return WidgetDrawResult::Done;
-            case WIDGET_BUTTON: {
-                auto options = std::static_pointer_cast<UIWidgets::ButtonOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::Button(TR(widget.name.c_str()), *options)) {
-                    FireWidgetCallback(widget);
-                }
-            } return WidgetDrawResult::Done;
+                return WidgetDrawResult::Done;
+            case WIDGET_SEPARATOR_TEXT:
+                DrawColoredTextWidget(widget, true);
+                return WidgetDrawResult::Done;
+            case WIDGET_TEXT:
+                DrawColoredTextWidget(widget, false);
+                return WidgetDrawResult::Done;
+            case WIDGET_BUTTON:
+                DrawThemedButtonWidget(widget, themeIndex);
+                return WidgetDrawResult::Done;
             case WIDGET_CUSTOM: {
                 if (widget.customFunction != nullptr) {
                     widget.customFunction(widget);
                 }
             } return WidgetDrawResult::Done;
-            case WIDGET_WINDOW_BUTTON: {
+            case WIDGET_WINDOW_BUTTON:
                 DrawWindowButtonWidget(widget, themeIndex);
-            } return WidgetDrawResult::Done;
-            case WIDGET_SEARCH: {
-                if (!DrawSearchWidget(themeIndex)) {
-                    return WidgetDrawResult::Bail;
-                }
-            } return WidgetDrawResult::Done;
+                return WidgetDrawResult::Done;
+            case WIDGET_SEARCH:
+                return DrawSearchWidget(themeIndex) ? WidgetDrawResult::Done
+                                                    : WidgetDrawResult::Bail;
         default:
             return WidgetDrawResult::NotMine;
     }
@@ -164,45 +169,43 @@ Menu::WidgetDrawResult Menu::DrawPointerWidget(WidgetInfo& widget, uint32_t widt
     }
 }
 
+/* Shared CVar-case body: cast options to the widget's option type,
+ * stamp the theme color, draw, and fire the widget callback when the
+ * control reports a change. The color picker is the exception — it
+ * owns its color, so it stays inline. */
+template <typename Opts, typename DrawFn>
+static void DrawCVarOptionCase(WidgetInfo& widget, UIWidgets::Colors themeIndex, DrawFn&& draw) {
+    auto options = std::static_pointer_cast<Opts>(widget.options);
+    options->color = themeIndex;
+    if (draw(*options)) {
+        FireWidgetCallback(widget);
+    }
+}
+
 /* CVar-bound widgets - always draw; callback runs on change. */
 Menu::WidgetDrawResult Menu::DrawCVarWidget(WidgetInfo& widget, uint32_t width, UIWidgets::Colors themeIndex) {
     switch (widget.type) {
-            case WIDGET_CVAR_CHECKBOX: {
-                auto options = std::static_pointer_cast<UIWidgets::CheckboxOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarCheckbox(UIWidgets::WrappedText(TR(widget.name.c_str()), width).c_str(), widget.cVar,
-                                            *options)) {
-                    FireWidgetCallback(widget);
-                };
-            } return WidgetDrawResult::Done;
-            case WIDGET_CVAR_COMBOBOX: {
-                auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarCombobox(TR(widget.name.c_str()), widget.cVar, options->comboMap, *options)) {
-                    FireWidgetCallback(widget);
-                }
-            } return WidgetDrawResult::Done;
-            case WIDGET_CVAR_SLIDER_INT: {
-                auto options = std::static_pointer_cast<UIWidgets::IntSliderOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarSliderInt(TR(widget.name.c_str()), widget.cVar, *options)) {
-                    FireWidgetCallback(widget);
-                };
-            } return WidgetDrawResult::Done;
-            case WIDGET_CVAR_SLIDER_FLOAT: {
-                auto options = std::static_pointer_cast<UIWidgets::FloatSliderOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarSliderFloat(TR(widget.name.c_str()), widget.cVar, *options)) {
-                    FireWidgetCallback(widget);
-                }
-            } return WidgetDrawResult::Done;
-            case WIDGET_CVAR_BTN_SELECTOR: {
-                auto options = std::static_pointer_cast<UIWidgets::BtnSelectorOptions>(widget.options);
-                options->color = themeIndex;
-                if (UIWidgets::CVarBtnSelector(TR(widget.name.c_str()), widget.cVar, *options)) {
-                    FireWidgetCallback(widget);
-                }
-            } return WidgetDrawResult::Done;
+            case WIDGET_CVAR_CHECKBOX:
+                DrawCVarOptionCase<UIWidgets::CheckboxOptions>(widget, themeIndex, [&](auto& o) {
+                    return UIWidgets::CVarCheckbox(
+                        UIWidgets::WrappedText(TR(widget.name.c_str()), width).c_str(), widget.cVar, o); });
+                return WidgetDrawResult::Done;
+            case WIDGET_CVAR_COMBOBOX:
+                DrawCVarOptionCase<UIWidgets::ComboboxOptions>(widget, themeIndex, [&](auto& o) {
+                    return UIWidgets::CVarCombobox(TR(widget.name.c_str()), widget.cVar, o.comboMap, o); });
+                return WidgetDrawResult::Done;
+            case WIDGET_CVAR_SLIDER_INT:
+                DrawCVarOptionCase<UIWidgets::IntSliderOptions>(widget, themeIndex, [&](auto& o) {
+                    return UIWidgets::CVarSliderInt(TR(widget.name.c_str()), widget.cVar, o); });
+                return WidgetDrawResult::Done;
+            case WIDGET_CVAR_SLIDER_FLOAT:
+                DrawCVarOptionCase<UIWidgets::FloatSliderOptions>(widget, themeIndex, [&](auto& o) {
+                    return UIWidgets::CVarSliderFloat(TR(widget.name.c_str()), widget.cVar, o); });
+                return WidgetDrawResult::Done;
+            case WIDGET_CVAR_BTN_SELECTOR:
+                DrawCVarOptionCase<UIWidgets::BtnSelectorOptions>(widget, themeIndex, [&](auto& o) {
+                    return UIWidgets::CVarBtnSelector(TR(widget.name.c_str()), widget.cVar, o); });
+                return WidgetDrawResult::Done;
             case WIDGET_CVAR_COLOR_PICKER: {
                 auto options = std::static_pointer_cast<UIWidgets::ColorPickerOptions>(widget.options);
                 uint32_t modifiers = 0;

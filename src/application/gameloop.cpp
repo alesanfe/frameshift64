@@ -77,6 +77,7 @@ extern "C" void port_vi_simulate_vblank(void);
  * per frame and surfaced as an overlay toast (the decomp's syDmaWriteSram
  * wrapper drops the return value). */
 extern "C" int port_save_write_failed(void);
+extern "C" void port_save_drain(void);
 extern "C" void port_save_clear_write_failed(void);
 
 extern "C" void lbBackupApplyCheats(void);
@@ -96,29 +97,31 @@ extern OSMesgQueue gSYSchedulerTaskMesgQueue;
 /* VI retrace interrupt value (matches scheduler.c local define). */
 #define INTR_VRETRACE 1
 
+#ifdef __EMSCRIPTEN__
+/* Config writes deferred while inside fibers are drained on the main
+ * context each frame — defined in LUS Config.cpp (__EMSCRIPTEN__ only). */
+extern void port_lus_config_drain(void);
+#endif
+
 } /* extern "C" */
 
 /*
- * port_make_os_mesg_int() — fully-initialised OSMesg from an integer code.
+ * Integer interrupt codes must reach the scheduler queue through
+ * port_os_send_mesg_code() (defined in n64_stubs.c), NOT via a locally
+ * built OSMesg value.
  *
- * The decomp treats OSMesg as `void*` (PR/os.h); libultraship treats it as a
- * union { u8; u16; u32; void*; } (components/libultraship/libultra/message.h). Both are
- * 8 bytes, so the calling convention matches, but writing only one union
- * member from C++ leaves the remaining bytes uninitialised — whatever was on
- * the stack in that slot. On MSVC/x64 those bytes happened to be zero and
- * the bug was latent; on macOS/arm64 they held a stack pointer, and the
- * scheduler's `(SYTaskInfo*)mesg` cast in sySchedulerThreadMain then jumped
- * through a garbage `fnCheck` pointer.
- *
- * All port-layer (C++) sends of integer interrupt codes should go through
- * this helper so the full 8 bytes are well-defined on every platform.
+ * The decomp treats OSMesg as `void*` (PR/os.h); libultraship treats it
+ * as a union { u8; u16; u32; void*; } (libultra/message.h). On LP64 both
+ * are 8 bytes and the two call signatures happen to match — but on
+ * wasm32 clang marshals UNION arguments byval (a hidden pointer to a
+ * caller temp) while the stub's decomp-typed osSendMesg expects the raw
+ * 4-byte word. The signatures are identical at the wasm level so the
+ * linker stays silent, and the callee receives a STACK ADDRESS instead
+ * of the code — for INTR_VRETRACE that fake "task pointer" reached
+ * sySchedulerExecuteTasksAll and crashed on its bogus fnCheck
+ * (RuntimeError: table index is out of bounds).
  */
-static inline OSMesg port_make_os_mesg_int(uint32_t code)
-{
-	OSMesg m{};          /* zero-initialise every union member */
-	m.data32 = code;     /* then set the scalar we care about */
-	return m;
-}
+extern "C" int32_t port_os_send_mesg_code(OSMesgQueue *mq, uint32_t code, int32_t flag);
 
 /* ========================================================================= */
 /*  Game coroutine state                                                     */
@@ -252,12 +255,20 @@ static void gbi_trace_callback(uintptr_t w0, uintptr_t w1, int dl_depth)
  * Tunable via SSB64_RCP_CYCLE_BUDGET (default 1040000). Lower budget →
  * more freezes; higher → fewer. SSB64_RCP_FORCE_N overrides cost model
  * with a fixed N for testing (matches old SSB64_GFX_DEFER_VI semantics). */
-extern "C" int port_get_last_dl_defer_n(void)
+/* Env-tunable cost-model parameters, read once on first use. */
+struct RcpCostConfig {
+	int budget;
+	int force_n;
+	int rect_gate;
+	int tri_weight_pct;
+	int cooldown_len;
+	int rcp_log;
+};
+
+static const RcpCostConfig &rcp_cost_config(void)
 {
-	static int sBudget = -1;
-	static int sForceN = -1;
-	static int sRectGate = -1;
-	if (sBudget < 0) {
+	static const RcpCostConfig cfg = [] {
+		RcpCostConfig c;
 		/* Calibrated empirically against attract-mode DL cost histogram:
 		 * p99 ≈ 394k, p99.5 ≈ 397k, max observed = 415k. Setting the
 		 * budget at 400k means only the top ~0.1% of DLs trigger a
@@ -266,10 +277,10 @@ extern "C" int port_get_last_dl_defer_n(void)
 		 * See `docs/freeze_frame_rcp_clock_design_2026-04-26.md` for
 		 * the full design + tuning rationale. */
 		const char *env = std::getenv("SSB64_RCP_CYCLE_BUDGET");
-		sBudget = (env != NULL) ? std::atoi(env) : 400000;
-		if (sBudget < 1000) sBudget = 1000;
+		c.budget = (env != NULL) ? std::atoi(env) : 400000;
+		if (c.budget < 1000) c.budget = 1000;
 		const char *fenv = std::getenv("SSB64_RCP_FORCE_N");
-		sForceN = (fenv != NULL) ? std::atoi(fenv) : 0;
+		c.force_n = (fenv != NULL) ? std::atoi(fenv) : 0;
 		/* Fillrate gate: a DL must ALSO push significant rect_px (texrect /
 		 * fillrect coverage) before we treat it as an authored freeze.
 		 * Empirical observation 2026-05-01: high-tri fighter-model DLs in
@@ -278,11 +289,89 @@ extern "C" int port_get_last_dl_defer_n(void)
 		 * have rect_px ≥ 260k. The cost-only model couldn't distinguish.
 		 * Default 200k sits cleanly between the two distributions. */
 		const char *renv = std::getenv("SSB64_RCP_RECT_GATE");
-		sRectGate = (renv != NULL) ? std::atoi(renv) : 200000;
-		if (sRectGate < 0) sRectGate = 0;
+		c.rect_gate = (renv != NULL) ? std::atoi(renv) : 200000;
+		if (c.rect_gate < 0) c.rect_gate = 0;
+		/* Triangle-fillrate weight (RDP cycles per covered pixel). Measured
+		 * on the opening montage: every window frame carries ~1.1M px of
+		 * triangle coverage, so any weight >= 1 trips the budget on ALL of
+		 * them and halves the tick rate (tested: weight 2 froze the whole
+		 * montage). Matching hardware's observed ~24% dropped-frame rate
+		 * there needs a debt/carry model rather than a per-DL threshold —
+		 * see issue #136 notes in docs/intro_divergence_triage_2026-07-30.md.
+		 * Default 0 keeps the shipped cost model; SSB64_RCP_TRI_WEIGHT_PCT
+		 * (percent) enables experimentation. */
+		const char *wenv = std::getenv("SSB64_RCP_TRI_WEIGHT_PCT");
+		c.tri_weight_pct = (wenv != NULL) ? std::atoi(wenv) : 0;
+		if (c.tri_weight_pct < 0) c.tri_weight_pct = 0;
+		const char *cenv = std::getenv("SSB64_RCP_COOLDOWN");
+		c.cooldown_len = (cenv != NULL) ? std::atoi(cenv) : 30;
+		if (c.cooldown_len < 0) c.cooldown_len = 0;
+		const char *lenv = std::getenv("SSB64_RCP_LOG");
+		c.rcp_log = (lenv != NULL) ? std::atoi(lenv) : 0;
 		port_log("SSB64: RCP cost model — budget=%d cycles/VI, force_n=%d (0=cost-model, >=1=fixed), rect_gate=%d\n",
-		         sBudget, sForceN, sRectGate);
+		         c.budget, c.force_n, c.rect_gate);
+		return c;
+	}();
+	return cfg;
+}
+
+/* Heavy-DL deferral decision. The port's coroutine scheduler observes the
+ * held framebuffer one host frame after slot contention, so climax DLs need
+ * one extra VI of synthetic RCP latency beyond the first visible stall.
+ * This shifts all authored freezes together (portrait banners, fighter
+ * poses, stage cuts) instead of patching scene timers individually.
+ *
+ * Issue #136: an ISOLATED over-budget climax gets the full N=3 hold, but a
+ * SUSTAINED over-budget stretch must not refire it every DL — the
+ * newcomers/silhouette scene sits at cost 460-515k with rect_px 262k on
+ * EVERY frame, and the old rule turned that into a machine-gun stutter
+ * (15 consecutive N=3 fires, the reported "stutter before the silhouettes").
+ * Real hardware paces that window as occasional single-frame drops (~7 over
+ * the window in the issue's accurate-emulator capture). So: after a full
+ * fire, enter a cooldown during which continued over-budget frames
+ * accumulate their EXCESS cycles as carry, dropping one frame (N=2) only
+ * each time the carry exceeds a full VI budget — the debt-paced cadence the
+ * excess actually implies (60-115k excess/frame -> one drop every ~4-6
+ * frames there). Isolated authored climaxes (montage fighter poses at
+ * ~1-frame spikes, e.g. frames 1800/1881 in the attract log) still fire
+ * exactly as before. */
+static int rcp_defer_n(int cost, int fillrate_px, const RcpCostConfig &cfg)
+{
+	static int sCooldownUntilFrame = 0;
+	static int sCarryCycles = 0;
+	int n;
+	if (cost < cfg.budget) {
+		n = 1;
+		/* Under budget: pay down lingering debt so old excess can't fire
+		 * long after the heavy stretch ended. */
+		sCarryCycles -= cfg.budget - cost;
+		if (sCarryCycles < 0) sCarryCycles = 0;
+	} else if (fillrate_px < cfg.rect_gate) {
+		/* Cost is over budget but the load is dominated by triangle COUNT,
+		 * not fillrate — looks like a fighter model render, not an authored
+		 * full-screen effect. Don't freeze. */
+		n = 1;
+	} else if (sFrameCount >= sCooldownUntilFrame) {
+		n = 3;
+		sCooldownUntilFrame = sFrameCount + cfg.cooldown_len;
+		sCarryCycles = 0;
+	} else {
+		sCarryCycles += cost - cfg.budget;
+		if (sCarryCycles >= cfg.budget) {
+			sCarryCycles -= cfg.budget;
+			n = 2;
+		} else {
+			n = 1;
+		}
 	}
+	if (n < 1) n = 1;
+	if (n > 3) n = 3;
+	return n;
+}
+
+extern "C" int port_get_last_dl_defer_n(void)
+{
+	const RcpCostConfig &cfg = rcp_cost_config();
 	/* (force-N check moved below the input logging so SSB64_RCP_LOG can
 	 * capture undisturbed cost inputs with SSB64_RCP_FORCE_N=1.) */
 
@@ -308,23 +397,7 @@ extern "C" int port_get_last_dl_defer_n(void)
 	 * the freeze generator on hardware. */
 	extern float gfx_get_frame_tri_area_px(void);
 	int tri_area = (int)sLastDLTriAreaPx;
-
-	/* Triangle-fillrate weight (RDP cycles per covered pixel). Measured on
-	 * the opening montage: every window frame carries ~1.1M px of triangle
-	 * coverage, so any weight >= 1 trips the budget on ALL of them and
-	 * halves the tick rate (tested: weight 2 froze the whole montage).
-	 * Matching hardware's observed ~24% dropped-frame rate there needs a
-	 * debt/carry model rather than a per-DL threshold — see issue #136 notes
-	 * in docs/intro_divergence_triage_2026-07-30.md. Default 0 keeps the
-	 * shipped cost model; SSB64_RCP_TRI_WEIGHT_PCT (percent) enables
-	 * experimentation. */
-	static int sTriWeightPct = -1;
-	if (sTriWeightPct < 0) {
-		const char *wenv = std::getenv("SSB64_RCP_TRI_WEIGHT_PCT");
-		sTriWeightPct = (wenv != NULL) ? std::atoi(wenv) : 0;
-		if (sTriWeightPct < 0) sTriWeightPct = 0;
-	}
-	int tri_cost = (int)((long long)tri_area * sTriWeightPct / 100);
+	int tri_cost = (int)((long long)tri_area * cfg.tri_weight_pct / 100);
 
 	int cost = sLastDLTris * 75
 	         + sLastDLRectPx
@@ -332,73 +405,13 @@ extern "C" int port_get_last_dl_defer_n(void)
 	         + tri_cost;
 	int fillrate_px = (sLastDLRectPx > tri_cost) ? sLastDLRectPx : tri_cost;
 
-	static int sRcpLog = -1;
-	if (sRcpLog < 0) {
-		const char *lenv = std::getenv("SSB64_RCP_LOG");
-		sRcpLog = (lenv != NULL) ? std::atoi(lenv) : 0;
-	}
-
-	/* Heavy-DL deferral. The port's coroutine scheduler observes the held
-	 * framebuffer one host frame after slot contention, so climax DLs need
-	 * one extra VI of synthetic RCP latency beyond the first visible stall.
-	 * This shifts all authored freezes together (portrait banners, fighter
-	 * poses, stage cuts) instead of patching scene timers individually.
-	 *
-	 * Issue #136: an ISOLATED over-budget climax gets the full N=3 hold, but
-	 * a SUSTAINED over-budget stretch must not refire it every DL — the
-	 * newcomers/silhouette scene sits at cost 460-515k with rect_px 262k on
-	 * EVERY frame, and the old rule turned that into a machine-gun stutter
-	 * (15 consecutive N=3 fires, the reported "stutter before the
-	 * silhouettes"). Real hardware paces that window as occasional
-	 * single-frame drops (~7 over the window in the issue's accurate-
-	 * emulator capture). So: after a full fire, enter a cooldown during
-	 * which continued over-budget frames accumulate their EXCESS cycles as
-	 * carry, dropping one frame (N=2) only each time the carry exceeds a
-	 * full VI budget — the debt-paced cadence the excess actually implies
-	 * (60-115k excess/frame -> one drop every ~4-6 frames there). Isolated
-	 * authored climaxes (montage fighter poses at ~1-frame spikes, e.g.
-	 * frames 1800/1881 in the attract log) still fire exactly as before. */
-	static int sCooldownUntilFrame = 0;
-	static int sCarryCycles = 0;
-	static int sCooldownLen = -1;
-	if (sCooldownLen < 0) {
-		const char *cenv = std::getenv("SSB64_RCP_COOLDOWN");
-		sCooldownLen = (cenv != NULL) ? std::atoi(cenv) : 30;
-		if (sCooldownLen < 0) sCooldownLen = 0;
-	}
-	int n;
-	if (cost < sBudget) {
-		n = 1;
-		/* Under budget: pay down lingering debt so old excess can't fire
-		 * long after the heavy stretch ended. */
-		sCarryCycles -= sBudget - cost;
-		if (sCarryCycles < 0) sCarryCycles = 0;
-	} else if (fillrate_px < sRectGate) {
-		/* Cost is over budget but the load is dominated by triangle COUNT,
-		 * not fillrate — looks like a fighter model render, not an authored
-		 * full-screen effect. Don't freeze. */
-		n = 1;
-	} else if (sFrameCount >= sCooldownUntilFrame) {
-		n = 3;
-		sCooldownUntilFrame = sFrameCount + sCooldownLen;
-		sCarryCycles = 0;
-	} else {
-		sCarryCycles += cost - sBudget;
-		if (sCarryCycles >= sBudget) {
-			sCarryCycles -= sBudget;
-			n = 2;
-		} else {
-			n = 1;
-		}
-	}
-	if (n < 1) n = 1;
-	if (n > 3) n = 3;
-	if (sRcpLog) {
+	int n = rcp_defer_n(cost, fillrate_px, cfg);
+	if (cfg.rcp_log) {
 		port_log("[rcp] frame=%d tris=%d rect_px=%d tri_area=%d load=%d cost=%d n=%d\n",
 		         sFrameCount, sLastDLTris, sLastDLRectPx, tri_area, sLastDLLoadBytes, cost, n);
 	}
-	if (sForceN >= 1) {
-		return sForceN;
+	if (cfg.force_n >= 1) {
+		return cfg.force_n;
 	}
 	return n;
 }
@@ -676,6 +689,162 @@ void PortGameInit(void)
  * When unset/empty, feature is OFF and adds only one bool check per frame.
  */
 
+#if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
+/* SSB64_DUMP_DRAWS=<vi frame>: snapshot the draw target after every
+ * DrawTriangles call while rendering that frame (GL backend only).
+ * Output: draw_dump/draw_NNNN.png relative to CWD.
+ * Accepts "N" or "N-M" (inclusive VI-frame range). */
+static void port_push_dump_draws(void)
+{
+	extern int gPortGLDumpDraws;
+	static int sDumpDrawsFirst = -2;
+	static int sDumpDrawsLast = -1;
+	if (sDumpDrawsFirst == -2) {
+		const char *env = std::getenv("SSB64_DUMP_DRAWS");
+		sDumpDrawsFirst = -1;
+		if (env != nullptr) {
+			sDumpDrawsFirst = std::atoi(env);
+			const char *dash = std::strchr(env, '-');
+			sDumpDrawsLast = (dash != nullptr) ? std::atoi(dash + 1) : sDumpDrawsFirst;
+		}
+		if (sDumpDrawsFirst > 0) {
+			std::error_code ec;
+			std::filesystem::create_directories("draw_dump", ec);
+		}
+	}
+	int vi = sFrameCount + 1;
+	gPortGLDumpDraws = (vi >= sDumpDrawsFirst && vi <= sDumpDrawsLast) ? vi : 0;
+}
+#endif
+
+/* VI-style idle presentation: when no gfx task was submitted this VI,
+ * original hardware still scans out the current RDRAM framebuffer.
+ * Fast3D normally presents only from DrawAndRunGraphicsCommands(), so
+ * 0-submit frames can otherwise hold an older swapchain image. Present
+ * the cached game framebuffer texture through the normal GUI/window path
+ * without re-running any display list or touching game memory. */
+static void port_push_idle_present(std::chrono::steady_clock::time_point frameStart)
+{
+#ifdef SSB64_TEST_HOOKS
+	if (port_headless_enabled()) {
+		/* Headless: DrawAndRunGraphicsCommands is skipped, so nothing
+		 * paces the frame — supply the 60 Hz VI cadence explicitly or
+		 * the game clock free-runs ahead of real time (and ahead of its
+		 * netplay peers). */
+		port_pace_one_vi(frameStart);
+		return;
+	}
+#endif
+	if (sDLSubmitsThisFrame != 0) {
+		return;
+	}
+	bool idlePresented = false;
+	static int sFreezePacing = -1;
+	if (sFreezePacing < 0) {
+		const char *env = std::getenv("SSB64_FREEZE_PACING");
+		sFreezePacing = (env != nullptr) ? std::atoi(env) : 1;
+	}
+	if (sFreezePacing) {
+		auto ctx = Ship::Context::GetInstance();
+		auto window = ctx
+			? std::dynamic_pointer_cast<Fast::Fast3dWindow>(ctx->GetWindow())
+			: nullptr;
+		if (window) {
+			/* Held frame: present k paced subframes of the cached
+			 * framebuffer so the tick still occupies one VI period at
+			 * the interpolated render rate. k == 1 when the feature is
+			 * off (single present, old behavior). */
+			int idleSubframes = portInterpActiveSubframes();
+			for (int sub = 0; sub < idleSubframes; sub++) {
+				idlePresented = window->PresentCurrentFramebuffer();
+				if (!idlePresented) {
+					break;
+				}
+			}
+		}
+
+		if (!idlePresented) {
+			/* Fallback pace to one VI period if there is no cached
+			 * framebuffer yet. Normal idle presents pace through the
+			 * backend's SwapBuffers path. */
+			port_pace_one_vi(frameStart);
+		}
+	}
+}
+
+/* Perf telemetry (opt-in via SSB64_PERF_LOG=1): ring-buffer the last
+ * ~10s of frame costs and emit one structured "SSB64 Perf:" line per
+ * window — tools/analysis/netplay_metrics.py parses it into the same
+ * metrics.json pipeline as netplay counters, so a benchmark run leaves
+ * P50/P95/P99 frame data next to rollback stats. */
+static void port_push_perf_log(long long frameUs)
+{
+	static const bool sPerfLog = std::getenv("SSB64_PERF_LOG") != nullptr;
+	if (!sPerfLog) {
+		return;
+	}
+	constexpr int kRing = 600;                 /* 10 s at 60 fps */
+	static unsigned int sRing[kRing];
+	static int sRingPos = 0, sRingCount = 0;
+	static auto sWindowStart = std::chrono::steady_clock::now();
+	sRing[sRingPos] = static_cast<unsigned int>(frameUs > 0 ? frameUs : 0);
+	sRingPos = (sRingPos + 1) % kRing;
+	if (sRingCount < kRing) {
+		sRingCount++;
+	}
+	const double windowSec = std::chrono::duration<double>(
+		std::chrono::steady_clock::now() - sWindowStart).count();
+	if (windowSec < 10.0 || sRingCount <= 0) {
+		return;
+	}
+	unsigned int sorted[kRing];
+	const int n = sRingCount;
+	std::memcpy(sorted, sRing, n * sizeof(unsigned int));
+	std::sort(sorted, sorted + n);
+	const unsigned int p50 = sorted[n / 2];
+	const unsigned int p95 = sorted[(n * 95) / 100];
+	const unsigned int p99 = sorted[(n * 99) / 100];
+	const unsigned int mx = sorted[n - 1];
+	port_log("SSB64 Perf: frames=%d window_s=%.1f "
+	         "frame_p50_us=%u frame_p95_us=%u frame_p99_us=%u frame_max_us=%u\n",
+	         n, windowSec, p50, p95, p99, mx);
+	sWindowStart = std::chrono::steady_clock::now();
+	sRingCount = 0;
+}
+
+/* Save-write failures surface here as an in-game overlay toast —
+ * the decomp's syDmaWriteSram wrapper drops the return value, so the
+ * sticky flag in port_save.cpp is the propagation channel. */
+static void port_push_save_failure_toast(const std::shared_ptr<Ship::Context> &context)
+{
+	if (!port_save_write_failed()) {
+		return;
+	}
+	port_save_clear_write_failed();
+	if (context && context->GetWindow() && context->GetWindow()->GetGui() &&
+	    context->GetWindow()->GetGui()->GetGameOverlay()) {
+		context->GetWindow()->GetGui()->GetGameOverlay()->TextDrawNotification(
+			5.0f, true, "WARNING: save data could not be written - progress may be lost");
+	}
+	port_log("SSB64: save write failure surfaced to player\n");
+}
+
+/* Periodic "Frame N complete" log — chatty on the Switch SD card, kept
+ * on desktop where it has helped triage frame-loop issues. */
+static void port_push_frame_log(void)
+{
+	static auto sStartTime = std::chrono::steady_clock::now();
+	auto now = std::chrono::steady_clock::now();
+	double elapsed = std::chrono::duration<double>(now - sStartTime).count();
+#ifndef __SWITCH__
+	if (sFrameCount <= 60 || (sFrameCount % 60 == 0)) {
+		port_log("SSB64: Frame %d complete (t=%.2fs)\n", sFrameCount, elapsed);
+	}
+#else
+	(void)elapsed;
+#endif
+}
+
 void PortPushFrame(void)
 {
 #ifdef __EMSCRIPTEN__
@@ -684,7 +853,13 @@ void PortPushFrame(void)
 	 * busy-spin). We are in the main context here, so the normal
 	 * locked path is legal. */
 	port_log_fiber_drain();
+	port_lus_config_drain();
 #endif
+
+	/* Deferred SRAM flushes — fsync/dir-fsync suspend forever inside an
+	 * Emscripten fiber, so port_save_write caches the image and this
+	 * applies it on the main context (all backends defer in-coroutine). */
+	port_save_drain();
 
 	// Process cheats safely before the frame updates
 	lbBackupApplyCheats();
@@ -726,9 +901,10 @@ void PortPushFrame(void)
 #endif
 
 	/* Post a VI retrace event to the scheduler's message queue. See
-	 * port_make_os_mesg_int() above for why we don't just write
-	 * `(OSMesg)INTR_VRETRACE` here. */
-	osSendMesg(&gSYSchedulerTaskMesgQueue, port_make_os_mesg_int(INTR_VRETRACE), OS_MESG_NOBLOCK);
+	 * port_os_send_mesg_code()'s comment for why the LUS OSMesg union
+	 * must not be passed to osSendMesg directly (wasm32 byval marshals
+	 * it as a pointer — the scheduler then dequeues a stack address). */
+	port_os_send_mesg_code(&gSYSchedulerTaskMesgQueue, INTR_VRETRACE, OS_MESG_NOBLOCK);
 
 	/* TCC mod hook: GamePreUpdateEvent fires once per frame BEFORE the
 	 * per-frame coroutine resume. Listeners run on the main thread with
@@ -777,30 +953,7 @@ void PortPushFrame(void)
 	 * order relative to vblank rotation. */
 	gbi_trace_set_vi_frame(sFrameCount + 1);
 #if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
-	/* SSB64_DUMP_DRAWS=<vi frame>: snapshot the draw target after every
-	 * DrawTriangles call while rendering that frame (GL backend only).
-	 * Output: draw_dump/draw_NNNN.png relative to CWD. */
-	{
-		extern int gPortGLDumpDraws;
-		static int sDumpDrawsFirst = -2;
-		static int sDumpDrawsLast = -1;
-		if (sDumpDrawsFirst == -2) {
-			/* Accepts "N" or "N-M" (inclusive VI-frame range). */
-			const char *env = std::getenv("SSB64_DUMP_DRAWS");
-			sDumpDrawsFirst = -1;
-			if (env != nullptr) {
-				sDumpDrawsFirst = std::atoi(env);
-				const char *dash = std::strchr(env, '-');
-				sDumpDrawsLast = (dash != nullptr) ? std::atoi(dash + 1) : sDumpDrawsFirst;
-			}
-			if (sDumpDrawsFirst > 0) {
-				std::error_code ec;
-				std::filesystem::create_directories("draw_dump", ec);
-			}
-		}
-		int vi = sFrameCount + 1;
-		gPortGLDumpDraws = (vi >= sDumpDrawsFirst && vi <= sDumpDrawsLast) ? vi : 0;
-	}
+	port_push_dump_draws();
 #endif
 	port_drain_pending_display_list();
 
@@ -819,49 +972,7 @@ void PortPushFrame(void)
 	 * 0-submit frames can otherwise hold an older swapchain image. Present
 	 * the cached game framebuffer texture through the normal GUI/window path
 	 * without re-running any display list or touching game memory. */
-#ifdef SSB64_TEST_HOOKS
-	if (port_headless_enabled()) {
-		/* Headless: DrawAndRunGraphicsCommands is skipped, so nothing
-		 * paces the frame — supply the 60 Hz VI cadence explicitly or
-		 * the game clock free-runs ahead of real time (and ahead of its
-		 * netplay peers). */
-		port_pace_one_vi(frameStart);
-	} else
-#endif
-	if (sDLSubmitsThisFrame == 0) {
-		bool idlePresented = false;
-		static int sFreezePacing = -1;
-		if (sFreezePacing < 0) {
-			const char *env = std::getenv("SSB64_FREEZE_PACING");
-			sFreezePacing = (env != nullptr) ? std::atoi(env) : 1;
-		}
-		if (sFreezePacing) {
-			auto ctx = Ship::Context::GetInstance();
-			auto window = ctx
-				? std::dynamic_pointer_cast<Fast::Fast3dWindow>(ctx->GetWindow())
-				: nullptr;
-			if (window) {
-				/* Held frame: present k paced subframes of the cached
-				 * framebuffer so the tick still occupies one VI period at
-				 * the interpolated render rate. k == 1 when the feature is
-				 * off (single present, old behavior). */
-				int idleSubframes = portInterpActiveSubframes();
-				for (int sub = 0; sub < idleSubframes; sub++) {
-					idlePresented = window->PresentCurrentFramebuffer();
-					if (!idlePresented) {
-						break;
-					}
-				}
-			}
-
-			if (!idlePresented) {
-				/* Fallback pace to one VI period if there is no cached
-				 * framebuffer yet. Normal idle presents pace through the
-				 * backend's SwapBuffers path. */
-				port_pace_one_vi(frameStart);
-			}
-		}
-	}
+	port_push_idle_present(frameStart);
 	sDLSubmitsThisFrame = 0;
 
 	/* Feed the interpolation auto-throttle the wall duration of this tick;
@@ -871,55 +982,8 @@ void PortPushFrame(void)
 		std::chrono::steady_clock::now() - frameStart).count();
 	portInterpNoteTicDuration(frameUs);
 
-	/* Perf telemetry (opt-in via SSB64_PERF_LOG=1): ring-buffer the last
-	 * ~10s of frame costs and emit one structured "SSB64 Perf:" line per
-	 * window — tools/analysis/netplay_metrics.py parses it into the same
-	 * metrics.json pipeline as netplay counters, so a benchmark run leaves
-	 * P50/P95/P99 frame data next to rollback stats. */
-	{
-		static const bool sPerfLog = std::getenv("SSB64_PERF_LOG") != nullptr;
-		if (sPerfLog) {
-			constexpr int kRing = 600;                 /* 10 s at 60 fps */
-			static unsigned int sRing[kRing];
-			static int sRingPos = 0, sRingCount = 0;
-			static auto sWindowStart = std::chrono::steady_clock::now();
-			sRing[sRingPos] = static_cast<unsigned int>(frameUs > 0 ? frameUs : 0);
-			sRingPos = (sRingPos + 1) % kRing;
-			if (sRingCount < kRing) {
-				sRingCount++;
-			}
-			const double windowSec = std::chrono::duration<double>(
-				std::chrono::steady_clock::now() - sWindowStart).count();
-			if (windowSec >= 10.0 && sRingCount > 0) {
-				unsigned int sorted[kRing];
-				const int n = sRingCount;
-				std::memcpy(sorted, sRing, n * sizeof(unsigned int));
-				std::sort(sorted, sorted + n);
-				const unsigned int p50 = sorted[n / 2];
-				const unsigned int p95 = sorted[(n * 95) / 100];
-				const unsigned int p99 = sorted[(n * 99) / 100];
-				const unsigned int mx = sorted[n - 1];
-				port_log("SSB64 Perf: frames=%d window_s=%.1f "
-				         "frame_p50_us=%u frame_p95_us=%u frame_p99_us=%u frame_max_us=%u\n",
-				         n, windowSec, p50, p95, p99, mx);
-				sWindowStart = std::chrono::steady_clock::now();
-				sRingCount = 0;
-			}
-		}
-	}
-
-	/* Save-write failures surface here as an in-game overlay toast —
-	 * the decomp's syDmaWriteSram wrapper drops the return value, so the
-	 * sticky flag in port_save.cpp is the propagation channel. */
-	if (port_save_write_failed()) {
-		port_save_clear_write_failed();
-		if (context && context->GetWindow() && context->GetWindow()->GetGui() &&
-		    context->GetWindow()->GetGui()->GetGameOverlay()) {
-			context->GetWindow()->GetGui()->GetGameOverlay()->TextDrawNotification(
-				5.0f, true, "WARNING: save data could not be written - progress may be lost");
-		}
-		port_log("SSB64: save write failure surfaced to player\n");
-	}
+	port_push_perf_log(frameUs);
+	port_push_save_failure_toast(context);
 
 	/* Tell the hang watchdog a frame completed. */
 	port_watchdog_note_frame_end();
@@ -934,16 +998,7 @@ void PortPushFrame(void)
 	 * feature's env-var contract. */
 	portRenderDocOnFrame(static_cast<unsigned int>(sFrameCount));
 
-	{
-		static auto sStartTime = std::chrono::steady_clock::now();
-		auto now = std::chrono::steady_clock::now();
-		double elapsed = std::chrono::duration<double>(now - sStartTime).count();
-#ifndef __SWITCH__
-		if (sFrameCount <= 60 || (sFrameCount % 60 == 0)) {
-			port_log("SSB64: Frame %d complete (t=%.2fs)\n", sFrameCount, elapsed);
-		}
-#endif
-	}
+	port_push_frame_log();
 
 #ifdef __EMSCRIPTEN__
 	/* Yield to the browser event loop once per frame. SDL's swap and

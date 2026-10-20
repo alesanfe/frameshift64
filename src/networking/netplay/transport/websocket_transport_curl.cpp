@@ -62,17 +62,10 @@ std::atomic<bool> sStop{ false };
  * game thread. */
 std::mutex sIoMutex;
 
-std::mutex sUpMutex;
-std::mutex sUpIoMutex;
-std::atomic<int> sUpState{ PORT_WS_CLOSED };
+/* Uplink bookkeeping — the locking choreography is shared
+ * (websocket_transport_internal.h); this TU keeps only the easy handle. */
+WsUplink sUp;
 CURL* sUpCurl = nullptr;
-/* Lazy-reconnect state: the uplink is send-only, so a dead TCP shows up
- * only as send failures — without a re-dial a relayed peer went mute
- * until the match timed out. The last URL is remembered and re-dialed
- * inside send at a bounded cadence. */
-std::string sUpUrl;
-std::chrono::steady_clock::time_point sUpRetryAfter{};
-constexpr auto kUpRedialMs = std::chrono::milliseconds(2000);
 
 void fail(const std::string &why)
 {
@@ -148,6 +141,59 @@ CURL* ws_dial(const std::string &url, std::string *err)
     return h;
 }
 
+/* Handles one curl_ws_recv chunk. Returns false when the loop should break. */
+static bool run_dispatch_chunk(CURL *c, const curl_ws_frame *meta,
+                               const unsigned char *buf, size_t nread,
+                               std::vector<unsigned char> &message,
+                               int *message_kind)
+{
+    (void)c;
+    const unsigned int flags = meta != nullptr ? meta->flags : 0u;
+    if ((flags & CURLWS_CLOSE) != 0) {
+        port_log("SSB64 WS: close frame received\n");
+        if (!sStop) { fail("server closed the connection"); }
+        return false;
+    }
+    /* Control frames need no action: curl already queued an auto-PONG
+     * for PINGs while collecting (ws_client_collect) and PONGs are
+     * unsolicited keepalive answers. Their payload never reaches us. */
+    if ((flags & (CURLWS_PING | CURLWS_PONG)) != 0) {
+        return true;
+    }
+    /* Every data chunk carries its message type (curl keeps it through
+     * CONT frames), so only start a new message when none is open —
+     * clearing on every chunk would keep just the last fragment. */
+    if (*message_kind < 0) {
+        if ((flags & CURLWS_TEXT) != 0) {
+            *message_kind = 0x1;
+        } else if ((flags & CURLWS_BINARY) != 0) {
+            *message_kind = 0x2;
+        } else {
+            return true;   /* stray chunk with no type: drop */
+        }
+        message.clear();
+    }
+    message.insert(message.end(), buf, buf + nread);
+    if (message.size() > kMaxWsMessageBytes) {
+        fail("server sent an oversized message");
+        return false;
+    }
+    /* bytesleft drains per frame; the message ends only when the LAST
+     * frame's payload is consumed, which curl marks by clearing CONT. */
+    const bool done = (meta == nullptr || meta->bytesleft == 0) &&
+                      (flags & CURLWS_CONT) == 0;
+    if (done) {
+        if (!WsEnqueueBounded(sMutex, sTextQueue, sBinaryQueue,
+                              message, *message_kind == 0x1)) {
+            fail("message queue overflow");
+            return false;
+        }
+        message.clear();
+        *message_kind = -1;
+    }
+    return true;
+}
+
 void run(std::string url)
 {
     std::string err;
@@ -184,48 +230,8 @@ void run(std::string url)
             if (!sStop) { fail("connection to the server was lost"); }
             break;
         }
-        const unsigned int flags = meta != nullptr ? meta->flags : 0u;
-        if ((flags & CURLWS_CLOSE) != 0) {
-            port_log("SSB64 WS: close frame received\n");
-            if (!sStop) { fail("server closed the connection"); }
+        if (!run_dispatch_chunk(c, meta, buf, nread, message, &message_kind)) {
             break;
-        }
-        /* Control frames need no action: curl already queued an auto-PONG
-         * for PINGs while collecting (ws_client_collect) and PONGs are
-         * unsolicited keepalive answers. Their payload never reaches us. */
-        if ((flags & (CURLWS_PING | CURLWS_PONG)) != 0) {
-            continue;
-        }
-        /* Every data chunk carries its message type (curl keeps it through
-         * CONT frames), so only start a new message when none is open —
-         * clearing on every chunk would keep just the last fragment. */
-        if (message_kind < 0) {
-            if ((flags & CURLWS_TEXT) != 0) {
-                message_kind = 0x1;
-            } else if ((flags & CURLWS_BINARY) != 0) {
-                message_kind = 0x2;
-            } else {
-                continue;   /* stray chunk with no type: drop */
-            }
-            message.clear();
-        }
-        message.insert(message.end(), buf, buf + nread);
-        if (message.size() > kMaxWsMessageBytes) {
-            fail("server sent an oversized message");
-            break;
-        }
-        /* bytesleft drains per frame; the message ends only when the LAST
-         * frame's payload is consumed, which curl marks by clearing CONT. */
-        const bool done = (meta == nullptr || meta->bytesleft == 0) &&
-                          (flags & CURLWS_CONT) == 0;
-        if (done) {
-            if (!WsEnqueueBounded(sMutex, sTextQueue, sBinaryQueue,
-                                  message, message_kind == 0x1)) {
-                fail("message queue overflow");
-                break;
-            }
-            message.clear();
-            message_kind = -1;
         }
     }
     /* The handle survives the loop on purpose — port_ws_close joins this
@@ -233,70 +239,33 @@ void run(std::string url)
      * can race the free. */
 }
 
-/* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
- * cadence when the link is dead. Returns 1 when the frame went out on the
- * uplink, -1 when the uplink is unusable and the caller should fall back
- * to the control socket — the frame is never dropped just because the
- * uplink died. sUpMutex is held across the whole dial+send: it bounds the
- * serialization to one uplink at a time and gives close() a single wait
- * point; the dial is bounded by CURLOPT_TIMEOUT_MS (10s). */
-/* Re-dial the remembered URL when the uplink is FAILED and the backoff
- * window elapsed - a single claimer per window (sUpRetryAfter), and
- * CONNECTING is excluded so we never overlap an explicit
- * port_ws_uplink_connect dial. Caller holds sUpMutex. Returns true when
- * sUpCurl is a live socket. */
-bool uplink_ensure_curl(void)
+
+
+/* Returns a live uplink handle: the open one, or a fresh re-dial of the
+ * remembered URL. The locking choreography lives in WsUplinkSocket —
+ * nullptr -> caller falls back to the control socket. */
+CURL* uplink_socket(void)
 {
-    if (sUpState == PORT_WS_OPEN && sUpCurl != nullptr) {
-        return true;
-    }
-    const auto now = std::chrono::steady_clock::now();
-    if (sUpState != PORT_WS_FAILED || sUpUrl.empty() || now < sUpRetryAfter) {
-        return false;
-    }
-    sUpRetryAfter = now + kUpRedialMs;
-    std::string err;
-    std::string url = sUpUrl;
-    CURL* c = ws_dial(url, &err);
-    if (c == nullptr) {
-        sUpState = PORT_WS_FAILED;
-        return false;
-    }
-    if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
-        sUpState = PORT_WS_CLOSED;
-        curl_easy_cleanup(c);
-        return false;
-    }
-    sUpCurl = c;
-    sUpState = PORT_WS_OPEN;
-    port_log("SSB64 WS: uplink reconnected\n");
-    return true;
+    return WsUplinkSocket(sUp, WsSteadyMs(), static_cast<CURL*>(nullptr),
+        sUpCurl,
+        [](const std::string &url) {
+            std::string err;
+            return ws_dial(url, &err);
+        },
+        [](CURL* c) { curl_easy_cleanup(c); });
 }
 
 /* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
  * cadence when the previous socket died. Returns 1 on a successful uplink
  * send, -1 when the uplink is unusable and the caller should fall back to
  * the control socket - the frame is never dropped just because the
- * uplink died. sUpMutex is held across the whole dial+send: it bounds the
- * serialization to one uplink at a time and gives close() a single wait
- * point. */
-int uplink_send_curl(const void *data, size_t size, unsigned int flags)
+ * uplink died. */
+int uplink_send(const void *data, size_t size, unsigned int flags)
 {
-    std::lock_guard<std::mutex> lock(sUpMutex);
-    if (!uplink_ensure_curl()) {
-        return -1;
-    }
-    std::lock_guard<std::mutex> ioLock(sUpIoMutex);
-    if (send_frame_curl(sUpCurl, data, size, flags)) {
-        return 1;
-    }
-    /* Dead socket - drop the handle so the next send takes the re-dial
-     * path. cleanup under the same io lock that serializes sends. */
-    CURL* dead = sUpCurl;
-    sUpCurl = nullptr;
-    sUpState = PORT_WS_FAILED;
-    curl_easy_cleanup(dead);
-    return -1;
+    return WsUplinkSend(sUp, sUpCurl, uplink_socket(),
+        static_cast<CURL*>(nullptr),
+        [&](CURL* c) { return send_frame_curl(c, data, size, flags); },
+        [](CURL* c) { curl_easy_cleanup(c); });
 }
 
 } // namespace
@@ -342,32 +311,32 @@ extern "C" int port_ws_send_text(const char *text)
 {
     /* uplink first (control sends stall behind its pending receive); a
      * dead uplink falls back to the control socket rather than dropping */
-    if (uplink_send_curl(text, std::strlen(text), CURLWS_TEXT) > 0) {
-        return 1;
-    }
-    if (sState != PORT_WS_OPEN) {
-        return 0;
-    }
-    std::lock_guard<std::mutex> ioLock(sIoMutex);
-    if (sCurl == nullptr) {
-        return 0;
-    }
-    return send_frame_curl(sCurl, text, std::strlen(text), CURLWS_TEXT);
+    return WsSend(sState, text, static_cast<int>(std::strlen(text)), CURLWS_TEXT,
+        [](const void *d, int n, unsigned char f) {
+            return uplink_send(d, static_cast<size_t>(n), f);
+        },
+        [](const void *d, int n, unsigned char f) {
+            std::lock_guard<std::mutex> ioLock(sIoMutex);
+            if (sCurl == nullptr) {
+                return 0;
+            }
+            return send_frame_curl(sCurl, d, static_cast<size_t>(n), f);
+        });
 }
 
 extern "C" int port_ws_send_binary(const void *data, int size)
 {
-    if (uplink_send_curl(data, static_cast<size_t>(size), CURLWS_BINARY) > 0) {
-        return 1;
-    }
-    if (sState != PORT_WS_OPEN) {
-        return 0;
-    }
-    std::lock_guard<std::mutex> ioLock(sIoMutex);
-    if (sCurl == nullptr) {
-        return 0;
-    }
-    return send_frame_curl(sCurl, data, static_cast<size_t>(size), CURLWS_BINARY);
+    return WsSend(sState, data, size, CURLWS_BINARY,
+        [](const void *d, int n, unsigned char f) {
+            return uplink_send(d, static_cast<size_t>(n), f);
+        },
+        [](const void *d, int n, unsigned char f) {
+            std::lock_guard<std::mutex> ioLock(sIoMutex);
+            if (sCurl == nullptr) {
+                return 0;
+            }
+            return send_frame_curl(sCurl, d, static_cast<size_t>(n), f);
+        });
 }
 
 extern "C" int port_ws_poll_text(char *out, int capacity)
@@ -383,55 +352,31 @@ extern "C" int port_ws_poll_binary(void *out, int capacity)
 extern "C" int port_ws_uplink_connect(const char *url)
 {
     port_ws_uplink_close();
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        sUpUrl = url != nullptr ? url : "";
-        sUpRetryAfter = std::chrono::steady_clock::time_point{};
-    }
-    sUpState = PORT_WS_CONNECTING;
-    std::string err;
-    CURL* c = ws_dial(url != nullptr ? url : "", &err);
-    std::lock_guard<std::mutex> lock(sUpMutex);
-    if (c == nullptr) {
-        port_log("SSB64 WS: uplink failed: %s\n", err.c_str());
-        sUpState = PORT_WS_FAILED;
-        return 0;
-    }
-    if (sUpUrl != (url != nullptr ? url : "")) {    /* closed or re-targeted while we dialed */
-        sUpState = PORT_WS_CLOSED;
-        curl_easy_cleanup(c);
-        return 0;
-    }
-    sUpCurl = c;
-    sUpState = PORT_WS_OPEN;
-    return 1;
+    return WsUplinkConnect(sUp, sUpCurl, static_cast<CURL*>(nullptr), url,
+        [](const std::string &u, std::string &err) {
+            return ws_dial(u, &err);
+        },
+        [](CURL* c) { curl_easy_cleanup(c); });
 }
 
 extern "C" void port_ws_uplink_close(void)
 {
-    CURL* c = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        c = sUpCurl;
-        sUpCurl = nullptr;
-        sUpUrl.clear();    /* explicit close — never resurrect */
-    }
-    if (c != nullptr) {
-        {
-            std::lock_guard<std::mutex> ioLock(sUpIoMutex);
+    /* Explicit close clears the remembered URL — never resurrect; the
+     * graceful close runs under ioMu to wait out an in-flight send. */
+    WsUplinkClose(sUp, sUpCurl, static_cast<CURL*>(nullptr),
+        [] {},
+        [](CURL* c) {
             send_frame_curl(c, "", 0, CURLWS_CLOSE);
-        }
-        curl_easy_cleanup(c);
-    }
-    sUpState = PORT_WS_CLOSED;
+            curl_easy_cleanup(c);
+        });
 }
 
-extern "C" int port_ws_uplink_state(void) { return sUpState; }
+extern "C" int port_ws_uplink_state(void) { return sUp.state; }
 
 extern "C" int port_ws_uplink_send(const void *data, int size)
 {
     /* Uplink-only API — no control-socket fallback here. */
-    return uplink_send_curl(data, static_cast<size_t>(size), CURLWS_BINARY) > 0 ? 1 : 0;
+    return uplink_send(data, static_cast<size_t>(size), CURLWS_BINARY) > 0 ? 1 : 0;
 }
 
 #endif

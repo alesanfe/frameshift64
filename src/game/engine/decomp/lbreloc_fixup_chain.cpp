@@ -38,21 +38,14 @@
 // Returns 1 if the slot was at a G_SETTIMG/G_VTX and a fixup was applied;
 // 0 otherwise.
 
-static int chain_fixup_settimg(void *file_base, size_t file_size,
-                                unsigned int slot_byte_off,
-                                unsigned int target_byte_off,
-                                uint32_t w0)
+/* Walk forward up to 8 cmds (64 bytes) from the SETTIMG slot to find the
+ * G_LOADBLOCK or G_LOADTLUT it feeds. Returns 0 = none (or another
+ * SETTIMG intervened), 1 = loadblock, 2 = loadtlut; the matched cmd's
+ * w1 lands in the corresponding out arg. */
+static int chain_find_load_cmd(const uint8_t *file_bytes, size_t file_size,
+                               unsigned int slot_byte_off,
+                               uint32_t *loadblock_w1, uint32_t *loadtlut_w1)
 {
-	const uint8_t *file_bytes = static_cast<const uint8_t *>(file_base);
-
-	uint32_t fmt = (w0 >> 21) & 0x07;
-	uint32_t siz = (w0 >> 19) & 0x03;
-	(void)fmt;
-
-	// Walk forward up to 8 cmds (64 bytes) to find G_LOADBLOCK or G_LOADTLUT.
-	uint32_t loadblock_w1 = 0;
-	uint32_t loadtlut_w1  = 0;
-	int      found_load   = 0;
 	for (int step = 1; step <= 8; step++)
 	{
 		size_t walk_off = (size_t)slot_byte_off - 4 + (size_t)(step * 8);
@@ -62,21 +55,26 @@ static int chain_fixup_settimg(void *file_base, size_t file_size,
 		uint8_t  walk_op = (uint8_t)(walk_w0 >> 24);
 		if (walk_op == GBI_LOADBLOCK)
 		{
-			loadblock_w1 = walk_w1;
-			found_load = 1;
-			break;
+			*loadblock_w1 = walk_w1;
+			return 1;
 		}
 		if (walk_op == GBI_LOADTLUT)
 		{
-			loadtlut_w1 = walk_w1;
-			found_load = 2;
-			break;
+			*loadtlut_w1 = walk_w1;
+			return 2;
 		}
 		if (walk_op == GBI_SETTIMG) return 0;
 	}
-	if (!found_load) return 0;
+	return 0;
+}
 
-	uint32_t tex_bytes = 0;
+/* Texel byte count implied by the load cmd: LOADBLOCK carries lrs+1
+ * texels at the SETTIMG's bit depth; LOADTLUT carries count+1 palette
+ * entries (2 bytes each). Aligned up to u32 words; 0 on an unusable siz. */
+static uint32_t chain_load_cmd_bytes(int found_load, uint32_t siz,
+                                     uint32_t loadblock_w1, uint32_t loadtlut_w1)
+{
+	uint32_t tex_bytes;
 	if (found_load == 1)
 	{
 		uint32_t lrs = (loadblock_w1 >> 12) & 0xFFF;
@@ -94,7 +92,91 @@ static int chain_fixup_settimg(void *file_base, size_t file_size,
 		uint32_t count = ((loadtlut_w1 >> 14) & 0x3FF) + 1;
 		tex_bytes = count * 2;
 	}
-	tex_bytes = (tex_bytes + 3) & ~3u;
+	return (tex_bytes + 3) & ~3u;
+}
+
+/* All formats need BSWAP32 to restore N64 BE byte order:
+ *  - 4b/8b: per-byte data; Fast3D reads bytes in their original order
+ *  - 16b: pixels are BE u16; Fast3D reads `(addr[0] << 8) | addr[1]`
+ *  - 32b: pixels are BE [R,G,B,A]; Fast3D's ImportTextureRgba32 reads
+ *         addr[0]=R, addr[1]=G, addr[2]=B, addr[3]=A
+ * Pass1 BSWAP32 reversed the byte order within each u32, so a second
+ * BSWAP32 restores the original layout for ALL of these formats.
+ *
+ * Issue #4 (BTT/BTP arrow palette): we must record this fix in
+ * sTexFixupExtent and sTexFixupWords too. Without those, the runtime
+ * LOADTLUT path's early-skip — which fires when a target appears in
+ * sStructU16Fixups but NOT sTexFixupExtent — locks out runtime fixup
+ * on this target. That matters when the runtime LOADTLUT loads MORE
+ * bytes than chain just fixed (e.g. a count=3 partial palette where
+ * chain only saw a count=1 LOADTLUT in its 8-cmd window): bytes
+ * beyond the chain-fixed range stay in pass1-BSWAP state and the
+ * arrow's palette[2] reads as 0xC17B (magenta) instead of 0x0001
+ * (black). With these two records, the runtime path now passes the
+ * early-skip and falls through to the per-word loop, which skips
+ * already-fixed words via sTexFixupWords and BSWAPs the rest. */
+static void chain_tex_apply(uint32_t *region, uint32_t tex_bytes)
+{
+	size_t num_words = tex_bytes / 4;
+	uintptr_t reg_base = reinterpret_cast<uintptr_t>(region);
+	for (size_t i = 0; i < num_words; i++) {
+		sTexFixupWords.insert(reg_base + i * 4);
+		region[i] = BSWAP32(region[i]);
+	}
+	auto extent_it = sTexFixupExtent.find(reg_base);
+	if (extent_it == sTexFixupExtent.end() || extent_it->second < tex_bytes)
+		sTexFixupExtent[reg_base] = tex_bytes;
+}
+
+/* Diagnostic: record what was just fixed (chain-walk path), plus a TGA
+ * dump for LOADBLOCK textures so they can be identified visually
+ * (palettes are 1-D LUTs — not viewable as images). */
+static void chain_tex_log(const void *file_base, uint32_t w0, uint32_t siz,
+                          unsigned int target_byte_off, uint32_t tex_bytes,
+                          int found_load, const uint32_t *region)
+{
+	if (!tex_log_enabled() && !tex_dump_enabled()) return;
+	uintptr_t fb_addr = reinterpret_cast<uintptr_t>(file_base);
+	int chain_file_id = portRelocFindFileIdAndBase(
+		reinterpret_cast<const void *>(fb_addr), nullptr);
+	uint32_t bpp_val = (siz == G_IM_SIZ_4b)  ? 4u
+	                 : (siz == G_IM_SIZ_8b)  ? 8u
+	                 : (siz == G_IM_SIZ_16b) ? 16u
+	                 : (siz == G_IM_SIZ_32b) ? 32u
+	                 : 0u;
+	int fmt_val = (int)((w0 >> 21) & 0x07);
+	const char *note = (found_load == 2) ? "tlut" : "loadblock";
+	tex_log_emit("chain.settimg", chain_file_id,
+	             target_byte_off, tex_bytes,
+	             fmt_val, (int)siz, (int)bpp_val,
+	             region, note);
+
+	if (found_load == 1) {
+		tex_dump_chain(chain_file_id, target_byte_off,
+		               fmt_val, (int)siz, bpp_val,
+		               reinterpret_cast<const uint8_t *>(region),
+		               (size_t)tex_bytes);
+	}
+}
+
+static int chain_fixup_settimg(void *file_base, size_t file_size,
+                                unsigned int slot_byte_off,
+                                unsigned int target_byte_off,
+                                uint32_t w0)
+{
+	const uint8_t *file_bytes = static_cast<const uint8_t *>(file_base);
+
+	uint32_t fmt = (w0 >> 21) & 0x07;
+	uint32_t siz = (w0 >> 19) & 0x03;
+	(void)fmt;
+
+	uint32_t loadblock_w1 = 0;
+	uint32_t loadtlut_w1  = 0;
+	int found_load = chain_find_load_cmd(file_bytes, file_size, slot_byte_off,
+	                                     &loadblock_w1, &loadtlut_w1);
+	if (!found_load) return 0;
+
+	uint32_t tex_bytes = chain_load_cmd_bytes(found_load, siz, loadblock_w1, loadtlut_w1);
 	if (tex_bytes == 0) return 0;
 	if ((size_t)target_byte_off + tex_bytes > file_size)
 	{
@@ -108,67 +190,83 @@ static int chain_fixup_settimg(void *file_base, size_t file_size,
 	sStructU16Fixups.insert(fixup_key);
 
 	uint32_t *region = (uint32_t *)((uint8_t *)file_base + target_byte_off);
-	size_t num_words = tex_bytes / 4;
-
-	// All formats need BSWAP32 to restore N64 BE byte order:
-	//  - 4b/8b: per-byte data; Fast3D reads bytes in their original order
-	//  - 16b: pixels are BE u16; Fast3D reads `(addr[0] << 8) | addr[1]`
-	//  - 32b: pixels are BE [R,G,B,A]; Fast3D's ImportTextureRgba32 reads
-	//         addr[0]=R, addr[1]=G, addr[2]=B, addr[3]=A
-	// Pass1 BSWAP32 reversed the byte order within each u32, so a second
-	// BSWAP32 restores the original layout for ALL of these formats.
-	//
-	// Issue #4 (BTT/BTP arrow palette): we must record this fix in
-	// sTexFixupExtent and sTexFixupWords too. Without those, the runtime
-	// LOADTLUT path's early-skip — which fires when a target appears in
-	// sStructU16Fixups but NOT sTexFixupExtent — locks out runtime fixup
-	// on this target. That matters when the runtime LOADTLUT loads MORE
-	// bytes than chain just fixed (e.g. a count=3 partial palette where
-	// chain only saw a count=1 LOADTLUT in its 8-cmd window): bytes
-	// beyond the chain-fixed range stay in pass1-BSWAP state and the
-	// arrow's palette[2] reads as 0xC17B (magenta) instead of 0x0001
-	// (black). With these two records, the runtime path now passes the
-	// early-skip and falls through to the per-word loop, which skips
-	// already-fixed words via sTexFixupWords and BSWAPs the rest.
-	uintptr_t reg_base = reinterpret_cast<uintptr_t>(region);
-	for (size_t i = 0; i < num_words; i++) {
-		sTexFixupWords.insert(reg_base + i * 4);
-		region[i] = BSWAP32(region[i]);
-	}
-	auto extent_it = sTexFixupExtent.find(reg_base);
-	if (extent_it == sTexFixupExtent.end() || extent_it->second < tex_bytes)
-		sTexFixupExtent[reg_base] = tex_bytes;
-
-	// Diagnostic: record what was just fixed (chain-walk path).
-	if (tex_log_enabled() || tex_dump_enabled()) {
-		uintptr_t fb_addr = reinterpret_cast<uintptr_t>(file_base);
-		int chain_file_id = portRelocFindFileIdAndBase(
-			reinterpret_cast<const void *>(fb_addr), nullptr);
-		uint32_t bpp_val = (siz == G_IM_SIZ_4b)  ? 4u
-		                 : (siz == G_IM_SIZ_8b)  ? 8u
-		                 : (siz == G_IM_SIZ_16b) ? 16u
-		                 : (siz == G_IM_SIZ_32b) ? 32u
-		                 : 0u;
-		int fmt_val = (int)((w0 >> 21) & 0x07);
-		const char *note = (found_load == 2) ? "tlut" : "loadblock";
-		tex_log_emit("chain.settimg", chain_file_id,
-		             target_byte_off, tex_bytes,
-		             fmt_val, (int)siz, (int)bpp_val,
-		             region, note);
-
-		// Dump the texture as one or more TGA images so we can identify
-		// it visually.  Skips palettes (loadtlut) since they're 1-D LUTs
-		// not viewable as images.
-		if (found_load == 1) {
-			tex_dump_chain(chain_file_id, target_byte_off,
-			               fmt_val, (int)siz, bpp_val,
-			               reinterpret_cast<const uint8_t *>(region),
-			               (size_t)tex_bytes);
-		}
-	}
+	chain_tex_apply(region, tex_bytes);
+	chain_tex_log(file_base, w0, siz, target_byte_off, tex_bytes, found_load, region);
 
 	if (stage_audit_enabled()) stage_audit().chain_settimg_fixups++;
 	return 1;
+}
+
+/* Structural validation of the would-be G_VTX w0 — opcode 0x01 is too
+ * common to trust by itself, so the reserved bits, the count and the
+ * end-vertex slot must all match the real encoding. num_vtx out on pass. */
+static bool chain_vtx_layout_ok(uint32_t w0, uint32_t *num_vtx)
+{
+	// bits [23:20] must be zero (reserved)
+	if ((w0 & 0x00F00000) != 0) return false;
+	// bit [0] must be zero (the count is multiplied by 2)
+	if ((w0 & 0x1) != 0) return false;
+
+	uint32_t n = (w0 >> 12) & 0xFF;
+	uint32_t end_idx = (w0 & 0xFFE) >> 1;
+
+	// Sanity-check num_vtx and the destination range.  Real game DLs use
+	// 1..32 vertices per G_VTX (Vtx buffer is 32 entries on N64).
+	if (n == 0 || n > 32) return false;
+	if (end_idx > 32 || end_idx < n) return false;
+	*num_vtx = n;
+	return true;
+}
+
+// Content-based sanity check on the FIRST vertex.
+// Post-pass1 word 0 (high 16 bits) = original BE ob[0] (s16),
+// (low 16 bits) = original BE ob[1] (s16). Word 1 likewise has
+// ob[2] and flag. Real game vertex coords observed up to ±4200,
+// flag is always 0. Reject anything with much larger coords or
+// nonzero flag — those are false-positive struct-field chain
+// entries whose preceding 4 bytes happen to look like a G_VTX cmd.
+static bool chain_vtx_content_ok(const uint32_t *region)
+{
+	int16_t ob0 = (int16_t)((region[0] >> 16) & 0xFFFF);
+	int16_t ob1 = (int16_t)(region[0] & 0xFFFF);
+	int16_t ob2 = (int16_t)((region[1] >> 16) & 0xFFFF);
+	uint16_t flag = (uint16_t)(region[1] & 0xFFFF);
+	const int kMaxCoord = 16384;
+	if (ob0 < -kMaxCoord || ob0 > kMaxCoord) return false;
+	if (ob1 < -kMaxCoord || ob1 > kMaxCoord) return false;
+	if (ob2 < -kMaxCoord || ob2 > kMaxCoord) return false;
+	return flag == 0;
+}
+
+/* Focused trace on ExternDataBank104 to see who's marking its vertices. */
+static void chain_vtx_trace(uintptr_t target_addr, const void *file_base,
+                            unsigned int target_byte_off, uint32_t num_vtx)
+{
+	if (!stage_audit_enabled()) return;
+	int tgt_file = portRelocFindFileIdAndBase((const void *)target_addr, nullptr);
+	int src_file = portRelocFindFileIdAndBase(file_base, nullptr);
+	static uint32_t sChainTrace = 0;
+	if (tgt_file == 104 && sChainTrace < 30) {
+		sChainTrace++;
+		port_log("[STAGE_AUDIT_CHAIN] chain_fixup_vertex src=file%d tgt=file%d target_off=0x%x num_vtx=%u\n",
+		         src_file, tgt_file, target_byte_off, num_vtx);
+	}
+}
+
+// Per-vertex idempotency (matches portRelocFixupVertexAtRuntime).
+static void chain_vtx_apply(uint32_t *region, uintptr_t target_addr, uint32_t num_vtx)
+{
+	for (uint32_t i = 0; i < num_vtx; i++)
+	{
+		uintptr_t vtx_key = target_addr + (uintptr_t)i * 16;
+		if (sStructU16Fixups.count(vtx_key)) continue;
+		sStructU16Fixups.insert(vtx_key);
+
+		region[i * 4 + 0] = (region[i * 4 + 0] << 16) | (region[i * 4 + 0] >> 16);
+		region[i * 4 + 1] = (region[i * 4 + 1] << 16) | (region[i * 4 + 1] >> 16);
+		region[i * 4 + 2] = (region[i * 4 + 2] << 16) | (region[i * 4 + 2] >> 16);
+		region[i * 4 + 3] = BSWAP32(region[i * 4 + 3]);
+	}
 }
 
 static int chain_fixup_vertex(void *file_base, size_t file_size,
@@ -194,67 +292,19 @@ static int chain_fixup_vertex(void *file_base, size_t file_size,
 	// STRICT VALIDATION: opcode 0x01 is too common to trust by itself.
 	// Many non-cmd u32 words start with 0x01.  Reject anything where the
 	// reserved/structural bits don't match the spec.
-
-	// bits [23:20] must be zero (reserved)
-	if ((w0 & 0x00F00000) != 0) return 0;
-	// bit [0] must be zero (the count is multiplied by 2)
-	if ((w0 & 0x1) != 0) return 0;
-
-	uint32_t num_vtx = (w0 >> 12) & 0xFF;
-	uint32_t end_idx = (w0 & 0xFFE) >> 1;
-
-	// Sanity-check num_vtx and the destination range.  Real game DLs use
-	// 1..32 vertices per G_VTX (Vtx buffer is 32 entries on N64).
-	if (num_vtx == 0 || num_vtx > 32) return 0;
-	if (end_idx > 32 || end_idx < num_vtx) return 0;
+	uint32_t num_vtx = 0;
+	if (!chain_vtx_layout_ok(w0, &num_vtx)) return 0;
 
 	size_t total_bytes = (size_t)num_vtx * 16;
 	if ((size_t)target_byte_off + total_bytes > file_size) return 0;
 
 	uint32_t *region = (uint32_t *)((uint8_t *)file_base + target_byte_off);
-
-	// Content-based sanity check on the FIRST vertex.
-	// Post-pass1 word 0 (high 16 bits) = original BE ob[0] (s16),
-	// (low 16 bits) = original BE ob[1] (s16). Word 1 likewise has
-	// ob[2] and flag. Real game vertex coords observed up to ±4200,
-	// flag is always 0. Reject anything with much larger coords or
-	// nonzero flag — those are false-positive struct-field chain
-	// entries whose preceding 4 bytes happen to look like a G_VTX cmd.
-	{
-		int16_t ob0 = (int16_t)((region[0] >> 16) & 0xFFFF);
-		int16_t ob1 = (int16_t)(region[0] & 0xFFFF);
-		int16_t ob2 = (int16_t)((region[1] >> 16) & 0xFFFF);
-		uint16_t flag = (uint16_t)(region[1] & 0xFFFF);
-		const int kMaxCoord = 16384;
-		if (ob0 < -kMaxCoord || ob0 > kMaxCoord) return 0;
-		if (ob1 < -kMaxCoord || ob1 > kMaxCoord) return 0;
-		if (ob2 < -kMaxCoord || ob2 > kMaxCoord) return 0;
-		if (flag != 0) return 0;
-	}
+	if (!chain_vtx_content_ok(region)) return 0;
 
 	// Per-vertex idempotency (matches portRelocFixupVertexAtRuntime).
 	uintptr_t target_addr = reinterpret_cast<uintptr_t>(file_base) + (uintptr_t)target_byte_off;
-	if (stage_audit_enabled()) {
-		int tgt_file = portRelocFindFileIdAndBase((const void *)target_addr, nullptr);
-		int src_file = portRelocFindFileIdAndBase(file_base, nullptr);
-		static uint32_t sChainTrace = 0;
-		if (tgt_file == 104 && sChainTrace < 30) {
-			sChainTrace++;
-			port_log("[STAGE_AUDIT_CHAIN] chain_fixup_vertex src=file%d tgt=file%d target_off=0x%x num_vtx=%u\n",
-			         src_file, tgt_file, target_byte_off, num_vtx);
-		}
-	}
-	for (uint32_t i = 0; i < num_vtx; i++)
-	{
-		uintptr_t vtx_key = target_addr + (uintptr_t)i * 16;
-		if (sStructU16Fixups.count(vtx_key)) continue;
-		sStructU16Fixups.insert(vtx_key);
-
-		region[i * 4 + 0] = (region[i * 4 + 0] << 16) | (region[i * 4 + 0] >> 16);
-		region[i * 4 + 1] = (region[i * 4 + 1] << 16) | (region[i * 4 + 1] >> 16);
-		region[i * 4 + 2] = (region[i * 4 + 2] << 16) | (region[i * 4 + 2] >> 16);
-		region[i * 4 + 3] = BSWAP32(region[i * 4 + 3]);
-	}
+	chain_vtx_trace(target_addr, file_base, target_byte_off, num_vtx);
+	chain_vtx_apply(region, target_addr, num_vtx);
 	if (stage_audit_enabled()) stage_audit().chain_vtx_fixups++;
 	return 1;
 }

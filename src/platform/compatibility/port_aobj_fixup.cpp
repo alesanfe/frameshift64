@@ -152,6 +152,104 @@ bool scan_recurse(uint32_t token, ScanCtx &ctx) {
     return scan(static_cast<uint32_t *>(target), ctx);
 }
 
+/* Per-command outcome: keep walking, or terminate the stream scan. */
+enum ScanVerdict { kScanStep, kScanEnd, kScanReject };
+
+/* Payload shape by opcode — mirrors the decomp parser's switch in
+ * src/sys/objanim.c: opcodes 0-17 for DObj streams, plus 18-22 for MObj.
+ * `flag_bits`/`slot_mult` give the f32 payload slot count as
+ * slot_mult * popcount(cmd.flags, 0, flag_bits).  Flags come from the
+ * command word itself (cmd.flags) — the decomp reads them via
+ * AObjAnimAdvance (post-increment) so what looks like "advance past
+ * header to get flags from next" is actually just reading the
+ * just-consumed command's flags. */
+enum ScanOpKind : int8_t {
+    kOpEnd,     /* End — terminates the stream */
+    kOpRecurse, /* Jump/SetAnim — trailing token, may recurse */
+    kOpNone,    /* command only, no payload slots */
+    kOpToken,   /* SetInterp — one token slot, no recursion */
+    kOpPayload, /* command + slot_mult * popcount payload slots */
+};
+
+struct ScanOpShape {
+    int8_t kind;
+    int8_t flag_bits;
+    int8_t slot_mult;
+};
+
+constexpr ScanOpShape kScanOps[23] = {
+    /* 0  End                */ { kOpEnd,     0, 0 },
+    /* 1  Jump               */ { kOpRecurse, 0, 0 },
+    /* 2  Wait               */ { kOpNone,    0, 0 },
+    /* 3  SetValBlock        */ { kOpPayload,10, 1 },
+    /* 4  SetVal             */ { kOpPayload,10, 1 },
+    /* 5  SetValRateBlock    */ { kOpPayload,10, 2 },
+    /* 6  SetValRate         */ { kOpPayload,10, 2 },
+    /* 7  SetTargetRate      */ { kOpPayload,10, 1 },
+    /* 8  SetVal0RateBlock   */ { kOpPayload,10, 1 },
+    /* 9  SetVal0Rate        */ { kOpPayload,10, 1 },
+    /* 10 SetValAfterBlock   */ { kOpPayload,10, 1 },
+    /* 11 SetValAfter        */ { kOpPayload,10, 1 },
+    /* 12 ANIM_CMD_12        */ { kOpNone,    0, 0 },
+    /* 13 SetInterp          */ { kOpToken,   0, 0 },
+    /* 14 SetAnim            */ { kOpRecurse, 0, 0 },
+    /* 15 SetFlags           */ { kOpNone,    0, 0 },
+    /* 16 ANIM_CMD_16        */ { kOpNone,    0, 0 },
+    /* 17 ANIM_CMD_17        */ { kOpPayload,10, 1 },
+    /* 18 SetExtVal          */ { kOpPayload,10, 1 },
+    /* 19 SetExtValBlock     */ { kOpPayload,10, 1 },
+    /* 20 SetExtValRate      */ { kOpPayload,10, 1 },
+    /* 21 SetExtValRateBlock */ { kOpPayload,10, 1 },
+    /* 22 ANIM_CMD_22 (MObj) */ { kOpPayload, 5, 1 },
+};
+
+/* Advance `ev` past `count` payload slots, collecting them under the
+ * un-halfswap interpretation. */
+void scan_take_slots(uint32_t *&ev, int count, ScanCtx &ctx) {
+    for (int k = 0; k < count; k++) {
+        if (ctx.unhalfswap) ctx.pending.push_back(ev);
+        ev++;
+    }
+}
+
+/* Execute one command: decode the opcode, advance `ev` past the
+ * command word and its payload, and follow recursion tokens where the
+ * context allows.  An unknown opcode rejects the whole stream. */
+ScanVerdict scan_step(uint32_t *&ev, ScanCtx &ctx) {
+    if (++ctx.total_steps > kStreamStepLimit) {
+        return kScanReject;
+    }
+    /* Rest of this stream was converted by an earlier walk. */
+    if (ctx.unhalfswap && has(kFixed, reinterpret_cast<uintptr_t>(ev))) {
+        return kScanEnd;
+    }
+
+    uint32_t cmd = ctx.unhalfswap ? unhalfswap(*ev) : *ev;
+    if (ctx.unhalfswap) {
+        ctx.pending.push_back(ev);
+    }
+    ev++;
+
+    const ScanOpShape &op = kScanOps[cmd_opcode(cmd)];
+    switch (op.kind) {
+    case kOpEnd:
+        return kScanEnd;
+    case kOpRecurse: /* Jump/SetAnim — [token] */
+        if (!scan_recurse(*ev, ctx)) return kScanReject;
+        ev++;
+        return kScanEnd;
+    case kOpNone:
+        return kScanStep;
+    case kOpToken: /* SetInterp — [token] (no recurse) */
+        ev++;
+        return kScanStep;
+    case kOpPayload:
+        scan_take_slots(ev, op.slot_mult * popcount_bits(cmd_flags(cmd), 0, op.flag_bits), ctx);
+        return kScanStep;
+    }
+    return kScanReject;
+}
+
 bool scan(uint32_t *head, ScanCtx &ctx) {
     if (head == nullptr) return true;
     if (!is_in_halfswapped_range(head)) return true; /* not our data; skip silently */
@@ -161,97 +259,11 @@ bool scan(uint32_t *head, ScanCtx &ctx) {
     if (!ctx.visited.insert(key).second) return true; /* already scanning this head */
 
     uint32_t *ev = head;
-
-    while (true) {
-        if (++ctx.total_steps > kStreamStepLimit) {
-            return false;
-        }
-        /* Rest of this stream was converted by an earlier walk. */
-        if (ctx.unhalfswap && has(kFixed, reinterpret_cast<uintptr_t>(ev))) {
-            return true;
-        }
-
-        uint32_t cmd_raw = *ev;
-        uint32_t cmd = ctx.unhalfswap ? unhalfswap(cmd_raw) : cmd_raw;
-        if (ctx.unhalfswap) {
-            ctx.pending.push_back(ev);
-        }
-        ev++;
-
-        uint32_t opcode = cmd_opcode(cmd);
-        uint32_t flags_in_cmd = cmd_flags(cmd);
-
-        switch (opcode) {
-        case 0:  /* End */
-            return true;
-
-        case 1:  /* Jump — [token] */
-        case 14: /* SetAnim — [token] */
-            if (!scan_recurse(*ev, ctx)) return false;
-            ev++;
-            return true;
-
-        case 2:  /* Wait */
-        case 15: /* SetFlags */
-        case 16: /* ANIM_CMD_16 */
-            break;
-
-        case 13: /* SetInterp — [token] (no recurse) */
-            ev++;
-            break;
-
-        /* Flags come from the command word itself (cmd.flags) — the
-         * decomp reads them via AObjAnimAdvance (post-increment) so
-         * what looks like "advance past header to get flags from next"
-         * is actually just reading the just-consumed command's flags.
-         * All of the opcodes below consume the command plus zero or
-         * more f32 payload slots. */
-
-        case 3: case 4: /* SetValBlock, SetVal */
-        case 7:         /* SetTargetRate */
-        case 8: case 9: /* SetVal0RateBlock, SetVal0Rate */
-        case 10: case 11: /* SetValAfterBlock, SetValAfter */
-        case 17:        /* ANIM_CMD_17 */
-        case 18: case 19: case 20: case 21: /* SetExtVal* (MObj) */
-        {
-            int n = popcount_bits(flags_in_cmd, 0, 10);
-            if (n > 10) return false;
-            for (int k = 0; k < n; k++) {
-                if (ctx.unhalfswap) ctx.pending.push_back(ev);
-                ev++;
-            }
-            break;
-        }
-
-        case 5: case 6: /* SetValRate(Block) — value+rate pairs */
-        {
-            int n = popcount_bits(flags_in_cmd, 0, 10);
-            if (n > 10) return false;
-            for (int k = 0; k < 2 * n; k++) {
-                if (ctx.unhalfswap) ctx.pending.push_back(ev);
-                ev++;
-            }
-            break;
-        }
-
-        case 12: /* ANIM_CMD_12 — no f values, flags-only effect */
-            break;
-
-        case 22: /* ANIM_CMD_22 (MObj) — N u32 from flag bits [0..4] */
-        {
-            int n = popcount_bits(flags_in_cmd, 0, 5);
-            if (n > 5) return false;
-            for (int k = 0; k < n; k++) {
-                if (ctx.unhalfswap) ctx.pending.push_back(ev);
-                ev++;
-            }
-            break;
-        }
-
-        default:
-            return false; /* invalid opcode — reject the whole stream */
-        }
-    }
+    ScanVerdict verdict;
+    do {
+        verdict = scan_step(ev, ctx);
+    } while (verdict == kScanStep);
+    return verdict == kScanEnd;
 }
 
 void walk(uint32_t *head) {
@@ -340,33 +352,31 @@ extern "C" void port_aobj_event32_unhalfswap_stream(void *head) {
     walk(static_cast<uint32_t *>(head));
 }
 
-extern "C" void port_aobj_register_halfswapped_range(void *base, unsigned long size) {
-    if (base == nullptr || size == 0) return;
-    uintptr_t b = reinterpret_cast<uintptr_t>(base);
-    uintptr_t e = b + static_cast<uintptr_t>(size);
-    /* Evict every cache keyed on an address inside the new range —
-     * fighter figatree heaps are bump-reset between status changes, so a
-     * later load lands fresh halfswap-corrupted bytes at addresses a
-     * previous load already populated.  Any cached "already processed"
-     * verdict from the previous load is stale once the bytes change.
-     *
-     * Every verdict kind resets in lockstep (the range's bitmaps are
-     * re-zeroed below):
-     *   - kVisited: per-block one-shot fixup tracker (interp.c spline data).
-     *   - kHeads / kFixed: streams and words the walker converted. Stale
-     *     entries make the walker short-circuit on a fresh load's stream
-     *     that lands at the same address.
-     *   - kRejected: streams the walker decided not to touch. A stream that
-     *     was non-event32 in the previous load would otherwise block a real
-     *     event32 stream in the new load from being un-halfswapped.
-     *
-     * Symptom that surfaced the missing head/rejected eviction: Master Hand's okutsubushi /
-     * okupunch / drill animations parsed garbage — gcParseDObjAnimJoint
-     * would hit a halfswap-corrupted command word with an out-of-range
-     * opcode (typically 64) and bail with "UNHANDLED opcode=64 — ending
-     * anim", leaving TransN.translate at (0,0,0) for the rest of the
-     * attack.  Same shape as project_fixup_idempotency_heap_reuse: cache
-     * keyed on pointer, heap reuses addresses, fresh bytes skip fixup. */
+/* Evict every cache keyed on an address inside [b,e) -- fighter figatree
+ * heaps are bump-reset between status changes, so a later load lands
+ * fresh halfswap-corrupted bytes at addresses a previous load already
+ * populated.  Any cached "already processed" verdict from the previous
+ * load is stale once the bytes change.
+ *
+ * Every verdict kind resets in lockstep (the range's bitmaps are
+ * re-zeroed by the caller):
+ *   - kVisited: per-block one-shot fixup tracker (interp.c spline data).
+ *   - kHeads / kFixed: streams and words the walker converted. Stale
+ *     entries make the walker short-circuit on a fresh load's stream
+ *     that lands at the same address.
+ *   - kRejected: streams the walker decided not to touch. A stream that
+ *     was non-event32 in the previous load would otherwise block a real
+ *     event32 stream in the new load from being un-halfswapped.
+ *
+ * Symptom that surfaced the missing head/rejected eviction: Master Hand's
+ * okutsubushi / okupunch / drill animations parsed garbage --
+ * gcParseDObjAnimJoint would hit a halfswap-corrupted command word with
+ * an out-of-range opcode (typically 64) and bail with "UNHANDLED
+ * opcode=64 -- ending anim", leaving TransN.translate at (0,0,0) for the
+ * rest of the attack.  Same shape as
+ * project_fixup_idempotency_heap_reuse: cache keyed on pointer, heap
+ * reuses addresses, fresh bytes skip fixup. */
+static void halfswap_evict_verdicts(uintptr_t b, uintptr_t e) {
     for (auto &set : sOutOfRange) {
         for (auto it = set.begin(); it != set.end(); ) {
             if (*it >= b && *it < e) it = set.erase(it);
@@ -379,14 +389,22 @@ extern "C" void port_aobj_register_halfswapped_range(void *base, unsigned long s
         if (it->base != b && it->base < e && b < it->end) it = sHalfswappedRanges.erase(it);
         else ++it;
     }
-    Range *range = nullptr;
+}
+
+static Range* halfswap_find_or_create(uintptr_t b) {
     for (auto &r : sHalfswappedRanges) {
-        if (r.base == b) range = &r;
+        if (r.base == b) return &r;
     }
-    if (range == nullptr) {
-        sHalfswappedRanges.push_back({b, e, {}});
-        range = &sHalfswappedRanges.back();
-    }
+    sHalfswappedRanges.push_back({b, 0, {}});
+    return &sHalfswappedRanges.back();
+}
+
+extern "C" void port_aobj_register_halfswapped_range(void *base, unsigned long size) {
+    if (base == nullptr || size == 0) return;
+    uintptr_t b = reinterpret_cast<uintptr_t>(base);
+    uintptr_t e = b + static_cast<uintptr_t>(size);
+    halfswap_evict_verdicts(b, e);
+    Range *range = halfswap_find_or_create(b);
     range->end = e;
     for (auto &bits : range->bits) {
         bits.assign((size + 7) / 8, 0);

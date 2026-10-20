@@ -7,6 +7,7 @@
 // normalization with a per-socket order queue, setAlarm idle sweeps, and
 // ctx.storage persistence behind the app's deps seam.
 
+import { DurableObject } from "cloudflare:workers";
 import { Hono } from "hono";
 
 import {
@@ -25,6 +26,7 @@ const isLbPath = (p) =>
   p === "/leaderboard" || p === "/history" || p === "/player" ||
   p === "/submit" || p === "/result" || p === "/report" ||
   p === "/crash" || p === "/crashes" || p === "/stats" ||
+  p.startsWith("/match/") ||
   p.startsWith("/replay") || p.startsWith("/tournament");
 
 // Per-isolate IP join accounting (approximate — isolates aren't shared,

@@ -13,9 +13,33 @@
  * moved out of the original anonymous namespace keep resolving. */
 #pragma once
 
+/* Umbrella for the netlobby TUs' shared include set — each file used to
+ * carry the same ~25-line block; only per-file extras remain at the TU. */
 #include "netlobby.h"
+#include "netlobby_util.h"
+#include "netfriends.h"
+#include "netstats.h"
+#include "udp_transport.h"
+#include "websocket_transport.h"
+#include "port_log.h"
+#include "netrules.h"
+#include "PortI18n.h"
 
+#include <libultraship/bridge/consolevariablebridge.h>
+
+#ifndef DISABLE_SCRIPTING
+#include "ModRegistry.h"
+#endif
+
+#include <ship/Context.h>
+
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <random>
 #include <string>
 #include <vector>

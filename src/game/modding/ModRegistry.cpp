@@ -44,6 +44,49 @@ std::string PathLabel(const std::string& archivePath) {
 
 } // namespace
 
+/* Names of mods that compiled and ran ModInit successfully. Keyed by
+ * manifest name — the same key ScriptLoader uses internally. If the
+ * loader is not up, every mod simply reports NotLoaded. */
+static std::unordered_set<std::string> CollectLoadedModNames(Ship::Context* ctx) {
+    std::unordered_set<std::string> loaded;
+    if (auto scripting = ctx->GetScriptLoader()) {
+        for (const auto& name : scripting->GetLoadersInDependencyOrder()) {
+            loaded.insert(name);
+        }
+    }
+    return loaded;
+}
+
+/* Build the ModInfo for one mounted archive (manifest fields + load state).
+ * A mounted archive is a managed mod iff it carries a manifest.json.
+ * Excludes the base game + shader archives, which carry none. */
+static bool ArchiveToModInfo(const std::shared_ptr<Ship::Archive>& archive,
+                             const std::unordered_set<std::string>& loaded,
+                             ModInfo* info) {
+    if (!archive || !archive->HasFile("manifest.json")) {
+        return false;
+    }
+    const Ship::ArchiveManifest& manifest = archive->GetManifest();
+
+    info->archivePath = archive->GetPath();
+    info->version = manifest.Version;
+    info->author = manifest.Author;
+    info->description = manifest.Description;
+    info->simulation = manifest.Simulation;
+
+    if (manifest.Name.empty()) {
+        /* manifest.json exists but parsed to no name: malformed JSON or
+         * a missing "name". Surface it instead of hiding it. */
+        info->name = PathLabel(info->archivePath);
+        info->state = ModState::InvalidManifest;
+        info->note = "manifest.json is missing a \"name\" or could not be parsed";
+    } else {
+        info->name = manifest.Name;
+        info->state = loaded.count(manifest.Name) ? ModState::Loaded : ModState::NotLoaded;
+    }
+    return true;
+}
+
 std::vector<ModInfo> ModRegistry::Snapshot() {
     std::vector<ModInfo> mods;
 
@@ -64,46 +107,13 @@ std::vector<ModInfo> ModRegistry::Snapshot() {
         return mods;
     }
 
-    /* Names of mods that compiled and ran ModInit successfully. Keyed by
-     * manifest name — the same key ScriptLoader uses internally. If the
-     * loader is not up, every mod simply reports NotLoaded. */
-    std::unordered_set<std::string> loaded;
-    if (auto scripting = ctx->GetScriptLoader()) {
-        for (const auto& name : scripting->GetLoadersInDependencyOrder()) {
-            loaded.insert(name);
-        }
-    }
+    const std::unordered_set<std::string> loaded = CollectLoadedModNames(ctx.get());
 
     for (const auto& archive : *archives) {
-        if (!archive) {
-            continue;
-        }
-        /* A mounted archive is a managed mod iff it carries a manifest.json.
-         * Excludes the base game + shader archives, which carry none. */
-        if (!archive->HasFile("manifest.json")) {
-            continue;
-        }
-
-        const Ship::ArchiveManifest& manifest = archive->GetManifest();
-
         ModInfo info;
-        info.archivePath = archive->GetPath();
-        info.version = manifest.Version;
-        info.author = manifest.Author;
-        info.description = manifest.Description;
-        info.simulation = manifest.Simulation;
-
-        if (manifest.Name.empty()) {
-            /* manifest.json exists but parsed to no name: malformed JSON or
-             * a missing "name". Surface it instead of hiding it. */
-            info.name = PathLabel(info.archivePath);
-            info.state = ModState::InvalidManifest;
-            info.note = "manifest.json is missing a \"name\" or could not be parsed";
-        } else {
-            info.name = manifest.Name;
-            info.state = loaded.count(manifest.Name) ? ModState::Loaded : ModState::NotLoaded;
+        if (!ArchiveToModInfo(archive, loaded, &info)) {
+            continue;
         }
-
         mods.push_back(std::move(info));
     }
 

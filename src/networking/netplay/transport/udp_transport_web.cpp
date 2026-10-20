@@ -98,11 +98,32 @@ extern "C" int port_udp_send_to(const char *spec, const void *data, int size)
 extern "C" int port_udp_recv_from(void *buffer, int capacity,
                                   char *from, int from_capacity)
 {
-	const int n = port_udp_recv(buffer, capacity);
-	if (n > 0 && from != nullptr && from_capacity > 0) {
-		std::snprintf(from, from_capacity, "relay");
+	/* Same contract as the socket backend: relayed datagrams arrive
+	 * framed [from_slot][payload] under the v2 protocol — strip the slot
+	 * byte into the "relay:<slot>" source name so peer_for_source can
+	 * attribute the packet, and copy out only the payload. Unframed
+	 * (v1/legacy) traffic keeps the plain "relay" name. */
+	if (buffer == nullptr || capacity <= 0) {
+		return -1;
 	}
-	return n;
+	uint8_t bytes[2048];
+	const int size = port_udp_recv(bytes, sizeof(bytes));
+	if (size <= 0) {
+		return size;
+	}
+	const int skip = sRelayFramed ? 1 : 0;
+	if (size - skip > capacity) {
+		return -1;
+	}
+	std::memcpy(buffer, bytes + skip, size - skip);
+	if (from != nullptr && from_capacity > 0) {
+		if (sRelayFramed && size >= 1) {
+			std::snprintf(from, from_capacity, "relay:%u", bytes[0]);
+		} else {
+			std::snprintf(from, from_capacity, "relay");
+		}
+	}
+	return size - skip;
 }
 
 extern "C" void port_udp_set_relay_hooks(port_udp_relay_send_fn send,

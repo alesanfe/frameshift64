@@ -131,6 +131,66 @@ std::string field_str(const nlohmann::json &o, const char *key)
         ? it->get_ref<const std::string&>() : std::string();
 }
 
+
+/* archived seasons: {"id":"2026-09","r":1450,"w":10,"l":8} */
+static void load_seasons(const nlohmann::json &doc)
+{
+    const auto seasons = doc.find("seasons");
+    if (seasons == doc.end() || !seasons->is_array()) {
+        return;
+    }
+    for (const nlohmann::json &row : *seasons) {
+        if (!row.is_object() || sStats.seasons.size() >= 24) {
+            break;
+        }
+        SeasonRow s;
+        s.id = field_str(row, "id");
+        s.rating = static_cast<int>(field_num(row, "r", 0));
+        s.wins = static_cast<int>(field_num(row, "w", 0));
+        s.losses = static_cast<int>(field_num(row, "l", 0));
+        if (!s.id.empty()) {
+            sStats.seasons.push_back(s);
+        }
+    }
+}
+
+/* history rows: {"w":1,"or":1234,"d":1234,"t":1720000000} */
+static void load_history(const nlohmann::json &doc)
+{
+    const auto history = doc.find("history");
+    if (history == doc.end() || !history->is_array()) {
+        return;
+    }
+    for (const nlohmann::json &row : *history) {
+        if (!row.is_object() || sStats.history.size() >= kMaxHistory) {
+            break;
+        }
+        MatchRow m;
+        m.won = static_cast<int>(field_num(row, "w", 0));
+        m.opp_rating = static_cast<int>(field_num(row, "or", -1));
+        m.duration_ticks = static_cast<unsigned int>(field_u64(row, "d", 0));
+        m.ts = field_u64(row, "t", 0);
+        sStats.history.push_back(m);
+    }
+}
+
+/* recent room codes: "recent":["ABC123",...] */
+static void load_recent(const nlohmann::json &doc)
+{
+    const auto recent = doc.find("recent");
+    if (recent == doc.end() || !recent->is_array()) {
+        return;
+    }
+    for (const nlohmann::json &c : *recent) {
+        if (sStats.recent_rooms.size() >= kMaxRecentRooms) {
+            break;
+        }
+        if (c.is_string()) {
+            sStats.recent_rooms.push_back(c.get_ref<const std::string&>());
+        }
+    }
+}
+
 void load()
 {
     std::ifstream f(stats_path());
@@ -151,52 +211,9 @@ void load()
     sStats.key = field_str(doc, "key");
     sStats.season = field_str(doc, "season");
 
-    /* archived seasons: {"id":"2026-09","r":1450,"w":10,"l":8} */
-    const auto seasons = doc.find("seasons");
-    if (seasons != doc.end() && seasons->is_array()) {
-        for (const nlohmann::json &row : *seasons) {
-            if (!row.is_object() || sStats.seasons.size() >= 24) {
-                break;
-            }
-            SeasonRow s;
-            s.id = field_str(row, "id");
-            s.rating = static_cast<int>(field_num(row, "r", 0));
-            s.wins = static_cast<int>(field_num(row, "w", 0));
-            s.losses = static_cast<int>(field_num(row, "l", 0));
-            if (!s.id.empty()) {
-                sStats.seasons.push_back(s);
-            }
-        }
-    }
-
-    /* history rows: {"w":1,"or":1234,"d":1234,"t":1720000000} */
-    const auto history = doc.find("history");
-    if (history != doc.end() && history->is_array()) {
-        for (const nlohmann::json &row : *history) {
-            if (!row.is_object() || sStats.history.size() >= kMaxHistory) {
-                break;
-            }
-            MatchRow m;
-            m.won = static_cast<int>(field_num(row, "w", 0));
-            m.opp_rating = static_cast<int>(field_num(row, "or", -1));
-            m.duration_ticks = static_cast<unsigned int>(field_u64(row, "d", 0));
-            m.ts = field_u64(row, "t", 0);
-            sStats.history.push_back(m);
-        }
-    }
-
-    /* recent room codes: "recent":["ABC123",...] */
-    const auto recent = doc.find("recent");
-    if (recent != doc.end() && recent->is_array()) {
-        for (const nlohmann::json &c : *recent) {
-            if (sStats.recent_rooms.size() >= kMaxRecentRooms) {
-                break;
-            }
-            if (c.is_string()) {
-                sStats.recent_rooms.push_back(c.get_ref<const std::string&>());
-            }
-        }
-    }
+    load_seasons(doc);
+    load_history(doc);
+    load_recent(doc);
 }
 
 void ensure_loaded()

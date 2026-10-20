@@ -18,6 +18,8 @@ export const LB_MUTE_DISPUTES = 3;        // disputes → muted (report rights l
 export const LB_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const LB_HISTORY_MAX = 50;         // recent verified matches kept
 export const LB_BUILD_MAX = 40;           // build-hash field cap
+export const LB_MATCH_TTL_MS = 30 * 60 * 1000;  // issued-match token expiry
+export const LB_MATCH_MAX = 512;          // live issued matches before eviction
 
 /* Display names come back verbatim to every client — keep them to a
  * boring alphabet so JSON serialization and ImGui rendering can't be
@@ -34,11 +36,15 @@ export function sanitizeName(name) {
 
 export class Leaderboard {
   constructor(entries = [], pending = {}, settled = [], reports = {},
-              history = []) {
+              history = [], matches = {}) {
     this.byName = new Map();   // displayName -> {rating,wins,losses,key,updated}
     for (const e of entries) this.byName.set(e.name, e);
     this.pending = new Map(Object.entries(pending));   // match_id -> report
     this.settled = new Set(settled);                   // verified match_ids
+    /* Server-issued matches: match_id -> {at, slots: {key -> {name,token}}}.
+     * A match_id minted HERE — not by the client — is the only id that can
+     * verify through the token path (see reportResult). */
+    this.matches = new Map(Object.entries(matches));
     // name -> Map(reporterKey -> ts) — moderation signal for /report
     this.reports = new Map();
     for (const [n, rs] of Object.entries(reports)) {
@@ -139,6 +145,65 @@ export class Leaderboard {
     return { kind: "ok", rank };
   }
 
+  /* Server-issued match: POST /match/begin {name, key, opp_name}. The
+   * caller must own `name` (claim key) and `opp_name` must be a claimed
+   * board entry — so issued matches always bind two real participants.
+   * Returns the caller's token only; the opponent fetches theirs via
+   * claimMatch with their own key. The match_id is server-minted, so a
+   * fabricated id can't reach the token path. */
+  beginMatch(body) {
+    if (body == null || typeof body !== "object") {
+      return { kind: "reject", reason: "bad-request" };
+    }
+    const me = sanitizeName(body.name);
+    const opp = sanitizeName(body.opp_name);
+    const key = typeof body.key === "string" ? body.key : "";
+    if (me === "" || opp === "") return { kind: "reject", reason: "bad-name" };
+    if (!this.keyOwns(me, key)) return { kind: "reject", reason: "bad-key" };
+    const oe = this.byName.get(opp);
+    if (!oe) return { kind: "reject", reason: "unknown-opp" };
+    if (oe.key === key) return { kind: "reject", reason: "self-match" };
+    const now = Date.now();
+    this.#expireMatches(now);
+    const id = crypto.randomUUID().replaceAll("-", "");
+    const meTok = crypto.randomUUID().replaceAll("-", "");
+    const oppTok = crypto.randomUUID().replaceAll("-", "");
+    this.matches.set(id, {
+      at: now,
+      slots: {
+        [key]: { name: me, token: meTok },
+        [oe.key]: { name: opp, token: oppTok },
+      },
+    });
+    while (this.matches.size > LB_MATCH_MAX) {
+      this.matches.delete(this.matches.keys().next().value);
+    }
+    return { kind: "ok", id, token: meTok };
+  }
+
+  /* POST /match/claim {id, name, key} — a participant retrieves their own
+   * token. The key must be the issued slot key for that name, so only the
+   * real opponent can read their token. */
+  claimMatch(body) {
+    if (body == null || typeof body !== "object") {
+      return { kind: "reject", reason: "bad-request" };
+    }
+    const id = typeof body.id === "string" ? body.id : "";
+    const name = sanitizeName(body.name);
+    const key = typeof body.key === "string" ? body.key : "";
+    const m = this.matches.get(id);
+    if (!m) return { kind: "reject", reason: "no-match" };
+    const slot = m.slots[key];
+    if (!slot || slot.name !== name) return { kind: "reject", reason: "bad-key" };
+    return { kind: "ok", token: slot.token };
+  }
+
+  #expireMatches(now) {
+    for (const [id, m] of this.matches) {
+      if (now - m.at > LB_MATCH_TTL_MS) this.matches.delete(id);
+    }
+  }
+
   /* Corroborated result reporting — the only path that moves ratings on
    * the verified board. Both clients POST the same match_id; the result
    * applies only when two DIFFERENT claim keys agree on the winner:
@@ -185,6 +250,19 @@ export class Leaderboard {
     }
     const now = Date.now();
     this.#expirePending(now);
+    this.#expireMatches(now);
+    /* Token path: when the match_id was server-issued, the report must
+     * present the participant's issued token — the key alone isn't
+     * enough (a leaked key could fabricate results on someone else's
+     * issued match). Both reports must come from issued slot keys. */
+    const issued = this.matches.get(matchId);
+    if (issued) {
+      const slot = issued.slots[key];
+      const token = typeof body.token === "string" ? body.token : "";
+      if (!slot || slot.name !== name || slot.token !== token) {
+        return { kind: "reject", reason: "bad-token" };
+      }
+    }
     const prior = this.pending.get(matchId);
     if (!prior) {
       this.pending.set(matchId, { name, opp, key, won, ts: now });
@@ -224,9 +302,14 @@ export class Leaderboard {
     /* a/b = both participants (w/l alone can't name a draw — both null). */
     this.history.push({ id: matchId, a: prior.name, b: name, w: wName,
                         l: lName, draw: prior.won === -1,
+                        trusted: issued ? "token" : "mirror",
                         at: new Date(now).toISOString() });
     while (this.history.length > LB_HISTORY_MAX) this.history.shift();
-    return { kind: "verified", winner: wName, loser: lName, draw: prior.won === -1 };
+    /* An issued match verifies once — consume it so the id can't be
+     * replayed for a second fabricated result. */
+    if (issued) this.matches.delete(matchId);
+    return { kind: "verified", winner: wName, loser: lName,
+             draw: prior.won === -1, trusted: issued ? "token" : "mirror" };
   }
 
   /* Elo update between two named entries. `score` is from winnerName's
@@ -388,6 +471,7 @@ export class Leaderboard {
       reports: Object.fromEntries(
         [...this.reports].map(([n, rs]) => [n, Object.fromEntries(rs)])),
       history: this.history,
+      matches: Object.fromEntries(this.matches),
     };
   }
   static fromJSON(data) {
@@ -397,6 +481,7 @@ export class Leaderboard {
       (o.pending && typeof o.pending === "object") ? o.pending : {},
       Array.isArray(o.settled) ? o.settled : [],
       (o.reports && typeof o.reports === "object") ? o.reports : {},
-      Array.isArray(o.history) ? o.history : []);
+      Array.isArray(o.history) ? o.history : [],
+      (o.matches && typeof o.matches === "object") ? o.matches : {});
   }
 }

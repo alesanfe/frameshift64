@@ -127,7 +127,9 @@ void Menu::ApplyPopoutTransition(ElementFrame& f, bool canPopout, ImGuiWindowFla
     popped = f.popout;
 }
 
-bool Menu::BeginElement(ElementFrame& f) {
+/* Fonts for the frame: menu faces with ImGui's current font as the
+ * fallback when the faces aren't registered yet. */
+void Menu::ResolveMenuFonts(ElementFrame& f) {
     f.fontLarge = GetMenuFont("MenuStandard");
     f.fontSmall = GetMenuFont("MenuStandardSmall");
     if (f.fontLarge == nullptr) {
@@ -136,11 +138,12 @@ bool Menu::BeginElement(ElementFrame& f) {
     if (f.fontSmall == nullptr) {
         f.fontSmall = f.fontLarge;
     }
-    for (auto& [reason, info] : disabledMap) {
-        info.active = info.evaluation(info);
-    }
-    const char* headerCvar = CVAR_SETTING("Menu.ActiveHeader");
+}
 
+/* One-shot navigation: jump to the pending sidebar target and arm the
+ * highlight TTL so the target stays findable for ~1.5s at 60fps. */
+void Menu::UpdatePendingNavigation() {
+    const char* headerCvar = CVAR_SETTING("Menu.ActiveHeader");
     if (navigateToWidget) {
         if (menuEntries.contains(navigateMainEntry) &&
             menuEntries.at(navigateMainEntry).sidebars.contains(navigateSidebar)) {
@@ -156,22 +159,11 @@ bool Menu::BeginElement(ElementFrame& f) {
     if (highlightWidget && --sHighlightTtl <= 0) {
         highlightWidget = false; /* target hidden or gone — stop looking */
     }
+}
 
-    SyncFrameEnvironment();
-
-    windowHeight = ImGui::GetMainViewport()->WorkSize.y;
-    windowWidth = ImGui::GetMainViewport()->WorkSize.x;
-    auto windowFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-    ApplyPopoutTransition(f, allowPopout, windowFlags);
-    auto windowCond = ImGuiCond_Always;
-    if (!f.popout) {
-        ImGui::SetNextWindowSize({ windowWidth, windowHeight }, windowCond);
-        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), windowCond, { 0.5f, 0.5f });
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    }
-
-    /* §8 — base theme palette first (Dark is the stock palette: no pushes),
-     * then the per-theme surface/focus colors on top. */
+/* §8 — base theme palette first (Dark is the stock palette: no pushes),
+ * then the per-theme surface/focus colors on top. */
+void Menu::PushMenuThemeColors(ElementFrame& f) {
     const auto baseTheme = static_cast<MenuBaseTheme>(
         std::clamp(CVarGetInteger(CVAR_SETTING("Menu.BaseTheme"), 0), 0, 2));
     f.pushedColors = PushMenuBasePalette(baseTheme) + 3;
@@ -196,6 +188,44 @@ bool Menu::BeginElement(ElementFrame& f) {
      * secondary-text affordance while holding contrast on any backdrop —
      * theme-aware: dark gray for Light, near-white for High Contrast. */
     ImGui::PushStyleColor(ImGuiCol_TextDisabled, MenuTextDisabledColor(baseTheme));
+}
+
+/* Persist the popout geometry when the window popped this frame and
+ * unwind the pushed style state — caller returns false after this. */
+void Menu::PersistPopoutGeometry(ElementFrame& f) {
+    if (!f.popout) {
+        ImGui::PopStyleVar();
+    }
+    CVarSetInteger(CVAR_SETTING("Menu.Popout"), popped);
+    CVarSetFloat(CVAR_SETTING("Menu.PoppedWidth"), poppedSize.x);
+    CVarSetFloat(CVAR_SETTING("Menu.PoppedHeight"), poppedSize.y);
+    CVarSetFloat(CVAR_SETTING("Menu.PoppedPos.x"), poppedSize.x);
+    CVarSetFloat(CVAR_SETTING("Menu.PoppedPos.y"), poppedSize.y);
+    CVarSave();
+    ImGui::End();
+    ImGui::PopStyleColor(f.pushedColors);
+}
+
+bool Menu::BeginElement(ElementFrame& f) {
+    ResolveMenuFonts(f);
+    for (auto& [reason, info] : disabledMap) {
+        info.active = info.evaluation(info);
+    }
+    UpdatePendingNavigation();
+    SyncFrameEnvironment();
+
+    windowHeight = ImGui::GetMainViewport()->WorkSize.y;
+    windowWidth = ImGui::GetMainViewport()->WorkSize.x;
+    auto windowFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+    ApplyPopoutTransition(f, allowPopout, windowFlags);
+    auto windowCond = ImGuiCond_Always;
+    if (!f.popout) {
+        ImGui::SetNextWindowSize({ windowWidth, windowHeight }, windowCond);
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), windowCond, { 0.5f, 0.5f });
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    }
+
+    PushMenuThemeColors(f);
 
     if (!ImGui::Begin("Main Menu", NULL, windowFlags)) {
         if (!f.popout) {
@@ -208,17 +238,7 @@ bool Menu::BeginElement(ElementFrame& f) {
     }
 
     if (popped != f.popout) {
-        if (!f.popout) {
-            ImGui::PopStyleVar();
-        }
-        CVarSetInteger(CVAR_SETTING("Menu.Popout"), popped);
-        CVarSetFloat(CVAR_SETTING("Menu.PoppedWidth"), poppedSize.x);
-        CVarSetFloat(CVAR_SETTING("Menu.PoppedHeight"), poppedSize.y);
-        CVarSetFloat(CVAR_SETTING("Menu.PoppedPos.x"), poppedSize.x);
-        CVarSetFloat(CVAR_SETTING("Menu.PoppedPos.y"), poppedSize.y);
-        CVarSave();
-        ImGui::End();
-        ImGui::PopStyleColor(f.pushedColors);
+        PersistPopoutGeometry(f);
         return false;
     }
     return true;
@@ -845,72 +865,80 @@ float Menu::DrawPendingRestartChip(ElementFrame& f, float leftClusterEndX, float
     return ImGui::GetItemRectMax().x;
 }
 
-void Menu::DrawElementFooter(ElementFrame& f) {
-    /* Footer: pinned to the bottom of the menu block regardless of how tall
-     * the section content ended up. Help strip first, action hints last. */
-    if (mShowHelpBar || mShowActionBar) {
-        // Opaque strip so the footer reads as its own bar instead of floating
-        // text that can collide with f.sidebar rows on small screens.
-        f.window->DrawList->AddRectFilled(
-            ImVec2(f.menuBlockPos.x, f.menuBlockPos.y + f.menuSize.y - f.footerH),
-            ImVec2(f.menuBlockPos.x + f.menuSize.x, f.menuBlockPos.y + f.menuSize.y),
-            ImGui::GetColorU32(ImGuiCol_WindowBg), f.style->WindowRounding);
-        ImGui::SetCursorScreenPos(
-            ImVec2(f.menuBlockPos.x + f.style->ItemSpacing.x * 2, f.menuBlockPos.y + f.menuSize.y - f.footerH));
-        if (mShowHelpBar && !mFocusHelpName.empty() && !f.compactLayout) {
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(menuThemeIndex));
-            ImGui::Text(TR("%s"), TR(mFocusHelpName.c_str()));
-            ImGui::PopStyleColor();
-            if (!mFocusHelpText.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::LightGray));
-                ImGui::TextWrapped(TR("%s"), UIWidgets::WrappedText(TR(mFocusHelpText.c_str()), 120).c_str());
-                ImGui::PopStyleColor();
-            }
-        }
-        if (mShowActionBar) {
-            const bool padNav = CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) != 0;
-            const char* compactHints;
-            const char* hints = FooterHints(padNav, f.compactLayout, &compactHints);
-            if (!f.compactLayout) {
-                ImGui::Separator();
-            }
-            const float hintLineY = ImGui::GetCursorScreenPos().y;
-            /* Right edge of the left-aligned footer cluster (match banner
-             * + pending chip). Long translations make `hints` wider than
-             * the free strip and the old clamp would draw them over that
-             * cluster — clamp against the real right edge instead. */
-            float leftClusterEndX = f.menuBlockPos.x + f.style->ItemSpacing.x * 2;
-            /* Online-match context: the menu never pauses netplay, so make
-             * that explicit instead of letting the player assume otherwise.
-             * Skipped in compact mode — a single footer line can't hold both
-             * texts; the Online section shows its own in-match banner. */
-            if (!f.compactLayout && port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
-                ImGui::SetCursorScreenPos(ImVec2(leftClusterEndX, hintLineY));
-                ImGui::TextColored(UIWidgets::SemanticColors::Warning, "%s", TR("Match in progress - the game continues while this menu is open"));
-                leftClusterEndX = ImGui::GetItemRectMax().x;
-            }
-            /* §34 pending-changes chip: left-aligned, after the match banner
-             * when both are up (compact mode keeps the single hint line). */
-            if (!f.compactLayout && sPendingRestart > 0) {
-                leftClusterEndX = DrawPendingRestartChip(f, leftClusterEndX, hintLineY);
-            }
-            float hintX =
-                f.menuBlockPos.x + f.menuSize.x - ImGui::CalcTextSize(hints).x - f.style->ItemSpacing.x * 2;
-            if (hintX < leftClusterEndX + f.style->ItemSpacing.x && !f.compactLayout) {
-                /* Long translation + occupied left cluster: switch to the
-                 * compact wording before we'd collide. */
-                hints = compactHints;
-                hintX = f.menuBlockPos.x + f.menuSize.x - ImGui::CalcTextSize(hints).x -
-                        f.style->ItemSpacing.x * 2;
-            }
-            ImGui::SetCursorScreenPos(
-                ImVec2(ImMax(hintX, leftClusterEndX + f.style->ItemSpacing.x), hintLineY));
-            ImGui::TextDisabled(TR("%s"), hints);
-        }
+void Menu::DrawFooterHelpText() {
+    ImGui::Separator();
+    ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(menuThemeIndex));
+    ImGui::Text(TR("%s"), TR(mFocusHelpName.c_str()));
+    ImGui::PopStyleColor();
+    if (!mFocusHelpText.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, UIWidgets::ColorValues.at(UIWidgets::Colors::LightGray));
+        ImGui::TextWrapped(TR("%s"), UIWidgets::WrappedText(TR(mFocusHelpText.c_str()), 120).c_str());
+        ImGui::PopStyleColor();
     }
 }
 
+void Menu::DrawFooterActionBar(ElementFrame& f) {
+    const bool padNav = CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) != 0;
+    const char* compactHints;
+    const char* hints = FooterHints(padNav, f.compactLayout, &compactHints);
+    if (!f.compactLayout) {
+        ImGui::Separator();
+    }
+    const float hintLineY = ImGui::GetCursorScreenPos().y;
+    /* Right edge of the left-aligned footer cluster (match banner
+     * + pending chip). Long translations make `hints` wider than
+     * the free strip and the old clamp would draw them over that
+     * cluster — clamp against the real right edge instead. */
+    float leftClusterEndX = f.menuBlockPos.x + f.style->ItemSpacing.x * 2;
+    /* Online-match context: the menu never pauses netplay, so make
+     * that explicit instead of letting the player assume otherwise.
+     * Skipped in compact mode — a single footer line can't hold both
+     * texts; the Online section shows its own in-match banner. */
+    if (!f.compactLayout && port_netlobby_state() == PORT_NETLOBBY_IN_MATCH) {
+        ImGui::SetCursorScreenPos(ImVec2(leftClusterEndX, hintLineY));
+        ImGui::TextColored(UIWidgets::SemanticColors::Warning, "%s", TR("Match in progress - the game continues while this menu is open"));
+        leftClusterEndX = ImGui::GetItemRectMax().x;
+    }
+    /* §34 pending-changes chip: left-aligned, after the match banner
+     * when both are up (compact mode keeps the single hint line). */
+    if (!f.compactLayout && sPendingRestart > 0) {
+        leftClusterEndX = DrawPendingRestartChip(f, leftClusterEndX, hintLineY);
+    }
+    float hintX =
+        f.menuBlockPos.x + f.menuSize.x - ImGui::CalcTextSize(hints).x - f.style->ItemSpacing.x * 2;
+    if (hintX < leftClusterEndX + f.style->ItemSpacing.x && !f.compactLayout) {
+        /* Long translation + occupied left cluster: switch to the
+         * compact wording before we'd collide. */
+        hints = compactHints;
+        hintX = f.menuBlockPos.x + f.menuSize.x - ImGui::CalcTextSize(hints).x -
+                f.style->ItemSpacing.x * 2;
+    }
+    ImGui::SetCursorScreenPos(
+        ImVec2(ImMax(hintX, leftClusterEndX + f.style->ItemSpacing.x), hintLineY));
+    ImGui::TextDisabled(TR("%s"), hints);
+}
+
+void Menu::DrawElementFooter(ElementFrame& f) {
+    /* Footer: pinned to the bottom of the menu block regardless of how tall
+     * the section content ended up. Help strip first, action hints last. */
+    if (!(mShowHelpBar || mShowActionBar)) {
+        return;
+    }
+    // Opaque strip so the footer reads as its own bar instead of floating
+    // text that can collide with f.sidebar rows on small screens.
+    f.window->DrawList->AddRectFilled(
+        ImVec2(f.menuBlockPos.x, f.menuBlockPos.y + f.menuSize.y - f.footerH),
+        ImVec2(f.menuBlockPos.x + f.menuSize.x, f.menuBlockPos.y + f.menuSize.y),
+        ImGui::GetColorU32(ImGuiCol_WindowBg), f.style->WindowRounding);
+    ImGui::SetCursorScreenPos(
+        ImVec2(f.menuBlockPos.x + f.style->ItemSpacing.x * 2, f.menuBlockPos.y + f.menuSize.y - f.footerH));
+    if (mShowHelpBar && !mFocusHelpName.empty() && !f.compactLayout) {
+        DrawFooterHelpText();
+    }
+    if (mShowActionBar) {
+        DrawFooterActionBar(f);
+    }
+}
 void Menu::DrawElement() {
     ElementFrame f;
     if (!BeginElement(f)) {

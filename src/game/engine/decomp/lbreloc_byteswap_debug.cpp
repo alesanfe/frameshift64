@@ -406,6 +406,118 @@ static void dump_tga_rgba(const char *path,
 // buffer.  Returns true if (fmt,siz) is supported and the byte count makes
 // sense for the requested dimensions.  CI formats are decoded with a
 // fabricated greyscale palette since we have no TLUT context here.
+static uint8_t scale_5_8(uint8_t v) { return (uint8_t)((v << 3) | (v >> 2)); }
+static uint8_t scale_4_8(uint8_t v) { return (uint8_t)((v << 4) | v); }
+static uint8_t scale_3_8(uint8_t v) { return (uint8_t)((v << 5) | (v << 2) | (v >> 1)); }
+
+// RGBA32: 4 bytes per pixel, byte order R G B A
+static bool decode_siz32(const uint8_t *src, size_t src_bytes,
+                         size_t need_pixels, std::vector<uint8_t> &out_rgba)
+{
+	size_t need = need_pixels * 4;
+	if (need > src_bytes) return false;
+	for (size_t i = 0; i < need_pixels; i++) {
+		out_rgba[i * 4 + 0] = src[i * 4 + 0];
+		out_rgba[i * 4 + 1] = src[i * 4 + 1];
+		out_rgba[i * 4 + 2] = src[i * 4 + 2];
+		out_rgba[i * 4 + 3] = src[i * 4 + 3];
+	}
+	return true;
+}
+
+// 16-bit per pixel, BE.  fmt=0:RGBA5551, fmt=3:IA88, fmt=4:I16, others:RGBA5551
+static bool decode_siz16(const uint8_t *src, size_t src_bytes,
+                         int fmt, size_t need_pixels,
+                         std::vector<uint8_t> &out_rgba)
+{
+	size_t need = need_pixels * 2;
+	if (need > src_bytes) return false;
+	for (size_t i = 0; i < need_pixels; i++) {
+		uint16_t c = ((uint16_t)src[i * 2] << 8) | src[i * 2 + 1];
+		if (fmt == 3) {
+			// IA88 (16b): hi=intensity, lo=alpha
+			uint8_t I = (uint8_t)(c >> 8);
+			uint8_t A = (uint8_t)(c & 0xFF);
+			out_rgba[i * 4 + 0] = I;
+			out_rgba[i * 4 + 1] = I;
+			out_rgba[i * 4 + 2] = I;
+			out_rgba[i * 4 + 3] = A;
+		} else if (fmt == 4) {
+			// I16 isn't a real RDP format — treat as IA88 fallback
+			uint8_t I = (uint8_t)(c >> 8);
+			out_rgba[i * 4 + 0] = I;
+			out_rgba[i * 4 + 1] = I;
+			out_rgba[i * 4 + 2] = I;
+			out_rgba[i * 4 + 3] = 255;
+		} else {
+			// RGBA5551 (and CI16 falls back here)
+			uint8_t r = (c >> 11) & 0x1F;
+			uint8_t g = (c >>  6) & 0x1F;
+			uint8_t b = (c >>  1) & 0x1F;
+			uint8_t a = c & 1;
+			out_rgba[i * 4 + 0] = scale_5_8(r);
+			out_rgba[i * 4 + 1] = scale_5_8(g);
+			out_rgba[i * 4 + 2] = scale_5_8(b);
+			out_rgba[i * 4 + 3] = a ? 255 : 0;
+		}
+	}
+	return true;
+}
+
+// 8b per pixel.  fmt=2:CI8 (no palette here → grayscale),
+// fmt=3:IA44, fmt=4:I8
+static bool decode_siz8(const uint8_t *src, size_t src_bytes,
+                        int fmt, size_t need_pixels,
+                        std::vector<uint8_t> &out_rgba)
+{
+	if (need_pixels > src_bytes) return false;
+	for (size_t i = 0; i < need_pixels; i++) {
+		uint8_t v = src[i];
+		if (fmt == 3) {
+			uint8_t I = (v >> 4) & 0xF;
+			uint8_t A = v & 0xF;
+			out_rgba[i * 4 + 0] = scale_4_8(I);
+			out_rgba[i * 4 + 1] = scale_4_8(I);
+			out_rgba[i * 4 + 2] = scale_4_8(I);
+			out_rgba[i * 4 + 3] = scale_4_8(A);
+		} else {
+			out_rgba[i * 4 + 0] = v;
+			out_rgba[i * 4 + 1] = v;
+			out_rgba[i * 4 + 2] = v;
+			out_rgba[i * 4 + 3] = 255;
+		}
+	}
+	return true;
+}
+
+// 4b per pixel.  fmt=2:CI4 (no palette → grayscale),
+// fmt=3:IA31, fmt=4:I4
+static bool decode_siz4(const uint8_t *src, size_t src_bytes,
+                        int fmt, size_t need_pixels,
+                        std::vector<uint8_t> &out_rgba)
+{
+	if ((need_pixels + 1) / 2 > src_bytes) return false;
+	for (size_t i = 0; i < need_pixels; i++) {
+		uint8_t byte = src[i / 2];
+		uint8_t nib = (i & 1) ? (byte & 0x0F) : (byte >> 4);
+		if (fmt == 3) {
+			uint8_t I = (nib >> 1) & 0x7;
+			uint8_t A = nib & 1;
+			out_rgba[i * 4 + 0] = scale_3_8(I);
+			out_rgba[i * 4 + 1] = scale_3_8(I);
+			out_rgba[i * 4 + 2] = scale_3_8(I);
+			out_rgba[i * 4 + 3] = A ? 255 : 0;
+		} else {
+			uint8_t v = scale_4_8(nib);
+			out_rgba[i * 4 + 0] = v;
+			out_rgba[i * 4 + 1] = v;
+			out_rgba[i * 4 + 2] = v;
+			out_rgba[i * 4 + 3] = 255;
+		}
+	}
+	return true;
+}
+
 static bool decode_to_rgba8(const uint8_t *src, size_t src_bytes,
                             int fmt, int siz,
                             uint32_t width, uint32_t height,
@@ -414,112 +526,16 @@ static bool decode_to_rgba8(const uint8_t *src, size_t src_bytes,
 	size_t need_pixels = (size_t)width * height;
 	out_rgba.assign(need_pixels * 4, 0);
 
-	auto scale_5_8 = [](uint8_t v) -> uint8_t {
-		return (uint8_t)((v << 3) | (v >> 2));
-	};
-	auto scale_4_8 = [](uint8_t v) -> uint8_t {
-		return (uint8_t)((v << 4) | v);
-	};
-	auto scale_3_8 = [](uint8_t v) -> uint8_t {
-		return (uint8_t)((v << 5) | (v << 2) | (v >> 1));
-	};
-
 	// siz: 0=4b, 1=8b, 2=16b, 3=32b
-	if (siz == 3) {
-		// RGBA32: 4 bytes per pixel, byte order R G B A
-		size_t need = need_pixels * 4;
-		if (need > src_bytes) return false;
-		for (size_t i = 0; i < need_pixels; i++) {
-			out_rgba[i * 4 + 0] = src[i * 4 + 0];
-			out_rgba[i * 4 + 1] = src[i * 4 + 1];
-			out_rgba[i * 4 + 2] = src[i * 4 + 2];
-			out_rgba[i * 4 + 3] = src[i * 4 + 3];
-		}
-		return true;
-	}
-	if (siz == 2) {
-		// 16-bit per pixel, BE.  fmt=0:RGBA5551, fmt=3:IA88, fmt=4:I16, others:RGBA5551
-		size_t need = need_pixels * 2;
-		if (need > src_bytes) return false;
-		for (size_t i = 0; i < need_pixels; i++) {
-			uint16_t c = ((uint16_t)src[i * 2] << 8) | src[i * 2 + 1];
-			if (fmt == 3) {
-				// IA88 (16b): hi=intensity, lo=alpha
-				uint8_t I = (uint8_t)(c >> 8);
-				uint8_t A = (uint8_t)(c & 0xFF);
-				out_rgba[i * 4 + 0] = I;
-				out_rgba[i * 4 + 1] = I;
-				out_rgba[i * 4 + 2] = I;
-				out_rgba[i * 4 + 3] = A;
-			} else if (fmt == 4) {
-				// I16 isn't a real RDP format — treat as IA88 fallback
-				uint8_t I = (uint8_t)(c >> 8);
-				out_rgba[i * 4 + 0] = I;
-				out_rgba[i * 4 + 1] = I;
-				out_rgba[i * 4 + 2] = I;
-				out_rgba[i * 4 + 3] = 255;
-			} else {
-				// RGBA5551 (and CI16 falls back here)
-				uint8_t r = (c >> 11) & 0x1F;
-				uint8_t g = (c >>  6) & 0x1F;
-				uint8_t b = (c >>  1) & 0x1F;
-				uint8_t a = c & 1;
-				out_rgba[i * 4 + 0] = scale_5_8(r);
-				out_rgba[i * 4 + 1] = scale_5_8(g);
-				out_rgba[i * 4 + 2] = scale_5_8(b);
-				out_rgba[i * 4 + 3] = a ? 255 : 0;
-			}
-		}
-		return true;
-	}
-	if (siz == 1) {
-		// 8b per pixel.  fmt=2:CI8 (no palette here → grayscale),
-		// fmt=3:IA44, fmt=4:I8
-		if (need_pixels > src_bytes) return false;
-		for (size_t i = 0; i < need_pixels; i++) {
-			uint8_t v = src[i];
-			if (fmt == 3) {
-				uint8_t I = (v >> 4) & 0xF;
-				uint8_t A = v & 0xF;
-				out_rgba[i * 4 + 0] = scale_4_8(I);
-				out_rgba[i * 4 + 1] = scale_4_8(I);
-				out_rgba[i * 4 + 2] = scale_4_8(I);
-				out_rgba[i * 4 + 3] = scale_4_8(A);
-			} else {
-				out_rgba[i * 4 + 0] = v;
-				out_rgba[i * 4 + 1] = v;
-				out_rgba[i * 4 + 2] = v;
-				out_rgba[i * 4 + 3] = 255;
-			}
-		}
-		return true;
-	}
-	if (siz == 0) {
-		// 4b per pixel.  fmt=2:CI4 (no palette → grayscale),
-		// fmt=3:IA31, fmt=4:I4
-		if ((need_pixels + 1) / 2 > src_bytes) return false;
-		for (size_t i = 0; i < need_pixels; i++) {
-			uint8_t byte = src[i / 2];
-			uint8_t nib = (i & 1) ? (byte & 0x0F) : (byte >> 4);
-			if (fmt == 3) {
-				uint8_t I = (nib >> 1) & 0x7;
-				uint8_t A = nib & 1;
-				out_rgba[i * 4 + 0] = scale_3_8(I);
-				out_rgba[i * 4 + 1] = scale_3_8(I);
-				out_rgba[i * 4 + 2] = scale_3_8(I);
-				out_rgba[i * 4 + 3] = A ? 255 : 0;
-			} else {
-				uint8_t v = scale_4_8(nib);
-				out_rgba[i * 4 + 0] = v;
-				out_rgba[i * 4 + 1] = v;
-				out_rgba[i * 4 + 2] = v;
-				out_rgba[i * 4 + 3] = 255;
-			}
-		}
-		return true;
+	switch (siz) {
+	case 3: return decode_siz32(src, src_bytes, need_pixels, out_rgba);
+	case 2: return decode_siz16(src, src_bytes, fmt, need_pixels, out_rgba);
+	case 1: return decode_siz8(src, src_bytes, fmt, need_pixels, out_rgba);
+	case 0: return decode_siz4(src, src_bytes, fmt, need_pixels, out_rgba);
 	}
 	return false;
 }
+
 
 // Dump a texture for which we know the width and height (sprite path).
 void tex_dump_known_dims(int file_id, uint32_t file_off,

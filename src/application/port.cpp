@@ -10,98 +10,15 @@
 #include "port_init_internal.h"
 #include "port_internal.h"
 
-#include <libultraship/libultraship.h>
-#include <SDL2/SDL.h>
-#include <math.h>  /* _set_FMA3_enable */
-#include <libultraship/controller/controldeck/ControlDeck.h>
-#include <fast/Fast3dWindow.h>
-#include <ship/resource/File.h>
-#include <chrono>
-#include <string>
-#include <vector>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <exception>
-#include <functional>
-#include <typeinfo>
-#include <unordered_set>
-
-#include "persistence/port_save.h"
-#include "game/engine/relocation/ResourceType.h"
-#include "game/engine/relocation/RelocFileFactory.h"
-#include "game/engine/relocation/SyntheticReloc.h"
-#include <ship/resource/factory/BlobFactory.h>
-#include <ship/resource/archive/Archive.h>
-#ifdef SSB64_TEST_HOOKS
-#include <nlohmann/json.hpp>
-#endif
-#include <ship/resource/ResourceType.h>
-#include <fast/resource/ResourceType.h>
-#include <fast/resource/factory/DisplayListFactory.h>
-#include <fast/resource/factory/LightFactory.h>
-#include <fast/resource/factory/MatrixFactory.h>
-#include <fast/resource/factory/TextureFactory.h>
-#include <fast/resource/factory/VertexFactory.h>
-
-#include "app_paths.h"
-#include "config/schema.h"
-#include "observability/crash_bundle.h"
-#include "application/update/integrity/ReleaseSig.h"
-#include "game/engine/decomp/audio_bridge.h"
-#include "game/engine/decomp/framebuffer_capture.h"
-#include "game/gameplay/enhancements.h"
-#include "first_run.h"
-#include "presentation/UpdatePrompt.h"
-#include "presentation/OnlineStatus.h"
-#include "presentation/Toasts.h"
-#include "presentation/PortMenu.h"
-#ifdef PORT_HIRES_ENABLED
-#include "rendering/textures/hires/HiResHook.h"
-#include "rendering/textures/hires/HiResPack.h"
-#endif
-#if !defined(__ANDROID__)
-#include "port_window_icon.h"
-#endif
-#ifdef __SWITCH__
-#include "platform/switch/SwitchImpl.h"
-#include <sys/stat.h>
-#endif
-#if defined(__ANDROID__)
-#include <android/api-level.h>  // android_get_device_api_level (audio-driver gate)
-#include <SDL2/SDL_system.h>    // SDL_AndroidGetExternalStoragePath (test env shim)
-#endif
-#ifndef DISABLE_SCRIPTING
-#include "game/modding/HookManager.h"
-#include "game/modding/ModCapabilities.h"
-#include "game/modding/SymbolResolver.h"
-#endif
-#include "renderdoc_trigger.h"
-#include "port_log.h"
-#include "fighter_registry.h"
-#include "focus.h"
-#include "rendering/shaders/fast3d_shader_manifest.h"
-
-#ifndef DISABLE_SCRIPTING
-#include <ship/scripting/ScriptLoader.h>
-#include <libultraship/bridge/scriptingbridge.h>
+#include <ship/debug/Console.h>
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 
-extern "C" void PortRegisterEvents(void);
 #if defined(SSB64_TEST_HOOKS) && defined(_MSC_VER) && defined(_DEBUG)
 /* Defined in core/observability/heap_check_boot.cpp — point-in-time probe of
  * the shared (ucrtbased) debug heap; no-op unless SSB64_HEAP_CHECK is set. */
 extern "C" int portSharedCrtHeapValidate(const char* tag);
-#endif
-
-
-
-#include <filesystem>
-#include <system_error>
-
-#include <ship/debug/Console.h>
-#ifdef __APPLE__
-#include <CoreFoundation/CoreFoundation.h>
 #endif
 
 static std::shared_ptr<Ship::Context> sContext;
@@ -214,6 +131,53 @@ void port_setenv(const char* name, const char* value) {
  *                           variable regardless of case.
  *
  * Documented in docs/development/env_vars.md ("Command-line equivalents"). */
+// --test-mode: enable test mode and skip the updater unless already set.
+static void cliApplyTestMode() {
+	if (std::getenv("SSB64_TEST_MODE") == nullptr) {
+		port_setenv("SSB64_TEST_MODE", "1");
+	}
+	if (std::getenv("SSB64_NO_UPDATE_CHECK") == nullptr) {
+		port_setenv("SSB64_NO_UPDATE_CHECK", "1");
+	}
+	port_log("SSB64: --test-mode (SSB64_TEST_MODE=1, "
+	         "SSB64_NO_UPDATE_CHECK=1)\n");
+}
+
+// Uppercase `c` into `*out` if it is a valid env-name char
+// ([A-Za-z0-9_]). Returns false on the first invalid char.
+static bool cliCopyEnvChar(char* out, char c) {
+	const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+	                (c >= '0' && c <= '9') || c == '_';
+	*out = (c >= 'a' && c <= 'z') ? (char)(c - 'a' + 'A') : c;
+	return ok;
+}
+
+// --ssb64-NAME=value → port_setenv("SSB64_NAME", "value"), uppercasing the
+// name. Returns false when the arg is not an --ssb64- flag.
+static bool cliApplyEnvFlag(const char* a) {
+	const char* body = a + 2;
+	if (std::strncmp(body, "ssb64-", 6) != 0) {
+		return false;
+	}
+	body += 6;
+	const char* eq = std::strchr(body, '=');
+	const size_t nlen = eq != nullptr ? (size_t)(eq - body) : 0;
+	bool valid = eq != nullptr && nlen > 0 && nlen < 80;
+	char name[96];
+	std::memcpy(name, "SSB64_", 6);
+	for (size_t j = 0; valid && j < nlen; j++) {
+		valid = cliCopyEnvChar(name + 6 + j, body[j]);
+	}
+	if (!valid) {
+		port_log("SSB64: ignoring malformed flag '%s'\n", a);
+		return true;
+	}
+	name[6 + nlen] = '\0';
+	port_setenv(name, eq + 1);
+	port_log("SSB64: %s=%s (from argv)\n", name, eq + 1);
+	return true;
+}
+
 void PortApplyCliEnvArgs(int argc, char* argv[]) {
 	for (int i = 1; i < argc; i++) {
 		const char* a = argv[i];
@@ -221,44 +185,14 @@ void PortApplyCliEnvArgs(int argc, char* argv[]) {
 			continue;
 		}
 		if (std::strcmp(a, "--test-mode") == 0) {
-			if (std::getenv("SSB64_TEST_MODE") == nullptr) {
-				port_setenv("SSB64_TEST_MODE", "1");
-			}
-			if (std::getenv("SSB64_NO_UPDATE_CHECK") == nullptr) {
-				port_setenv("SSB64_NO_UPDATE_CHECK", "1");
-			}
-			port_log("SSB64: --test-mode (SSB64_TEST_MODE=1, "
-			         "SSB64_NO_UPDATE_CHECK=1)\n");
+			cliApplyTestMode();
 			continue;
 		}
-		const char* body = a + 2;
-		const char* eq = nullptr;
-		size_t nlen = 0;
-		if (std::strncmp(body, "ssb64-", 6) == 0) {
-			body += 6;
-			eq = std::strchr(body, '=');
-			nlen = eq != nullptr ? (size_t)(eq - body) : 0;
-		} else {
-			continue;
-		}
-		bool valid = eq != nullptr && nlen > 0 && nlen < 80;
-		char name[96];
-		std::memcpy(name, "SSB64_", 6);
-		for (size_t j = 0; valid && j < nlen; j++) {
-			const char c = body[j];
-			valid = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-			        (c >= '0' && c <= '9') || c == '_';
-			name[6 + j] = (c >= 'a' && c <= 'z') ? (char)(c - 'a' + 'A') : c;
-		}
-		if (!valid) {
-			port_log("SSB64: ignoring malformed flag '%s'\n", a);
-			continue;
-		}
-		name[6 + nlen] = '\0';
-		port_setenv(name, eq + 1);
-		port_log("SSB64: %s=%s (from argv)\n", name, eq + 1);
+		cliApplyEnvFlag(a);
 	}
 }
+
+
 #endif /* SSB64_TEST_HOOKS */
 
 /* Test-hook env shims + parser-fuzz early entry. Returns 0 to continue
@@ -402,107 +336,94 @@ int PortIsRunning(void) {
 
 } // extern "C"
 
-int main(int argc, char* argv[]) {
-#if defined(_MSC_VER) && defined(_M_X64)
-	/* Netplay determinism: the MSVC CRT picks FMA3 or SSE2 implementations of
-	 * sinf/cosf/atan2f/... by CPU, and the two round differently. Two peers
-	 * on different CPUs would then simulate slightly different matches. Pin
-	 * every machine to the same (SSE2) path. */
-	_set_FMA3_enable(0);
-#endif
-	/* Use an absolute path for ssb64.log so it lands in a predictable
-	 * place regardless of how the binary was launched (Finder / open /
-	 * shell from any cwd). SDL_GetPrefPath returns the OS app-data dir
-	 * (~/Library/Application Support/BattleShip/, %APPDATA%\BattleShip\,
-	 * $XDG_DATA_HOME/BattleShip/) and creates it on demand — same dir
-	 * Ship::Context will later use for the user's saves and o2r. */
-	{
-		std::string logPath;
-		/* SSB64_LOG_PATH: per-instance log, e.g. two local netplay peers. */
-		if (const char* override_path = std::getenv("SSB64_LOG_PATH")) {
-			logPath = override_path;
-		}
+
+/* Use an absolute path for ssb64.log so it lands in a predictable
+ * place regardless of how the binary was launched (Finder / open /
+ * shell from any cwd). SDL_GetPrefPath returns the OS app-data dir
+ * (~/Library/Application Support/BattleShip/, %APPDATA%\BattleShip\,
+ * $XDG_DATA_HOME/BattleShip/) and creates it on demand — same dir
+ * Ship::Context will later use for the user's saves and o2r. */
+static std::string portResolveLogPath() {
+	/* SSB64_LOG_PATH: per-instance log, e.g. two local netplay peers. */
+	if (const char* override_path = std::getenv("SSB64_LOG_PATH")) {
+		return override_path;
+	}
 #ifdef __SWITCH__
-		// On Switch, write ssb64.log to the SD card alongside the .nro
-		// so it's accessible without a PC tool. The directory may not exist
-		// yet — without it fopen fails and all logging is silently lost.
-		else {
-			mkdir("sdmc:/switch/BattleShip", 0777);
-			logPath = "sdmc:/switch/BattleShip/ssb64.log";
-		}
+	// On Switch, write ssb64.log to the SD card alongside the .nro
+	// so it's accessible without a PC tool. The directory may not exist
+	// yet — without it fopen fails and all logging is silently lost.
+	mkdir("sdmc:/switch/BattleShip", 0777);
+	return "sdmc:/switch/BattleShip/ssb64.log";
 #else
 #ifdef _WIN32
-		/* Portable Windows build: keep the log next to the game, in logs\,
-		 * where players can find it to send with a bug report. */
-		else if (char* base = SDL_GetBasePath()) {
-			std::string dir = std::string(base) + "logs";
-			SDL_free(base);
-			CreateDirectoryA(dir.c_str(), NULL);
-			logPath = dir + "\\ssb64.log";
-		}
-#endif
-		else if (char* p = SDL_GetPrefPath(NULL, "BattleShip")) {
-			logPath = std::string(p) + "ssb64.log";
-			SDL_free(p);
-		} else {
-			logPath = "ssb64.log";  // last-resort cwd fallback
-		}
-#endif
-		/* TD-015: if the previous run crashed, its handler left a
-		 * crash.marker beside the log. Bundle it (marker + the old log,
-		 * which holds the backtrace) into logs/crashes/ BEFORE
-		 * port_log_init truncates ssb64.log. */
-		const std::string bundle = ssb64::diag::CollectPendingCrashBundle(logPath);
-		ssb64::diag::QueueCrashReport(bundle);
-		port_log_init(logPath.c_str());
-		if (!bundle.empty()) {
-			port_log("SSB64: previous run crashed — bundle at %s\n", bundle.c_str());
-		}
-		/* Safe mode: a collected crash bundle means the last run died, so
-		 * boot without scripted mods or hi-res packs this launch — a bad
-		 * mod can't crash-loop the game. SSB64_SAFE_MODE=1 forces the same
-		 * without a crash. Nothing here touches persisted CVars. */
-		{
-			const char* safeEnv = std::getenv("SSB64_SAFE_MODE");
-			const bool forced = safeEnv != nullptr && safeEnv[0] != '\0' &&
-				!(safeEnv[0] == '0' && safeEnv[1] == '\0');
-			/* One-shot request from Support -> "Restart in Safe Mode": the
-			 * marker sits next to crash.marker and is consumed here. */
-			const size_t smSep = logPath.find_last_of("/\\");
-			const std::string smDir = (smSep == std::string::npos) ? "." : logPath.substr(0, smSep);
-			const std::string smReq = smDir + "/safemode.request";
-			/* error_code overloads — a read-only log dir must not throw
-			 * inside the crash-recovery path itself. */
-			std::error_code smEc;
-			const bool requested = std::filesystem::exists(smReq, smEc) &&
-				(std::filesystem::remove(smReq, smEc), true);
-			port_diag_set_safe_mode((!bundle.empty() || forced || requested) ? 1 : 0);
-			if (port_diag_safe_mode_active()) {
-				port_log("SSB64: safe mode active (%s) — mods and hi-res packs skipped this launch\n",
-				         !bundle.empty() ? "previous run crashed" :
-				         (forced ? "SSB64_SAFE_MODE set" : "user-requested"));
-			}
-		}
-
-		/* Tell the crash handlers where to drop crash.marker for the NEXT
-		 * run: the same directory the log lives in. */
-		const size_t sep = logPath.find_last_of("/\\");
-		const std::string logDir = (sep == std::string::npos) ? "." : logPath.substr(0, sep);
-		port_diag_set_crash_dir(logDir.c_str());
+	/* Portable Windows build: keep the log next to the game, in logs\,
+	 * where players can find it to send with a bug report. */
+	if (char* base = SDL_GetBasePath()) {
+		std::string dir = std::string(base) + "logs";
+		SDL_free(base);
+		CreateDirectoryA(dir.c_str(), NULL);
+		return dir + "\\ssb64.log";
 	}
-	port_log("SSB64: main entered\n");
-#ifdef __SWITCH__
-	/* Mount romfs and bring up the platform services (pl/apm/pcv) before any
-	 * asset or applet work — without this nothing under src/platform/switch
-	 * ever runs. */
-	Ship::Switch::Init();
-	port_log("SSB64: Switch platform init done\n");
 #endif
-	/* SSB64_ADDR_JITTER=<n>: shift this process's heap layout (leaked
-	 * allocations of varying size) so two local netplay peers don't share
-	 * addresses the way two different PCs never do. Test-only —
-	 * compiled out unless -DSSB64_TEST_HOOKS=ON. */
+	if (char* p = SDL_GetPrefPath(NULL, "BattleShip")) {
+		std::string path = std::string(p) + "ssb64.log";
+		SDL_free(p);
+		return path;
+	}
+	return "ssb64.log";  // last-resort cwd fallback
+#endif
+}
+
+/* TD-015: if the previous run crashed, its handler left a
+ * crash.marker beside the log. Bundle it (marker + the old log,
+ * which holds the backtrace) into logs/crashes/ BEFORE
+ * port_log_init truncates ssb64.log. */
+static void portBootCrashRecovery(const std::string& logPath) {
+	const std::string bundle = ssb64::diag::CollectPendingCrashBundle(logPath);
+	ssb64::diag::QueueCrashReport(bundle);
+	port_log_init(logPath.c_str());
+	if (!bundle.empty()) {
+		port_log("SSB64: previous run crashed — bundle at %s\n", bundle.c_str());
+	}
+	/* Safe mode: a collected crash bundle means the last run died, so
+	 * boot without scripted mods or hi-res packs this launch — a bad
+	 * mod can't crash-loop the game. SSB64_SAFE_MODE=1 forces the same
+	 * without a crash. Nothing here touches persisted CVars. */
+	{
+		const char* safeEnv = std::getenv("SSB64_SAFE_MODE");
+		const bool forced = safeEnv != nullptr && safeEnv[0] != '\0' &&
+			!(safeEnv[0] == '0' && safeEnv[1] == '\0');
+		/* One-shot request from Support -> "Restart in Safe Mode": the
+		 * marker sits next to crash.marker and is consumed here. */
+		const size_t smSep = logPath.find_last_of("/\\");
+		const std::string smDir = (smSep == std::string::npos) ? "." : logPath.substr(0, smSep);
+		const std::string smReq = smDir + "/safemode.request";
+		/* error_code overloads — a read-only log dir must not throw
+		 * inside the crash-recovery path itself. */
+		std::error_code smEc;
+		const bool requested = std::filesystem::exists(smReq, smEc) &&
+			(std::filesystem::remove(smReq, smEc), true);
+		port_diag_set_safe_mode((!bundle.empty() || forced || requested) ? 1 : 0);
+		if (port_diag_safe_mode_active()) {
+			port_log("SSB64: safe mode active (%s) — mods and hi-res packs skipped this launch\n",
+			         !bundle.empty() ? "previous run crashed" :
+			         (forced ? "SSB64_SAFE_MODE set" : "user-requested"));
+		}
+	}
+
+	/* Tell the crash handlers where to drop crash.marker for the NEXT
+	 * run: the same directory the log lives in. */
+	const size_t sep = logPath.find_last_of("/\\");
+	const std::string logDir = (sep == std::string::npos) ? "." : logPath.substr(0, sep);
+	port_diag_set_crash_dir(logDir.c_str());
+}
+
+/* SSB64_ADDR_JITTER=<n>: shift this process's heap layout (leaked
+ * allocations of varying size) so two local netplay peers don't share
+ * addresses the way two different PCs never do. Test-only —
+ * compiled out unless -DSSB64_TEST_HOOKS=ON. */
 #ifdef SSB64_TEST_HOOKS
+static void portAddrJitter() {
 	if (const char* jitter = std::getenv("SSB64_ADDR_JITTER")) {
 		int n = std::atoi(jitter);
 		for (int i = 0; i < n; i++) {
@@ -515,50 +436,24 @@ int main(int argc, char* argv[]) {
 		}
 #endif
 	}
+}
 #endif /* SSB64_TEST_HOOKS */
 
-#ifdef __APPLE__
-	/* Disable the macOS press-and-hold accent/diacritic popup for this app.
-	 * SDL keeps a Cocoa text-input context alive for the game window, so
-	 * holding a movement key (e.g. WASD) makes AppKit pop the accent picker
-	 * instead of delivering key-repeat — the held key stops registering as
-	 * down. AppKit reads ApplePressAndHoldEnabled from the app's user
-	 * defaults when the text-input context is first created, so this must
-	 * run before SDL creates the window (i.e. before PortInit). Writing it
-	 * per-app (kCFPreferencesCurrentApplication) leaves the global/system
-	 * default untouched. Key repeat still works. */
-	CFPreferencesSetAppValue(CFSTR("ApplePressAndHoldEnabled"), kCFBooleanFalse,
-	                         kCFPreferencesCurrentApplication);
-	CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
-#endif
-
-	port_install_crash_handlers();
-
-
-	// Initialize RenderDoc trigger BEFORE PortInit so the RenderDoc DLL
-	// can hook D3D11 before LUS creates the device.
-	portRenderDocInit();
-	port_log("SSB64: RenderDoc hook initialized\n");
-
-	if (PortInit(argc, argv) != 0) {
-		return 1;
-	}
-
 #if defined(__ANDROID__)
-	// === Android JNI cache warm-up ===
-	//
-	// Our cooperative scheduler runs as port_coroutines (aarch64 fibers)
-	// stack-switched on the SDL_main thread. ART tracks JNI transition
-	// frames per OS thread via a ManagedStack list whose head lives on
-	// the native stack — when port_coroutine_swap moves SP to a different
-	// fiber, the head pointer dangles and any JNI call from the fiber
-	// aborts with "invalid JNI transition frame reference".
-	//
-	// SDL2's Android backend lazy-initializes a few caches via JNI on
-	// first use; if the first use happens from a coroutine, we crash.
-	// Force-warm them here on the real thread so subsequent reads from
-	// inside coroutines hit the in-process cache without re-entering JNI.
-
+// === Android JNI cache warm-up ===
+//
+// Our cooperative scheduler runs as port_coroutines (aarch64 fibers)
+// stack-switched on the SDL_main thread. ART tracks JNI transition
+// frames per OS thread via a ManagedStack list whose head lives on
+// the native stack — when port_coroutine_swap moves SP to a different
+// fiber, the head pointer dangles and any JNI call from the fiber
+// aborts with "invalid JNI transition frame reference".
+//
+// SDL2's Android backend lazy-initializes a few caches via JNI on
+// first use; if the first use happens from a coroutine, we crash.
+// Force-warm them here on the real thread so subsequent reads from
+// inside coroutines hit the in-process cache without re-entering JNI.
+static void portAndroidJniWarmup() {
 	// 1. SDL_INIT_GAMECONTROLLER → HIDDeviceManager.initialize.
 	SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
 	if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) {
@@ -606,6 +501,148 @@ int main(int argc, char* argv[]) {
 	// missed is also cached. The SDL_main thread is JVM-attached at
 	// this point, so the JNI roundtrip succeeds.
 	(void)SDL_getenv("__ssb64_jni_warmup__");
+}
+#endif
+
+/* One-time CVar write 60 frames in, once the window/gui exist. */
+static void portMaybeShowFirstRunHint() {
+	auto cv = sContext->GetConsoleVariables();
+	if (cv && cv->GetInteger("gFirstRunHintShown", 0) == 0) {
+		cv->SetInteger("gFirstRunHintShown", 1);
+		if (auto gui = sContext->GetWindow()->GetGui()) {
+			gui->SaveConsoleVariablesNextFrame();
+		}
+	}
+}
+
+// Main frame loop — each iteration runs one frame of game logic
+// and rendering through the coroutine system. PortPushFrame posts
+// a VI tick, resumes the game coroutine, and display lists are
+// rendered via DrawAndRunGraphicsCommands inside the coroutine.
+//
+// SSB64_MAX_FRAMES=N — debug aid that forces a clean shutdown
+// after N frames. Goes through the same code path as the user
+// closing the window (Window::Close() sets mIsRunning=false).
+// Compiled out unless -DSSB64_TEST_HOOKS=ON.
+static void portRunFrameLoop() {
+#ifdef SSB64_TEST_HOOKS
+	int maxFrames = 0;
+	if (const char* env = std::getenv("SSB64_MAX_FRAMES")) {
+		maxFrames = std::atoi(env);
+	}
+#endif
+	int frame = 0;
+	bool firstRunHintShown = false;
+	while (WindowIsRunning()) {
+		PortPushFrame();
+		frame++;
+#if defined(SSB64_TEST_HOOKS) && defined(_MSC_VER) && defined(_DEBUG)
+		/* Heap-corruption bisect: validate the shared (ucrtbased) debug heap
+		 * once per frame when SSB64_HEAP_CHECK is set; heap_probe.log records
+		 * frame-N ENTER/DONE so the first DONE-missing line brackets the
+		 * corrupting frame. */
+		if (std::getenv("SSB64_HEAP_CHECK") != nullptr) {
+			char tag[40];
+			snprintf(tag, sizeof(tag), "frame-%d", frame);
+			portSharedCrtHeapValidate(tag);
+		}
+#endif
+
+		if (!firstRunHintShown && frame == 60) {
+			portMaybeShowFirstRunHint();
+			firstRunHintShown = true;
+		}
+#ifdef SSB64_TEST_HOOKS
+		if (maxFrames > 0 && frame >= maxFrames) {
+			port_log("SSB64: SSB64_MAX_FRAMES=%d reached — triggering clean shutdown\n", maxFrames);
+			if (auto ctx = Ship::Context::GetInstance()) {
+				if (auto win = ctx->GetWindow()) {
+					win->Close();
+				}
+			}
+			break;
+		}
+#endif
+	}
+
+	port_log("SSB64: main loop exited cleanly at frame=%d (WindowIsRunning=%d)\n",
+	         frame, WindowIsRunning());
+}
+
+// Game boot + frame loop + orderly shutdown — the body wrapped by the
+// top-level exception catch in main.
+static int portRunGame() {
+	// Initialize the game boot sequence (coroutines, thread init, etc.)
+	PortGameInit();
+
+	portRunFrameLoop();
+
+	PortGameShutdown();
+	port_log("SSB64: PortGameShutdown returned\n");
+
+#if defined(SSB64_TEST_HOOKS) && defined(_MSC_VER) && defined(_DEBUG)
+	portSharedCrtHeapValidate("pre-PortShutdown");
+#endif
+	PortShutdown();
+	portRenderDocShutdown();
+#ifdef __SWITCH__
+	Ship::Switch::Exit();
+#endif
+	return 0;
+}
+
+int main(int argc, char* argv[]) {
+#if defined(_MSC_VER) && defined(_M_X64)
+	/* Netplay determinism: the MSVC CRT picks FMA3 or SSE2 implementations of
+	 * sinf/cosf/atan2f/... by CPU, and the two round differently. Two peers
+	 * on different CPUs would then simulate slightly different matches. Pin
+	 * every machine to the same (SSE2) path. */
+	_set_FMA3_enable(0);
+#endif
+	const std::string logPath = portResolveLogPath();
+	portBootCrashRecovery(logPath);
+
+	port_log("SSB64: main entered\n");
+#ifdef __SWITCH__
+	/* Mount romfs and bring up the platform services (pl/apm/pcv) before any
+	 * asset or applet work — without this nothing under src/platform/switch
+	 * ever runs. */
+	Ship::Switch::Init();
+	port_log("SSB64: Switch platform init done\n");
+#endif
+#ifdef SSB64_TEST_HOOKS
+	portAddrJitter();
+#endif
+
+#ifdef __APPLE__
+	/* Disable the macOS press-and-hold accent/diacritic popup for this app.
+	 * SDL keeps a Cocoa text-input context alive for the game window, so
+	 * holding a movement key (e.g. WASD) makes AppKit pop the accent picker
+	 * instead of delivering key-repeat — the held key stops registering as
+	 * down. AppKit reads ApplePressAndHoldEnabled from the app's user
+	 * defaults when the text-input context is first created, so this must
+	 * run before SDL creates the window (i.e. before PortInit). Writing it
+	 * per-app (kCFPreferencesCurrentApplication) leaves the global/system
+	 * default untouched. Key repeat still works. */
+	CFPreferencesSetAppValue(CFSTR("ApplePressAndHoldEnabled"), kCFBooleanFalse,
+	                         kCFPreferencesCurrentApplication);
+	CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
+#endif
+
+	port_install_crash_handlers();
+
+
+	// Initialize RenderDoc trigger BEFORE PortInit so the RenderDoc DLL
+	// can hook D3D11 before LUS creates the device.
+	portRenderDocInit();
+	port_log("SSB64: RenderDoc hook initialized\n");
+
+	if (PortInit(argc, argv) != 0) {
+		return 1;
+	}
+
+#if defined(__ANDROID__)
+	portAndroidJniWarmup();
 #endif
 
 	/* Deblob validation harness (docs/architecture/deblob.md, the
@@ -631,81 +668,7 @@ int main(int argc, char* argv[]) {
 	// with type and what() before the process exits, instead of bubbling
 	// up as an opaque MSVC 0xE06D7363 throw.
 	try {
-
-	// Initialize the game boot sequence (coroutines, thread init, etc.)
-	PortGameInit();
-
-	// Main frame loop — each iteration runs one frame of game logic
-	// and rendering through the coroutine system. PortPushFrame posts
-	// a VI tick, resumes the game coroutine, and display lists are
-	// rendered via DrawAndRunGraphicsCommands inside the coroutine.
-	//
-	// SSB64_MAX_FRAMES=N — debug aid that forces a clean shutdown
-	// after N frames. Goes through the same code path as the user
-	// closing the window (Window::Close() sets mIsRunning=false).
-	// Compiled out unless -DSSB64_TEST_HOOKS=ON.
-#ifdef SSB64_TEST_HOOKS
-	int maxFrames = 0;
-	if (const char* env = std::getenv("SSB64_MAX_FRAMES")) {
-		maxFrames = std::atoi(env);
-	}
-#endif
-	int frame = 0;
-	bool firstRunHintShown = false;
-	while (WindowIsRunning()) {
-		PortPushFrame();
-		frame++;
-#if defined(SSB64_TEST_HOOKS) && defined(_MSC_VER) && defined(_DEBUG)
-		/* Heap-corruption bisect: validate the shared (ucrtbased) debug heap
-		 * once per frame when SSB64_HEAP_CHECK is set; heap_probe.log records
-		 * frame-N ENTER/DONE so the first DONE-missing line brackets the
-		 * corrupting frame. */
-		if (std::getenv("SSB64_HEAP_CHECK") != nullptr) {
-			char tag[40];
-			snprintf(tag, sizeof(tag), "frame-%d", frame);
-			portSharedCrtHeapValidate(tag);
-		}
-#endif
-
-		if (!firstRunHintShown && frame == 60) {
-			auto cv = sContext->GetConsoleVariables();
-			if (cv && cv->GetInteger("gFirstRunHintShown", 0) == 0) {
-				cv->SetInteger("gFirstRunHintShown", 1);
-				if (auto gui = sContext->GetWindow()->GetGui()) {
-					gui->SaveConsoleVariablesNextFrame();
-				}
-			}
-			firstRunHintShown = true;
-		}
-#ifdef SSB64_TEST_HOOKS
-		if (maxFrames > 0 && frame >= maxFrames) {
-			port_log("SSB64: SSB64_MAX_FRAMES=%d reached — triggering clean shutdown\n", maxFrames);
-			if (auto ctx = Ship::Context::GetInstance()) {
-				if (auto win = ctx->GetWindow()) {
-					win->Close();
-				}
-			}
-			break;
-		}
-#endif
-	}
-
-	port_log("SSB64: main loop exited cleanly at frame=%d (WindowIsRunning=%d)\n",
-	         frame, WindowIsRunning());
-
-	PortGameShutdown();
-	port_log("SSB64: PortGameShutdown returned\n");
-
-#if defined(SSB64_TEST_HOOKS) && defined(_MSC_VER) && defined(_DEBUG)
-	portSharedCrtHeapValidate("pre-PortShutdown");
-#endif
-	PortShutdown();
-	portRenderDocShutdown();
-#ifdef __SWITCH__
-	Ship::Switch::Exit();
-#endif
-	return 0;
-
+		return portRunGame();
 	} catch (const std::exception& e) {
 		port_log("\n*** main: unhandled C++ exception ***\n"
 		         "    type: %s\n    what: %s\n",

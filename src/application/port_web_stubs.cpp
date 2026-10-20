@@ -16,11 +16,67 @@
 
 #ifdef __EMSCRIPTEN__
 
+#include <emscripten.h>
+#include <emscripten/console.h>
+
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string>
 
 namespace {
+
+/* Browser env bridge: the wasm `environ` starts empty and there is no
+ * exported setenv, so lobby/netplay bootstrap knobs
+ * (SSB64_LOBBY_HOST/JOIN/CODE/... in netlobby_start.cpp) would be
+ * unreachable from a browser session. The loader page passes them as URL
+ * query params instead — either the raw env name (?SSB64_LOBBY_JOIN=...)
+ * or a short ?lobby_* alias — and this pre-main constructor copies them
+ * into the C environment before PortInit or any lazy getenv() static
+ * can cache a miss.
+ *
+ * URLSearchParams already percent-decodes, so values may hold ws:// URLs
+ * verbatim. Names are whitelisted (SSB64_* prefix or the alias table) and
+ * any decoded value containing a newline or '=' is dropped so the
+ * NAME=VALUE\n wire format to C can't be smuggled into extra vars. */
+__attribute__((constructor)) void port_web_apply_url_env() {
+    char* blob = emscripten_run_script_string(
+        "(function(){"
+        "var p=new URLSearchParams(globalThis.location?location.search:'');"
+        "var alias={"
+        "lobby_host:'SSB64_LOBBY_HOST',lobby_join:'SSB64_LOBBY_JOIN',"
+        "lobby_code:'SSB64_LOBBY_CODE',lobby_spectate:'SSB64_LOBBY_SPECTATE',"
+        "lobby_code_file:'SSB64_LOBBY_CODE_FILE',"
+        "lobby_autostart:'SSB64_LOBBY_AUTOSTART',"
+        "lobby_fkind:'SSB64_LOBBY_FKIND',lobby_stage:'SSB64_LOBBY_STAGE',"
+        "lobby_min_players:'SSB64_LOBBY_MIN_PLAYERS',"
+        "lobby_force_relay:'SSB64_LOBBY_FORCE_RELAY'};"
+        "var out='';"
+        "p.forEach(function(v,k){"
+        "var n=/^SSB64_[A-Z0-9_]+$/.test(k)?k:alias[k.toLowerCase()];"
+        "if(!n)return;"
+        "if(v.indexOf('\\n')>=0||v.indexOf('=')>=0)return;"
+        "out+=n+'='+v+'\\n';});"
+        "return out;})()");
+    if (blob == nullptr) {
+        return;
+    }
+    for (char* line = blob; *line != '\0';) {
+        char* eol = std::strchr(line, '\n');
+        if (eol != nullptr) {
+            *eol = '\0';
+        }
+        char* eq = std::strchr(line, '=');
+        if (eq != nullptr && eq != line) {
+            *eq = '\0';
+            emscripten_errf("SSB64 web env: %s applied from URL param\n", line);
+            ::setenv(line, eq + 1, /*overwrite=*/1);
+        }
+        line = eol != nullptr ? eol + 1 : line + std::strlen(line);
+    }
+    std::free(blob);
+}
 
 /* Shared inert state for the pack-installer stubs: an install request
  * reports Error with a human-readable reason instead of silently doing
@@ -55,12 +111,8 @@ ExtractionResult ExtractAssetsIfNeeded(const std::string& target_o2r_path, bool 
     return result;
 }
 
-bool RunFirstRunWizard(const std::string& /*target_o2r_path*/) {
-    return false;
-}
-
-void SetWindowIcon() {}
-
+/* RunFirstRunWizard/SetWindowIcon are shared with Switch — see
+ * port_inert_stubs.cpp. */
 namespace enhancements {
 
 void FetchShaderPackCatalogAsync() {

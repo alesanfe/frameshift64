@@ -7,6 +7,37 @@
 #include <cstdio>
 #include <cstdlib>
 
+static void print_line_info(IDiaSession* sess, DWORD rva) {
+    IDiaEnumLineNumbers* en = nullptr;
+    if (FAILED(sess->findLinesByRVA(rva, 1, &en)) || !en) return;
+    IDiaLineNumber* ln = nullptr; ULONG got = 0;
+    if (SUCCEEDED(en->Next(1, &ln, &got)) && got && ln) {
+        DWORD lineno = 0; IDiaSourceFile* sf = nullptr; BSTR fn = nullptr;
+        ln->get_lineNumber(&lineno);
+        if (SUCCEEDED(ln->get_sourceFile(&sf)) && sf) { sf->get_fileName(&fn); sf->Release(); }
+        wprintf(L"  %s:%lu", fn ? fn : L"", lineno);
+        if (fn) SysFreeString(fn);
+        ln->Release();
+    }
+    en->Release();
+}
+
+static void resolve_rva(IDiaSession* sess, DWORD rva) {
+    IDiaSymbol* sym = nullptr;
+    if (FAILED(sess->findSymbolByRVA(rva, SymTagNull, &sym)) || !sym) {
+        wprintf(L"+0x%-8x ?\n", rva);
+        return;
+    }
+    BSTR name = nullptr; DWORD symRva = 0;
+    sym->get_name(&name); sym->get_relativeVirtualAddress(&symRva);
+    wprintf(L"+0x%-8x %s+0x%x", rva, name ? name : L"?", rva - symRva);
+    if (name) SysFreeString(name);
+    sym->Release();
+    // line info
+    print_line_info(sess, rva);
+    wprintf(L"\n");
+}
+
 int wmain(int argc, wchar_t** argv) {
     if (argc < 3) { wprintf(L"usage: rva2sym <pdb> <rva-hex>...\n"); return 2; }
     HRESULT hr = CoInitialize(nullptr);
@@ -19,31 +50,7 @@ int wmain(int argc, wchar_t** argv) {
     if (FAILED(src->openSession(&sess))) { wprintf(L"openSession failed\n"); return 1; }
     for (int i = 2; i < argc; i++) {
         DWORD rva = (DWORD)wcstoul(argv[i], nullptr, 16);
-        IDiaSymbol* sym = nullptr;
-        if (SUCCEEDED(sess->findSymbolByRVA(rva, SymTagNull, &sym)) && sym) {
-            BSTR name = nullptr; DWORD symRva = 0;
-            sym->get_name(&name); sym->get_relativeVirtualAddress(&symRva);
-            wprintf(L"+0x%-8x %s+0x%x", rva, name ? name : L"?", rva - symRva);
-            if (name) SysFreeString(name);
-            sym->Release();
-            // line info
-            IDiaEnumLineNumbers* en = nullptr;
-            if (SUCCEEDED(sess->findLinesByRVA(rva, 1, &en)) && en) {
-                IDiaLineNumber* ln = nullptr; ULONG got = 0;
-                if (SUCCEEDED(en->Next(1, &ln, &got)) && got && ln) {
-                    DWORD lineno = 0; IDiaSourceFile* sf = nullptr; BSTR fn = nullptr;
-                    ln->get_lineNumber(&lineno);
-                    if (SUCCEEDED(ln->get_sourceFile(&sf)) && sf) { sf->get_fileName(&fn); sf->Release(); }
-                    wprintf(L"  %s:%lu", fn ? fn : L"", lineno);
-                    if (fn) SysFreeString(fn);
-                    ln->Release();
-                }
-                en->Release();
-            }
-            wprintf(L"\n");
-        } else {
-            wprintf(L"+0x%-8x ?\n", rva);
-        }
+        resolve_rva(sess, rva);
     }
     return 0;
 }

@@ -1,27 +1,6 @@
 /** lbreloc_status.cpp — file-range registry, arena eviction, fighter
  * figatree fixup, ResourceManager fetch, and the status-buffer tables.
  * Split from lbreloc_bridge.cpp; the pipeline overview lives there. */
-#include <ship/Context.h>
-#include <ship/resource/ResourceManager.h>
-#include <spdlog/spdlog.h>
-
-#include <algorithm>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <memory>
-#include <vector>
-
-#if defined(__unix__) || defined(__APPLE__)
-#include <unistd.h>  // _exit
-#endif
-
-#include "RelocFile.h"
-#include "RelocFileTable.h"
-#include "RelocPointerTable.h"
-#include "SyntheticReloc.h"
-#include "ssb64_reloc_rebuild.h"
-#include "lbreloc_byteswap.h"
 #include "lbreloc_bridge_internal.h"
 
 void portRelocEvictFileRangesInRange(void *base, size_t size)

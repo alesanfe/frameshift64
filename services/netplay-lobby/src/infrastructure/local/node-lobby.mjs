@@ -31,10 +31,24 @@ const rooms = new Map();    // code -> LobbyRoom
 const dataDir = process.env.LOBBY_DATA_DIR ||
   path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
+/* temp+fsync+rename+dirsync: writeFileSync alone leaves bytes in the page
+ * cache, and rename alone leaves the directory entry unflushed — a power
+ * loss between the two could drop both. fsync the temp before the rename
+ * and the parent directory after it. */
 const writeJsonAtomic = (dest, obj) => {
   const tmp = `${dest}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify(obj));
+  const fd = fs.openSync(tmp, "w");
+  try {
+    fs.writeSync(fd, JSON.stringify(obj));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   fs.renameSync(tmp, dest);
+  try {
+    const dirFd = fs.openSync(path.dirname(dest), "r");
+    try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+  } catch { /* Windows can't fsync a dir handle — rename is enough there */ }
 };
 
 /* Leaderboard persisted under dataDir — runtime state, not repo data.

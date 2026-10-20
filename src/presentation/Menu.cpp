@@ -270,42 +270,50 @@ ImVec4 MenuTextDisabledColor(MenuBaseTheme theme) {
  * same CVarGet* types the reset writes with CVarSet*. */
 SectionUndo sSectionUndo;
 
+/* Build one undo entry for a widget, or false when the widget carries no
+ * snapshot-able cvar binding. The switch skips types with no scalar CVar
+ * read path (default arm). */
+static bool SnapshotWidgetEntry(const WidgetInfo& widget, SectionUndoEntry* e) {
+    if (widget.cVar == nullptr || *widget.cVar == '\0' || widget.options == nullptr) {
+        return false;
+    }
+    e->cvar = widget.cVar;
+    e->type = widget.type;
+    switch (widget.type) {
+        case WIDGET_CVAR_CHECKBOX:
+        case WIDGET_CVAR_COMBOBOX:
+        case WIDGET_AUDIO_BACKEND:
+        case WIDGET_VIDEO_BACKEND:
+        case WIDGET_CVAR_SLIDER_INT:
+        case WIDGET_CVAR_BTN_SELECTOR:
+            e->i = CVarGetInteger(widget.cVar, 0);
+            break;
+        case WIDGET_CVAR_SLIDER_FLOAT:
+            e->f = CVarGetFloat(widget.cVar, 0.0f);
+            break;
+        case WIDGET_CVAR_INPUT:
+            e->s = CVarGetString(widget.cVar, "");
+            break;
+        case WIDGET_CVAR_COLOR_PICKER:
+            e->c = CVarGetColor(widget.cVar, e->c);
+            break;
+        default:
+            return false;
+    }
+    return true;
+}
+
 void SnapshotSectionCvars(const SidebarEntry& section, SectionUndo& undo) {
     undo.entries.clear();
     for (const auto& column : section.columnWidgets) {
         for (const auto& widget : column) {
-            if (widget.cVar == nullptr || *widget.cVar == '\0' || widget.options == nullptr) {
-                continue;
-            }
             SectionUndoEntry e;
-            e.cvar = widget.cVar;
-            e.type = widget.type;
-            switch (widget.type) {
-                case WIDGET_CVAR_CHECKBOX:
-                case WIDGET_CVAR_COMBOBOX:
-                case WIDGET_AUDIO_BACKEND:
-                case WIDGET_VIDEO_BACKEND:
-                case WIDGET_CVAR_SLIDER_INT:
-                case WIDGET_CVAR_BTN_SELECTOR:
-                    e.i = CVarGetInteger(widget.cVar, 0);
-                    break;
-                case WIDGET_CVAR_SLIDER_FLOAT:
-                    e.f = CVarGetFloat(widget.cVar, 0.0f);
-                    break;
-                case WIDGET_CVAR_INPUT:
-                    e.s = CVarGetString(widget.cVar, "");
-                    break;
-                case WIDGET_CVAR_COLOR_PICKER:
-                    e.c = CVarGetColor(widget.cVar, e.c);
-                    break;
-                default:
-                    continue;
+            if (SnapshotWidgetEntry(widget, &e)) {
+                undo.entries.push_back(std::move(e));
             }
-            undo.entries.push_back(std::move(e));
         }
     }
 }
-
 void ApplySectionUndo(SectionUndo& undo) {
     for (const auto& e : undo.entries) {
         switch (e.type) {
@@ -333,79 +341,68 @@ void ApplySectionUndo(SectionUndo& undo) {
     }
     undo.entries.clear();
 }
+/* Per-type "reset this widget's CVar to the options default" table.
+ * Non-CVAR_ widget types are not resettable and never appear here. */
+using ResetCvarFn = void (*)(const WidgetInfo&);
+static const std::pair<WidgetType, ResetCvarFn> kCvarResetters[] = {
+    { WIDGET_CVAR_CHECKBOX, [](const WidgetInfo& w) {
+        CVarSetInteger(w.cVar,
+            std::static_pointer_cast<UIWidgets::CheckboxOptions>(w.options)->defaultValue ? 1 : 0); } },
+    { WIDGET_CVAR_COMBOBOX, [](const WidgetInfo& w) {
+        CVarSetInteger(w.cVar,
+            static_cast<int32_t>(
+                std::static_pointer_cast<UIWidgets::ComboboxOptions>(w.options)->defaultIndex)); } },
+    { WIDGET_AUDIO_BACKEND, [](const WidgetInfo& w) {
+        CVarSetInteger(w.cVar,
+            static_cast<int32_t>(
+                std::static_pointer_cast<UIWidgets::ComboboxOptions>(w.options)->defaultIndex)); } },
+    { WIDGET_VIDEO_BACKEND, [](const WidgetInfo& w) {
+        CVarSetInteger(w.cVar,
+            static_cast<int32_t>(
+                std::static_pointer_cast<UIWidgets::ComboboxOptions>(w.options)->defaultIndex)); } },
+    { WIDGET_CVAR_SLIDER_INT, [](const WidgetInfo& w) {
+        CVarSetInteger(w.cVar,
+            std::static_pointer_cast<UIWidgets::IntSliderOptions>(w.options)->defaultValue); } },
+    { WIDGET_CVAR_SLIDER_FLOAT, [](const WidgetInfo& w) {
+        CVarSetFloat(w.cVar,
+            std::static_pointer_cast<UIWidgets::FloatSliderOptions>(w.options)->defaultValue); } },
+    { WIDGET_CVAR_BTN_SELECTOR, [](const WidgetInfo& w) {
+        CVarSetInteger(w.cVar,
+            std::static_pointer_cast<UIWidgets::BtnSelectorOptions>(w.options)->defaultValue); } },
+    { WIDGET_CVAR_INPUT, [](const WidgetInfo& w) {
+        CVarSetString(w.cVar,
+            std::static_pointer_cast<UIWidgets::InputOptions>(w.options)->defaultValue.c_str()); } },
+    { WIDGET_CVAR_COLOR_PICKER, [](const WidgetInfo& w) {
+        CVarSetColor(w.cVar,
+            std::static_pointer_cast<UIWidgets::ColorPickerOptions>(w.options)->defaultValue); } },
+};
+
+/* Reset one widget to its default when `apply`; returns whether the
+ * widget counts as resettable (has a CVar and a known CVAR_ type). */
+static bool ResetWidgetCvar(const WidgetInfo& widget, bool apply) {
+    if (widget.cVar == nullptr || *widget.cVar == '\0' || widget.options == nullptr) {
+        return false;
+    }
+    for (const auto& [type, reset] : kCvarResetters) {
+        if (type == widget.type) {
+            if (apply) {
+                reset(widget);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 size_t ResetSectionCvars(const SidebarEntry& section, bool apply) {
     size_t touched = 0;
     for (const auto& column : section.columnWidgets) {
         for (const auto& widget : column) {
-            if (widget.cVar == nullptr || *widget.cVar == '\0' || widget.options == nullptr) {
+            if (!ResetWidgetCvar(widget, apply)) {
                 continue;
             }
-            const size_t before = touched;
-            switch (widget.type) {
-                case WIDGET_CVAR_CHECKBOX:
-                    if (apply) {
-                        CVarSetInteger(
-                            widget.cVar,
-                            std::static_pointer_cast<UIWidgets::CheckboxOptions>(widget.options)->defaultValue ? 1
-                                                                                                             : 0);
-                    }
-                    touched++;
-                    break;
-                case WIDGET_CVAR_COMBOBOX:
-                case WIDGET_AUDIO_BACKEND:
-                case WIDGET_VIDEO_BACKEND:
-                    if (apply) {
-                        CVarSetInteger(widget.cVar,
-                                       static_cast<int32_t>(
-                                           std::static_pointer_cast<UIWidgets::ComboboxOptions>(widget.options)
-                                               ->defaultIndex));
-                    }
-                    touched++;
-                    break;
-                case WIDGET_CVAR_SLIDER_INT:
-                    if (apply) {
-                        CVarSetInteger(
-                            widget.cVar,
-                            std::static_pointer_cast<UIWidgets::IntSliderOptions>(widget.options)->defaultValue);
-                    }
-                    touched++;
-                    break;
-                case WIDGET_CVAR_SLIDER_FLOAT:
-                    if (apply) {
-                        CVarSetFloat(
-                            widget.cVar,
-                            std::static_pointer_cast<UIWidgets::FloatSliderOptions>(widget.options)->defaultValue);
-                    }
-                    touched++;
-                    break;
-                case WIDGET_CVAR_BTN_SELECTOR:
-                    if (apply) {
-                        CVarSetInteger(
-                            widget.cVar,
-                            std::static_pointer_cast<UIWidgets::BtnSelectorOptions>(widget.options)->defaultValue);
-                    }
-                    touched++;
-                    break;
-                case WIDGET_CVAR_INPUT:
-                    if (apply) {
-                        CVarSetString(
-                            widget.cVar,
-                            std::static_pointer_cast<UIWidgets::InputOptions>(widget.options)->defaultValue.c_str());
-                    }
-                    touched++;
-                    break;
-                case WIDGET_CVAR_COLOR_PICKER:
-                    if (apply) {
-                        CVarSetColor(
-                            widget.cVar,
-                            std::static_pointer_cast<UIWidgets::ColorPickerOptions>(widget.options)->defaultValue);
-                    }
-                    touched++;
-                    break;
-                default:
-                    break;
-            }
-            if (apply && touched != before) {
+            touched++;
+            if (apply) {
                 ShipInit::Init(widget.cVar);
             }
         }
@@ -615,6 +612,42 @@ static bool SearchMatches(std::string haystack, const std::string& needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
+/* Searchable text for a widget: raw + translated name and tooltip,
+ * stableId, and any extra search terms — all feed SearchMatches. */
+static std::string WidgetSearchText(const WidgetInfo& info) {
+    const char* tooltip = info.options->tooltip;
+    std::string widgetStr = std::string(info.name) + TR(info.name.c_str()) +
+        std::string(tooltip != NULL ? tooltip : "") +
+        (tooltip != NULL ? TR(tooltip) : "") + info.stableId;
+    for (const auto& term : info.searchTerms) {
+        widgetStr += term;
+    }
+    return widgetStr;
+}
+
+/* Search rows render combobox widgets left-aligned with the label
+ * above; this guard applies that layout and restores it on scope end. */
+struct ComboSearchLayoutGuard {
+    std::shared_ptr<UIWidgets::ComboboxOptions> options;
+    UIWidgets::ComponentAlignments backupAlignment{};
+    UIWidgets::LabelPositions backupLabelPos{};
+    explicit ComboSearchLayoutGuard(const WidgetInfo& info) {
+        if (info.type == WIDGET_COMBOBOX || info.type == WIDGET_CVAR_COMBOBOX) {
+            options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+            backupAlignment = options->alignment;
+            backupLabelPos = options->labelPosition;
+            options->alignment = UIWidgets::ComponentAlignments::Left;
+            options->labelPosition = UIWidgets::LabelPositions::Above;
+        }
+    }
+    ~ComboSearchLayoutGuard() {
+        if (options) {
+            options->alignment = backupAlignment;
+            options->labelPosition = backupLabelPos;
+        }
+    }
+};
+
 uint32_t Menu::DrawSearchResultWidgets(const std::string& menuSearchText) {
     uint32_t count = 0;
     for (auto& menuLabel : menuOrder) {
@@ -627,36 +660,14 @@ uint32_t Menu::DrawSearchResultWidgets(const std::string& menuSearchText) {
                         info.type == WIDGET_SEPARATOR_TEXT || info.isHidden || info.hideInSearch) {
                         continue;
                     }
-                    const char* tooltip = info.options->tooltip;
-                    std::string widgetStr = std::string(info.name) + TR(info.name.c_str()) +
-                        std::string(tooltip != NULL ? tooltip : "") +
-                        (tooltip != NULL ? TR(tooltip) : "") + info.stableId;
-                    for (const auto& term : info.searchTerms) {
-                        widgetStr += term;
-                    }
-                    if (!SearchMatches(widgetStr, menuSearchText)) {
+                    if (!SearchMatches(WidgetSearchText(info), menuSearchText)) {
                         continue;
                     }
-                    UIWidgets::ComponentAlignments backupAlignment{};
-                    UIWidgets::LabelPositions backupLabelPos{};
-                    const bool isCombo =
-                        info.type == WIDGET_COMBOBOX || info.type == WIDGET_CVAR_COMBOBOX;
-                    if (isCombo) {
-                        auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
-                        backupAlignment = options->alignment;
-                        backupLabelPos = options->labelPosition;
-                        options->alignment = UIWidgets::ComponentAlignments::Left;
-                        options->labelPosition = UIWidgets::LabelPositions::Above;
-                    }
+                    ComboSearchLayoutGuard comboGuard(info);
                     MenuDrawItem(info, 400, menuThemeIndex);
                     DrawSearchHit(info, fmt::format("  ({} -> {})", menuEntry.label, sidebarLabel),
                                   menuEntry.label, sidebarLabel);
                     count++;
-                    if (isCombo) {
-                        auto options = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
-                        options->alignment = backupAlignment;
-                        options->labelPosition = backupLabelPos;
-                    }
                 }
             }
         }

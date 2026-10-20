@@ -178,6 +178,71 @@ struct PortMsvcCatchableType {
 	int32_t   copyFunction;
 };
 
+struct MsvcThrowImage {
+	uintptr_t base;
+	uintptr_t end;
+	bool contains(const void* p) const {
+		const uintptr_t a = (uintptr_t)p;
+		return a >= base && a < end;
+	}
+	const void* rva(uint32_t off) const { return (const void*)(base + off); }
+};
+
+// End of the throwing module image — every metadata pointer must live
+// inside it. `end==0` when the module info cannot be read.
+static MsvcThrowImage msvcImageOf(uintptr_t imgBase) {
+	MsvcThrowImage img = {imgBase, 0};
+	MODULEINFO mi = {0};
+	if (GetModuleInformation(GetCurrentProcess(), (HMODULE)imgBase, &mi, sizeof(mi))) {
+		img.end = (uintptr_t)mi.lpBaseOfDll + mi.SizeOfImage;
+	}
+	return img;
+}
+
+// Attempt std::exception::what() only when offset 0 looks safe per
+// CatchableType properties. Multi-inherit / virtual-base types would need
+// adjustments; keep it conservative and report the type name regardless.
+// Catch any access violation — vectored handlers must not throw.
+static const char* msvcTryWhat(void* thrownObj, const PortMsvcCatchableType* ct) {
+	if (!thrownObj || !ct || (ct->properties & 0x4) != 0) {
+		return nullptr;
+	}
+	const char* what = nullptr;
+	__try {
+		const std::exception* ex = (const std::exception*)thrownObj;
+		what = ex->what();
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		what = nullptr;
+	}
+	return what;
+}
+
+// Walk ThrowInfo → CatchableTypeArray → CatchableType[0] → type_info and
+// report the decoded throw. Every deref is image-bounds-checked; the whole
+// call runs under the caller's __try.
+static void msvcLogCatchable(const MsvcThrowImage& img,
+                             const PortMsvcThrowInfo* throwInfo,
+                             void* thrownObj) {
+	auto* cta = (const PortMsvcCatchableTypeArray*)
+	            img.rva((uint32_t)throwInfo->pCatchableTypeArray);
+	if (!img.contains(cta) || cta->nCatchableTypes == 0) {
+		port_log("    C++ throw: thrown=%p (empty/out-of-image CatchableTypeArray)\n", thrownObj);
+		return;
+	}
+
+	auto* ct = (const PortMsvcCatchableType*)
+	           img.rva((uint32_t)cta->arrayOfCatchableTypes[0]);
+	const std::type_info* ti = img.contains(ct)
+	                           ? (const std::type_info*)img.rva((uint32_t)ct->pType)
+	                           : nullptr;
+	const char* tname = (ti && img.contains(ti)) ? ti->name() : "(null)";
+	const char* what = msvcTryWhat(thrownObj, ct);
+	port_log("    C++ throw: type=\"%s\" thrown=%p%s%s\n",
+	         tname, thrownObj,
+	         what ? " what=" : "",
+	         what ? what     : "");
+}
+
 static void portLogMsvcCxxThrow(EXCEPTION_POINTERS* info)
 {
 	/* Decoder dereferences throw-record metadata supplied by the runtime.
@@ -201,58 +266,34 @@ static void portLogMsvcCxxThrow(EXCEPTION_POINTERS* info)
 		return;
 	}
 
-	// Every metadata pointer must live inside the throwing module image.
-	uintptr_t imgEnd = 0;
-	MODULEINFO mi = {0};
-	if (GetModuleInformation(GetCurrentProcess(), (HMODULE)imgBase, &mi, sizeof(mi))) {
-		imgEnd = (uintptr_t)mi.lpBaseOfDll + mi.SizeOfImage;
-	}
-	auto inImage = [&](const void* p) -> bool {
-		const uintptr_t a = (uintptr_t)p;
-		return a >= imgBase && a < imgEnd;
-	};
-	if (imgEnd == 0 || !inImage(throwInfo)) {
+	const MsvcThrowImage img = msvcImageOf(imgBase);
+	if (img.end == 0 || !img.contains(throwInfo)) {
 		port_log("    C++ throw: thrown=%p (ThrowInfo %p outside image)\n",
 		         thrownObj, (const void*)throwInfo);
 		return;
 	}
-
-	auto* cta = (const PortMsvcCatchableTypeArray*)
-	            (imgBase + (uint32_t)throwInfo->pCatchableTypeArray);
-	if (!inImage(cta) || cta->nCatchableTypes == 0) {
-		port_log("    C++ throw: thrown=%p (empty/out-of-image CatchableTypeArray)\n", thrownObj);
-		return;
-	}
-
-	auto* ct = (const PortMsvcCatchableType*)
-	           (imgBase + (uint32_t)cta->arrayOfCatchableTypes[0]);
-	const std::type_info* ti = inImage(ct)
-	                           ? (const std::type_info*)(imgBase + (uint32_t)ct->pType)
-	                           : nullptr;
-	const char* tname = (ti && inImage(ti)) ? ti->name() : "(null)";
-
-	// Most std exceptions live at offset 0 in the catchable layout (single
-	// inheritance, no virtual bases). For multi-inherit / virtual-base
-	// types this would need adjustments; keep it conservative and report
-	// the type name regardless. We attempt what() only when offset 0 looks
-	// safe per CatchableType properties.
-	const char* what = nullptr;
-	if (thrownObj && ct && (ct->properties & 0x4) == 0) {
-		// Try as std::exception. Catch any access violation just in case
-		// the layout differs — vectored handlers must not throw.
-		__try {
-			const std::exception* ex = (const std::exception*)thrownObj;
-			what = ex->what();
-		} __except (EXCEPTION_EXECUTE_HANDLER) {
-			what = nullptr;
-		}
-	}
-	port_log("    C++ throw: type=\"%s\" thrown=%p%s%s\n",
-	         tname, thrownObj,
-	         what ? " what=" : "",
-	         what ? what     : "");
+	msvcLogCatchable(img, throwInfo, thrownObj);
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
 		port_log("    C++ throw: (metadata decode faulted)\n");
+	}
+}
+
+
+// Noisy / non-actionable exception codes that get no log entry.
+static bool portIsSuppressedCode(DWORD code) {
+	return code == EXCEPTION_BREAKPOINT ||
+	       code == DBG_PRINTEXCEPTION_C || code == DBG_PRINTEXCEPTION_WIDE_C ||
+	       code == 0x406D1388;
+}
+
+// First-chance logging of C++ throws (see issue #58 note at call site).
+static void portHandleCxxThrow(EXCEPTION_POINTERS* info) {
+	static volatile LONG sCxxThrowsLogged = 0;
+	// Cap to first 8 to avoid log spam if a hot path throws.
+	if (InterlockedIncrement(&sCxxThrowsLogged) <= 8) {
+		port_log("\n*** C++ THROW (first-chance) tid=%lu ***\n",
+		         GetCurrentThreadId());
+		portLogMsvcCxxThrow(info);
 	}
 }
 
@@ -267,18 +308,10 @@ static LONG CALLBACK portWindowsVectoredHandler(EXCEPTION_POINTERS* info)
 	// Decode and log it, then keep returning EXCEPTION_CONTINUE_SEARCH
 	// so SEH still gets a chance to catch it normally.
 	if (code == 0xE06D7363) {
-		static volatile LONG sCxxThrowsLogged = 0;
-		// Cap to first 8 to avoid log spam if a hot path throws.
-		if (InterlockedIncrement(&sCxxThrowsLogged) <= 8) {
-			port_log("\n*** C++ THROW (first-chance) tid=%lu ***\n",
-			         GetCurrentThreadId());
-			portLogMsvcCxxThrow(info);
-		}
+		portHandleCxxThrow(info);
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
-	if (code == EXCEPTION_BREAKPOINT ||
-	    code == DBG_PRINTEXCEPTION_C || code == DBG_PRINTEXCEPTION_WIDE_C ||
-	    code == 0x406D1388) {
+	if (portIsSuppressedCode(code)) {
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
 

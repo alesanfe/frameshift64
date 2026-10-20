@@ -593,6 +593,33 @@ void PopStyleSlider() {
     ImGui::PopStyleColor(6);
 }
 
+/* "-"/"+" step buttons share shape: the button always renders under
+ * showButtons, the step applies only when it doesn't cross its bound,
+ * and the post-step clamp guards the bound it just moved toward. */
+template <typename T, typename ClampFn>
+static bool SliderStepDown(T* value, T min, T step, bool clamp, ClampFn&& doClamp, Colors color) {
+    if (Button("-", ButtonOptions{ .color = color }.Size(Sizes::Inline)) && *value > min) {
+        *value -= step;
+        if (clamp) {
+            doClamp();
+        }
+        return true;
+    }
+    return false;
+}
+
+template <typename T, typename ClampFn>
+static bool SliderStepUp(T* value, T max, T step, bool clamp, ClampFn&& doClamp, Colors color) {
+    if (Button("+", ButtonOptions{ .color = color }.Size(Sizes::Inline)) && *value < max) {
+        *value += step;
+        if (clamp) {
+            doClamp();
+        }
+        return true;
+    }
+    return false;
+}
+
 bool SliderInt(const char* label, int32_t* value, const IntSliderOptions& options) {
     bool dirty = false;
     std::string invisibleLabelStr = "##" + std::string(label);
@@ -607,13 +634,8 @@ bool SliderInt(const char* label, int32_t* value, const IntSliderOptions& option
     }
     SliderLabelPrefix(label, *value, &width, options, 0.0f);
     if (options.showButtons) {
-        if (Button("-", ButtonOptions{ .color = options.color }.Size(Sizes::Inline)) && *value > options.min) {
-            *value -= options.step;
-            if (options.clamp) {
-                if (*value < options.min) {
-                    *value = options.min;
-                }
-            }
+        if (SliderStepDown(value, options.min, options.step, options.clamp,
+                           [&] { if (*value < options.min) *value = options.min; }, options.color)) {
             dirty = true;
         }
         ImGui::SameLine(0, 3.0f);
@@ -635,12 +657,8 @@ bool SliderInt(const char* label, int32_t* value, const IntSliderOptions& option
     if (options.showButtons) {
         ImGui::SameLine(0, 3.0f);
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        if (Button("+", ButtonOptions{ .color = options.color }.Size(Sizes::Inline)) && *value < options.max) {
-            *value += options.step;
-            if (options.clamp) {
-                if (*value > options.max)
-                    *value = options.max;
-            }
+        if (SliderStepUp(value, options.max, options.step, options.clamp,
+                         [&] { if (*value > options.max) *value = options.max; }, options.color)) {
             dirty = true;
         }
     }
@@ -715,11 +733,8 @@ bool SliderFloat(const char* label, float* value, const FloatSliderOptions& opti
     }
     SliderLabelPrefix(label, *value, &width, options, labelSpacing);
     if (options.showButtons) {
-        if (Button("-", ButtonOptions{ .color = options.color }.Size(Sizes::Inline)) && *value > options.min) {
-            *value -= options.step;
-            if (options.clamp) {
-                ClampFloat(value, options.min, options.max, options.step);
-            }
+        if (SliderStepDown(value, options.min, options.step, options.clamp,
+                           [&] { ClampFloat(value, options.min, options.max, options.step); }, options.color)) {
             dirty = true;
         }
         ImGui::SameLine(0, 3.0f);
@@ -738,11 +753,8 @@ bool SliderFloat(const char* label, float* value, const FloatSliderOptions& opti
     if (options.showButtons) {
         ImGui::SameLine(0, 3.0f);
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        if (Button("+", ButtonOptions{ .color = options.color }.Size(Sizes::Inline)) && *value < options.max) {
-            *value += options.step;
-            if (options.clamp) {
-                ClampFloat(value, options.min, options.max, options.step);
-            }
+        if (SliderStepUp(value, options.max, options.step, options.clamp,
+                         [&] { ClampFloat(value, options.min, options.max, options.step); }, options.color)) {
             dirty = true;
         }
     }

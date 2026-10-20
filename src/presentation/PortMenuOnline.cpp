@@ -215,301 +215,271 @@ static void PollConnTest(ConnTest& test) {
 
 
 
-static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
-    static char serverBuf[128] = {};
-    static char codeBuf[8] = {};
-    static bool loaded = false;
-    static ConnTest connTest;
-    static float sPingHistory[120] = {};
-    static int sPingHead = 0;
-    static int sPingCount = 0;
-    static std::chrono::steady_clock::time_point sPingLast;
+/* Per-frame lobby view state: the CVar mirror + lobby snapshot the panel
+ * helpers read. `save` is the persistence callback (SaveOnlineCvars). */
+struct LobbyFrameState {
+    int fighter;
+    int stage;
+    int stocks;
+    bool itemsOn;
+    int delay;
+    bool autoDelay;
+    int effectiveDelay;
+    int state;
+    bool idle;
+    void (*save)(void);
+};
 
-    if (!loaded) {
-        std::snprintf(serverBuf, sizeof(serverBuf), "%s", CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER));
-        loaded = true;
+/* Server buffer + connection probe are shared by several sections, so
+ * they live at file scope (previously function-statics in the monolith). */
+static char sServerBuf[128] = {};
+static ConnTest sConnTest;
+
+static void RenderHowToPlay() {
+    if (ImGui::CollapsingHeader(TR("How to play online"))) {
+        ImGui::PushTextWrapPos();
+        ImGui::TextWrapped("%s", TR(
+            "• Quick play: press Find match — you join a public queue room and\n"
+            "  get paired with whoever else is searching. No code needed.\n"
+            "• Play with a friend: one of you presses Host and shares the\n"
+            "  6-letter room code; the other enters it under Join a match.\n"
+            "• Spectate: enter a room code and press Spectate — you watch\n"
+            "  live without affecting the match or its netcode.\n"
+            "• Ready up when you're set; the host starts the match.\n"
+            "• LAN (direct IP) skips the lobby server entirely — use it on\n"
+            "  the same network or over a VPN."));
+        ImGui::PopTextWrapPos();
     }
-    int fighter = CVarGetInteger("gNetplay.Fighter", 0);
-    int stage = CVarGetInteger("gNetplay.Stage", 0);
-    int stocks = CVarGetInteger("gNetplay.Stocks", 3);
-    int items = CVarGetInteger("gNetplay.Items", 0);
-    int delay = CVarGetInteger("gNetplay.Delay", 2);
-    // §22 — "Automatic" is a persistent mode, not a one-shot copy: the
-    // delay resolves from measured ping each time a session is hosted
-    // (fallback 2 before any ping is known).
-    const bool autoDelay = CVarGetInteger("gNetplay.AutoDelay", 1) != 0;
-    const int lobbyPing = port_netlobby_ping_ms();
-    const int pingRecommended = lobbyPing < 30 ? 1 : lobbyPing < 70 ? 2 : lobbyPing < 110 ? 3 : 4;
-    const int effectiveDelay = autoDelay ? (lobbyPing >= 0 ? pingRecommended : 2) : delay;
-    auto save = SaveOnlineCvars;
+}
 
-    const int state = port_netlobby_state();
-    const bool idle = (state == PORT_NETLOBBY_IDLE || state == PORT_NETLOBBY_FAILED);
-    if (!idle && connTest.state == ConnTestState::Running) {
-        // Lobby session claimed the shared control socket — abandon the probe.
-        connTest.state = ConnTestState::Idle;
-        connTest.result.clear();
-    }
-    if (idle) {
-        sPingCount = 0;
-        sPingHead = 0;
-    }
-    PollConnTest(connTest);
-
-    ImGui::TextWrapped("%s", TR("Play online with rollback netcode - up to 4 players in one room. One player hosts "
-                       "and shares the room code; the others join with it. No port forwarding needed."));
-    ImGui::Spacing();
-
-    ImGui::BeginDisabled(state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH);
-    ImGui::TextUnformatted(TR("Your fighter"));
+static void RenderHostSection(LobbyFrameState& S) {
+    ImGui::SeparatorText(TR("Host a match"));
+    ImGui::TextUnformatted(TR("Stage"));
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::Combo("##NetplayFighter", &fighter, kNetplayFighters, IM_ARRAYSIZE(kNetplayFighters))) {
-        CVarSetInteger("gNetplay.Fighter", fighter);
-        port_netlobby_set_fkind(fighter);
-        save();
+    if (ImGui::Combo("##NetplayStage", &S.stage, kNetplayStages, IM_ARRAYSIZE(kNetplayStages))) {
+        CVarSetInteger("gNetplay.Stage", S.stage);
+        S.save();
+    }
+    ImGui::TextUnformatted(TR("Stocks"));
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::SliderInt("##NetplayStocks", &S.stocks, 1, 5)) {
+        CVarSetInteger("gNetplay.Stocks", S.stocks);
+        S.save();
+    }
+    if (ImGui::Checkbox(TR("Items"), &S.itemsOn)) {
+        CVarSetInteger("gNetplay.Items", S.itemsOn ? 1 : 0);
+        S.save();
+    }
+    ImGui::TextUnformatted(TR("Input delay"));
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    {
+        // ~16.6ms per frame: cover the round trip plus jitter margin.
+        const std::string delayPreview =
+            S.autoDelay ? TR("Automatic (recommended)")
+                        : fmt::format(fmt::runtime(TR("{} frames")), S.delay);
+        if (ImGui::BeginCombo("##NetplayDelay", delayPreview.c_str())) {
+            if (ImGui::Selectable(TR("Automatic (recommended)"), S.autoDelay)) {
+                CVarSetInteger("gNetplay.AutoDelay", 1);
+                S.save();
+            }
+            for (int v = 0; v <= 4; v++) {
+                const std::string lbl = fmt::format(fmt::runtime(TR("{} frames")), v);
+                if (ImGui::Selectable(lbl.c_str(), !S.autoDelay && S.delay == v)) {
+                    CVarSetInteger("gNetplay.AutoDelay", 0);
+                    CVarSetInteger("gNetplay.Delay", v);
+                    S.save();
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    if (S.autoDelay) {
+        ImGui::TextWrapped(TR("Automatic: resolves from measured ping at room start (now: %d "
+                              "frames). Everyone in the room plays with the host's value."),
+                           S.effectiveDelay);
+    } else {
+        ImGui::TextWrapped("%s", TR("Recommended: 2 for most connections. Raise it on high-ping "
+                           "links to reduce visible rollbacks; everyone in the room "
+                           "plays with the host's value."));
+    }
+    ImGui::PopStyleColor();
+    if (UIWidgets::Button(TR("Host"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+        port_netlobby_host(sServerBuf, S.fighter, S.stage, S.stocks, S.itemsOn ? 1 : 0, S.effectiveDelay);
+    }
+}
+
+static void RenderRecentMatches() {
+    const int total = port_netstats_history_count();
+    const int shown = (std::min)(total, 5);
+    for (int i = 0; i < shown; i++) {
+        int won = 0, opp = -1;
+        unsigned int ticks = 0;
+        unsigned long long ts = 0;
+        if (!port_netstats_history_at(i, &won, &opp, &ticks, &ts)) {
+            continue;
+        }
+        const char* verdict = won == 1 ? TR("Win")
+                            : won == 0 ? TR("Loss") : TR("Draw");
+        const ImVec4 vc = won == 1 ? SemanticColors::Success
+                        : won == 0 ? SemanticColors::Error
+                                   : SemanticColors::Muted;
+        ImGui::Bullet();
+        ImGui::TextColored(vc, "%s", verdict);
+        ImGui::SameLine();
+        if (opp > 0) {
+            ImGui::TextDisabled(TR("vs ~%d rating  ·  %ds"), opp, ticks / 60);
+        } else {
+            ImGui::TextDisabled(TR("%ds"), ticks / 60);
+        }
+    }
+}
+
+/* Local rating mirror: rating, record and history live in netstats.json
+ * next to the save file. */
+static void RenderQuickPlayStats() {
+    const int rating = port_netstats_rating();
+    const int n = port_netstats_wins() + port_netstats_losses() + port_netstats_draws();
+    char seasonBuf[16] = {};
+    port_netstats_season(seasonBuf, sizeof(seasonBuf));
+    if (seasonBuf[0] != '\0') {
+        ImGui::TextDisabled(TR("Season %s"), seasonBuf);
+    }
+    if (n == 0) {
+        ImGui::TextDisabled("%s", TR("No online matches on record yet."));
+        return;
+    }
+    char tierBuf[16] = {};
+    port_netstats_rank_tier_name(tierBuf, sizeof(tierBuf));
+    std::string line = port_netstats_provisional()
+        ? fmt::format(fmt::runtime(TR("Rating: %d (provisional)  ·  %d-%d-%d")),
+                      rating, port_netstats_wins(), port_netstats_losses(),
+                      port_netstats_draws())
+        : fmt::format(fmt::runtime(TR("Rating: %d [%s]  ·  %d-%d-%d")),
+                      rating, tierBuf, port_netstats_wins(), port_netstats_losses(),
+                      port_netstats_draws());
+    ImGui::TextWrapped("%s", line.c_str());
+    if (ImGui::TreeNode(TR("Recent matches"))) {
+        RenderRecentMatches();
+        ImGui::TreePop();
+    }
+}
+
+static void RenderQuickPlaySection(LobbyFrameState& S) {
+    ImGui::SeparatorText(TR("Quick play"));
+    RenderQuickPlayStats();
+    if (UIWidgets::Button(TR("Find match"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+        port_netlobby_quickplay(sServerBuf, S.fighter, S.stage, S.stocks, S.itemsOn ? 1 : 0, S.effectiveDelay);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", TR("Joins the public queue — pairs with whoever else is waiting.\n"
+                                  "Your rating is shared with the opponent and updates after the match."));
+    }
+}
+
+static void RenderJoinSection(LobbyFrameState& S) {
+    static char codeBuf[8] = {};
+    ImGui::SeparatorText(TR("Join a match"));
+    ImGui::TextUnformatted(TR("Room code"));
+    ImGui::SetNextItemWidth(-80.0f);
+    const bool codeEnter = ImGui::InputText("##NetplayCode", codeBuf, sizeof(codeBuf),
+                                            ImGuiInputTextFlags_CharsUppercase |
+                                                ImGuiInputTextFlags_EnterReturnsTrue);
+    // Always run the sanitizer — paste via Ctrl+V lands in one edit, but
+    // a programmatic write shouldn't leave invalid chars behind either.
+    SanitizeRoomCode(codeBuf, codeBuf, sizeof(codeBuf));
+    ImGui::SameLine();
+    if (ImGui::SmallButton(TR("Paste"))) {
+        SanitizeRoomCode(ImGui::GetClipboardText(), codeBuf, sizeof(codeBuf));
+    }
+    const size_t codeLen = std::strlen(codeBuf);
+    if (codeLen > 0 && codeLen < kRoomCodeLen) {
+        ImGui::TextDisabled(TR("%d of %d characters"), static_cast<int>(codeLen), static_cast<int>(kRoomCodeLen));
+    }
+    const bool codeValid = (codeLen == kRoomCodeLen);
+    if (codeEnter && codeValid) {
+        port_netlobby_join(sServerBuf, codeBuf, S.fighter);
+    }
+    ImGui::BeginDisabled(!codeValid);
+    if (UIWidgets::Button(TR("Join"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+        port_netlobby_join(sServerBuf, codeBuf, S.fighter);
+    }
+    ImGui::SameLine();
+    if (UIWidgets::Button(TR("Spectate"))) {
+        port_netlobby_spectate(sServerBuf, codeBuf);
     }
     ImGui::EndDisabled();
-
-    /* Connect view — only while idle. Once you're in a room the panel swaps
-     * to the room/status view below so the creation controls can't be
-     * mistaken for live settings. */
-    if (idle) {
-        if (ImGui::CollapsingHeader(TR("How to play online"))) {
-            ImGui::PushTextWrapPos();
-            ImGui::TextWrapped("%s", TR(
-                "• Quick play: press Find match — you join a public queue room and\n"
-                "  get paired with whoever else is searching. No code needed.\n"
-                "• Play with a friend: one of you presses Host and shares the\n"
-                "  6-letter room code; the other enters it under Join a match.\n"
-                "• Spectate: enter a room code and press Spectate — you watch\n"
-                "  live without affecting the match or its netcode.\n"
-                "• Ready up when you're set; the host starts the match.\n"
-                "• LAN (direct IP) skips the lobby server entirely — use it on\n"
-                "  the same network or over a VPN."));
-            ImGui::PopTextWrapPos();
-        }
-
-        ImGui::SeparatorText(TR("Host a match"));
-        ImGui::TextUnformatted(TR("Stage"));
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::Combo("##NetplayStage", &stage, kNetplayStages, IM_ARRAYSIZE(kNetplayStages))) {
-            CVarSetInteger("gNetplay.Stage", stage);
-            save();
-        }
-        ImGui::TextUnformatted(TR("Stocks"));
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::SliderInt("##NetplayStocks", &stocks, 1, 5)) {
-            CVarSetInteger("gNetplay.Stocks", stocks);
-            save();
-        }
-        bool itemsOn = items != 0;
-        if (ImGui::Checkbox(TR("Items"), &itemsOn)) {
-            CVarSetInteger("gNetplay.Items", itemsOn ? 1 : 0);
-            save();
-        }
-        ImGui::TextUnformatted(TR("Input delay"));
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        {
-            // ~16.6ms per frame: cover the round trip plus jitter margin.
-            const std::string delayPreview =
-                autoDelay ? TR("Automatic (recommended)")
-                          : fmt::format(fmt::runtime(TR("{} frames")), delay);
-            if (ImGui::BeginCombo("##NetplayDelay", delayPreview.c_str())) {
-                if (ImGui::Selectable(TR("Automatic (recommended)"), autoDelay)) {
-                    CVarSetInteger("gNetplay.AutoDelay", 1);
-                    save();
-                }
-                for (int v = 0; v <= 4; v++) {
-                    const std::string lbl = fmt::format(fmt::runtime(TR("{} frames")), v);
-                    if (ImGui::Selectable(lbl.c_str(), !autoDelay && delay == v)) {
-                        CVarSetInteger("gNetplay.AutoDelay", 0);
-                        CVarSetInteger("gNetplay.Delay", v);
-                        save();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-        }
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        if (autoDelay) {
-            ImGui::TextWrapped(TR("Automatic: resolves from measured ping at room start (now: %d "
-                                  "frames). Everyone in the room plays with the host's value."),
-                               effectiveDelay);
-        } else {
-            ImGui::TextWrapped("%s", TR("Recommended: 2 for most connections. Raise it on high-ping "
-                               "links to reduce visible rollbacks; everyone in the room "
-                               "plays with the host's value."));
-        }
-        ImGui::PopStyleColor();
-        if (UIWidgets::Button(TR("Host"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-            port_netlobby_host(serverBuf, fighter, stage, stocks, itemsOn ? 1 : 0, effectiveDelay);
-        }
-
-        ImGui::SeparatorText(TR("Quick play"));
-        /* Local rating mirror: rating, record and history live in
-         * netstats.json next to the save file. */
-        {
-            const int rating = port_netstats_rating();
-            const int n = port_netstats_wins() + port_netstats_losses() + port_netstats_draws();
-            char seasonBuf[16] = {};
-            port_netstats_season(seasonBuf, sizeof(seasonBuf));
-            if (seasonBuf[0] != '\0') {
-                ImGui::TextDisabled(TR("Season %s"), seasonBuf);
-            }
-            if (n == 0) {
-                ImGui::TextDisabled("%s", TR("No online matches on record yet."));
-            } else {
-                char tierBuf[16] = {};
-                port_netstats_rank_tier_name(tierBuf, sizeof(tierBuf));
-                std::string line = port_netstats_provisional()
-                    ? fmt::format(fmt::runtime(TR("Rating: %d (provisional)  ·  %d-%d-%d")),
-                                  rating, port_netstats_wins(), port_netstats_losses(),
-                                  port_netstats_draws())
-                    : fmt::format(fmt::runtime(TR("Rating: %d [%s]  ·  %d-%d-%d")),
-                                  rating, tierBuf, port_netstats_wins(), port_netstats_losses(),
-                                  port_netstats_draws());
-                ImGui::TextWrapped("%s", line.c_str());
-                if (ImGui::TreeNode(TR("Recent matches"))) {
-                    const int total = port_netstats_history_count();
-                    const int shown = (std::min)(total, 5);
-                    for (int i = 0; i < shown; i++) {
-                        int won = 0, opp = -1;
-                        unsigned int ticks = 0;
-                        unsigned long long ts = 0;
-                        if (!port_netstats_history_at(i, &won, &opp, &ticks, &ts)) {
-                            continue;
-                        }
-                        const char* verdict = won == 1 ? TR("Win")
-                                            : won == 0 ? TR("Loss") : TR("Draw");
-                        const ImVec4 vc = won == 1 ? SemanticColors::Success
-                                        : won == 0 ? SemanticColors::Error
-                                                   : SemanticColors::Muted;
-                        ImGui::Bullet();
-                        ImGui::TextColored(vc, "%s", verdict);
-                        ImGui::SameLine();
-                        if (opp > 0) {
-                            ImGui::TextDisabled(TR("vs ~%d rating  ·  %ds"), opp, ticks / 60);
-                        } else {
-                            ImGui::TextDisabled(TR("%ds"), ticks / 60);
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-            }
-        }
-        if (UIWidgets::Button(TR("Find match"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-            port_netlobby_quickplay(serverBuf, fighter, stage, stocks, itemsOn ? 1 : 0, effectiveDelay);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", TR("Joins the public queue — pairs with whoever else is waiting.\n"
-                                      "Your rating is shared with the opponent and updates after the match."));
-        }
-
-        ImGui::SeparatorText(TR("Join a match"));
-        ImGui::TextUnformatted(TR("Room code"));
-        ImGui::SetNextItemWidth(-80.0f);
-        const bool codeEnter = ImGui::InputText("##NetplayCode", codeBuf, sizeof(codeBuf),
-                                                ImGuiInputTextFlags_CharsUppercase |
-                                                    ImGuiInputTextFlags_EnterReturnsTrue);
-        // Always run the sanitizer — paste via Ctrl+V lands in one edit, but
-        // a programmatic write shouldn't leave invalid chars behind either.
-        SanitizeRoomCode(codeBuf, codeBuf, sizeof(codeBuf));
-        ImGui::SameLine();
-        if (ImGui::SmallButton(TR("Paste"))) {
-            SanitizeRoomCode(ImGui::GetClipboardText(), codeBuf, sizeof(codeBuf));
-        }
-        const size_t codeLen = std::strlen(codeBuf);
-        if (codeLen > 0 && codeLen < kRoomCodeLen) {
-            ImGui::TextDisabled(TR("%d of %d characters"), static_cast<int>(codeLen), static_cast<int>(kRoomCodeLen));
-        }
-        const bool codeValid = (codeLen == kRoomCodeLen);
-        if (codeEnter && codeValid) {
-            port_netlobby_join(serverBuf, codeBuf, fighter);
-        }
-        ImGui::BeginDisabled(!codeValid);
-        if (UIWidgets::Button(TR("Join"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-            port_netlobby_join(serverBuf, codeBuf, fighter);
-        }
-        ImGui::SameLine();
-        if (UIWidgets::Button(TR("Spectate"))) {
-            port_netlobby_spectate(serverBuf, codeBuf);
-        }
-        ImGui::EndDisabled();
-        if (!codeValid && codeLen == 0) {
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("%s", TR("Enter the 6-character room code shared by the host."));
-            }
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", TR("Watch the room's match live without playing - the spectator never\n"
-                              "joins the match, so it can't lag or desync the players."));
-        }
-
-        ImGui::SeparatorText(TR("LAN (direct IP)"));
-        {
-            static char lanAddr[64] = {};
-            static int lanPort = 41700;
-            ImGui::TextUnformatted(TR("Host port"));
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputInt("##LanPort", &lanPort, 0, 0);
-            lanPort = std::clamp(lanPort, 1, 65535);
-            if (UIWidgets::Button(TR("Host LAN"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-                port_netlobby_lan_host(lanPort, fighter, stage, stocks, itemsOn ? 1 : 0, effectiveDelay);
-            }
-            ImGui::TextUnformatted(TR("Host address (ip[:port])"));
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##LanAddr", lanAddr, sizeof(lanAddr));
-            if (UIWidgets::Button(TR("Join LAN"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
-                port_netlobby_lan_join(lanAddr, fighter);
-            }
-        }
-
-        RenderOnlineFriends();
-
-        RenderOnlineLeaderboard(serverBuf);
-
-        /* Community brackets — the lobby service runs single-elimination
-         * tournaments that settle off verified leaderboard results. */
-        RenderOnlineTournaments(serverBuf);
-
-        if (ImGui::CollapsingHeader(TR("Advanced"))) {
-            ImGui::TextUnformatted(TR("Lobby server"));
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            if (ImGui::InputText("##NetplayServer", serverBuf, sizeof(serverBuf))) {
-                CVarSetString("gNetplay.Server", serverBuf);
-                save();
-            }
-            if (ImGui::SmallButton(TR("Use default server"))) {
-                std::snprintf(serverBuf, sizeof(serverBuf), "%s", PORT_NETLOBBY_DEFAULT_SERVER);
-                CVarClear("gNetplay.Server");
-                save();
-            }
-            ImGui::BeginDisabled(connTest.state == ConnTestState::Running);
-            if (UIWidgets::Button(TR("Test connection"))) {
-                StartConnTest(connTest, serverBuf);
-            }
-            ImGui::EndDisabled();
-            if (connTest.state == ConnTestState::Running) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("%s", TR("Testing..."));
-            } else if (connTest.state == ConnTestState::Done && !connTest.result.empty()) {
-                ImGui::TextColored(connTest.ok ? SemanticColors::Success : SemanticColors::Error, TR("%s"), connTest.result.c_str());
-            }
-            if (connTest.stun_started && connTest.stun_result.empty()) {
-                ImGui::TextDisabled("%s", TR("Probing UDP / NAT..."));
-            } else if (!connTest.stun_result.empty()) {
-                ImGui::TextWrapped("%s", connTest.stun_result.c_str());
-            }
+    if (!codeValid && codeLen == 0) {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("%s", TR("Enter the 6-character room code shared by the host."));
         }
     }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", TR("Watch the room's match live without playing - the spectator never\n"
+                          "joins the match, so it can't lag or desync the players."));
+    }
+}
 
-    if (state == PORT_NETLOBBY_IN_MATCH) {
+static void RenderLanSection(LobbyFrameState& S) {
+    static char lanAddr[64] = {};
+    static int lanPort = 41700;
+    ImGui::SeparatorText(TR("LAN (direct IP)"));
+    ImGui::TextUnformatted(TR("Host port"));
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputInt("##LanPort", &lanPort, 0, 0);
+    lanPort = std::clamp(lanPort, 1, 65535);
+    if (UIWidgets::Button(TR("Host LAN"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+        port_netlobby_lan_host(lanPort, S.fighter, S.stage, S.stocks, S.itemsOn ? 1 : 0, S.effectiveDelay);
+    }
+    ImGui::TextUnformatted(TR("Host address (ip[:port])"));
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputText("##LanAddr", lanAddr, sizeof(lanAddr));
+    if (UIWidgets::Button(TR("Join LAN"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::LightBlue))) {
+        port_netlobby_lan_join(lanAddr, S.fighter);
+    }
+}
+
+static void RenderAdvancedSection(LobbyFrameState& S) {
+    if (!ImGui::CollapsingHeader(TR("Advanced"))) {
+        return;
+    }
+    ImGui::TextUnformatted(TR("Lobby server"));
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::InputText("##NetplayServer", sServerBuf, sizeof(sServerBuf))) {
+        CVarSetString("gNetplay.Server", sServerBuf);
+        S.save();
+    }
+    if (ImGui::SmallButton(TR("Use default server"))) {
+        std::snprintf(sServerBuf, sizeof(sServerBuf), "%s", PORT_NETLOBBY_DEFAULT_SERVER);
+        CVarClear("gNetplay.Server");
+        S.save();
+    }
+    ImGui::BeginDisabled(sConnTest.state == ConnTestState::Running);
+    if (UIWidgets::Button(TR("Test connection"))) {
+        StartConnTest(sConnTest, sServerBuf);
+    }
+    ImGui::EndDisabled();
+    if (sConnTest.state == ConnTestState::Running) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", TR("Testing..."));
+    } else if (sConnTest.state == ConnTestState::Done && !sConnTest.result.empty()) {
+        ImGui::TextColored(sConnTest.ok ? SemanticColors::Success : SemanticColors::Error, TR("%s"), sConnTest.result.c_str());
+    }
+    if (sConnTest.stun_started && sConnTest.stun_result.empty()) {
+        ImGui::TextDisabled("%s", TR("Probing UDP / NAT..."));
+    } else if (!sConnTest.stun_result.empty()) {
+        ImGui::TextWrapped("%s", sConnTest.stun_result.c_str());
+    }
+}
+
+static void RenderStatusLine(LobbyFrameState& S) {
+    if (S.state == PORT_NETLOBBY_IN_MATCH) {
         ImGui::SeparatorText(TR("Match in progress"));
     } else {
         ImGui::SeparatorText(TR("Status"));
     }
     {
-        const NetStatusView statusView = NetStatusViewFor(state);
+        const NetStatusView statusView = NetStatusViewFor(S.state);
         if (statusView.color != nullptr) {
             ImGui::TextColored(*statusView.color, TR("[%s]"), statusView.tag);
             ImGui::SameLine(0.0f, 6.0f);
@@ -520,7 +490,7 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
         }
     }
 
-    if (port_netlobby_code()[0] != '\0' && port_netlobby_is_host() && !idle) {
+    if (port_netlobby_code()[0] != '\0' && port_netlobby_is_host() && !S.idle) {
         ImGui::Text(TR("Room code: %s"), GroupRoomCode(port_netlobby_code()).c_str());
         ImGui::SameLine();
         if (ImGui::SmallButton(TR("Copy"))) {
@@ -528,189 +498,323 @@ static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
             ToastSuccess(TR("Room code copied to clipboard"));
         }
     }
-    if (state == PORT_NETLOBBY_CONNECTED || state == PORT_NETLOBBY_STARTING || state == PORT_NETLOBBY_IN_MATCH) {
-        const int mySlot = port_netlobby_my_slot();
-        const int peers = port_netlobby_peer_count();
-        const int fighterCount = static_cast<int>(IM_ARRAYSIZE(kNetplayFighters));
-        ImGui::Text(TR("Players in room: %d"), port_netlobby_player_count());
-        ImGui::BulletText(TR("Player %d: %s (you)"), mySlot + 1, (fighter >= 0 && fighter < fighterCount) ? kNetplayFighters[fighter] : "?");
+}
+
+static const char* PeerFighterLabel(int i, int fighterCount) {
+    int fk = port_netlobby_peer_fkind_at(i);
+    if (!port_netlobby_peer_connected_at(i)) {
+        return TR("connecting...");
+    }
+    if (fk >= 0 && fk < fighterCount) {
+        return kNetplayFighters[fk];
+    }
+    return TR("choosing...");
+}
+
+static void RenderReadyTag(bool ready) {
+    ImGui::TextColored(ready ? SemanticColors::Success : SemanticColors::Muted, "%s",
+                       ready ? TR("— ready") : TR("— not ready"));
+}
+
+static void RenderRosterPeerList(LobbyFrameState& S, int peers, int mySlot, int fighterCount) {
+    ImGui::Text(TR("Players in room: %d"), port_netlobby_player_count());
+    ImGui::BulletText(TR("Player %d: %s (you)"), mySlot + 1, (S.fighter >= 0 && S.fighter < fighterCount) ? kNetplayFighters[S.fighter] : "?");
+    ImGui::SameLine(0.0f, 4.0f);
+    if (port_netlobby_is_host()) {
+        ImGui::TextDisabled("%s", TR("— host"));
+    } else {
+        RenderReadyTag(port_netlobby_is_ready() != 0);
+    }
+    for (int i = 0; i < peers; i++) {
+        const int slot = port_netlobby_peer_slot(i);
+        if (slot < 0 || slot == mySlot) {
+            continue;
+        }
+        ImGui::BulletText(TR("Player %d: %s"), slot + 1, PeerFighterLabel(i, fighterCount));
         ImGui::SameLine(0.0f, 4.0f);
-        if (port_netlobby_is_host()) {
+        const char* pname = port_netlobby_peer_name_at(i);
+        if (pname[0] != '\0') {
+            ImGui::TextDisabled(TR("(%s)"), pname);
+            ImGui::SameLine(0.0f, 4.0f);
+        }
+        if (slot == 0) {
             ImGui::TextDisabled("%s", TR("— host"));
         } else {
-            const bool meReady = port_netlobby_is_ready() != 0;
-            ImGui::TextColored(meReady ? SemanticColors::Success : SemanticColors::Muted, "%s",
-                               meReady ? TR("— ready") : TR("— not ready"));
+            RenderReadyTag(port_netlobby_peer_ready_at(i) != 0);
         }
-        for (int i = 0; i < peers; i++) {
-            const int slot = port_netlobby_peer_slot(i);
-            if (slot < 0 || slot == mySlot) {
-                continue;
-            }
-            const char* label;
-            int fk = port_netlobby_peer_fkind_at(i);
-            if (!port_netlobby_peer_connected_at(i)) {
-                label = TR("connecting...");
-            } else if (fk >= 0 && fk < fighterCount) {
-                label = kNetplayFighters[fk];
-            } else {
-                label = TR("choosing...");
-            }
-            ImGui::BulletText(TR("Player %d: %s"), slot + 1, label);
+    }
+}
+
+static double WorstPeerLossPct() {
+    /* Worst-peer loss rate feeds the tier too — low ping with
+     * dropped packets still desyncs. Cumulative over the match. */
+    double worstLoss = 0.0;
+    const int peerCount = port_netlobby_peer_count();
+    for (int i = 0; i < peerCount; i++) {
+        unsigned g = 0, d = 0, o = 0, hw = 0;
+        int adv = 0;
+        if (port_netlobby_peer_stats_at(i, &g, &d, &o, &adv, &hw) && hw > 0) {
+            worstLoss = (std::max)(worstLoss, 100.0 * g / hw);
+        }
+    }
+    return worstLoss;
+}
+
+static int ConnectionTier(int ping, double worstLoss) {
+    int tier = ping < 50 ? 0 : ping < 100 ? 1 : 2;
+    if (worstLoss >= 5.0) {
+        return 2;
+    }
+    if (worstLoss >= 2.0 && tier < 1) {
+        return 1;
+    }
+    return tier;
+}
+
+static void RenderConnectionQuality() {
+    const int ping = port_netlobby_ping_ms();
+    if (ping < 0) {
+        return;
+    }
+    const double worstLoss = WorstPeerLossPct();
+    const int tier = ConnectionTier(ping, worstLoss);
+    const char* quality = tier == 0 ? TR("Good") : tier == 1 ? TR("Fair") : TR("Poor");
+    const ImVec4 qualityColor = tier == 0   ? SemanticColors::Success
+                                : tier == 1 ? SemanticColors::Warning
+                                            : SemanticColors::Error;
+    ImGui::Text("%s", TR("Connection: "));
+    ImGui::SameLine(0.0f, 0.0f);
+    ImGui::TextColored(qualityColor, TR("%s"), quality);
+    ImGui::SameLine(0.0f, 0.0f);
+    ImGui::TextDisabled(TR(" — %d ms, %s"), ping, port_netlobby_is_relay() ? TR("relayed") : TR("direct"));
+    if (worstLoss > 0.05) {
+        ImGui::SameLine(0.0f, 4.0f);
+        ImGui::TextDisabled(TR("(loss %.1f%%)"), worstLoss);
+    }
+}
+
+static void RenderPingSparkline(bool idle) {
+    static float sPingHistory[120] = {};
+    static int sPingHead = 0;
+    static int sPingCount = 0;
+    static std::chrono::steady_clock::time_point sPingLast;
+    if (idle) {
+        sPingCount = 0;
+        sPingHead = 0;
+        return;
+    }
+    // §21 — per-peer wire stats: what "Poor" actually means. The ping
+    // history sparkline makes jitter visible instead of summarizing it
+    // away — samples every ~100 ms while connected, cleared on leave.
+    const auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - sPingLast).count() >= 100) {
+        sPingLast = now;
+        const int p = port_netlobby_ping_ms();
+        if (p >= 0) {
+            sPingHistory[sPingHead] = static_cast<float>(p);
+            sPingHead = (sPingHead + 1) % 120;
+            sPingCount = (sPingCount < 120) ? sPingCount + 1 : 120;
+        }
+    }
+    if (sPingCount > 2) {
+        // Reorder the ring into draw order (oldest -> newest).
+        float ordered[120];
+        for (int i = 0; i < sPingCount; i++) {
+            ordered[i] = sPingHistory[(sPingHead - sPingCount + i + 120) % 120];
+        }
+        float peak = 0.0f;
+        for (int i = 0; i < sPingCount; i++) {
+            peak = (std::max)(peak, ordered[i]);
+        }
+        ImGui::PlotLines("##pinghist", ordered, sPingCount, 0,
+                         fmt::format(fmt::runtime(TR("ping {} ms (peak {:.0f})")), port_netlobby_ping_ms(), peak).c_str(),
+                         0.0f, (std::max)(peak * 1.1f, 60.0f), ImVec2(-1.0f, 48.0f));
+    }
+}
+
+static void RenderPeerDetailTree(int peers, int mySlot) {
+    if (!ImGui::TreeNode(TR("Connection details"))) {
+        return;
+    }
+    bool anyStats = false;
+    for (int i = 0; i < peers; i++) {
+        const int slot = port_netlobby_peer_slot(i);
+        if (slot < 0 || slot == mySlot || !port_netlobby_peer_connected_at(i)) {
+            continue;
+        }
+        unsigned gaps = 0, dups = 0, ooo = 0, highwater = 0;
+        int advantage = 0;
+        const int peerPing = port_netlobby_peer_ping_at(i);
+        ImGui::BulletText(TR("Player %d: "), slot + 1);
+        ImGui::SameLine(0.0f, 0.0f);
+        if (peerPing >= 0) {
+            ImGui::TextDisabled(TR("%d ms, %s"), peerPing, port_udp_link_is_relay(slot) ? TR("relayed") : TR("direct"));
+        } else {
+            ImGui::TextDisabled(TR("ping unknown, %s"), port_udp_link_is_relay(slot) ? TR("relayed") : TR("direct"));
+        }
+        if (port_netlobby_peer_stats_at(i, &gaps, &dups, &ooo, &advantage, &highwater)) {
+            anyStats = true;
             ImGui::SameLine(0.0f, 4.0f);
-            const char* pname = port_netlobby_peer_name_at(i);
-            if (pname[0] != '\0') {
-                ImGui::TextDisabled(TR("(%s)"), pname);
-                ImGui::SameLine(0.0f, 4.0f);
-            }
-            if (slot == 0) {
-                ImGui::TextDisabled("%s", TR("— host"));
-            } else {
-                const bool peerReady = port_netlobby_peer_ready_at(i) != 0;
-                ImGui::TextColored(peerReady ? SemanticColors::Success : SemanticColors::Muted, "%s",
-                                   peerReady ? TR("— ready") : TR("— not ready"));
-            }
-        }
-        int ping = port_netlobby_ping_ms();
-        if (ping >= 0) {
-            /* Worst-peer loss rate feeds the tier too — low ping with
-             * dropped packets still desyncs. Cumulative over the match. */
-            double worstLoss = 0.0;
-            const int peerCount = port_netlobby_peer_count();
-            for (int i = 0; i < peerCount; i++) {
-                unsigned g = 0, d = 0, o = 0, hw = 0;
-                int adv = 0;
-                if (port_netlobby_peer_stats_at(i, &g, &d, &o, &adv, &hw) && hw > 0) {
-                    worstLoss = (std::max)(worstLoss, 100.0 * g / hw);
-                }
-            }
-            int tier = ping < 50 ? 0 : ping < 100 ? 1 : 2;
-            if (worstLoss >= 5.0) {
-                tier = 2;
-            } else if (worstLoss >= 2.0 && tier < 1) {
-                tier = 1;
-            }
-            const char* quality = tier == 0 ? TR("Good") : tier == 1 ? TR("Fair") : TR("Poor");
-            const ImVec4 qualityColor = tier == 0   ? SemanticColors::Success
-                                        : tier == 1 ? SemanticColors::Warning
-                                                    : SemanticColors::Error;
-            ImGui::Text("%s", TR("Connection: "));
-            ImGui::SameLine(0.0f, 0.0f);
-            ImGui::TextColored(qualityColor, TR("%s"), quality);
-            ImGui::SameLine(0.0f, 0.0f);
-            ImGui::TextDisabled(TR(" — %d ms, %s"), ping, port_netlobby_is_relay() ? TR("relayed") : TR("direct"));
-            if (worstLoss > 0.05) {
-                ImGui::SameLine(0.0f, 4.0f);
-                ImGui::TextDisabled(TR("(loss %.1f%%)"), worstLoss);
-            }
-        }
-        if (port_netlobby_is_host()) {
-            if (autoDelay) {
-                ImGui::TextDisabled(TR("Input delay: automatic, %d frames (applies to all players)"), effectiveDelay);
-            } else {
-                ImGui::TextDisabled(TR("Input delay: %d frames (applies to all players)"), delay);
-            }
-        }
-        // §21 — per-peer wire stats: what "Poor" actually means. The ping
-        // history sparkline makes jitter visible instead of summarizing it
-        // away — samples every ~100 ms while connected, cleared on leave.
-        const auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - sPingLast).count() >= 100) {
-            sPingLast = now;
-            const int p = port_netlobby_ping_ms();
-            if (p >= 0) {
-                sPingHistory[sPingHead] = static_cast<float>(p);
-                sPingHead = (sPingHead + 1) % 120;
-                sPingCount = (sPingCount < 120) ? sPingCount + 1 : 120;
-            }
-        }
-        if (sPingCount > 2) {
-            // Reorder the ring into draw order (oldest -> newest).
-            float ordered[120];
-            for (int i = 0; i < sPingCount; i++) {
-                ordered[i] = sPingHistory[(sPingHead - sPingCount + i + 120) % 120];
-            }
-            float peak = 0.0f;
-            for (int i = 0; i < sPingCount; i++) {
-                peak = (std::max)(peak, ordered[i]);
-            }
-            ImGui::PlotLines("##pinghist", ordered, sPingCount, 0,
-                             fmt::format(fmt::runtime(TR("ping {} ms (peak {:.0f})")), port_netlobby_ping_ms(), peak).c_str(),
-                             0.0f, (std::max)(peak * 1.1f, 60.0f), ImVec2(-1.0f, 48.0f));
-        }
-        if (ImGui::TreeNode(TR("Connection details"))) {
-            bool anyStats = false;
-            for (int i = 0; i < peers; i++) {
-                const int slot = port_netlobby_peer_slot(i);
-                if (slot < 0 || slot == mySlot || !port_netlobby_peer_connected_at(i)) {
-                    continue;
-                }
-                unsigned gaps = 0, dups = 0, ooo = 0, highwater = 0;
-                int advantage = 0;
-                const int peerPing = port_netlobby_peer_ping_at(i);
-                ImGui::BulletText(TR("Player %d: "), slot + 1);
-                ImGui::SameLine(0.0f, 0.0f);
-                if (peerPing >= 0) {
-                    ImGui::TextDisabled(TR("%d ms, %s"), peerPing, port_udp_link_is_relay(slot) ? TR("relayed") : TR("direct"));
-                } else {
-                    ImGui::TextDisabled(TR("ping unknown, %s"), port_udp_link_is_relay(slot) ? TR("relayed") : TR("direct"));
-                }
-                if (port_netlobby_peer_stats_at(i, &gaps, &dups, &ooo, &advantage, &highwater)) {
-                    anyStats = true;
-                    ImGui::SameLine(0.0f, 4.0f);
-                    ImGui::TextDisabled(TR("— loss %u, dup %u, ooo %u, rollback %d frames"), gaps, dups, ooo, advantage);
-                }
-            }
-            if (!anyStats) {
-                ImGui::TextDisabled("%s", TR("Live stats appear once the match starts."));
-            }
-            ImGui::TreePop();
+            ImGui::TextDisabled(TR("— loss %u, dup %u, ooo %u, rollback %d frames"), gaps, dups, ooo, advantage);
         }
     }
-    if (!port_netlobby_is_host() && !port_netlobby_is_spectator() && state == PORT_NETLOBBY_CONNECTED) {
-        const bool amReady = port_netlobby_is_ready() != 0;
-        if (UIWidgets::Button(amReady ? TR("Cancel ready") : TR("I'm ready"),
-                              UIWidgets::ButtonOptions().Color(amReady ? UIWidgets::Colors::Gray
-                                                                       : UIWidgets::Colors::Green))) {
-            port_netlobby_set_ready(amReady ? 0 : 1);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", TR("Flag yourself ready - changing your fighter un-readies you."));
+    if (!anyStats) {
+        ImGui::TextDisabled("%s", TR("Live stats appear once the match starts."));
+    }
+    ImGui::TreePop();
+}
+
+static void RenderRosterSection(LobbyFrameState& S) {
+    const int mySlot = port_netlobby_my_slot();
+    const int peers = port_netlobby_peer_count();
+    const int fighterCount = static_cast<int>(IM_ARRAYSIZE(kNetplayFighters));
+    RenderRosterPeerList(S, peers, mySlot, fighterCount);
+    RenderConnectionQuality();
+    if (port_netlobby_is_host()) {
+        if (S.autoDelay) {
+            ImGui::TextDisabled(TR("Input delay: automatic, %d frames (applies to all players)"), S.effectiveDelay);
+        } else {
+            ImGui::TextDisabled(TR("Input delay: %d frames (applies to all players)"), S.delay);
         }
     }
-    if (port_netlobby_is_host() && state == PORT_NETLOBBY_CONNECTED) {
-        bool allPicked = true;
-        bool anyPeer = false;
-        const int peers = port_netlobby_peer_count();
-        for (int i = 0; i < peers; i++) {
-            if (port_netlobby_peer_connected_at(i)) {
-                anyPeer = true;
-                if (port_netlobby_peer_fkind_at(i) < 0) {
-                    allPicked = false;
-                    break;
-                }
-            }
-        }
-        const bool allReady = port_netlobby_all_ready() != 0;
-        const bool canStart = anyPeer && allPicked && allReady;
-        ImGui::BeginDisabled(!canStart);
-        if (UIWidgets::Button(TR("Start match"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::Green))) {
-            port_netlobby_start_match();
-        }
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !canStart) {
-            if (anyPeer && allPicked && !allReady) {
-                ImGui::SetTooltip("%s", TR("Waiting for every player to ready up."));
-            } else {
-                ImGui::SetTooltip("%s", TR("Waiting for every connected player to pick a fighter."));
+    RenderPingSparkline(S.idle);
+    RenderPeerDetailTree(peers, mySlot);
+}
+
+static void RenderReadyButton() {
+    const bool amReady = port_netlobby_is_ready() != 0;
+    if (UIWidgets::Button(amReady ? TR("Cancel ready") : TR("I'm ready"),
+                          UIWidgets::ButtonOptions().Color(amReady ? UIWidgets::Colors::Gray
+                                                                   : UIWidgets::Colors::Green))) {
+        port_netlobby_set_ready(amReady ? 0 : 1);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", TR("Flag yourself ready - changing your fighter un-readies you."));
+    }
+}
+
+static void RenderStartMatchButton() {
+    bool allPicked = true;
+    bool anyPeer = false;
+    const int peers = port_netlobby_peer_count();
+    for (int i = 0; i < peers; i++) {
+        if (port_netlobby_peer_connected_at(i)) {
+            anyPeer = true;
+            if (port_netlobby_peer_fkind_at(i) < 0) {
+                allPicked = false;
+                break;
             }
         }
     }
-    if (!idle && state != PORT_NETLOBBY_IN_MATCH) {
+    const bool allReady = port_netlobby_all_ready() != 0;
+    const bool canStart = anyPeer && allPicked && allReady;
+    ImGui::BeginDisabled(!canStart);
+    if (UIWidgets::Button(TR("Start match"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::Green))) {
+        port_netlobby_start_match();
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !canStart) {
+        if (anyPeer && allPicked && !allReady) {
+            ImGui::SetTooltip("%s", TR("Waiting for every player to ready up."));
+        } else {
+            ImGui::SetTooltip("%s", TR("Waiting for every connected player to pick a fighter."));
+        }
+    }
+}
+
+static void RenderLobbyActions(LobbyFrameState& S) {
+    if (!port_netlobby_is_host() && !port_netlobby_is_spectator() && S.state == PORT_NETLOBBY_CONNECTED) {
+        RenderReadyButton();
+    }
+    if (port_netlobby_is_host() && S.state == PORT_NETLOBBY_CONNECTED) {
+        RenderStartMatchButton();
+    }
+    if (!S.idle && S.state != PORT_NETLOBBY_IN_MATCH) {
         if (UIWidgets::Button(TR("Leave"), UIWidgets::ButtonOptions().Color(UIWidgets::Colors::Red))) {
             port_netlobby_cancel();
         }
     }
+}
+
+static void LoadLobbyFrameState(LobbyFrameState& S) {
+    S.fighter = CVarGetInteger("gNetplay.Fighter", 0);
+    S.stage = CVarGetInteger("gNetplay.Stage", 0);
+    S.stocks = CVarGetInteger("gNetplay.Stocks", 3);
+    S.itemsOn = CVarGetInteger("gNetplay.Items", 0) != 0;
+    S.delay = CVarGetInteger("gNetplay.Delay", 2);
+    // §22 — "Automatic" is a persistent mode, not a one-shot copy: the
+    // delay resolves from measured ping each time a session is hosted
+    // (fallback 2 before any ping is known).
+    S.autoDelay = CVarGetInteger("gNetplay.AutoDelay", 1) != 0;
+    const int lobbyPing = port_netlobby_ping_ms();
+    const int pingRecommended = lobbyPing < 30 ? 1 : lobbyPing < 70 ? 2 : lobbyPing < 110 ? 3 : 4;
+    S.effectiveDelay = S.autoDelay ? (lobbyPing >= 0 ? pingRecommended : 2) : S.delay;
+    S.save = SaveOnlineCvars;
+
+    S.state = port_netlobby_state();
+    S.idle = (S.state == PORT_NETLOBBY_IDLE || S.state == PORT_NETLOBBY_FAILED);
+}
+
+static void RenderFighterPicker(LobbyFrameState& S) {
+    ImGui::BeginDisabled(S.state == PORT_NETLOBBY_STARTING || S.state == PORT_NETLOBBY_IN_MATCH);
+    ImGui::TextUnformatted(TR("Your fighter"));
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::Combo("##NetplayFighter", &S.fighter, kNetplayFighters, IM_ARRAYSIZE(kNetplayFighters))) {
+        CVarSetInteger("gNetplay.Fighter", S.fighter);
+        port_netlobby_set_fkind(S.fighter);
+        S.save();
+    }
+    ImGui::EndDisabled();
+}
+
+static void RenderNetplayLobby(WidgetInfo& /*widget*/) {
+    static bool loaded = false;
+    if (!loaded) {
+        std::snprintf(sServerBuf, sizeof(sServerBuf), "%s", CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER));
+        loaded = true;
+    }
+
+    LobbyFrameState S = {};
+    LoadLobbyFrameState(S);
+    if (!S.idle && sConnTest.state == ConnTestState::Running) {
+        // Lobby session claimed the shared control socket — abandon the probe.
+        sConnTest.state = ConnTestState::Idle;
+        sConnTest.result.clear();
+    }
+    if (S.idle) {
+        RenderPingSparkline(true);   /* drain-on-idle keeps the ring reset */
+    }
+    PollConnTest(sConnTest);
+
+    ImGui::TextWrapped("%s", TR("Play online with rollback netcode - up to 4 players in one room. One player hosts "
+                       "and shares the room code; the others join with it. No port forwarding needed."));
+    ImGui::Spacing();
+
+    RenderFighterPicker(S);
+
+    /* Connect view — only while idle. Once you're in a room the panel swaps
+     * to the room/status view below so the creation controls can't be
+     * mistaken for live settings. */
+    if (S.idle) {
+        RenderHowToPlay();
+        RenderHostSection(S);
+        RenderQuickPlaySection(S);
+        RenderJoinSection(S);
+        RenderLanSection(S);
+        RenderOnlineFriends();
+        RenderOnlineLeaderboard(sServerBuf);
+        /* Community brackets — the lobby service runs single-elimination
+         * tournaments that settle off verified leaderboard results. */
+        RenderOnlineTournaments(sServerBuf);
+        RenderAdvancedSection(S);
+    }
+
+    RenderStatusLine(S);
+
+    if (S.state == PORT_NETLOBBY_CONNECTED || S.state == PORT_NETLOBBY_STARTING || S.state == PORT_NETLOBBY_IN_MATCH) {
+        RenderRosterSection(S);
+    }
+    RenderLobbyActions(S);
 }
 
 #endif // !BATTLESHIP_UWP (netplay lobby)

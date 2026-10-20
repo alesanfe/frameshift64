@@ -1,5 +1,6 @@
 #include "port_save.h"
 #include "port_log.h"
+#include "coroutine.h"
 #include "smash_classic/version.h"
 
 #include <libultraship/libultraship.h>
@@ -20,7 +21,8 @@
 #include <windows.h>
 #include <io.h>      /* _commit, _fileno */
 #else
-#include <unistd.h>  /* fsync (POSIX + libnx) */
+#include <fcntl.h>   /* open, O_RDONLY */
+#include <unistd.h>  /* fsync, close (POSIX + libnx) */
 #endif
 
 // Where the SRAM file lives, in priority order:
@@ -76,6 +78,36 @@ const std::string &savePath()
     return gSavePath;
 }
 
+/* Flush the temp file to stable storage before the atomic rename — fflush
+ * only pushes to the OS page cache, so a power loss between fclose and
+ * rename could still drop the data. Returns 0 on success. */
+int syncFile(FILE *f)
+{
+#ifdef _WIN32
+    return _commit(_fileno(f));
+#else
+    return fsync(fileno(f));
+#endif
+}
+
+/* fsync the parent directory after rename() so the new directory entry is
+ * durable too — without it a crash can un-link the renamed file even
+ * though its bytes made it to disk. Windows doesn't need this:
+ * MOVEFILE_WRITE_THROUGH already flushes the operation through. */
+#ifndef _WIN32
+void syncParentDir(const std::string &path)
+{
+    const std::string dir = std::filesystem::path(path).parent_path().string();
+    const int fd = open(dir.empty() ? "." : dir.c_str(), O_RDONLY);
+    if (fd >= 0) {
+        (void)fsync(fd);
+        close(fd);
+    }
+}
+#else
+void syncParentDir(const std::string &) {}
+#endif
+
 // The SRAM image itself is a flat 32 KiB chip mirror — no header, because
 // every game offset is absolute. Format/version metadata lives in a
 // `ssb64_save.meta` sidecar (SMASH_SAVE_FORMAT_VERSION bumps when the
@@ -84,6 +116,30 @@ std::once_flag gMetaCheckOnce;
 std::once_flag gMetaWriteOnce;
 
 void writeSaveMeta();   /* defined below; migrations re-stamp via this */
+void checkSaveFormat(); /* defined below; ensureImage() calls it first */
+
+/* SRAM image cache + deferred flush.
+ *
+ * port_save_write is called from inside coroutines — syDmaWriteSram is
+ * invoked by decomp threads, e.g. scManager's lbBackup* path on the
+ * Thread5 fiber. On Emscripten the fsync()/dir-fsync() at the end of the
+ * write path is an Asyncify-async import (fd_sync); suspending on it
+ * inside a fiber never rewinds back into the game loop — the coroutine
+ * is lost and the main thread hangs. We therefore keep the SRAM image
+ * in memory, apply writes to the cache immediately (read-after-write
+ * stays coherent), and flush to disk from port_save_drain(), which the
+ * frame loop calls on the main context. Writes made outside a coroutine
+ * still flush synchronously. */
+std::once_flag gImageLoadOnce;
+std::vector<char> gSramImage;
+bool gImageDirty = false;
+bool gMetaRestampPending = false;
+
+// Sticky "last write failed" flag — the decomp's syDmaWriteSram wrapper
+// discards port_save_write's return value, so the game layer can't see
+// failures directly. PortPushFrame polls this once per frame and surfaces
+// it as a GameOverlay notification (AUD-16).
+std::atomic<bool> gWriteFailed{false};
 
 std::string metaPath()
 {
@@ -169,9 +225,10 @@ void checkSaveFormat()
                      fmt, SMASH_SAVE_FORMAT_VERSION);
         } else if (fmt < SMASH_SAVE_FORMAT_VERSION) {
             if (runSaveMigrations(fmt) == 0) {
-                /* Re-stamp at the migrated version — via the write-once
-                 * flag so port_save_write doesn't emit a second copy. */
-                std::call_once(gMetaWriteOnce, writeSaveMeta);
+                /* Re-stamp at the migrated version — deferred to
+                 * port_save_drain() because writeSaveMeta does
+                 * fsync/dir-fsync, which cannot run inside a coroutine. */
+                gMetaRestampPending = true;
             }
         }
     }
@@ -193,6 +250,8 @@ void writeSaveMeta()
                  SMASH_SAVE_FORMAT_VERSION, SMASH_CLASSIC_APP_VERSION_STR,
                  (unsigned)PORT_SAVE_SIZE);
     std::fflush(f);
+    (void)syncFile(f);   /* meta is informational — a failed sync shouldn't
+                          * mask the sidecar write the way the image does */
     std::fclose(f);
 #ifdef _WIN32
     if (!MoveFileExA(tmp.c_str(), path.c_str(),
@@ -211,13 +270,90 @@ void writeSaveMeta()
         }
     }
 #endif
+    syncParentDir(path);
 }
 
-// Sticky "last write failed" flag — the decomp's syDmaWriteSram wrapper
-// discards port_save_write's return value, so the game layer can't see
-// failures directly. PortPushFrame polls this once per frame and surfaces
-// it as a GameOverlay notification (AUD-16).
-std::atomic<bool> gWriteFailed{false};
+void loadSramImage()
+{
+    std::error_code ec;
+    const uintmax_t cur = std::filesystem::file_size(savePath(), ec);
+    if (!ec && cur > 0) {
+        gSramImage.resize((size_t)cur);
+        if (FILE *f = std::fopen(savePath().c_str(), "rb")) {
+            (void)std::fread(gSramImage.data(), 1, gSramImage.size(), f);
+            std::fclose(f);
+        } else {
+            gSramImage.clear();
+        }
+    }
+}
+
+/* The format check runs first: a pending migration rewrites the file,
+ * and the cache must observe the post-migration bytes. */
+void ensureImage()
+{
+    std::call_once(gMetaCheckOnce, checkSaveFormat);
+    std::call_once(gImageLoadOnce, loadSramImage);
+}
+
+/* Persist the cached image through a temp file + fsync + atomic rename —
+ * the same durability discipline the old in-place write had. Only runs
+ * on the main context (fd_sync suspends forever inside a fiber). */
+int flushSaveImage()
+{
+    const std::string& path = savePath();
+    const std::string tmp  = path + ".tmp";
+
+    FILE *f = std::fopen(tmp.c_str(), "wb");
+    if (f == NULL) {
+        port_log("SSB64 Save: open(%s) for write failed\n", tmp.c_str());
+        gWriteFailed = true;
+        return -1;
+    }
+    size_t wrote = std::fwrite(gSramImage.data(), 1, gSramImage.size(), f);
+    int flush_rc = std::fflush(f);
+    /* Durability, not just ordering: fflush only pushes to the OS page
+     * cache — a power loss between fflush and rename could still drop the
+     * new image. Force it to stable storage before the atomic replace. */
+    const int sync_rc = syncFile(f);
+    std::fclose(f);
+
+    if (wrote != gSramImage.size() || flush_rc != 0 || sync_rc != 0) {
+        port_log("SSB64 Save: short write (%zu/%zu) to %s\n",
+                 wrote, gSramImage.size(), tmp.c_str());
+        std::error_code ec;
+        std::filesystem::remove(tmp, ec);
+        gWriteFailed = true;
+        return -1;
+    }
+
+    /* Atomic replace: rename() is atomic on POSIX. On Windows plain rename
+     * refuses to overwrite, so go through MoveFileEx. */
+#ifdef _WIN32
+    if (!MoveFileExA(tmp.c_str(), path.c_str(),
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        port_log("SSB64 Save: replace %s -> %s failed (%lu)\n",
+                 tmp.c_str(), path.c_str(), (unsigned long)GetLastError());
+        gWriteFailed = true;
+        return -1;
+    }
+#else
+    {
+        std::error_code ec;
+        std::filesystem::rename(tmp, path, ec);
+        if (ec) {
+            port_log("SSB64 Save: rename %s -> %s failed: %s\n",
+                     tmp.c_str(), path.c_str(), ec.message().c_str());
+            std::filesystem::remove(tmp, ec);
+            gWriteFailed = true;
+            return -1;
+        }
+    }
+#endif
+    syncParentDir(path);
+    std::call_once(gMetaWriteOnce, writeSaveMeta);
+    return 0;
+}
 
 } // namespace
 
@@ -267,18 +403,12 @@ extern "C" int port_save_read(uintptr_t offset, void *dst, size_t size)
     if (size == 0) return 0;
     std::memset(dst, 0, size);
 
-    std::call_once(gMetaCheckOnce, checkSaveFormat);
+    ensureImage();
 
-    FILE *f = std::fopen(savePath().c_str(), "rb");
-    if (f == NULL) {
-        return 0; // missing file -> zero-filled, treated as fresh SRAM
+    if (offset < (uintptr_t)gSramImage.size()) {
+        const size_t avail = gSramImage.size() - (size_t)offset;
+        std::memcpy(dst, gSramImage.data() + offset, avail < size ? avail : size);
     }
-    if (std::fseek(f, (long)offset, SEEK_SET) != 0) {
-        std::fclose(f);
-        return 0; // short file -> zero-filled
-    }
-    (void)std::fread(dst, 1, size, f);
-    std::fclose(f);
     return 0;
 }
 
@@ -286,88 +416,37 @@ extern "C" int port_save_write(uintptr_t offset, const void *src, size_t size)
 {
     if (size == 0) return 0;
 
-    std::call_once(gMetaCheckOnce, checkSaveFormat);
+    ensureImage();
 
-    const std::string& path = savePath();
-    const std::string tmp  = path + ".tmp";
-
-    /* Read-modify-write the whole image through a temp file + rename. The
-     * old in-place seek+fwrite could leave a truncated ssb64_save.bin if
-     * the process died mid-write — and the DMA wrappers ignore the return
-     * value, so the corruption was also silent. With rename, the previous
-     * file stays intact until the new one is fully on disk. */
-    std::vector<char> img;
-    {
-        std::error_code ec;
-        uintmax_t cur = std::filesystem::file_size(path, ec);
-        if (!ec && cur > 0) {
-            img.resize((size_t)cur);
-        }
-        if (!img.empty()) {
-            if (FILE *f = std::fopen(path.c_str(), "rb")) {
-                (void)std::fread(img.data(), 1, img.size(), f);
-                std::fclose(f);
-            } else {
-                img.clear();
-            }
-        }
-    }
     const size_t end = (size_t)offset + size;
-    if (img.size() < end) {
-        img.resize(end, 0);   /* zero-pad gap like the old path did */
+    if (gSramImage.size() < end) {
+        gSramImage.resize(end, 0);   /* zero-pad gap like the old path did */
     }
-    std::memcpy(img.data() + offset, src, size);
+    std::memcpy(gSramImage.data() + offset, src, size);
+    gImageDirty = true;
 
-    FILE *f = std::fopen(tmp.c_str(), "wb");
-    if (f == NULL) {
-        port_log("SSB64 Save: open(%s) for write failed\n", tmp.c_str());
-        gWriteFailed = true;
-        return -1;
+    /* In a coroutine the actual file write is deferred to
+     * port_save_drain() — see the cache comment above. The write still
+     * reports success: flush failures surface through gWriteFailed, the
+     * channel the game layer polls anyway. */
+    if (!port_coroutine_in_coroutine()) {
+        port_save_drain();
     }
-    size_t wrote = std::fwrite(img.data(), 1, img.size(), f);
-    int flush_rc = std::fflush(f);
-    /* Durability, not just ordering: fflush only pushes to the OS page
-     * cache — a power loss between fflush and rename could still drop the
-     * new image. Force it to stable storage before the atomic replace. */
-    int sync_rc = 0;
-#ifdef _WIN32
-    sync_rc = _commit(_fileno(f));
-#else
-    sync_rc = fsync(fileno(f));
-#endif
-    std::fclose(f);
+    return 0;
+}
 
-    if (wrote != img.size() || flush_rc != 0 || sync_rc != 0) {
-        port_log("SSB64 Save: short write (%zu/%zu) to %s\n",
-                 wrote, img.size(), tmp.c_str());
-        std::error_code ec;
-        std::filesystem::remove(tmp, ec);
-        gWriteFailed = true;
-        return -1;
-    }
-
-    /* Atomic replace: rename() is atomic on POSIX. On Windows plain rename
-     * refuses to overwrite, so go through MoveFileEx. */
-#ifdef _WIN32
-    if (!MoveFileExA(tmp.c_str(), path.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        port_log("SSB64 Save: replace %s -> %s failed (%lu)\n",
-                 tmp.c_str(), path.c_str(), (unsigned long)GetLastError());
-        gWriteFailed = true;
-        return -1;
-    }
-#else
-    {
-        std::error_code ec;
-        std::filesystem::rename(tmp, path, ec);
-        if (ec) {
-            port_log("SSB64 Save: rename %s -> %s failed: %s\n",
-                     tmp.c_str(), path.c_str(), ec.message().c_str());
-            gWriteFailed = true;
-            return -1;
+/* Frame-loop hook on the main context — flush deferred SRAM writes and a
+ * pending meta re-stamp. A failed flush leaves gImageDirty set so the
+ * next frame retries; gWriteFailed is surfaced regardless. */
+extern "C" void port_save_drain(void)
+{
+    if (gImageDirty) {
+        if (flushSaveImage() == 0) {
+            gImageDirty = false;
         }
     }
-#endif
-    std::call_once(gMetaWriteOnce, writeSaveMeta);
-    return 0;
+    if (gMetaRestampPending) {
+        gMetaRestampPending = false;
+        std::call_once(gMetaWriteOnce, writeSaveMeta);
+    }
 }

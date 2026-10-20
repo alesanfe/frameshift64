@@ -52,7 +52,6 @@ typedef enum {
     WIDGET_BUTTON,
     WIDGET_CVAR_INPUT,
     WIDGET_CVAR_COLOR_PICKER,
-    WIDGET_COLOR_PICKER,
     WIDGET_SEARCH,
     WIDGET_SEPARATOR,
     WIDGET_SEPARATOR_TEXT,
@@ -112,6 +111,36 @@ using OptionsVariant = std::variant<UIWidgets::ButtonOptions, UIWidgets::Checkbo
                                     UIWidgets::FloatSliderOptions, UIWidgets::IntSliderOptions, UIWidgets::TextOptions,
                                     UIWidgets::WidgetOptions, UIWidgets::WindowButtonOptions,
                                     UIWidgets::ColorPickerOptions, UIWidgets::BtnSelectorOptions>;
+
+/* OptionsVariant assignment per widget type -- std::get throws
+ * std::bad_variant_access when the variant doesn't hold the expected
+ * alternative, keeping the widget-type <-> options-type contract the
+ * old switch enforced. Types absent from the table take WidgetOptions. */
+template <typename Opts>
+inline void AssignWidgetOptions(std::shared_ptr<UIWidgets::WidgetOptions>& out,
+                                const OptionsVariant& v) {
+    out = std::make_shared<Opts>(std::get<Opts>(v));
+}
+
+using WidgetOptionsAssignFn = void (*)(std::shared_ptr<UIWidgets::WidgetOptions>&, const OptionsVariant&);
+inline const std::pair<WidgetType, WidgetOptionsAssignFn> kWidgetOptionsAssigners[] = {
+    { WIDGET_AUDIO_BACKEND,     &AssignWidgetOptions<UIWidgets::ComboboxOptions> },
+    { WIDGET_VIDEO_BACKEND,     &AssignWidgetOptions<UIWidgets::ComboboxOptions> },
+    { WIDGET_COMBOBOX,          &AssignWidgetOptions<UIWidgets::ComboboxOptions> },
+    { WIDGET_CVAR_COMBOBOX,     &AssignWidgetOptions<UIWidgets::ComboboxOptions> },
+    { WIDGET_CHECKBOX,          &AssignWidgetOptions<UIWidgets::CheckboxOptions> },
+    { WIDGET_CVAR_CHECKBOX,     &AssignWidgetOptions<UIWidgets::CheckboxOptions> },
+    { WIDGET_SLIDER_FLOAT,      &AssignWidgetOptions<UIWidgets::FloatSliderOptions> },
+    { WIDGET_CVAR_SLIDER_FLOAT, &AssignWidgetOptions<UIWidgets::FloatSliderOptions> },
+    { WIDGET_CVAR_BTN_SELECTOR, &AssignWidgetOptions<UIWidgets::BtnSelectorOptions> },
+    { WIDGET_SLIDER_INT,        &AssignWidgetOptions<UIWidgets::IntSliderOptions> },
+    { WIDGET_CVAR_SLIDER_INT,   &AssignWidgetOptions<UIWidgets::IntSliderOptions> },
+    { WIDGET_CVAR_COLOR_PICKER, &AssignWidgetOptions<UIWidgets::ColorPickerOptions> },
+    { WIDGET_BUTTON,            &AssignWidgetOptions<UIWidgets::ButtonOptions> },
+    { WIDGET_WINDOW_BUTTON,     &AssignWidgetOptions<UIWidgets::WindowButtonOptions> },
+    { WIDGET_TEXT,              &AssignWidgetOptions<UIWidgets::TextOptions> },
+    { WIDGET_SEPARATOR_TEXT,    &AssignWidgetOptions<UIWidgets::TextOptions> },
+};
 
 // All the info needed for display and search of all widgets in the menu.
 // `name` is the label displayed,
@@ -175,51 +204,13 @@ struct WidgetInfo {
     }
 
     WidgetInfo& Options(OptionsVariant options_) {
-        switch (type) {
-            case WIDGET_AUDIO_BACKEND:
-            case WIDGET_VIDEO_BACKEND:
-            case WIDGET_COMBOBOX:
-            case WIDGET_CVAR_COMBOBOX:
-                options = std::make_shared<UIWidgets::ComboboxOptions>(std::get<UIWidgets::ComboboxOptions>(options_));
-                break;
-            case WIDGET_CHECKBOX:
-            case WIDGET_CVAR_CHECKBOX:
-                options = std::make_shared<UIWidgets::CheckboxOptions>(std::get<UIWidgets::CheckboxOptions>(options_));
-                break;
-            case WIDGET_SLIDER_FLOAT:
-            case WIDGET_CVAR_SLIDER_FLOAT:
-                options =
-                    std::make_shared<UIWidgets::FloatSliderOptions>(std::get<UIWidgets::FloatSliderOptions>(options_));
-                break;
-            case WIDGET_CVAR_BTN_SELECTOR:
-                options =
-                    std::make_shared<UIWidgets::BtnSelectorOptions>(std::get<UIWidgets::BtnSelectorOptions>(options_));
-                break;
-            case WIDGET_SLIDER_INT:
-            case WIDGET_CVAR_SLIDER_INT:
-                options =
-                    std::make_shared<UIWidgets::IntSliderOptions>(std::get<UIWidgets::IntSliderOptions>(options_));
-                break;
-            case WIDGET_COLOR_PICKER:
-            case WIDGET_CVAR_COLOR_PICKER:
-                options =
-                    std::make_shared<UIWidgets::ColorPickerOptions>(std::get<UIWidgets::ColorPickerOptions>(options_));
-                break;
-            case WIDGET_BUTTON:
-                options = std::make_shared<UIWidgets::ButtonOptions>(std::get<UIWidgets::ButtonOptions>(options_));
-                break;
-            case WIDGET_WINDOW_BUTTON:
-                options = std::make_shared<UIWidgets::WindowButtonOptions>(
-                    std::get<UIWidgets::WindowButtonOptions>(options_));
-                break;
-            case WIDGET_TEXT:
-            case WIDGET_SEPARATOR_TEXT:
-                options = std::make_shared<UIWidgets::TextOptions>(std::get<UIWidgets::TextOptions>(options_));
-                break;
-            case WIDGET_SEPARATOR:
-            default:
-                options = std::make_shared<UIWidgets::WidgetOptions>(std::get<UIWidgets::WidgetOptions>(options_));
+        for (const auto& [widgetType, assign] : kWidgetOptionsAssigners) {
+            if (widgetType == type) {
+                assign(options, options_);
+                return *this;
+            }
         }
+        options = std::make_shared<UIWidgets::WidgetOptions>(std::get<UIWidgets::WidgetOptions>(options_));
         return *this;
     }
 

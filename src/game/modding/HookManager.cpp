@@ -234,6 +234,106 @@ void HookManager::Shutdown() {
     sInitialized = false;
 }
 
+/* First hook on this target. funchook detours the engine
+ * address to `replacement`; its trampoline runs original code.
+ * inner_thunk wraps that trampoline so subsequent installs can
+ * re-point "the bottom of the chain" without the first mod
+ * recompiling. */
+int HookManager::InstallFirstHook(const char *symbol_name, void *target,
+                            void *replacement, void **original_out) {
+    void *orig_call = nullptr;
+    funchook_t *fh = BuildHandle(symbol_name, target, replacement,
+                                 &orig_call);
+    if (fh == nullptr) {
+        return 1;
+    }
+    void *inner_thunk = AllocThunk(orig_call);
+    if (inner_thunk == nullptr) {
+        port_log("[mods] InstallHook(%s): inner thunk alloc failed\n",
+                 symbol_name);
+        DestroyHandle(fh);
+        return 1;
+    }
+    ChainState st;
+    st.fh = fh;
+    st.orig_call = orig_call;
+    st.inner_thunk = inner_thunk;
+    st.chain.push_back(replacement);
+    st.chain_owners.push_back(sCurrentOwner);
+    st.chain_trampolines.push_back(inner_thunk);
+    sChains[target] = st;
+
+    sHooks.push_back({std::string(symbol_name), target, sCurrentOwner});
+    if (original_out != nullptr) {
+        *original_out = inner_thunk;
+    }
+    port_log("[mods] hooked %s @ %p (trampoline=%p, chain=1, owner=%s)\n",
+             symbol_name, target, inner_thunk,
+             sCurrentOwner.empty() ? "(unowned)" : sCurrentOwner.c_str());
+    return 0;
+}
+
+/* Subsequent hook on an already-detoured target. funchook has no
+ * incremental API, so destroy the handle and rebuild it with the
+ * new mod's function as the outermost detour. The new mod's
+ * trampoline jumps to the previous outermost replacement (which
+ * has its own trampoline walking inward). inner_thunk is re-pointed
+ * at the fresh funchook trampoline so the chain bottom still
+ * reaches original engine code. */
+int HookManager::InstallChainTopHook(const char *symbol_name, void *target,
+                               ChainState &st, void *replacement,
+                               void **original_out) {
+    void *prev_outer = st.chain.back();
+
+    /* Allocate the new chain trampoline BEFORE any destructive teardown.
+     * If it fails we return with the existing handle and chain fully
+     * intact (target still correctly detoured to prev_outer). Doing this
+     * after DestroyHandle/BuildHandle (the old order) left the target
+     * detoured to `replacement` with *original_out never set — an
+     * untracked live detour with a null "original" the chain didn't even
+     * record, so the mod would crash on call-original and the previous
+     * chain was silently bypassed. */
+    void *new_trampoline = AllocThunk(prev_outer);
+    if (new_trampoline == nullptr) {
+        port_log("[mods] InstallHook(%s): chain thunk alloc failed (chain left intact)\n",
+                 symbol_name);
+        return 1;
+    }
+
+    DestroyHandle((funchook_t *)st.fh);
+    st.fh = nullptr;
+
+    void *new_orig_call = nullptr;
+    funchook_t *fh = BuildHandle(symbol_name, target, replacement,
+                                 &new_orig_call);
+    if (fh == nullptr) {
+        /* funchook couldn't re-detour the target. It is now un-hooked
+         * entirely; drop the chain (and the trampoline just allocated)
+         * so the engine runs clean rather than leaving dangling thunks. */
+        FreeThunk(new_trampoline);
+        for (void *t : st.chain_trampolines) {
+            FreeThunk(t);
+        }
+        sChains.erase(target);
+        return 1;
+    }
+    st.fh = fh;
+    st.orig_call = new_orig_call;
+    SetThunkTarget(st.inner_thunk, new_orig_call);
+
+    st.chain.push_back(replacement);
+    st.chain_owners.push_back(sCurrentOwner);
+    st.chain_trampolines.push_back(new_trampoline);
+    sHooks.push_back({std::string(symbol_name), target, sCurrentOwner});
+    if (original_out != nullptr) {
+        *original_out = new_trampoline;
+    }
+    port_log("[mods] chained %s @ %p (trampoline=%p, chain=%zu, owner=%s)\n",
+             symbol_name, target, new_trampoline, st.chain.size(),
+             sCurrentOwner.empty() ? "(unowned)" : sCurrentOwner.c_str());
+    return 0;
+}
+
 int HookManager::InstallHook(const char *symbol_name, void *replacement,
                              void **original_out) {
     if (original_out != nullptr) {
@@ -260,101 +360,13 @@ int HookManager::InstallHook(const char *symbol_name, void *replacement,
 
     auto chain_it = sChains.find(target);
     if (chain_it == sChains.end()) {
-        /* First hook on this target. funchook detours the engine
-         * address to `replacement`; its trampoline runs original code.
-         * inner_thunk wraps that trampoline so subsequent installs can
-         * re-point "the bottom of the chain" without the first mod
-         * recompiling. */
-        void *orig_call = nullptr;
-        funchook_t *fh = BuildHandle(symbol_name, target, replacement,
-                                     &orig_call);
-        if (fh == nullptr) {
-            return 1;
-        }
-        void *inner_thunk = AllocThunk(orig_call);
-        if (inner_thunk == nullptr) {
-            port_log("[mods] InstallHook(%s): inner thunk alloc failed\n",
-                     symbol_name);
-            DestroyHandle(fh);
-            return 1;
-        }
-        ChainState st;
-        st.fh = fh;
-        st.orig_call = orig_call;
-        st.inner_thunk = inner_thunk;
-        st.chain.push_back(replacement);
-        st.chain_owners.push_back(sCurrentOwner);
-        st.chain_trampolines.push_back(inner_thunk);
-        sChains[target] = st;
-
-        sHooks.push_back({std::string(symbol_name), target, sCurrentOwner});
-        if (original_out != nullptr) {
-            *original_out = inner_thunk;
-        }
-        port_log("[mods] hooked %s @ %p (trampoline=%p, chain=1, owner=%s)\n",
-                 symbol_name, target, inner_thunk,
-                 sCurrentOwner.empty() ? "(unowned)" : sCurrentOwner.c_str());
-        return 0;
+        return InstallFirstHook(symbol_name, target, replacement, original_out);
     }
-
-    /* Subsequent hook on an already-detoured target. funchook has no
-     * incremental API, so destroy the handle and rebuild it with the
-     * new mod's function as the outermost detour. The new mod's
-     * trampoline jumps to the previous outermost replacement (which
-     * has its own trampoline walking inward). inner_thunk is re-pointed
-     * at the fresh funchook trampoline so the chain bottom still
-     * reaches original engine code. */
-    ChainState &st = chain_it->second;
-    void *prev_outer = st.chain.back();
-
-    /* Allocate the new chain trampoline BEFORE any destructive teardown.
-     * If it fails we return with the existing handle and chain fully
-     * intact (target still correctly detoured to prev_outer). Doing this
-     * after DestroyHandle/BuildHandle (the old order) left the target
-     * detoured to `replacement` with *original_out never set — an
-     * untracked live detour with a null "original" the chain didn't even
-     * record, so the mod would crash on call-original and the previous
-     * chain was silently bypassed. */
-    void *new_trampoline = AllocThunk(prev_outer);
-    if (new_trampoline == nullptr) {
-        port_log("[mods] InstallHook(%s): chain thunk alloc failed (chain left intact)\n",
-                 symbol_name);
-        return 1;
-    }
-
-    DestroyHandle((funchook_t *)st.fh);
-    st.fh = nullptr;
-
-    void *new_orig_call = nullptr;
-    funchook_t *fh = BuildHandle(symbol_name, chain_it->first, replacement,
-                                 &new_orig_call);
-    if (fh == nullptr) {
-        /* funchook couldn't re-detour the target. It is now un-hooked
-         * entirely; drop the chain (and the trampoline just allocated)
-         * so the engine runs clean rather than leaving dangling thunks. */
-        FreeThunk(new_trampoline);
-        for (void *t : st.chain_trampolines) {
-            FreeThunk(t);
-        }
-        sChains.erase(chain_it);
-        return 1;
-    }
-    st.fh = fh;
-    st.orig_call = new_orig_call;
-    SetThunkTarget(st.inner_thunk, new_orig_call);
-
-    st.chain.push_back(replacement);
-    st.chain_owners.push_back(sCurrentOwner);
-    st.chain_trampolines.push_back(new_trampoline);
-    sHooks.push_back({std::string(symbol_name), target, sCurrentOwner});
-    if (original_out != nullptr) {
-        *original_out = new_trampoline;
-    }
-    port_log("[mods] chained %s @ %p (trampoline=%p, chain=%zu, owner=%s)\n",
-             symbol_name, target, new_trampoline, st.chain.size(),
-             sCurrentOwner.empty() ? "(unowned)" : sCurrentOwner.c_str());
-    return 0;
+    return InstallChainTopHook(symbol_name, target, chain_it->second,
+                               replacement, original_out);
 }
+
+
 
 void HookManager::SetCurrentOwner(const char *owner_id) {
     std::lock_guard<std::mutex> lock(sMutex);
@@ -364,6 +376,78 @@ void HookManager::SetCurrentOwner(const char *owner_id) {
 void HookManager::ClearCurrentOwner() {
     std::lock_guard<std::mutex> lock(sMutex);
     sCurrentOwner.clear();
+}
+
+/* Removes chain[i] owned by `oid` from `st` and re-links the survivors.
+ * Caller must restart its scan after this (vectors were mutated). */
+void HookManager::UninstallChainEntry(std::map<void *, ChainState>::iterator chain_it,
+                                ChainState &st, const std::string &oid,
+                                int i, int *removed) {
+    void *removed_tramp = st.chain_trampolines[i];
+    bool is_top = (i == (int)st.chain.size() - 1);
+    bool is_bottom = (i == 0);
+
+    if (is_top && st.chain.size() == 1) {
+        DestroyHandle((funchook_t *)st.fh);
+        st.fh = nullptr;
+        if (st.inner_thunk != nullptr) {
+            FreeThunk(st.inner_thunk);
+            st.inner_thunk = nullptr;
+        }
+    } else if (is_top) {
+        void *new_top = st.chain[i - 1];
+        DestroyHandle((funchook_t *)st.fh);
+        st.fh = nullptr;
+        void *new_orig_call = nullptr;
+        funchook_t *fh = BuildHandle("(uninstall)",
+                                     chain_it->first, new_top,
+                                     &new_orig_call);
+        if (fh != nullptr) {
+            st.fh = fh;
+            st.orig_call = new_orig_call;
+            SetThunkTarget(st.inner_thunk, new_orig_call);
+        } else {
+            port_log("[mods] uninstall %p (owner=%s): rebuild "
+                     "failed — chain broken\n",
+                     chain_it->first, oid.c_str());
+        }
+        if (removed_tramp != st.inner_thunk) {
+            FreeThunk(removed_tramp);
+        }
+    } else {
+        /* Mid-chain: re-point chain[i+1]'s trampoline thunk
+         * to skip our entry. If we're the bottom, the
+         * upstairs thunk now points at orig_call (the
+         * funchook trampoline → original engine code) and
+         * itself becomes the new inner_thunk. */
+        void *new_target =
+            is_bottom ? st.orig_call : st.chain[i - 1];
+        SetThunkTarget(st.chain_trampolines[i + 1], new_target);
+
+        if (is_bottom) {
+            if (st.inner_thunk != nullptr) {
+                FreeThunk(st.inner_thunk);
+            }
+            st.inner_thunk = st.chain_trampolines[i + 1];
+        } else {
+            if (removed_tramp != st.inner_thunk) {
+                FreeThunk(removed_tramp);
+            }
+        }
+    }
+
+    st.chain.erase(st.chain.begin() + i);
+    st.chain_owners.erase(st.chain_owners.begin() + i);
+    st.chain_trampolines.erase(st.chain_trampolines.begin() + i);
+
+    port_log(
+        "[mods] uninstalled %p[%d] (owner=%s, %s, chain=%zu)\n",
+        chain_it->first, i, oid.c_str(),
+        is_top ? (st.chain.empty() ? "chain emptied" : "was top")
+               : (is_bottom ? "was bottom (mid-chain skip)"
+                            : "mid-chain"),
+        st.chain.size());
+    (*removed)++;
 }
 
 int HookManager::UninstallHooksForOwner(const char *owner_id) {
@@ -396,71 +480,7 @@ int HookManager::UninstallHooksForOwner(const char *owner_id) {
                 if (st.chain_owners[i] != oid) {
                     continue;
                 }
-                void *removed_tramp = st.chain_trampolines[i];
-                bool is_top = (i == (int)st.chain.size() - 1);
-                bool is_bottom = (i == 0);
-
-                if (is_top && st.chain.size() == 1) {
-                    DestroyHandle((funchook_t *)st.fh);
-                    st.fh = nullptr;
-                    if (st.inner_thunk != nullptr) {
-                        FreeThunk(st.inner_thunk);
-                        st.inner_thunk = nullptr;
-                    }
-                } else if (is_top) {
-                    void *new_top = st.chain[i - 1];
-                    DestroyHandle((funchook_t *)st.fh);
-                    st.fh = nullptr;
-                    void *new_orig_call = nullptr;
-                    funchook_t *fh = BuildHandle("(uninstall)",
-                                                 chain_it->first, new_top,
-                                                 &new_orig_call);
-                    if (fh != nullptr) {
-                        st.fh = fh;
-                        st.orig_call = new_orig_call;
-                        SetThunkTarget(st.inner_thunk, new_orig_call);
-                    } else {
-                        port_log("[mods] uninstall %p (owner=%s): rebuild "
-                                 "failed — chain broken\n",
-                                 chain_it->first, oid.c_str());
-                    }
-                    if (removed_tramp != st.inner_thunk) {
-                        FreeThunk(removed_tramp);
-                    }
-                } else {
-                    /* Mid-chain: re-point chain[i+1]'s trampoline thunk
-                     * to skip our entry. If we're the bottom, the
-                     * upstairs thunk now points at orig_call (the
-                     * funchook trampoline → original engine code) and
-                     * itself becomes the new inner_thunk. */
-                    void *new_target =
-                        is_bottom ? st.orig_call : st.chain[i - 1];
-                    SetThunkTarget(st.chain_trampolines[i + 1], new_target);
-
-                    if (is_bottom) {
-                        if (st.inner_thunk != nullptr) {
-                            FreeThunk(st.inner_thunk);
-                        }
-                        st.inner_thunk = st.chain_trampolines[i + 1];
-                    } else {
-                        if (removed_tramp != st.inner_thunk) {
-                            FreeThunk(removed_tramp);
-                        }
-                    }
-                }
-
-                st.chain.erase(st.chain.begin() + i);
-                st.chain_owners.erase(st.chain_owners.begin() + i);
-                st.chain_trampolines.erase(st.chain_trampolines.begin() + i);
-
-                port_log(
-                    "[mods] uninstalled %p[%d] (owner=%s, %s, chain=%zu)\n",
-                    chain_it->first, i, oid.c_str(),
-                    is_top ? (st.chain.empty() ? "chain emptied" : "was top")
-                           : (is_bottom ? "was bottom (mid-chain skip)"
-                                        : "mid-chain"),
-                    st.chain.size());
-                removed++;
+                UninstallChainEntry(chain_it, st, oid, i, &removed);
                 any_removed = true;
                 break; /* restart after vector mutation */
             }
@@ -481,5 +501,7 @@ int HookManager::UninstallHooksForOwner(const char *owner_id) {
 
     return removed;
 }
+
+
 
 } // namespace ssb64::mods

@@ -68,13 +68,131 @@ static void pass1_swap_u32(void *data, size_t size)
 //  Pass 2: DL-guided fixup scan
 // ============================================================
 
+// Pending texture image state from the most recent gDPSetTextureImage
+struct PendingTex
+{
+	bool     has = false;
+	uint32_t offset = 0;
+	uint32_t siz = 0;
+};
+
+static void scan_dl_vtx(uint32_t w0, uint32_t w1, size_t file_size,
+                        std::vector<FixupRegion> &regions)
+{
+	uint32_t num_vtx = (w0 >> 12) & 0xFF;
+	uint8_t seg = (w1 >> 24) & 0xFF;
+	uint32_t offset = w1 & 0x00FFFFFF;
+	size_t offset_sz = static_cast<size_t>(offset);
+	size_t vtx_bytes = static_cast<size_t>(num_vtx) * 16;
+
+	if (seg == FILE_SEGMENT_ID && num_vtx > 0 &&
+	    offset_sz <= file_size && vtx_bytes <= (file_size - offset_sz))
+	{
+		regions.push_back({offset, num_vtx * 16, FIXUP_VERTEX});
+		if (stage_audit_enabled()) stage_audit().vtx_scan_caught++;
+	}
+	else if (stage_audit_enabled() && num_vtx > 0)
+	{
+		stage_audit().vtx_scan_skipped_seg++;
+	}
+}
+
+static void scan_dl_settimg(uint32_t w0, uint32_t w1, PendingTex &pending)
+{
+	uint8_t seg = (w1 >> 24) & 0xFF;
+	uint32_t siz = (w0 >> 19) & 0x03;
+
+	if (seg == FILE_SEGMENT_ID)
+	{
+		pending.offset = w1 & 0x00FFFFFF;
+		pending.siz = siz;
+		pending.has = true;
+		if (stage_audit_enabled()) stage_audit().settimg_scan_caught++;
+	}
+	else
+	{
+		pending.has = false;
+		if (stage_audit_enabled()) stage_audit().settimg_scan_skipped_seg++;
+	}
+}
+
+static void scan_dl_loadblock(uint32_t w1, PendingTex &pending,
+                              size_t file_size, std::vector<FixupRegion> &regions)
+{
+	if (!pending.has)
+		return;
+
+	uint32_t lrs = (w1 >> 12) & 0xFFF;
+	uint32_t num_texels = lrs + 1;
+	uint32_t bpp = 0;
+
+	switch (pending.siz)
+	{
+	case G_IM_SIZ_4b:  bpp = 4;  break;
+	case G_IM_SIZ_8b:  bpp = 8;  break;
+	case G_IM_SIZ_16b: bpp = 16; break;
+	case G_IM_SIZ_32b: bpp = 32; break;
+	}
+
+	if (bpp == 0)
+		return;
+
+	uint32_t tex_bytes = (num_texels * bpp + 7) / 8;
+	// Align to 4 bytes for u32 word processing
+	tex_bytes = (tex_bytes + 3) & ~3u;
+
+	size_t pending_offset_sz = static_cast<size_t>(pending.offset);
+	if (pending_offset_sz > file_size)
+	{
+		pending.has = false;
+		return;
+	}
+	if (static_cast<size_t>(tex_bytes) > (file_size - pending_offset_sz))
+		tex_bytes = static_cast<uint32_t>(file_size - pending_offset_sz);
+
+	switch (pending.siz)
+	{
+	case G_IM_SIZ_4b:
+	case G_IM_SIZ_8b:
+		regions.push_back({pending.offset, tex_bytes, FIXUP_TEX_BYTES});
+		break;
+	case G_IM_SIZ_16b:
+		regions.push_back({pending.offset, tex_bytes, FIXUP_TEX_U16});
+		break;
+	default:
+		break;   // 32b: u32 swap was correct, no fixup
+	}
+	pending.has = false;
+}
+
+static void scan_dl_loadtlut(uint32_t w1, PendingTex &pending,
+                             size_t file_size, std::vector<FixupRegion> &regions)
+{
+	if (!pending.has)
+		return;
+
+	uint32_t count = ((w1 >> 14) & 0x3FF) + 1;
+	uint32_t palette_bytes = count * 2;
+	// Align to 4 bytes
+	palette_bytes = (palette_bytes + 3) & ~3u;
+
+	size_t pending_offset_sz = static_cast<size_t>(pending.offset);
+	if (pending_offset_sz > file_size)
+	{
+		pending.has = false;
+		return;
+	}
+	if (static_cast<size_t>(palette_bytes) > (file_size - pending_offset_sz))
+		palette_bytes = static_cast<uint32_t>(file_size - pending_offset_sz);
+
+	regions.push_back({pending.offset, palette_bytes, FIXUP_TEX_U16});
+	pending.has = false;
+}
+
 static void scan_display_lists(const uint32_t *words, size_t num_words,
                                size_t file_size, std::vector<FixupRegion> &regions)
 {
-	// Pending texture image state from the most recent gDPSetTextureImage
-	bool has_pending_tex = false;
-	uint32_t pending_tex_offset = 0;
-	uint32_t pending_tex_siz = 0;
+	PendingTex pending;
 
 	for (size_t i = 0; i + 1 < num_words; i += 2)
 	{
@@ -85,124 +203,17 @@ static void scan_display_lists(const uint32_t *words, size_t num_words,
 		switch (opcode)
 		{
 		case GBI_VTX:
-		{
-			uint32_t num_vtx = (w0 >> 12) & 0xFF;
-			uint8_t seg = (w1 >> 24) & 0xFF;
-			uint32_t offset = w1 & 0x00FFFFFF;
-			size_t offset_sz = static_cast<size_t>(offset);
-			size_t vtx_bytes = static_cast<size_t>(num_vtx) * 16;
-
-			if (seg == FILE_SEGMENT_ID && num_vtx > 0 &&
-			    offset_sz <= file_size && vtx_bytes <= (file_size - offset_sz))
-			{
-				regions.push_back({offset, num_vtx * 16, FIXUP_VERTEX});
-				if (stage_audit_enabled()) stage_audit().vtx_scan_caught++;
-			}
-			else if (stage_audit_enabled() && num_vtx > 0)
-			{
-				stage_audit().vtx_scan_skipped_seg++;
-			}
+			scan_dl_vtx(w0, w1, file_size, regions);
 			break;
-		}
-
 		case GBI_SETTIMG:
-		{
-			uint8_t seg = (w1 >> 24) & 0xFF;
-			uint32_t siz = (w0 >> 19) & 0x03;
-
-			if (seg == FILE_SEGMENT_ID)
-			{
-				pending_tex_offset = w1 & 0x00FFFFFF;
-				pending_tex_siz = siz;
-				has_pending_tex = true;
-				if (stage_audit_enabled()) stage_audit().settimg_scan_caught++;
-			}
-			else
-			{
-				has_pending_tex = false;
-				if (stage_audit_enabled()) stage_audit().settimg_scan_skipped_seg++;
-			}
+			scan_dl_settimg(w0, w1, pending);
 			break;
-		}
-
 		case GBI_LOADBLOCK:
-		{
-			if (!has_pending_tex)
-				break;
-
-			uint32_t lrs = (w1 >> 12) & 0xFFF;
-			uint32_t num_texels = lrs + 1;
-			uint32_t bpp = 0;
-
-			switch (pending_tex_siz)
-			{
-			case G_IM_SIZ_4b:  bpp = 4;  break;
-			case G_IM_SIZ_8b:  bpp = 8;  break;
-			case G_IM_SIZ_16b: bpp = 16; break;
-			case G_IM_SIZ_32b: bpp = 32; break;
-			}
-
-			if (bpp == 0)
-				break;
-
-			uint32_t tex_bytes = (num_texels * bpp + 7) / 8;
-			// Align to 4 bytes for u32 word processing
-			tex_bytes = (tex_bytes + 3) & ~3u;
-
-			size_t pending_offset_sz = static_cast<size_t>(pending_tex_offset);
-			if (pending_offset_sz > file_size)
-			{
-				has_pending_tex = false;
-				break;
-			}
-			if (static_cast<size_t>(tex_bytes) > (file_size - pending_offset_sz))
-				tex_bytes = static_cast<uint32_t>(file_size - pending_offset_sz);
-
-			RegionFixup fixup;
-			switch (pending_tex_siz)
-			{
-			case G_IM_SIZ_4b:
-			case G_IM_SIZ_8b:
-				fixup = FIXUP_TEX_BYTES;
-				break;
-			case G_IM_SIZ_16b:
-				fixup = FIXUP_TEX_U16;
-				break;
-			default:
-				// 32b: u32 swap was correct, no fixup
-				goto skip_tex;
-			}
-
-			regions.push_back({pending_tex_offset, tex_bytes, fixup});
-		skip_tex:
-			has_pending_tex = false;
+			scan_dl_loadblock(w1, pending, file_size, regions);
 			break;
-		}
-
 		case GBI_LOADTLUT:
-		{
-			if (!has_pending_tex)
-				break;
-
-			uint32_t count = ((w1 >> 14) & 0x3FF) + 1;
-			uint32_t palette_bytes = count * 2;
-			// Align to 4 bytes
-			palette_bytes = (palette_bytes + 3) & ~3u;
-
-			size_t pending_offset_sz = static_cast<size_t>(pending_tex_offset);
-			if (pending_offset_sz > file_size)
-			{
-				has_pending_tex = false;
-				break;
-			}
-			if (static_cast<size_t>(palette_bytes) > (file_size - pending_offset_sz))
-				palette_bytes = static_cast<uint32_t>(file_size - pending_offset_sz);
-
-			regions.push_back({pending_tex_offset, palette_bytes, FIXUP_TEX_U16});
-			has_pending_tex = false;
+			scan_dl_loadtlut(w1, pending, file_size, regions);
 			break;
-		}
-
 		default:
 			break;
 		}

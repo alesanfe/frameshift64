@@ -46,12 +46,9 @@ static char     sTraceFilePath[1024];
 /*  Initialization                                                           */
 /* ========================================================================= */
 
-void gbi_trace_init(void)
+static void gbi_trace_read_env(void)
 {
 	const char *env;
-
-	if (sInitialized) return;
-	sInitialized = 1;
 
 	env = getenv("SSB64_GBI_TRACE");
 	if (env && (env[0] == '1' || env[0] == 'y' || env[0] == 'Y')) {
@@ -79,7 +76,14 @@ void gbi_trace_init(void)
 		int val = atoi(env);
 		if (val > 0) sStartFrame = val;
 	}
+}
 
+void gbi_trace_init(void)
+{
+	if (sInitialized) return;
+	sInitialized = 1;
+
+	gbi_trace_read_env();
 	if (!sEnabled) return;
 
 	/* Create output directory */
@@ -196,6 +200,78 @@ void gbi_trace_end_frame(void)
 /*  Command logging                                                          */
 /* ========================================================================= */
 
+
+/* ========================================================================= */
+/*  Command logging                                                          */
+/* ========================================================================= */
+
+static int gbi_trace_dump_enabled(void)
+{
+	static int sDumpData = -1;
+	if (sDumpData < 0) {
+		const char *env = getenv("SSB64_GBI_TRACE_DATA");
+		sDumpData = (env != NULL && env[0] == '1') ? 1 : 0;
+	}
+	return sDumpData;
+}
+
+/* Dump the payload behind pointer-carrying commands (G_MTX matrices,
+ * G_VTX vertices). The command stream alone can be byte-identical between
+ * a good and a corrupt frame when the divergence lives in CPU-computed
+ * matrix/vertex data; this exposes it. w1 is a host pointer on PC (w1_64),
+ * so the payload is directly readable here. */
+static void gbi_trace_dump_payload(uint32_t w0_lo, unsigned long long w1)
+{
+	uint8_t opcode = (uint8_t)((w0_lo >> 24) & 0xFF);
+	const uint32_t *p = (const uint32_t *)(uintptr_t)w1;
+	if (opcode == 0xDA && p != NULL) { /* F3DEX2 G_MTX: 64-byte fixed-point matrix */
+		int i;
+		fprintf(sTraceFile, "       MTXDATA");
+		for (i = 0; i < 16; i++) fprintf(sTraceFile, " %08X", p[i]);
+		fprintf(sTraceFile, "\n");
+	} else if (opcode == 0xFD && p != NULL) { /* G_SETTIMG: checksum the pointed pixels */
+		/* Length is unknown at SETTIMG time; 1 KB is enough to detect
+		 * content changes between frames without risking a long read. */
+		const uint8_t *b = (const uint8_t *)p;
+		uint32_t sum = 0;
+		int i;
+		for (i = 0; i < 1024; i++) sum = sum * 31 + b[i];
+		fprintf(sTraceFile, "       TIMGSUM %08X  first=%02X%02X%02X%02X%02X%02X%02X%02X\n",
+		        sum, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
+	} else if (opcode == 0x01 && p != NULL) { /* F3DEX2 G_VTX: n verts, 16 bytes each */
+		int n = (int)((w0_lo >> 12) & 0xFF);
+		int i;
+		if (n > 32) n = 32;
+		for (i = 0; i < n; i++) {
+			const int16_t *v = (const int16_t *)(p + i * 4);
+			fprintf(sTraceFile, "       VTX[%02d] x=%d y=%d z=%d\n", i, v[0], v[1], v[2]);
+		}
+	}
+}
+
+/* Token-addressed G_VTX (w1_hi == 0): resolve through the port's reloc
+ * handle table and dump the backing vertex data. This is how per-frame
+ * CPU-built effect geometry is addressed, and content corruption there is
+ * invisible to the command-stream diff. */
+static void gbi_trace_dump_token_vtx(uint32_t w0_lo, uint32_t w1_lo)
+{
+	const uint32_t* vp = (const uint32_t*)portRelocTryResolvePointer(w1_lo);
+	if (vp == NULL) {
+		fprintf(sTraceFile, "       VTXTOK %08X -> UNRESOLVED\n", w1_lo);
+		return;
+	}
+	{
+		int n = (int)((w0_lo >> 12) & 0xFF);
+		int i;
+		if (n > 8) n = 8;
+		fprintf(sTraceFile, "       VTXTOK %08X -> %p\n", w1_lo, (const void*)vp);
+		for (i = 0; i < n; i++) {
+			const int16_t* v = (const int16_t*)(vp + i * 4);
+			fprintf(sTraceFile, "       VTX[%02d] x=%d y=%d z=%d f=%04X uv=(%d,%d)\n", i, v[0], v[1],
+			        v[2], (uint16_t)v[3], v[4], v[5]);
+		}
+	}
+}
 void gbi_trace_log_cmd(unsigned long long w0, unsigned long long w1, int depth)
 {
 	char decoded[512];
@@ -222,69 +298,15 @@ void gbi_trace_log_cmd(unsigned long long w0, unsigned long long w1, int depth)
 		        sCmdIndex, depth, decoded);
 	}
 
-	/* SSB64_GBI_TRACE_DATA=1: also hexdump the payload behind pointer-carrying
-	 * commands (G_MTX matrices, G_VTX vertices). The command stream alone can
-	 * be byte-identical between a good and a corrupt frame when the divergence
-	 * lives in CPU-computed matrix/vertex data; this exposes it. w1 is a host
-	 * pointer on PC (w1_64), so the payload is directly readable here. */
-	{
-		static int sDumpData = -1;
-		if (sDumpData < 0) {
-			const char *env = getenv("SSB64_GBI_TRACE_DATA");
-			sDumpData = (env != NULL && env[0] == '1') ? 1 : 0;
-		}
+	if (gbi_trace_dump_enabled() && w1_hi != 0) {
 		/* Only deref w1 when its upper 32 bits are set (a genuine widened
 		 * host pointer). Segment-relative addresses (e.g. 0x0C000000) are
 		 * resolved inside Fast3D and must not be dereferenced here. */
-		if (sDumpData && w1_hi != 0) {
-			uint8_t opcode = (uint8_t)((w0_lo >> 24) & 0xFF);
-			const uint32_t *p = (const uint32_t *)(uintptr_t)w1;
-			if (opcode == 0xDA && p != NULL) { /* F3DEX2 G_MTX: 64-byte fixed-point matrix */
-				int i;
-				fprintf(sTraceFile, "       MTXDATA");
-				for (i = 0; i < 16; i++) fprintf(sTraceFile, " %08X", p[i]);
-				fprintf(sTraceFile, "\n");
-			} else if (opcode == 0xFD && p != NULL) { /* G_SETTIMG: checksum the pointed pixels */
-				/* Length is unknown at SETTIMG time; 1 KB is enough to detect
-				 * content changes between frames without risking a long read. */
-				const uint8_t *b = (const uint8_t *)p;
-				uint32_t sum = 0;
-				int i;
-				for (i = 0; i < 1024; i++) sum = sum * 31 + b[i];
-				fprintf(sTraceFile, "       TIMGSUM %08X  first=%02X%02X%02X%02X%02X%02X%02X%02X\n",
-				        sum, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
-			} else if (opcode == 0x01 && p != NULL) { /* F3DEX2 G_VTX: n verts, 16 bytes each */
-				int n = (int)((w0_lo >> 12) & 0xFF);
-				int i;
-				if (n > 32) n = 32;
-				for (i = 0; i < n; i++) {
-					const int16_t *v = (const int16_t *)(p + i * 4);
-					fprintf(sTraceFile, "       VTX[%02d] x=%d y=%d z=%d\n", i, v[0], v[1], v[2]);
-				}
-			}
-		}
-		/* Token-addressed G_VTX (w1_hi == 0): resolve through the port's
-		 * reloc handle table and dump the backing vertex data. This is how
-		 * per-frame CPU-built effect geometry is addressed, and content
-		 * corruption there is invisible to the command-stream diff. */
-		if (sDumpData && w1_hi == 0 && ((w0_lo >> 24) & 0xFF) == 0x01 && w1_lo != 0) {
-			const uint32_t* vp = (const uint32_t*)portRelocTryResolvePointer(w1_lo);
-			if (vp == NULL) {
-				fprintf(sTraceFile, "       VTXTOK %08X -> UNRESOLVED\n", w1_lo);
-			} else {
-				int n = (int)((w0_lo >> 12) & 0xFF);
-				int i;
-				if (n > 8) n = 8;
-				fprintf(sTraceFile, "       VTXTOK %08X -> %p\n", w1_lo, (const void*)vp);
-				for (i = 0; i < n; i++) {
-					const int16_t* v = (const int16_t*)(vp + i * 4);
-					fprintf(sTraceFile, "       VTX[%02d] x=%d y=%d z=%d f=%04X uv=(%d,%d)\n", i, v[0], v[1],
-					        v[2], (uint16_t)v[3], v[4], v[5]);
-				}
-			}
-		}
+		gbi_trace_dump_payload(w0_lo, w1);
 	}
-
+	if (gbi_trace_dump_enabled() && w1_hi == 0 && ((w0_lo >> 24) & 0xFF) == 0x01 && w1_lo != 0) {
+		gbi_trace_dump_token_vtx(w0_lo, w1_lo);
+	}
 	sCmdIndex++;
 }
 

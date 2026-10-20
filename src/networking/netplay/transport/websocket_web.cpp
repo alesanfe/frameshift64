@@ -50,7 +50,8 @@ std::string sUplinkError;
  * remembered URL at a bounded cadence instead of going mute. */
 std::string sUplinkUrl;
 double sUplinkRetryAt = 0.0;
-constexpr double kUpRedialMs = 2000.0;
+/* Re-dial cadence is the shared kUpRedialMs from the internal header —
+ * emscripten_get_now() is double-ms, the uint64_t converts exactly. */
 
 EM_BOOL on_open(int /*type*/, const EmscriptenWebSocketOpenEvent */*ev*/, void *user)
 {
@@ -84,8 +85,10 @@ EM_BOOL on_close(int /*type*/, const EmscriptenWebSocketCloseEvent *ev, void *us
 	}
 	if (user == &sState && !was_failed && ev->code != 1000 && ev->code != 1005) {
 		char buf[96];
+		/* ev->reason is 512B — cap the precision to the tail of buf
+		 * (gcc -Wformat-truncation flags the raw sizeof). */
 		std::snprintf(buf, sizeof(buf), "closed: code=%u %.*s", ev->code,
-		              static_cast<int>(sizeof(ev->reason)), ev->reason);
+		              static_cast<int>(sizeof(buf) - 24), ev->reason);
 		sError = buf;
 	}
 	return EM_TRUE;
@@ -257,7 +260,14 @@ namespace {
  * remembered URL at a bounded cadence. Returns 1 when the frame went out
  * on the uplink, -1 when the uplink is unusable and the caller should
  * fall back to the control socket — a frame is never dropped just
- * because the uplink died. */
+ * because the uplink died.
+ *
+ * Eagerness note: unlike the threaded backends (where a send failure
+ * leaves the uplink FAILED until the NEXT send attempts the redial),
+ * this path falls through to the redial on the SAME call that observed
+ * the failure — the observable state after a failed send is therefore
+ * CONNECTING, not FAILED. Sends are the only event pump this backend
+ * has, so deferring the dial would only add latency. */
 int uplink_send(const void *data, int size, bool text)
 {
 	if (sUplinkState == PORT_WS_OPEN && sUplink > 0) {

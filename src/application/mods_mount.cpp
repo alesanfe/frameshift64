@@ -38,21 +38,18 @@ namespace ssb64 {
  * present in the manager's archive list. Safe to call repeatedly
  * (e.g. from the Mods → Reload menu, after a modder dropped a
  * brand-new mod folder in mods/ while the engine was running). */
-void MountModsDir() {
-	namespace fs = std::filesystem;
-	auto rm = PortContext() ? PortContext()->GetResourceManager() : nullptr;
-	if (!rm) return;
-	auto am = rm->GetArchiveManager();
-	if (!am) return;
+namespace {
 
-	/* Mods can live in two roots:
-	 *   - the bundle dir (RealAppBundlePath()/mods) — mods shipped with
-	 *     the release or dropped next to the exe in portable installs;
-	 *   - the writable app-data dir (GetPathRelativeToAppDirectory("mods"))
-	 *     — where the in-game installer puts mods on packaged builds
-	 *     (AppImage, .app, installed layouts) whose bundle dir is
-	 *     read-only. In portable mode both resolve to the same place and
-	 *     the second walk just no-ops through the dedupe set. */
+/* Mods can live in two roots:
+ *   - the bundle dir (RealAppBundlePath()/mods) — mods shipped with
+ *     the release or dropped next to the exe in portable installs;
+ *   - the writable app-data dir (GetPathRelativeToAppDirectory("mods"))
+ *     — where the in-game installer puts mods on packaged builds
+ *     (AppImage, .app, installed layouts) whose bundle dir is
+ *     read-only. In portable mode both resolve to the same place and
+ *     the second walk just no-ops through the dedupe set. */
+std::vector<std::filesystem::path> CollectModsDirs() {
+	namespace fs = std::filesystem;
 	std::vector<fs::path> modsDirs;
 #ifdef BATTLESHIP_UWP
 	const fs::path usbMods(ssb64::ExternalDataPath("mods"));
@@ -78,30 +75,40 @@ void MountModsDir() {
 		modsDirs.push_back(appDataMods);
 	}
 #endif
-	{
-		std::error_code ec;
-		bool any = false;
-		for (const auto& d : modsDirs) {
-			if (fs::exists(d, ec)) { any = true; break; }
-		}
-		if (!any) {
-			return;
+	return modsDirs;
+}
+
+bool AnyModsDirExists(const std::vector<std::filesystem::path> &modsDirs) {
+	std::error_code ec;
+	for (const auto &d : modsDirs) {
+		if (std::filesystem::exists(d, ec)) {
+			return true;
 		}
 	}
+	return false;
+}
 
-	/* Build a set of already-mounted archive paths so we don't
-	 * double-mount on a rescan. Path comparison is by exact string;
-	 * the LUS manager keeps the path the caller passed to AddArchive. */
-	auto existing_list = am->GetArchives();
+/* Build a set of already-mounted archive paths so we don't
+ * double-mount on a rescan. Path comparison is by exact string;
+ * the LUS manager keeps the path the caller passed to AddArchive. */
+std::unordered_set<std::string> ExistingArchivePaths(
+    const std::shared_ptr<Ship::ArchiveManager> &am) {
 	std::unordered_set<std::string> existing;
+	auto existing_list = am->GetArchives();
 	if (existing_list) {
-		for (const auto& a : *existing_list) {
+		for (const auto &a : *existing_list) {
 			if (a) existing.insert(a->GetPath());
 		}
 	}
+	return existing;
+}
 
+struct ModMountScan {
+	std::shared_ptr<Ship::ArchiveManager> am;
+	std::unordered_set<std::string> existing;
 	bool mounted_new = false;
-	auto try_mount = [&](const fs::path& p) {
+
+	void TryMount(const std::filesystem::path &p) {
 		const std::string path = p.generic_string();
 		if (existing.contains(path)) {
 			return;
@@ -113,16 +120,17 @@ void MountModsDir() {
 		} else {
 			port_log("SSB64: failed to mount mod archive -> %s\n", path.c_str());
 		}
-	};
+	}
 
-	std::function<void(const fs::path&)> walk = [&](const fs::path& dir) {
+	void Walk(const std::filesystem::path &dir) {
+		namespace fs = std::filesystem;
 		std::error_code ec_local;
-		for (const auto& entry : fs::directory_iterator(dir, ec_local)) {
+		for (const auto &entry : fs::directory_iterator(dir, ec_local)) {
 			const fs::path p = entry.path();
 			if (entry.is_regular_file(ec_local)) {
 				const std::string ext = p.extension().string();
 				if (ext == ".o2r" || ext == ".otr" || ext == ".zip") {
-					try_mount(p);
+					TryMount(p);
 				}
 				continue;
 			}
@@ -132,16 +140,35 @@ void MountModsDir() {
 			/* A folder containing manifest.json is a mod. Otherwise
 			 * treat it as a category directory and recurse. */
 			if (fs::exists(p / "manifest.json", ec_local)) {
-				try_mount(p);
+				TryMount(p);
 			} else {
-				walk(p);
+				Walk(p);
 			}
 		}
-	};
-	for (const auto& d : modsDirs) {
+	}
+};
+
+} // namespace
+
+void MountModsDir() {
+	namespace fs = std::filesystem;
+	auto rm = PortContext() ? PortContext()->GetResourceManager() : nullptr;
+	if (!rm) return;
+	auto am = rm->GetArchiveManager();
+	if (!am) return;
+
+	const std::vector<fs::path> modsDirs = CollectModsDirs();
+	if (!AnyModsDirExists(modsDirs)) {
+		return;
+	}
+
+	ModMountScan scan;
+	scan.am = am;
+	scan.existing = ExistingArchivePaths(am);
+	for (const auto &d : modsDirs) {
 		std::error_code ec;
 		if (fs::is_directory(d, ec)) {
-			walk(d);
+			scan.Walk(d);
 		}
 	}
 
@@ -152,7 +179,7 @@ void MountModsDir() {
 	 * process start. Drop both; resources reload on demand and deblobbed
 	 * bundles re-synthesize with the override on the next scene load.
 	 * At boot this runs before anything is cached, so it is free. */
-	if (mounted_new) {
+	if (scan.mounted_new) {
 		if (auto resMgr = PortContext() ? PortContext()->GetResourceManager() : nullptr) {
 			resMgr->UnloadResources("*");
 		}

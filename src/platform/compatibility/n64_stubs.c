@@ -91,59 +91,74 @@ static s32 port_current_thread_id(void)
 	return (sPortCurrentThread != NULL) ? (s32)sPortCurrentThread->id : -1;
 }
 
-/* Called by PortPushFrame to resume all service thread coroutines
- * that have messages waiting in their blocked queues. */
-void port_resume_service_threads(void)
+#ifndef __SWITCH__
+static void port_resume_debug_dump(void)
 {
-	#ifndef __SWITCH__
-	if (sResumeDebugCount < 3) {
-		port_log( "SSB64: port_resume_service_threads: %d threads registered\n",
-		        (int)sServiceThreadCount);
-		for (s32 i = 0; i < sServiceThreadCount; i++) {
-			OSThread *t = sServiceThreads[i];
-			port_log( "  Thread %d: state=%d coroutine=%p finished=%d\n",
-			        (int)t->id, (int)t->state,
-			        t->port_coroutine,
-			        t->port_coroutine ? port_coroutine_is_finished((PortCoroutine *)t->port_coroutine) : -1);
-		}
-		sResumeDebugCount++;
+	if (sResumeDebugCount >= 3) return;
+	port_log( "SSB64: port_resume_service_threads: %d threads registered\n",
+	        (int)sServiceThreadCount);
+	for (s32 i = 0; i < sServiceThreadCount; i++) {
+		OSThread *t = sServiceThreads[i];
+		port_log( "  Thread %d: state=%d coroutine=%p finished=%d\n",
+		        (int)t->id, (int)t->state,
+		        t->port_coroutine,
+		        t->port_coroutine ? port_coroutine_is_finished((PortCoroutine *)t->port_coroutine) : -1);
 	}
-	#endif
+	sResumeDebugCount++;
+}
+#endif
 
-	/* Resume threads in priority order (higher priority first).
-	 * Simple bubble: scheduler(120) > controller(115) > audio(110) > game(50)
-	 *
-	 * Game-thread cap (kept as opt-in safety net, default OFF). The
-	 * original freeze-frame work assumed the cap was necessary — without
-	 * it, the resume loop could let the game thread catch up within the
-	 * same host frame and erase the visible freeze. Empirical retest
-	 * 2026-05-01 disproved this: the SP/DP deferral alone is sufficient
-	 * because slot release fires from `port_vi_simulate_vblank`, which
-	 * only runs once per host frame. The blocked game tic literally
-	 * cannot finish until the next host frame regardless of cap state.
-	 *
-	 * The cap was over-defensive and silently cost a frame of input
-	 * latency (game logic spread across multiple host frames instead of
-	 * completing within one), so the default is now 0. The env var stays
-	 * for diagnostics — set `SSB64_GAME_THREAD_CAP_RESUMES=1` to restore
-	 * the old behavior if a regression surfaces. */
+/* Game-thread cap (kept as opt-in safety net, default OFF). The
+ * original freeze-frame work assumed the cap was necessary — without
+ * it, the resume loop could let the game thread catch up within the
+ * same host frame and erase the visible freeze. Empirical retest
+ * 2026-05-01 disproved this: the SP/DP deferral alone is sufficient
+ * because slot release fires from `port_vi_simulate_vblank`, which
+ * only runs once per host frame. The blocked game tic literally
+ * cannot finish until the next host frame regardless of cap state.
+ *
+ * The cap was over-defensive and silently cost a frame of input
+ * latency (game logic spread across multiple host frames instead of
+ * completing within one), so the default is now 0. The env var stays
+ * for diagnostics — set `SSB64_GAME_THREAD_CAP_RESUMES=1` to restore
+ * the old behavior if a regression surfaces. */
+static int port_game_thread_cap(void)
+{
 	static int sGameThreadCapResumes = -1;
 	if (sGameThreadCapResumes < 0) {
 		const char *env = getenv("SSB64_GAME_THREAD_CAP_RESUMES");
 		sGameThreadCapResumes = (env != NULL) ? atoi(env) : 0;
 		if (sGameThreadCapResumes < 0) sGameThreadCapResumes = 0;
 		port_log("SSB64: GAME_THREAD_CAP_RESUMES=%d (0=disabled)\n",
-		         (int)sGameThreadCapResumes);
+		         sGameThreadCapResumes);
 	}
-	int game_thread_resumes_this_frame = 0;
+	return sGameThreadCapResumes;
+}
 
-	/* Resume in descending N64 priority, matching the comment above —
-	 * previously this iterated raw registration order. Rebuilt every
-	 * call so osSetThreadPri changes take effect; ≤16 entries, so an
-	 * insertion sort is free. */
-	s32 order[PORT_MAX_SERVICE_THREADS];
-	s32 order_n = sServiceThreadCount;
-	if (order_n > PORT_MAX_SERVICE_THREADS) order_n = PORT_MAX_SERVICE_THREADS;
+/* Returns nonzero when the game-thread (id=5) resume cap is engaged
+ * for `t` this round. Other threads run normally. */
+static int port_thread_cap_engaged(const OSThread *t, int cap, int resumes, int round)
+{
+	if (cap <= 0 || (int)t->id != 5 || resumes < cap) {
+		return 0;
+	}
+	if (getenv("SSB64_TRACE_SWITCH_CTX") != NULL) {
+		static int sCapHits = 0;
+		if (sCapHits < 5 || (sCapHits % 200) == 0) {
+			port_log("SSB64: game-thread cap engaged (hits=%d round=%d)\n",
+			         sCapHits, (int)round);
+		}
+		sCapHits++;
+	}
+	return 1;
+}
+
+/* Resume in descending N64 priority — scheduler(120) > controller(115)
+ * > audio(110) > game(50); previously this iterated raw registration
+ * order. Rebuilt every call so osSetThreadPri changes take effect;
+ * <=16 entries, so an insertion sort is free. */
+static void port_resume_sort_order(s32 *order, s32 order_n)
+{
 	for (s32 i = 0; i < order_n; i++) order[i] = i;
 	for (s32 i = 1; i < order_n; i++) {
 		s32 key = order[i];
@@ -156,6 +171,50 @@ void port_resume_service_threads(void)
 		}
 		order[j + 1] = key;
 	}
+}
+
+/* Resume one thread — it runs until it yields again at
+ * osRecvMesg(BLOCK) on an empty queue — then re-derive its state. */
+static void port_resume_one_thread(OSThread *t, int round)
+{
+	t->state = OS_STATE_RUNNING;
+	port_watchdog_note_resume_start((int)t->id);
+	{
+		OSThread *prev = sPortCurrentThread;
+		sPortCurrentThread = t;
+		port_coroutine_resume((PortCoroutine *)t->port_coroutine);
+		sPortCurrentThread = prev;
+	}
+	port_watchdog_note_resume_end((int)t->id);
+	if (port_coroutine_is_finished((PortCoroutine *)t->port_coroutine)) {
+		t->state = OS_STATE_STOPPED;
+	} else {
+		t->state = OS_STATE_WAITING;
+	}
+	#ifndef __SWITCH__
+	if (sResumeDebugCount <= 5) {
+		port_log("  round %d: resumed thread %d (finished=%d)\n",
+		         (int)round, (int)t->id,
+		         port_coroutine_is_finished((PortCoroutine *)t->port_coroutine));
+	}
+	#endif
+}
+
+/* Called by PortPushFrame to resume all service thread coroutines
+ * that have messages waiting in their blocked queues. */
+void port_resume_service_threads(void)
+{
+	#ifndef __SWITCH__
+	port_resume_debug_dump();
+	#endif
+
+	const int game_thread_cap = port_game_thread_cap();
+	int game_thread_resumes_this_frame = 0;
+
+	s32 order[PORT_MAX_SERVICE_THREADS];
+	s32 order_n = sServiceThreadCount;
+	if (order_n > PORT_MAX_SERVICE_THREADS) order_n = PORT_MAX_SERVICE_THREADS;
+	port_resume_sort_order(order, order_n);
 
 	for (s32 round = 0; round < 8; round++) {
 		s32 progress = 0;
@@ -165,46 +224,15 @@ void port_resume_service_threads(void)
 			if (port_coroutine_is_finished((PortCoroutine *)t->port_coroutine)) continue;
 			if (t->state != OS_STATE_WAITING) continue;
 
-			/* Cap the game thread (id=5) to N resumes per host frame.
-			 * Other threads (scheduler, controller, audio) run normally. */
-			if (sGameThreadCapResumes > 0 && (int)t->id == 5
-			    && game_thread_resumes_this_frame >= sGameThreadCapResumes) {
-				if (getenv("SSB64_TRACE_SWITCH_CTX") != NULL) {
-					static int sCapHits = 0;
-					if (sCapHits < 5 || (sCapHits % 200) == 0) {
-						port_log("SSB64: game-thread cap engaged (hits=%d round=%d)\n",
-						         (int)sCapHits, (int)round);
-					}
-					sCapHits++;
-				}
+			if (port_thread_cap_engaged(t, game_thread_cap,
+			                            game_thread_resumes_this_frame, (int)round)) {
 				continue;
 			}
 
-			/* Resume this thread — it will run until it yields again. */
-			t->state = OS_STATE_RUNNING;
-			port_watchdog_note_resume_start((int)t->id);
-			{
-				OSThread *prev = sPortCurrentThread;
-				sPortCurrentThread = t;
-				port_coroutine_resume((PortCoroutine *)t->port_coroutine);
-				sPortCurrentThread = prev;
-			}
-			port_watchdog_note_resume_end((int)t->id);
-			if (port_coroutine_is_finished((PortCoroutine *)t->port_coroutine)) {
-				t->state = OS_STATE_STOPPED;
-			} else {
-				t->state = OS_STATE_WAITING;
-			}
+			port_resume_one_thread(t, (int)round);
 			if ((int)t->id == 5) {
 				game_thread_resumes_this_frame++;
 			}
-			#ifndef __SWITCH__
-			if (sResumeDebugCount <= 5) {
-				port_log("  round %d: resumed thread %d (finished=%d)\n",
-				         (int)round, (int)t->id,
-				         port_coroutine_is_finished((PortCoroutine *)t->port_coroutine));
-			}
-			#endif
 			progress = 1;
 		}
 		if (!progress) {
@@ -256,7 +284,13 @@ void osStartThread(OSThread *t)
 		OSThread *prev = sPortCurrentThread;
 		sPortCurrentThread = t;
 		t->state = OS_STATE_RUNNING;
+#ifdef __EMSCRIPTEN__
+		fprintf(stderr, "OSTR resume-enter id=%d\n", (int)t->id);
+#endif
 		port_coroutine_resume((PortCoroutine *)t->port_coroutine);
+#ifdef __EMSCRIPTEN__
+		fprintf(stderr, "OSTR resume-exit id=%d\n", (int)t->id);
+#endif
 		sPortCurrentThread = prev;
 		if (port_coroutine_is_finished((PortCoroutine *)t->port_coroutine)) {
 			t->state = OS_STATE_STOPPED;
@@ -341,8 +375,18 @@ static void port_mesg_warn_no_coroutine(const char *func, OSMesgQueue *mq)
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+extern OSMesgQueue gSYSchedulerTaskMesgQueue;
+extern void emscripten_errf(const char *fmt, ...);
+#endif
+
 s32 osSendMesg(OSMesgQueue *mq, OSMesg msg, s32 flag)
 {
+#ifdef __EMSCRIPTEN__
+	if (mq == &gSYSchedulerTaskMesgQueue) {
+		emscripten_errf("MQSEND msg=%p tid=%d", msg, (int)port_current_thread_id());
+	}
+#endif
 	if (mq->validCount >= mq->msgCount) {
 		if (flag == OS_MESG_NOBLOCK) {
 			return -1;
@@ -418,8 +462,26 @@ s32 osRecvMesg(OSMesgQueue *mq, OSMesg *msg, s32 flag)
 	return 0;
 }
 
+/* Send an integer interrupt code through the decomp's raw `void*`
+ * OSMesg ABI. C++ callers must NOT pass libultraship's OSMesg union to
+ * osSendMesg directly: on wasm32 clang marshals union arguments byval
+ * (hidden pointer to a caller-side temp), while this stub's decomp-typed
+ * osSendMesg expects the raw word — the callee then receives a stack
+ * address instead of the code. That is exactly how the INTR_VRETRACE
+ * post delivered a fake "task" pointer to the scheduler, which then
+ * crashed calling its bogus fnCheck (table index out of bounds). */
+s32 port_os_send_mesg_code(OSMesgQueue *mq, u32 code, s32 flag)
+{
+	return osSendMesg(mq, (OSMesg)(uintptr_t)code, flag);
+}
+
 s32 osJamMesg(OSMesgQueue *mq, OSMesg msg, s32 flag)
 {
+#ifdef __EMSCRIPTEN__
+	if (mq == &gSYSchedulerTaskMesgQueue) {
+		emscripten_errf("MQJAM msg=%p tid=%d", msg, (int)port_current_thread_id());
+	}
+#endif
 	if (mq->validCount >= mq->msgCount) {
 		if (flag == OS_MESG_NOBLOCK) {
 			return -1;
@@ -664,6 +726,41 @@ static s32 sTaskGoCount = 0;
  * Counters declared at top of file alongside FB rotation state.
  */
 
+/* Resolve the SP_TASK_DONE / DP_FULL_SYNC deferral in VI periods.
+ *
+ * Phase 3: N is selected per-DL by the cost model in
+ * port/gameloop.cpp:port_get_last_dl_defer_n() -- light DLs return
+ * N=1 (no contention, smooth play); heavy climax DLs (Yoshi tongue,
+ * Samus grapple, DK smash) return N=2 (slot release lags by one
+ * extra VI, SwitchContext blocks, game-thread cap holds the host
+ * frame, screen visibly freezes for one frame).
+ *
+ * Old SSB64_GFX_DEFER_VI env var still works as an override --
+ * setting it forces a fixed N regardless of cost. Default = use
+ * the cost model. */
+static int sptask_resolve_defer_n(const OSTask *tp)
+{
+	extern int port_get_last_dl_defer_n(void);
+	if (sPortGfxDeferN < 0) {
+		const char *env = getenv("SSB64_GFX_DEFER_VI");
+		sPortGfxDeferN = (env != NULL) ? atoi(env) : 0;  /* 0 = use cost model */
+		if (sPortGfxDeferN < 0) sPortGfxDeferN = 0;
+		if (sPortGfxDeferN > PORT_GFX_DEFER_MAX - 1) sPortGfxDeferN = PORT_GFX_DEFER_MAX - 1;
+	}
+	if (sPortGfxDeferN >= 1) {
+		return sPortGfxDeferN;
+	}
+	if (tp->t.type == M_GFXTASK) {
+		int defer_n = port_get_last_dl_defer_n();
+		if (defer_n < 1) defer_n = 1;
+		if (defer_n > PORT_GFX_DEFER_MAX - 1) defer_n = PORT_GFX_DEFER_MAX - 1;
+		return defer_n;
+	}
+	/* Non-gfx tasks (audio): fixed 1-VI latency -- the DL cost model
+	 * only describes RDP work of the most recent gfx task. */
+	return 1;
+}
+
 void osSpTaskStartGo(OSTask *tp)
 {
 	sTaskGoCount++;
@@ -682,37 +779,8 @@ void osSpTaskStartGo(OSTask *tp)
 		port_submit_display_list((void *)tp->t.data_ptr);
 	}
 
-	/* Defer SP_TASK_DONE / DP_FULL_SYNC by N VI periods.
-	 *
-	 * Phase 3: N is selected per-DL by the cost model in
-	 * port/gameloop.cpp:port_get_last_dl_defer_n() — light DLs return
-	 * N=1 (no contention, smooth play); heavy climax DLs (Yoshi tongue,
-	 * Samus grapple, DK smash) return N=2 (slot release lags by one
-	 * extra VI, SwitchContext blocks, game-thread cap holds the host
-	 * frame, screen visibly freezes for one frame).
-	 *
-	 * Old SSB64_GFX_DEFER_VI env var still works as an override —
-	 * setting it forces a fixed N regardless of cost. Default = use
-	 * the cost model. */
-	extern int port_get_last_dl_defer_n(void);
-	int defer_n;
-	if (sPortGfxDeferN < 0) {
-		const char *env = getenv("SSB64_GFX_DEFER_VI");
-		sPortGfxDeferN = (env != NULL) ? atoi(env) : 0;  /* 0 = use cost model */
-		if (sPortGfxDeferN < 0) sPortGfxDeferN = 0;
-		if (sPortGfxDeferN > PORT_GFX_DEFER_MAX - 1) sPortGfxDeferN = PORT_GFX_DEFER_MAX - 1;
-	}
-	if (sPortGfxDeferN >= 1) {
-		defer_n = sPortGfxDeferN;
-	} else if (tp->t.type == M_GFXTASK) {
-		defer_n = port_get_last_dl_defer_n();
-		if (defer_n < 1) defer_n = 1;
-		if (defer_n > PORT_GFX_DEFER_MAX - 1) defer_n = PORT_GFX_DEFER_MAX - 1;
-	} else {
-		/* Non-gfx tasks (audio): fixed 1-VI latency — the DL cost model
-		 * only describes RDP work of the most recent gfx task. */
-		defer_n = 1;
-	}
+	const int defer_n = sptask_resolve_defer_n(tp);
+
 	sPortPendingSPInts[defer_n]++;
 	/* DP_FULL_SYNC is an RDP interrupt — only graphics tasks generate it.
 	 * Audio (and other) RSP tasks only produce SP_TASK_DONE. Posting a

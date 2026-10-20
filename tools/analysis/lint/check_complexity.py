@@ -32,6 +32,75 @@ SCAN_DIRS = ["src", "include", "platforms", "tools", "services", "mods"]
 CCN_LIMIT = 15
 NLOC_LIMIT = 100
 
+# Violation priority by subsystem (AUD follow-up): a bare global count
+# hides where the debt is dangerous. Ordered — first matching prefix wins.
+#   P0  determinism, memory safety, corruption: decomp↔port relocation,
+#       rollback, coroutines, persistence/save, release/update integrity
+#   P1  netplay/session, application composition, remaining engine glue
+#   P2  presentation, rendering, audio, input, observability, modding
+#   P3  offline tooling, platform wrappers, mods, tests
+PRIORITY_RULES = [
+    ("P0", (
+        "src/game/engine/relocation/",
+        "src/game/engine/decomp/",
+        "src/platform/coroutine/",
+        "src/persistence/",
+        "src/networking/netplay/rollback/",
+        "src/networking/netplay/domain/",
+        "src/application/update/integrity/",
+    )),
+    ("P1", (
+        "src/networking/",
+        "src/application/",
+        "src/game/engine/",
+        "src/platform/",
+    )),
+    ("P2", (
+        "src/presentation/",
+        "src/rendering/",
+        "src/audio/",
+        "src/input/",
+        "src/observability/",
+        "src/config/",
+        "src/i18n/",
+        "src/game/gameplay/",
+        "src/game/modding/",
+        "src/shared/",
+        "include/",
+    )),
+    ("P3", (
+        "tools/",
+        "mods/",
+        "tests/",
+        "platforms/",
+        "services/",
+    )),
+]
+
+
+def classify(path: str) -> str:
+    for prio, prefixes in PRIORITY_RULES:
+        if path.startswith(prefixes):
+            return prio
+    return "P2"  # unclassified src/ leaf — presentational by default
+
+
+def priority_summary(violations: dict[str, list[tuple[str, int, int]]]) -> str:
+    """Per-class violation counts + worst function per class."""
+    per: dict[str, list[tuple[str, str, int, int]]] = {}
+    for path, fns in violations.items():
+        for func, ccn, nloc in fns:
+            per.setdefault(classify(path), []).append((path, func, ccn, nloc))
+    lines = []
+    for prio in ("P0", "P1", "P2", "P3"):
+        items = per.get(prio, [])
+        files = len({p for p, *_ in items})
+        worst = max(items, key=lambda x: (x[2], x[3]), default=None)
+        tail = (f"  worst: {worst[0]}::{worst[1]} CCN={worst[2]} NLOC={worst[3]}"
+                if worst else "")
+        lines.append(f"  {prio}: {len(items)} violation(s) in {files} file(s){tail}")
+    return "\n".join(lines)
+
 
 def lizard_exe() -> str:
     exe = shutil.which("lizard")
@@ -95,8 +164,10 @@ def main() -> int:
     if args.report:
         for path in sorted(violations):
             for func, ccn, nloc in violations[path]:
-                print(f"{path}: {func}  CCN={ccn} NLOC={nloc}")
+                print(f"{path}: {func}  CCN={ccn} NLOC={nloc}  [{classify(path)}]")
         print(f"{total} violation(s) in {len(violations)} file(s)")
+        print("by priority:")
+        print(priority_summary(violations))
 
     if args.update:
         lines = [f"{p} {len(v)}" for p, v in sorted(violations.items())]
@@ -131,6 +202,8 @@ def main() -> int:
               "run --update and justify it in review.")
         return 1
     print(f"complexity ratchet OK: {total} violation(s), all within baseline quotas")
+    print("by priority:")
+    print(priority_summary(violations))
     return 0
 
 

@@ -14,15 +14,28 @@
 #include "RelocFileTable.h"
 #include "ssb64_reloc_rebuild.h"
 
+#include <cstring>
+#include <algorithm>
 #include <cstdint>
+#include <deque>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+
+#include <ship/Context.h>
+#include <ship/resource/ResourceManager.h>
 #include <ship/resource/archive/Archive.h>
+#include <ship/resource/archive/ArchiveManager.h>
+#include <ship/resource/type/Blob.h>
+#include <ship/utils/StrHash64.h>
 #include <fast/resource/type/DisplayList.h>
+#include <fast/resource/type/Texture.h>
+#include <fast/resource/type/Vertex.h>
 
 constexpr uint8_t kOTRGSetTImgHash = 0x20;
 constexpr uint8_t kOTRGDlHash = 0x31;

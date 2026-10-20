@@ -25,7 +25,8 @@ BASELINE = ROOT / "config" / "file-size-baseline.txt"
 SCAN_DIRS = ["src", "include", "platforms", "tools", "services", "mods"]
 EXTENSIONS = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx",
               ".mjs", ".js", ".py", ".ps1", ".sh", ".bat"}
-SKIP_PARTS = {"node_modules", "__pycache__", ".venv-lint", "build", "out"}
+SKIP_PARTS = {"node_modules", "__pycache__", ".venv-lint", "build", "out",
+              ".wrangler"}
 SIZE_LIMIT = 1000
 
 

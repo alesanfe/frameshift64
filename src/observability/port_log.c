@@ -273,43 +273,134 @@ void port_log_ex(port_log_level level, const char *category, const char *fmt, ..
 	}
 }
 
-void port_log_write(port_log_level level, const char *category, const char *msg, int n)
+/* Non-INFO records carry a textual [level/cat] prefix in the plain log
+ * so grep still finds them without the JSONL mirror. */
+static size_t port_log_format_record(port_log_level level, const char *category,
+                                     const char *msg, size_t len,
+                                     char *pbuf, size_t pbuf_size, const char **out)
 {
-	/* Format once, feed three taps: plain log, JSONL mirror, sinks.
-	 * Non-INFO records carry a textual [level/cat] prefix in the plain
-	 * log so grep still finds them without the JSONL mirror. */
-	size_t len = ((size_t)n < 4096) ? (size_t)n : 4095;
-	char pbuf[4300];
-	const char *out = msg;
-	size_t olen = len;
-	if (level != PORT_LOG_INFO || (category != NULL && category[0])) {
-		int pn = snprintf(pbuf, sizeof(pbuf), "[%s%s%s] %.*s",
-		                  level_name(level),
-		                  (category != NULL && category[0] != '\0') ? "/" : "",
-		                  (category != NULL && category[0] != '\0') ? category : "",
-		                  (int)len, msg);
-		if (pn > 0) {
-			out = pbuf;
-			olen = ((size_t)pn < sizeof(pbuf)) ? (size_t)pn : sizeof(pbuf) - 1;
-		}
+	*out = msg;
+	if (level == PORT_LOG_INFO && (category == NULL || !category[0])) {
+		return len;
 	}
+	int pn = snprintf(pbuf, pbuf_size, "[%s%s%s] %.*s",
+	                  level_name(level),
+	                  (category != NULL && category[0] != '\0') ? "/" : "",
+	                  (category != NULL && category[0] != '\0') ? category : "",
+	                  (int)len, msg);
+	if (pn <= 0) {
+		return len;
+	}
+	*out = pbuf;
+	return ((size_t)pn < pbuf_size) ? (size_t)pn : pbuf_size - 1;
+}
 
 #ifdef __EMSCRIPTEN__
-	/* Inside an emscripten_fiber, ANY contended lock is fatal: the
-	 * main-thread futex wait is a synchronous busy-spin that never
-	 * yields to the event loop, and a lock held by a suspended context
-	 * (or briefly held by a pthread worker) parks the whole runtime.
-	 * Emit straight to the console through a raw JS import and queue
-	 * the line so the main context can persist it on the normal path. */
-	if (port_coroutine_in_coroutine()) {
-		char fline[FIBER_LOG_LINE];
-		int fl = snprintf(fline, sizeof(fline), "%.*s", (int)olen, out);
-		if (fl > 0) {
-			size_t fn = ((size_t)fl < sizeof(fline)) ? (size_t)fl
-			                                        : sizeof(fline) - 1;
-			emscripten_err(fline);
-			port_log_fiber_enqueue(fline, fn);
-		}
+/* Inside an emscripten_fiber, ANY contended lock is fatal: the
+ * main-thread futex wait is a synchronous busy-spin that never
+ * yields to the event loop, and a lock held by a suspended context
+ * (or briefly held by a pthread worker) parks the whole runtime.
+ * Emit straight to the console through a raw JS import and queue
+ * the line so the main context can persist it on the normal path.
+ * Returns 1 when the record was consumed on the fiber path. */
+static int port_log_fiber_emit(const char *out, size_t olen)
+{
+	if (!port_coroutine_in_coroutine()) {
+		return 0;
+	}
+	char fline[FIBER_LOG_LINE];
+	int fl = snprintf(fline, sizeof(fline), "%.*s", (int)olen, out);
+	if (fl > 0) {
+		size_t fn = ((size_t)fl < sizeof(fline)) ? (size_t)fl
+		                                        : sizeof(fline) - 1;
+		emscripten_err(fline);
+		port_log_fiber_enqueue(fline, fn);
+	}
+	return 1;
+}
+#endif
+
+/* Locked: write `out` to the plain log file. Every write is durable so
+ * crash-time reports (vectored handler, crash filter) survive process
+ * death — stdio buffering would otherwise silently drop them (observed:
+ * the exception section vanished mid-line on a heap-corruption kill).
+ * On Switch the SD card makes per-line fwrite+fflush prohibitive, so
+ * lines are batched into sLogBuffer instead. */
+static void port_log_write_file(FILE *f, const char *out, size_t olen)
+{
+	if (f == NULL) {
+		return;
+	}
+#ifdef __SWITCH__
+	/* vsnprintf returns the untruncated length — clamp so a too-long
+	 * line fills the buffer instead of overflowing the index. */
+	size_t remaining = sizeof(sLogBuffer) - sLogBufUsed;
+	size_t copy = (olen < remaining) ? olen : remaining;
+	memcpy(sLogBuffer + sLogBufUsed, out, copy);
+	sLogBufUsed += copy;
+	if (sLogBufUsed >= sizeof(sLogBuffer) * 3 / 4) {
+		fwrite(sLogBuffer, 1, sLogBufUsed, f);
+		sLogBufUsed = 0;
+	}
+#else
+	fwrite(out, 1, olen, f);
+	fflush(f);
+#endif
+}
+
+/* Locked: mirror the record to the JSONL log with redaction+escaping. */
+static void port_log_write_json(port_log_level level, const char *category,
+                                const char *msg, size_t len)
+{
+	if (sJsonFile == NULL) {
+		return;
+	}
+	char jline[4700];
+	char esc[4100];
+	char jmsg[4096];
+	/* Redact on a scratch copy — the plain log keeps the full text. */
+	size_t jml = (len < sizeof(jmsg)) ? len : sizeof(jmsg) - 1;
+	memcpy(jmsg, msg, jml);
+	jmsg[jml] = '\0';
+	json_redact(jmsg);
+	json_escape(esc, sizeof(esc), jmsg);
+	char cesc[160];
+	json_escape(cesc, sizeof(cesc), (category != NULL) ? category : "");
+	int jn = snprintf(jline, sizeof(jline),
+	                  "{\"t\":%llu,\"sid\":\"%s\",\"lvl\":\"%s\",\"cat\":%s,\"msg\":%s}\n",
+	                  log_now_ms() - sInitMs, sSessionId,
+	                  level_name(level), cesc, esc);
+	if (jn > 0) {
+		fwrite(jline, 1, ((size_t)jn < sizeof(jline)) ? (size_t)jn : sizeof(jline) - 1, sJsonFile);
+	}
+}
+
+/* Sinks run outside the lock (they may be slow) but must not recurse —
+ * a sink that calls port_log would re-enter forever. */
+static void port_log_sink_dispatch(port_log_level level, const char *category, const char *msg)
+{
+	port_log_sink_fn sink = sSink;
+	port_log_sink_ex_fn sink_ex = sSinkEx;
+	if ((sink == NULL && sink_ex == NULL) || sInSink) {
+		return;
+	}
+	sInSink = 1;
+	if (sink != NULL) sink(msg, sSinkUser);
+	if (sink_ex != NULL) sink_ex(level, category, msg, sSinkExUser);
+	sInSink = 0;
+}
+
+void port_log_write(port_log_level level, const char *category, const char *msg, int n)
+{
+	/* Format once, feed three taps: plain log, JSONL mirror, sinks. */
+	size_t len = ((size_t)n < 4096) ? (size_t)n : 4095;
+	char pbuf[4300];
+	const char *out;
+	size_t olen = port_log_format_record(level, category, msg, len,
+	                                     pbuf, sizeof(pbuf), &out);
+
+#ifdef __EMSCRIPTEN__
+	if (port_log_fiber_emit(out, olen)) {
 		return;
 	}
 #endif
@@ -328,63 +419,15 @@ void port_log_write(port_log_level level, const char *category, const char *msg,
 		fflush(stderr);
 	}
 #endif
-	if (f != NULL) {
-#ifdef __SWITCH__
-		/* vsnprintf returns the untruncated length — clamp so a too-long
-		 * line fills the buffer instead of overflowing the index. */
-		size_t remaining = sizeof(sLogBuffer) - sLogBufUsed;
-		size_t copy = (olen < remaining) ? olen : remaining;
-		memcpy(sLogBuffer + sLogBufUsed, out, copy);
-		sLogBufUsed += copy;
-		if (sLogBufUsed >= sizeof(sLogBuffer) * 3 / 4) {
-			fwrite(sLogBuffer, 1, sLogBufUsed, f);
-			sLogBufUsed = 0;
-		}
-#else
-		fwrite(out, 1, olen, f);
-		/* Header contract: every write is durable so crash-time reports
-		 * (vectored handler, crash filter) survive process death. stdio
-		 * buffering would otherwise silently drop them — observed: the
-		 * exception section vanished mid-line on a heap-corruption kill. */
-		fflush(f);
-#endif
-	}
-	if (sJsonFile != NULL) {
-		char jline[4700];
-		char esc[4100];
-		char jmsg[4096];
-		/* Redact on a scratch copy — the plain log keeps the full text. */
-		size_t jml = (len < sizeof(jmsg)) ? len : sizeof(jmsg) - 1;
-		memcpy(jmsg, msg, jml);
-		jmsg[jml] = '\0';
-		json_redact(jmsg);
-		json_escape(esc, sizeof(esc), jmsg);
-		char cesc[160];
-		json_escape(cesc, sizeof(cesc), (category != NULL) ? category : "");
-		int jn = snprintf(jline, sizeof(jline),
-		                  "{\"t\":%llu,\"sid\":\"%s\",\"lvl\":\"%s\",\"cat\":%s,\"msg\":%s}\n",
-		                  log_now_ms() - sInitMs, sSessionId,
-		                  level_name(level), cesc, esc);
-		if (jn > 0) {
-			fwrite(jline, 1, ((size_t)jn < sizeof(jline)) ? (size_t)jn : sizeof(jline) - 1, sJsonFile);
-		}
-	}
+	port_log_write_file(f, out, olen);
+	port_log_write_json(level, category, msg, len);
 	LOG_UNLOCK();
 	/* fflush on every call costs seconds per frame on a slow drive when
 	 * figatree watchdogs fire 28x per frame during a stuck APPEAR. Rely on
 	 * stdio's buffer + OS-on-exit flush for normal logging; crash dumps
 	 * have their own flush path. */
 
-	/* Sinks run outside the lock (they may be slow) but must not recurse —
-	 * a sink that calls port_log would re-enter forever. */
-	port_log_sink_fn sink = sSink;
-	port_log_sink_ex_fn sink_ex = sSinkEx;
-	if ((sink != NULL || sink_ex != NULL) && !sInSink) {
-		sInSink = 1;
-		if (sink != NULL) sink(msg, sSinkUser);
-		if (sink_ex != NULL) sink_ex(level, category, msg, sSinkExUser);
-		sInSink = 0;
-	}
+	port_log_sink_dispatch(level, category, msg);
 }
 
 #ifdef __EMSCRIPTEN__

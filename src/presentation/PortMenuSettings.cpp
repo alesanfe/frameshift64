@@ -50,15 +50,8 @@
 #include <filesystem>
 
 
-/* Navigation globals owned by Menu.cpp — a "Go to" row writes them and the
- * menu's draw path jumps to the owning sidebar, scrolls the target into
- * view and flashes an accent outline (one frame, ~1.5 s TTL). */
-namespace Ship {
-extern bool navigateToWidget;
-extern std::string navigateMainEntry;
-extern std::string navigateSidebar;
-extern std::string navigateWidgetName;
-}
+/* Navigation globals owned by Menu.cpp — declared in Menu_internal.h. */
+#include "Menu_internal.h"
 
 namespace ssb64 {
 
@@ -226,39 +219,48 @@ namespace {
 /* "Modified" sidebar: true when a CVar-bound widget's live value
  * differs from its declared default — same type coverage as
  * ResetSectionCvars in Menu.cpp. */
+using NonDefaultCheckFn = bool (*)(const WidgetInfo&);
+static const std::pair<WidgetType, NonDefaultCheckFn> kNonDefaultChecks[] = {
+    { WIDGET_CVAR_CHECKBOX, [](const WidgetInfo& w) {
+        return CVarGetInteger(w.cVar, 0) !=
+            (std::static_pointer_cast<CheckboxOptions>(w.options)->defaultValue ? 1 : 0); } },
+    { WIDGET_CVAR_COMBOBOX, [](const WidgetInfo& w) {
+        return CVarGetInteger(w.cVar, 0) !=
+            static_cast<int32_t>(std::static_pointer_cast<ComboboxOptions>(w.options)->defaultIndex); } },
+    { WIDGET_AUDIO_BACKEND, [](const WidgetInfo& w) {
+        return CVarGetInteger(w.cVar, 0) !=
+            static_cast<int32_t>(std::static_pointer_cast<ComboboxOptions>(w.options)->defaultIndex); } },
+    { WIDGET_VIDEO_BACKEND, [](const WidgetInfo& w) {
+        return CVarGetInteger(w.cVar, 0) !=
+            static_cast<int32_t>(std::static_pointer_cast<ComboboxOptions>(w.options)->defaultIndex); } },
+    { WIDGET_CVAR_SLIDER_INT, [](const WidgetInfo& w) {
+        return CVarGetInteger(w.cVar, 0) !=
+            std::static_pointer_cast<IntSliderOptions>(w.options)->defaultValue; } },
+    { WIDGET_CVAR_SLIDER_FLOAT, [](const WidgetInfo& w) {
+        return CVarGetFloat(w.cVar, 0.0f) !=
+            std::static_pointer_cast<FloatSliderOptions>(w.options)->defaultValue; } },
+    { WIDGET_CVAR_BTN_SELECTOR, [](const WidgetInfo& w) {
+        return CVarGetInteger(w.cVar, 0) !=
+            std::static_pointer_cast<BtnSelectorOptions>(w.options)->defaultValue; } },
+    { WIDGET_CVAR_INPUT, [](const WidgetInfo& w) {
+        return std::string(CVarGetString(w.cVar, "")) !=
+            std::static_pointer_cast<InputOptions>(w.options)->defaultValue; } },
+    { WIDGET_CVAR_COLOR_PICKER, [](const WidgetInfo& w) {
+        const Color_RGBA8 d = std::static_pointer_cast<ColorPickerOptions>(w.options)->defaultValue;
+        const Color_RGBA8 c = CVarGetColor(w.cVar, d);
+        return !(c.r == d.r && c.g == d.g && c.b == d.b && c.a == d.a); } },
+};
+
 static bool WidgetIsNonDefault(const WidgetInfo& w) {
     if (w.cVar == nullptr || w.cVar[0] == '\0' || w.options == nullptr) {
         return false;
     }
-    switch (w.type) {
-        case WIDGET_CVAR_CHECKBOX:
-            return CVarGetInteger(w.cVar, 0) !=
-                   (std::static_pointer_cast<CheckboxOptions>(w.options)->defaultValue ? 1 : 0);
-        case WIDGET_CVAR_COMBOBOX:
-        case WIDGET_AUDIO_BACKEND:
-        case WIDGET_VIDEO_BACKEND:
-            return CVarGetInteger(w.cVar, 0) !=
-                   static_cast<int32_t>(std::static_pointer_cast<ComboboxOptions>(w.options)->defaultIndex);
-        case WIDGET_CVAR_SLIDER_INT:
-            return CVarGetInteger(w.cVar, 0) !=
-                   std::static_pointer_cast<IntSliderOptions>(w.options)->defaultValue;
-        case WIDGET_CVAR_SLIDER_FLOAT:
-            return CVarGetFloat(w.cVar, 0.0f) !=
-                   std::static_pointer_cast<FloatSliderOptions>(w.options)->defaultValue;
-        case WIDGET_CVAR_BTN_SELECTOR:
-            return CVarGetInteger(w.cVar, 0) !=
-                   std::static_pointer_cast<BtnSelectorOptions>(w.options)->defaultValue;
-        case WIDGET_CVAR_INPUT:
-            return std::string(CVarGetString(w.cVar, "")) !=
-                   std::static_pointer_cast<InputOptions>(w.options)->defaultValue;
-        case WIDGET_CVAR_COLOR_PICKER: {
-            const Color_RGBA8 d = std::static_pointer_cast<ColorPickerOptions>(w.options)->defaultValue;
-            const Color_RGBA8 c = CVarGetColor(w.cVar, d);
-            return !(c.r == d.r && c.g == d.g && c.b == d.b && c.a == d.a);
+    for (const auto& [type, check] : kNonDefaultChecks) {
+        if (type == w.type) {
+            return check(w);
         }
-        default:
-            return false;
     }
+    return false;
 }
 
 /* Live CVar value of a widget, formatted for the "Modified" audit list -

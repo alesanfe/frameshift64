@@ -130,6 +130,10 @@ class Menu : public GuiWindow {
      * window needs a rebuild) — pushed style state is balanced inside. */
     void SyncFrameEnvironment();
     void ApplyPopoutTransition(ElementFrame& f, bool canPopout, ImGuiWindowFlags& windowFlags);
+    void ResolveMenuFonts(ElementFrame& f);
+    void UpdatePendingNavigation();
+    void PushMenuThemeColors(ElementFrame& f);
+    void PersistPopoutGeometry(ElementFrame& f);
     bool BeginElement(ElementFrame& f);
     void DrawElementHeader(ElementFrame& f);
     void DrawHeaderActions(ElementFrame& f);
@@ -144,6 +148,8 @@ class Menu : public GuiWindow {
     void DrawSectionColumns(ElementFrame& f, float columnWidth);
     void DrawSectionRestoreRow(ElementFrame& f);
     void DrawElementFooter(ElementFrame& f);
+    void DrawFooterHelpText();
+    void DrawFooterActionBar(ElementFrame& f);
     float DrawPendingRestartChip(ElementFrame& f, float leftClusterEndX, float hintLineY);
     const char* FooterHints(bool padNav, bool compactLayout, const char** compactOut);
 

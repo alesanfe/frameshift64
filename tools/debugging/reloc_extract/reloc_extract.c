@@ -37,6 +37,118 @@ static uint32_t read_be_u32(const uint8_t *p) {
            ((uint32_t)p[2] << 8)  |  (uint32_t)p[3];
 }
 
+static uint8_t *load_rom(const char *rom_path, long *out_sz) {
+    FILE *fp = fopen(rom_path, "rb");
+    if (!fp) {
+        fprintf(stderr, "error: cannot open ROM '%s'\n", rom_path);
+        return NULL;
+    }
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (sz <= 0) {
+        fprintf(stderr, "error: empty ROM\n");
+        fclose(fp);
+        return NULL;
+    }
+
+    uint8_t *rom = (uint8_t *)malloc((size_t)sz);
+    if (!rom) {
+        fprintf(stderr, "error: oom\n");
+        fclose(fp);
+        return NULL;
+    }
+    if (fread(rom, 1, (size_t)sz, fp) != (size_t)sz) {
+        fprintf(stderr, "error: short read\n");
+        free(rom);
+        fclose(fp);
+        return NULL;
+    }
+    fclose(fp);
+    *out_sz = sz;
+    return rom;
+}
+
+static int check_z64_magic(const uint8_t *rom) {
+    if (rom[0] == 0x80 && rom[1] == 0x37 && rom[2] == 0x12 && rom[3] == 0x40)
+        return 1;
+    fprintf(stderr, "error: not a z64 (big-endian) ROM (header: %02X %02X %02X %02X)\n",
+            rom[0], rom[1], rom[2], rom[3]);
+    return 0;
+}
+
+typedef struct {
+    uint32_t data_offset;
+    uint32_t next_data_offset;
+    uint16_t reloc_intern;
+    uint16_t reloc_extern;
+    uint32_t compressed_bytes;
+    uint32_t decompressed_bytes;
+    int      is_compressed;
+} RelocEntry;
+
+static int read_reloc_entry(const uint8_t *rom, long sz, uint32_t file_id, RelocEntry *e) {
+    /* --- Read this file's table entry and the next one --- */
+    size_t table_off = RELOC_TABLE_ROM_ADDR + (size_t)file_id * RELOC_TABLE_ENTRY_SIZE;
+    if (table_off + RELOC_TABLE_ENTRY_SIZE * 2 > (size_t)sz) {
+        fprintf(stderr, "error: ROM too small for table entry %u\n", file_id);
+        return 0;
+    }
+
+    const uint8_t *te = rom + table_off;
+    uint32_t first_word            = read_be_u32(te + 0);
+    e->is_compressed               = (first_word >> 31) != 0;
+    e->data_offset                 = first_word & 0x7FFFFFFFu;
+    e->reloc_intern                = read_be_u16(te + 4);
+    uint16_t compressed_words      = read_be_u16(te + 6);
+    e->reloc_extern                = read_be_u16(te + 8);
+    uint16_t decompressed_words    = read_be_u16(te + 10);
+
+    uint32_t next_first_word       = read_be_u32(te + 12);
+    e->next_data_offset            = next_first_word & 0x7FFFFFFFu;
+
+    e->compressed_bytes            = (uint32_t)compressed_words   * 4u;
+    e->decompressed_bytes          = (uint32_t)decompressed_words * 4u;
+    return 1;
+}
+
+static uint8_t *extract_file_data(const uint8_t *file_data, const RelocEntry *e,
+                                  uint32_t *out_bytes) {
+    uint8_t *out = (uint8_t *)malloc(e->decompressed_bytes);
+    if (!out) {
+        fprintf(stderr, "error: oom\n");
+        return NULL;
+    }
+    if (e->is_compressed) {
+        uint32_t result = vpk0_decode(file_data, e->compressed_bytes,
+                                      out, e->decompressed_bytes);
+        if (result == 0) {
+            fprintf(stderr, "error: VPK0 decode failed\n");
+            free(out);
+            return NULL;
+        }
+    } else {
+        memcpy(out, file_data, e->decompressed_bytes);
+    }
+    *out_bytes = e->decompressed_bytes;
+    return out;
+}
+
+static int write_output(const char *out_path, const uint8_t *out, uint32_t out_bytes) {
+    FILE *of = fopen(out_path, "wb");
+    if (!of) {
+        fprintf(stderr, "error: cannot open output '%s'\n", out_path);
+        return 0;
+    }
+    if (fwrite(out, 1, out_bytes, of) != out_bytes) {
+        fprintf(stderr, "error: short write\n");
+        fclose(of);
+        return 0;
+    }
+    fclose(of);
+    return 1;
+}
+
 int main(int argc, char **argv) {
     if (argc != 4) {
         fprintf(stderr, "usage: %s <baserom.z64> <file_id> <output.bin>\n", argv[0]);
@@ -54,76 +166,33 @@ int main(int argc, char **argv) {
     }
 
     /* --- Load ROM --- */
-    FILE *fp = fopen(rom_path, "rb");
-    if (!fp) {
-        fprintf(stderr, "error: cannot open ROM '%s'\n", rom_path);
-        return 1;
-    }
-    fseek(fp, 0, SEEK_END);
-    long sz = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    if (sz <= 0) {
-        fprintf(stderr, "error: empty ROM\n");
-        fclose(fp);
-        return 1;
-    }
-
-    uint8_t *rom = (uint8_t *)malloc((size_t)sz);
-    if (!rom) {
-        fprintf(stderr, "error: oom\n");
-        fclose(fp);
-        return 1;
-    }
-    if (fread(rom, 1, (size_t)sz, fp) != (size_t)sz) {
-        fprintf(stderr, "error: short read\n");
-        free(rom);
-        fclose(fp);
-        return 1;
-    }
-    fclose(fp);
+    long sz = 0;
+    uint8_t *rom = load_rom(rom_path, &sz);
+    if (!rom) return 1;
 
     /* z64 magic check */
-    if (!(rom[0] == 0x80 && rom[1] == 0x37 && rom[2] == 0x12 && rom[3] == 0x40)) {
-        fprintf(stderr, "error: not a z64 (big-endian) ROM (header: %02X %02X %02X %02X)\n",
-                rom[0], rom[1], rom[2], rom[3]);
+    if (!check_z64_magic(rom)) {
         free(rom);
         return 1;
     }
 
-    /* --- Read this file's table entry and the next one --- */
-    size_t table_off = RELOC_TABLE_ROM_ADDR + (size_t)file_id * RELOC_TABLE_ENTRY_SIZE;
-    if (table_off + RELOC_TABLE_ENTRY_SIZE * 2 > (size_t)sz) {
-        fprintf(stderr, "error: ROM too small for table entry %u\n", file_id);
+    RelocEntry e;
+    if (!read_reloc_entry(rom, sz, file_id, &e)) {
         free(rom);
         return 1;
     }
-
-    const uint8_t *te = rom + table_off;
-    uint32_t first_word            = read_be_u32(te + 0);
-    int      is_compressed         = (first_word >> 31) != 0;
-    uint32_t data_offset           = first_word & 0x7FFFFFFFu;
-    uint16_t reloc_intern          = read_be_u16(te + 4);
-    uint16_t compressed_words      = read_be_u16(te + 6);
-    uint16_t reloc_extern          = read_be_u16(te + 8);
-    uint16_t decompressed_words    = read_be_u16(te + 10);
-
-    uint32_t next_first_word       = read_be_u32(te + 12);
-    uint32_t next_data_offset      = next_first_word & 0x7FFFFFFFu;
-
-    uint32_t compressed_bytes      = (uint32_t)compressed_words   * 4u;
-    uint32_t decompressed_bytes    = (uint32_t)decompressed_words * 4u;
 
     fprintf(stderr,
             "file_id=%u  compressed=%d  data_offset=0x%X  "
             "reloc_intern=0x%04X  reloc_extern=0x%04X  "
             "comp_bytes=%u  decomp_bytes=%u\n",
-            file_id, is_compressed, data_offset,
-            reloc_intern, reloc_extern,
-            compressed_bytes, decompressed_bytes);
+            file_id, e.is_compressed, e.data_offset,
+            e.reloc_intern, e.reloc_extern,
+            e.compressed_bytes, e.decompressed_bytes);
 
     /* --- Locate ROM data --- */
-    size_t data_rom_addr = RELOC_DATA_START + data_offset;
-    if (data_rom_addr + compressed_bytes > (size_t)sz) {
+    size_t data_rom_addr = RELOC_DATA_START + e.data_offset;
+    if (data_rom_addr + e.compressed_bytes > (size_t)sz) {
         fprintf(stderr, "error: ROM too small for file data\n");
         free(rom);
         return 1;
@@ -131,55 +200,22 @@ int main(int argc, char **argv) {
     const uint8_t *file_data = rom + data_rom_addr;
 
     fprintf(stderr, "data_rom_addr=0x%zX (RELOC_DATA_START=0x%X + offset=0x%X)\n",
-            data_rom_addr, (unsigned)RELOC_DATA_START, data_offset);
+            data_rom_addr, (unsigned)RELOC_DATA_START, e.data_offset);
 
     /* --- Decompress / copy --- */
-    uint8_t *out;
-    uint32_t out_bytes;
-
-    if (is_compressed) {
-        out = (uint8_t *)malloc(decompressed_bytes);
-        if (!out) {
-            fprintf(stderr, "error: oom\n");
-            free(rom);
-            return 1;
-        }
-        uint32_t result = vpk0_decode(file_data, compressed_bytes,
-                                      out, decompressed_bytes);
-        if (result == 0) {
-            fprintf(stderr, "error: VPK0 decode failed\n");
-            free(out);
-            free(rom);
-            return 1;
-        }
-        out_bytes = decompressed_bytes;
-    } else {
-        out = (uint8_t *)malloc(decompressed_bytes);
-        if (!out) {
-            fprintf(stderr, "error: oom\n");
-            free(rom);
-            return 1;
-        }
-        memcpy(out, file_data, decompressed_bytes);
-        out_bytes = decompressed_bytes;
+    uint32_t out_bytes = 0;
+    uint8_t *out = extract_file_data(file_data, &e, &out_bytes);
+    if (!out) {
+        free(rom);
+        return 1;
     }
 
     /* --- Write output --- */
-    FILE *of = fopen(out_path, "wb");
-    if (!of) {
-        fprintf(stderr, "error: cannot open output '%s'\n", out_path);
+    if (!write_output(out_path, out, out_bytes)) {
         free(out);
         free(rom);
         return 1;
     }
-    if (fwrite(out, 1, out_bytes, of) != out_bytes) {
-        fprintf(stderr, "error: short write\n");
-        fclose(of);
-        free(out);
-        free(rom);
-        return 1;
-    }
-    fclose(of);
 
     fprintf(stderr, "wrote %u bytes to %s\n", out_bytes, out_path);
 

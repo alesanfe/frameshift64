@@ -16,28 +16,7 @@
 // Every failure cites its invariant (docs/deblob.md) and the diagnosis
 // command. SSB64_SYNTH_INSPECT=<id> dumps the build's decisions as JSON
 // shaped to diff against the generator manifest (the L2<->L5 gate).
-#include "SyntheticReloc.h"
 #include "synth_reloc_internal.h"
-
-#include <cstring>
-#include <algorithm>
-#include <deque>
-#include <filesystem>
-#include <functional>
-#include <mutex>
-#include <unordered_map>
-#include <vector>
-
-#include <spdlog/spdlog.h>
-
-#include <ship/Context.h>
-#include <ship/resource/ResourceManager.h>
-#include <ship/resource/archive/ArchiveManager.h>
-#include <ship/resource/type/Blob.h>
-#include <ship/utils/StrHash64.h>
-#include <fast/resource/type/DisplayList.h>
-#include <fast/resource/type/Texture.h>
-#include <fast/resource/type/Vertex.h>
 
 int portSyntheticRelocSelfTest()
 {

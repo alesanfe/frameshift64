@@ -13,27 +13,6 @@
  * status buffers, the relocate pipeline, and buffer getters live in
  * lbreloc_{status,loader,query}.cpp.
  */
-#include <ship/Context.h>
-#include <ship/resource/ResourceManager.h>
-#include <spdlog/spdlog.h>
-
-#include <algorithm>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <memory>
-#include <vector>
-
-#if defined(__unix__) || defined(__APPLE__)
-#include <unistd.h>  // _exit
-#endif
-
-#include "RelocFile.h"
-#include "RelocFileTable.h"
-#include "RelocPointerTable.h"
-#include "SyntheticReloc.h"
-#include "ssb64_reloc_rebuild.h"
-#include "lbreloc_byteswap.h"
 #include "lbreloc_bridge_internal.h"
 
 // // // // // // // // // // // //

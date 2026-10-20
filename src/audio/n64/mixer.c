@@ -239,53 +239,79 @@ void aSetLoopImpl(uintptr_t adpcm_loop_state) {
 /*  Scalar implementation from Starship.                              */
 /* ================================================================== */
 
+/* PORT: dump first ADPCM call to disk for offline reference comparison.
+ * Captures: book (rspa.adpcm_table), input bytes (DMEM at rspa.in), prior
+ * state (16 s16), flags, nbytes — all the inputs needed to reproduce the
+ * decode in a Python reference.  Output samples are written after the
+ * decode finishes.  Set SSB64_ADPCM_DUMP=1 to enable. */
+static void adpcm_dump_input(uint8_t flags, int nbytes, const uint8_t *in,
+                             const int16_t *state) {
+	static int dumped = -1;
+	if (dumped == -1) {
+		dumped = (getenv("SSB64_ADPCM_DUMP") && getenv("SSB64_ADPCM_DUMP")[0] == '1') ? 0 : -2;
+	}
+	if (dumped != 0) {
+		return;
+	}
+	dumped = 1;
+	FILE *f = fopen("/tmp/adpcm_dump.bin", "wb");
+	if (!f) {
+		return;
+	}
+	/* Header (32 bytes): magic 'ADPCMDP1', flags(u32), nbytes(s32),
+	 * in_offset(u16) [DMEM addr], out_offset(u16), reserved×16 */
+	fwrite("ADPCMDP1", 1, 8, f);
+	uint32_t fl = flags;            fwrite(&fl, 4, 1, f);
+	int32_t  nb = nbytes;           fwrite(&nb, 4, 1, f);
+	uint16_t in_o = rspa.in;        fwrite(&in_o, 2, 1, f);
+	uint16_t out_o = rspa.out;      fwrite(&out_o, 2, 1, f);
+	uint8_t pad[12] = {0};          fwrite(pad, 1, 12, f);
+	/* Codebook: 8 × 2 × 8 = 128 s16 = 256 bytes */
+	fwrite(rspa.adpcm_table, sizeof(int16_t), 8 * 2 * 8, f);
+	/* Loop state pointer (8 bytes) — write its content if non-NULL */
+	if (rspa.adpcm_loop_state) {
+		fwrite(rspa.adpcm_loop_state, sizeof(int16_t), 16, f);
+	} else {
+		int16_t zero[16] = {0};
+		fwrite(zero, sizeof(int16_t), 16, f);
+	}
+	/* Prior decoder state (16 s16) — what the impl will load */
+	fwrite(state, sizeof(int16_t), 16, f);
+	/* Input bytes from DMEM */
+	fwrite(in, 1, nbytes, f);
+	fclose(f);
+	port_log("SSB64 Audio: ADPCM dump → /tmp/adpcm_dump.bin (flags=0x%02x nbytes=%d in=0x%04x out=0x%04x)\n",
+	         (unsigned)flags, nbytes, (unsigned)rspa.in, (unsigned)rspa.out);
+}
+
+/* Append output samples to the dump file (only on first call). */
+static void adpcm_dump_output(const int16_t *out_base, const int16_t *out_end) {
+	static int output_dumped = 0;
+	if (output_dumped || !getenv("SSB64_ADPCM_DUMP") ||
+	    getenv("SSB64_ADPCM_DUMP")[0] != '1') {
+		return;
+	}
+	output_dumped = 1;
+	FILE *f = fopen("/tmp/adpcm_dump_output.bin", "wb");
+	if (!f) {
+		return;
+	}
+	/* Restart from rspa.out — total samples decoded =
+	 * 16 (initial state copy) + (nbytes_orig / 9) * 16 (per ADPCM frame).
+	 * Just write everything from rspa.out for the original nbytes_orig
+	 * worth of decoded samples. */
+	int decoded_samples = (int)(out_end - out_base);
+	fwrite(out_base, sizeof(int16_t), decoded_samples, f);
+	fclose(f);
+}
+
 void aADPCMdecImpl(uint8_t flags, int16_t *state) {
 	uint8_t *in = BUF_U8(rspa.in);
 	int16_t *out = BUF_S16(rspa.out);
 	int nbytes = ROUND_UP_32(rspa.nbytes);
 	int i, j, k;
 
-	/* PORT: dump first ADPCM call to disk for offline reference comparison.
-	 * Captures: book (rspa.adpcm_table), input bytes (DMEM at rspa.in), prior
-	 * state (16 s16), flags, nbytes — all the inputs needed to reproduce the
-	 * decode in a Python reference.  Output samples are written after the
-	 * decode finishes.  Set SSB64_ADPCM_DUMP=1 to enable. */
-	{
-		static int dumped = -1;
-		if (dumped == -1) {
-			dumped = (getenv("SSB64_ADPCM_DUMP") && getenv("SSB64_ADPCM_DUMP")[0] == '1') ? 0 : -2;
-		}
-		if (dumped == 0) {
-			dumped = 1;
-			FILE *f = fopen("/tmp/adpcm_dump.bin", "wb");
-			if (f) {
-				/* Header (32 bytes): magic 'ADPCMDP1', flags(u32), nbytes(s32),
-				 * in_offset(u16) [DMEM addr], out_offset(u16), reserved×16 */
-				fwrite("ADPCMDP1", 1, 8, f);
-				uint32_t fl = flags;            fwrite(&fl, 4, 1, f);
-				int32_t  nb = nbytes;           fwrite(&nb, 4, 1, f);
-				uint16_t in_o = rspa.in;        fwrite(&in_o, 2, 1, f);
-				uint16_t out_o = rspa.out;      fwrite(&out_o, 2, 1, f);
-				uint8_t pad[12] = {0};          fwrite(pad, 1, 12, f);
-				/* Codebook: 8 × 2 × 8 = 128 s16 = 256 bytes */
-				fwrite(rspa.adpcm_table, sizeof(int16_t), 8 * 2 * 8, f);
-				/* Loop state pointer (8 bytes) — write its content if non-NULL */
-				if (rspa.adpcm_loop_state) {
-					fwrite(rspa.adpcm_loop_state, sizeof(int16_t), 16, f);
-				} else {
-					int16_t zero[16] = {0};
-					fwrite(zero, sizeof(int16_t), 16, f);
-				}
-				/* Prior decoder state (16 s16) — what the impl will load */
-				fwrite(state, sizeof(int16_t), 16, f);
-				/* Input bytes from DMEM */
-				fwrite(in, 1, nbytes, f);
-				fclose(f);
-				port_log("SSB64 Audio: ADPCM dump → /tmp/adpcm_dump.bin (flags=0x%02x nbytes=%d in=0x%04x out=0x%04x)\n",
-				         (unsigned)flags, nbytes, (unsigned)rspa.in, (unsigned)rspa.out);
-			}
-		}
-	}
+	adpcm_dump_input(flags, nbytes, in, state);
 
 	if (flags & 0x01) { /* A_INIT */
 		memset(out, 0, 16 * sizeof(int16_t));
@@ -339,30 +365,55 @@ void aADPCMdecImpl(uint8_t flags, int16_t *state) {
 	}
 	memcpy(state, out - 16, 16 * sizeof(int16_t));
 
-	/* Append output samples to the dump file (only on first call). */
-	{
-		static int output_dumped = 0;
-		if (!output_dumped && getenv("SSB64_ADPCM_DUMP") && getenv("SSB64_ADPCM_DUMP")[0] == '1') {
-			output_dumped = 1;
-			FILE *f = fopen("/tmp/adpcm_dump_output.bin", "wb");
-			if (f) {
-				/* Restart from rspa.out — total samples decoded =
-				 * 16 (initial state copy) + (nbytes_orig / 9) * 16 (per ADPCM frame).
-				 * Just write everything from rspa.out for the original nbytes_orig
-				 * worth of decoded samples. */
-				int16_t *out_base = BUF_S16(rspa.out);
-				int decoded_samples = (int)(out - out_base);
-				fwrite(out_base, sizeof(int16_t), decoded_samples, f);
-				fclose(f);
-			}
-		}
-	}
+	adpcm_dump_output(BUF_S16(rspa.out), out);
 }
+
+
+
 
 /* ================================================================== */
 /*  A_RESAMPLE (opcode 5) — 4-tap interpolated resampling             */
 /*  Scalar implementation from Starship.                              */
 /* ================================================================== */
+
+/* PORT: dump first resample call to disk for offline reference comparison.
+ * Captures: flags, pitch, prior state (16 s16), DMEM contents around the
+ * input area (the resampler reads in[-4..nbytes/8+4] roughly), rspa.in/out/
+ * nbytes — enough for a Python reference to reproduce the math.
+ * Set SSB64_RESAMPLE_DUMP=1 to enable. */
+static void aResampleDumpInput(uint8_t flags, uint16_t pitch, int nbytes,
+                               const int16_t *state) {
+	static int dumped = -1;
+	if (dumped == -1) {
+		dumped = (getenv("SSB64_RESAMPLE_DUMP") &&
+		          getenv("SSB64_RESAMPLE_DUMP")[0] == '1') ? 0 : -2;
+	}
+	if (dumped != 0) {
+		return;
+	}
+	dumped = 1;
+	FILE *f = fopen("/tmp/resample_dump.bin", "wb");
+	if (f) {
+		/* Header (32 bytes): magic 'RSAMPDP1', flags(u32), pitch(u32),
+		 * nbytes(s32), in(u16), out(u16), reserved(12) */
+		fwrite("RSAMPDP1", 1, 8, f);
+		uint32_t fl = flags;          fwrite(&fl, 4, 1, f);
+		uint32_t pt = pitch;          fwrite(&pt, 4, 1, f);
+		int32_t  nb = nbytes;         fwrite(&nb, 4, 1, f);
+		uint16_t in_o = rspa.in;      fwrite(&in_o, 2, 1, f);
+		uint16_t out_o = rspa.out;    fwrite(&out_o, 2, 1, f);
+		uint8_t pad[10] = {0};        fwrite(pad, 1, 10, f);
+		/* Prior state: 16 s16 */
+		fwrite(state, sizeof(int16_t), 16, f);
+		/* Full DMEM (4 KB) — captures any input range the resampler
+		 * may touch including lookbehind / lookahead. */
+		fwrite(rspa.buf, 1, sizeof(rspa.buf), f);
+		fclose(f);
+		port_log("SSB64 Audio: resample dump → /tmp/resample_dump.bin (flags=0x%02x pitch=0x%04x nbytes=%d in=0x%04x out=0x%04x)\n",
+		         (unsigned)flags, (unsigned)pitch, nbytes,
+		         (unsigned)rspa.in, (unsigned)rspa.out);
+	}
+}
 
 void aResampleImpl(uint8_t flags, uint16_t pitch, int16_t *state) {
 	int16_t tmp[16];
@@ -375,42 +426,7 @@ void aResampleImpl(uint8_t flags, uint16_t pitch, int16_t *state) {
 	const int16_t *tbl;
 	int32_t sample;
 
-	/* PORT: dump first resample call to disk for offline reference comparison.
-	 * Captures: flags, pitch, prior state (16 s16), DMEM contents around the
-	 * input area (the resampler reads in[-4..nbytes/8+4] roughly), rspa.in/out/
-	 * nbytes — enough for a Python reference to reproduce the math.
-	 * Set SSB64_RESAMPLE_DUMP=1 to enable. */
-	{
-		static int dumped = -1;
-		if (dumped == -1) {
-			dumped = (getenv("SSB64_RESAMPLE_DUMP") &&
-			          getenv("SSB64_RESAMPLE_DUMP")[0] == '1') ? 0 : -2;
-		}
-		if (dumped == 0) {
-			dumped = 1;
-			FILE *f = fopen("/tmp/resample_dump.bin", "wb");
-			if (f) {
-				/* Header (32 bytes): magic 'RSAMPDP1', flags(u32), pitch(u32),
-				 * nbytes(s32), in(u16), out(u16), reserved(12) */
-				fwrite("RSAMPDP1", 1, 8, f);
-				uint32_t fl = flags;          fwrite(&fl, 4, 1, f);
-				uint32_t pt = pitch;          fwrite(&pt, 4, 1, f);
-				int32_t  nb = nbytes;         fwrite(&nb, 4, 1, f);
-				uint16_t in_o = rspa.in;      fwrite(&in_o, 2, 1, f);
-				uint16_t out_o = rspa.out;    fwrite(&out_o, 2, 1, f);
-				uint8_t pad[10] = {0};        fwrite(pad, 1, 10, f);
-				/* Prior state: 16 s16 */
-				fwrite(state, sizeof(int16_t), 16, f);
-				/* Full DMEM (4 KB) — captures any input range the resampler
-				 * may touch including lookbehind / lookahead. */
-				fwrite(rspa.buf, 1, sizeof(rspa.buf), f);
-				fclose(f);
-				port_log("SSB64 Audio: resample dump → /tmp/resample_dump.bin (flags=0x%02x pitch=0x%04x nbytes=%d in=0x%04x out=0x%04x)\n",
-				         (unsigned)flags, (unsigned)pitch, nbytes,
-				         (unsigned)rspa.in, (unsigned)rspa.out);
-			}
-		}
-	}
+	aResampleDumpInput(flags, pitch, nbytes, state);
 
 	if (flags & 0x01) { /* A_INIT */
 		memset(tmp, 0, 5 * sizeof(int16_t));

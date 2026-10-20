@@ -30,6 +30,45 @@ int InputTextResizeCallback(ImGuiInputTextCallbackData* data) {
     return 0;
 }
 
+namespace {
+
+/* Label drawn above (Left) or right-aligned-above (Right) before the
+ * input box, depending on the alignment/labelPosition combo. */
+void DrawInputLabel(const char* label, const std::string& value, float width,
+                    const InputOptions& options) {
+    ImVec2 labelSize = ImGui::CalcTextSize(label, NULL, true);
+    if (labelSize.x == 0) {
+        return;
+    }
+    if (options.alignment == ComponentAlignments::Left) {
+        if (options.labelPosition == LabelPositions::Above) {
+            ImGui::Text(label, *value.c_str());
+        }
+    } else if (options.alignment == ComponentAlignments::Right &&
+               options.labelPosition == LabelPositions::Above) {
+        ImGui::NewLine();
+        ImGui::SameLine(width - ImGui::CalcTextSize(label).x);
+        ImGui::Text(label, *value.c_str());
+    }
+}
+
+/* Hover tooltip on the finished group — error text wins over the
+ * disabled tooltip, which wins over the regular one. */
+void InputHoverTooltip(const InputOptions& options) {
+    if (options.hasError && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
+        !Ship_IsCStringEmpty(options.errorText)) {
+        ImGui::SetTooltip("%s", WrappedText(TR(options.errorText)).c_str());
+    } else if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
+               !Ship_IsCStringEmpty(options.disabledTooltip)) {
+        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
+    } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
+               !Ship_IsCStringEmpty(options.tooltip)) {
+        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
+    }
+}
+
+} // namespace
+
 bool InputString(const char* label, std::string* value, const InputOptions& options) {
     bool dirty = false;
     ImGui::PushID(label);
@@ -40,20 +79,7 @@ bool InputString(const char* label, std::string* value, const InputOptions& opti
         ImGui::PushStyleColor(ImGuiCol_Border, ColorValues.at(Colors::Red));
     }
     float width = (options.size == ImVec2(0, 0)) ? ImGui::GetContentRegionAvail().x : options.size.x;
-    ImVec2 labelSize = ImGui::CalcTextSize(label, NULL, true);
-    if (labelSize.x != 0) {
-        if (options.alignment == ComponentAlignments::Left) {
-            if (options.labelPosition == LabelPositions::Above) {
-                ImGui::Text(label, *value->c_str());
-            }
-        } else if (options.alignment == ComponentAlignments::Right) {
-            if (options.labelPosition == LabelPositions::Above) {
-                ImGui::NewLine();
-                ImGui::SameLine(width - ImGui::CalcTextSize(label).x);
-                ImGui::Text(label, *value->c_str());
-            }
-        }
-    }
+    DrawInputLabel(label, *value, width, options);
     ImGui::SetNextItemWidth(width);
     ImGuiInputTextFlags flags = ImGuiInputTextFlags_CallbackResize;
     if (options.secret) {
@@ -73,15 +99,7 @@ bool InputString(const char* label, std::string* value, const InputOptions& opti
     PopStyleInput();
     ImGui::EndDisabled();
     ImGui::EndGroup();
-    if (options.hasError && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-        !Ship_IsCStringEmpty(options.errorText)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.errorText)).c_str());
-    } else if (options.disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
-               !Ship_IsCStringEmpty(options.disabledTooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.disabledTooltip)).c_str());
-    } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Ship_IsCStringEmpty(options.tooltip)) {
-        ImGui::SetTooltip("%s", WrappedText(TR(options.tooltip)).c_str());
-    }
+    InputHoverTooltip(options);
     ImGui::PopID();
     return dirty;
 }

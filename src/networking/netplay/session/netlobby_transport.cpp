@@ -1,35 +1,6 @@
 /* Signaling transport: STUN, control/uplink websockets, relay hooks — split from netlobby.cpp; the wire-protocol overview lives there. */
-#include "netlobby.h"
 #include "netlobby_internal.h"
-#include "netlobby_util.h"
-#include "netfriends.h"
-#include "netstats.h"
-#include "udp_transport.h"
-#include "websocket_transport.h"
-#include "port_log.h"
-#include "netrules.h"
-#include "PortI18n.h"
-
-#include <libultraship/bridge/consolevariablebridge.h>
-
-#ifndef DISABLE_SCRIPTING
-#include "ModRegistry.h"
-#endif
-
-#include <algorithm>
 #include <cctype>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <random>
-#include <string>
-#include <vector>
-
-#include <ship/Context.h>
-
 /* State-free helpers (compat token, env, split, rules reads)
  * live in netlobby_util.cpp; wire JSON parsing in lobby_json.cpp. */
 using namespace ssb64::netlobby;
@@ -122,11 +93,33 @@ void send_stun(void)
     port_udp_send_to(stun_server(), req, sizeof(req));
 }
 
+static bool stun_check_header(const uint8_t *msg, int size)
+{
+    return size >= 20 && msg[0] == 0x01 && msg[1] == 0x01 &&
+           msg[4] == 0x21 && msg[5] == 0x12 && msg[6] == 0xA4 && msg[7] == 0x42 &&
+           std::memcmp(msg + 8, sLobby.stun_txid, 12) == 0;
+}
+
+/* (XOR-)MAPPED-ADDRESS, IPv4 — returns true when the endpoint was captured. */
+static void stun_apply_mapped_addr(int type, const uint8_t *v)
+{
+    uint16_t port = static_cast<uint16_t>((v[2] << 8) | v[3]);
+    uint32_t addr = (static_cast<uint32_t>(v[4]) << 24) | (v[5] << 16) | (v[6] << 8) | v[7];
+    if (type == 0x0020) {
+        port ^= static_cast<uint16_t>(kStunCookie >> 16);
+        addr ^= kStunCookie;
+    }
+    char text[32];
+    std::snprintf(text, sizeof(text), "%u.%u.%u.%u:%u", addr >> 24, (addr >> 16) & 0xFF, (addr >> 8) & 0xFF,
+                  addr & 0xFF, port);
+    sLobby.stun_public = text;
+    sLobby.stun_done = true;
+    port_log("SSB64 Lobby: public UDP endpoint %s\n", text);
+}
+
 bool parse_stun(const uint8_t *msg, int size)
 {
-    if (size < 20 || msg[0] != 0x01 || msg[1] != 0x01 ||
-        msg[4] != 0x21 || msg[5] != 0x12 || msg[6] != 0xA4 || msg[7] != 0x42 ||
-        std::memcmp(msg + 8, sLobby.stun_txid, 12) != 0) {
+    if (!stun_check_header(msg, size)) {
         return false;
     }
     if (sLobby.stun_done) {
@@ -142,24 +135,15 @@ bool parse_stun(const uint8_t *msg, int size)
             break;
         }
         if ((type == 0x0020 || type == 0x0001) && alen >= 8 && v[1] == 0x01) {   // (XOR-)MAPPED-ADDRESS, IPv4
-            uint16_t port = static_cast<uint16_t>((v[2] << 8) | v[3]);
-            uint32_t addr = (static_cast<uint32_t>(v[4]) << 24) | (v[5] << 16) | (v[6] << 8) | v[7];
-            if (type == 0x0020) {
-                port ^= static_cast<uint16_t>(kStunCookie >> 16);
-                addr ^= kStunCookie;
-            }
-            char text[32];
-            std::snprintf(text, sizeof(text), "%u.%u.%u.%u:%u", addr >> 24, (addr >> 16) & 0xFF, (addr >> 8) & 0xFF,
-                          addr & 0xFF, port);
-            sLobby.stun_public = text;
-            sLobby.stun_done = true;
-            port_log("SSB64 Lobby: public UDP endpoint %s\n", text);
+            stun_apply_mapped_addr(type, v);
             return true;
         }
         at += 4 + ((alen + 3) & ~3);
     }
     return false;
 }
+
+
 
 /* ---- server (WebSocket) ---- */
 

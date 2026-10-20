@@ -108,15 +108,74 @@ u32 nbNetPacketBuildInput(u8 *buffer, const NBNetPacketInput *in)
 	return NB_NETPACKET_PACKET_BYTES;
 }
 
+static NBNetPacketStatus nbNetPacketReadHeader(const u8 **cursor, NBNetPacketInput *parsed)
+{
+	if (nbNetPacketReadU32(cursor) != NB_NETPACKET_MAGIC)
+	{
+		return NB_NETPACKET_BAD_MAGIC;
+	}
+	if (nbNetPacketReadU16(cursor) != NB_NETPACKET_VERSION)
+	{
+		return NB_NETPACKET_BAD_VERSION;
+	}
+	parsed->remote_advantage = (s16)nbNetPacketReadU16(cursor);
+	parsed->session_id = nbNetPacketReadU32(cursor);
+	parsed->ack_tick = nbNetPacketReadU32(cursor);
+	parsed->seq = nbNetPacketReadU32(cursor);
+	parsed->player = nbNetPacketReadU8(cursor);
+	parsed->frame_count = nbNetPacketReadU8(cursor);
+	parsed->local_player = nbNetPacketReadU8(cursor);
+	parsed->remote_player = nbNetPacketReadU8(cursor);
+	return NB_NETPACKET_OK;
+}
+
+static NBNetPacketStatus nbNetPacketValidateCtx(const NBNetPacketInput *parsed,
+												const NBNetPacketContext *ctx)
+{
+	if (ctx == NULL)
+	{
+		return NB_NETPACKET_OK;
+	}
+	if ((ctx->ignore_session == 0) && (parsed->session_id != ctx->session_id))
+	{
+		return NB_NETPACKET_BAD_SESSION;
+	}
+	if ((parsed->player != (u8)ctx->src_player) ||
+		(parsed->local_player != (u8)ctx->src_player))
+	{
+		return NB_NETPACKET_BAD_PLAYER;
+	}
+	if ((ctx->forwarded == 0) && (parsed->remote_player != (u8)ctx->local_player))
+	{
+		return NB_NETPACKET_BAD_REMOTE;
+	}
+	return NB_NETPACKET_OK;
+}
+
+static void nbNetPacketReadFrames(const u8 **cursor, NBNetPacketInput *parsed)
+{
+	s32 i;
+
+	for (i = 0; i < NB_NETPACKET_MAX_PACKET_FRAMES; i++)
+	{
+		parsed->frames[i].tick = nbNetPacketReadU32(cursor);
+		parsed->frames[i].buttons = nbNetPacketReadU16(cursor);
+		parsed->frames[i].stick_x = (s8)nbNetPacketReadU8(cursor);
+		parsed->frames[i].stick_y = (s8)nbNetPacketReadU8(cursor);
+	}
+	parsed->check_tick = nbNetPacketReadU32(cursor);
+	parsed->check_hash = nbNetPacketReadU32(cursor);
+}
+
 NBNetPacketStatus nbNetPacketParseInput(const u8 *buffer, s32 size,
 										const NBNetPacketContext *ctx,
 										NBNetPacketInput *out)
 {
 	const u8 *cursor = buffer;
 	NBNetPacketInput parsed;
+	NBNetPacketStatus status;
 	u32 checksum;
 	u32 expected_checksum;
-	s32 i;
 
 	if (size != NB_NETPACKET_PACKET_BYTES)
 	{
@@ -124,52 +183,22 @@ NBNetPacketStatus nbNetPacketParseInput(const u8 *buffer, s32 size,
 	}
 	memset(&parsed, 0, sizeof(parsed));
 
-	if (nbNetPacketReadU32(&cursor) != NB_NETPACKET_MAGIC)
+	status = nbNetPacketReadHeader(&cursor, &parsed);
+	if (status != NB_NETPACKET_OK)
 	{
-		return NB_NETPACKET_BAD_MAGIC;
+		return status;
 	}
-	if (nbNetPacketReadU16(&cursor) != NB_NETPACKET_VERSION)
+	status = nbNetPacketValidateCtx(&parsed, ctx);
+	if (status != NB_NETPACKET_OK)
 	{
-		return NB_NETPACKET_BAD_VERSION;
-	}
-	parsed.remote_advantage = (s16)nbNetPacketReadU16(&cursor);
-	parsed.session_id = nbNetPacketReadU32(&cursor);
-	parsed.ack_tick = nbNetPacketReadU32(&cursor);
-	parsed.seq = nbNetPacketReadU32(&cursor);
-	parsed.player = nbNetPacketReadU8(&cursor);
-	parsed.frame_count = nbNetPacketReadU8(&cursor);
-	parsed.local_player = nbNetPacketReadU8(&cursor);
-	parsed.remote_player = nbNetPacketReadU8(&cursor);
-
-	if ((ctx != NULL) && (ctx->ignore_session == 0) &&
-		(parsed.session_id != ctx->session_id))
-	{
-		return NB_NETPACKET_BAD_SESSION;
-	}
-	if ((ctx != NULL) &&
-		((parsed.player != (u8)ctx->src_player) ||
-		 (parsed.local_player != (u8)ctx->src_player)))
-	{
-		return NB_NETPACKET_BAD_PLAYER;
-	}
-	if ((ctx != NULL) && (ctx->forwarded == 0) &&
-		(parsed.remote_player != (u8)ctx->local_player))
-	{
-		return NB_NETPACKET_BAD_REMOTE;
+		return status;
 	}
 	if (parsed.frame_count > NB_NETPACKET_MAX_PACKET_FRAMES)
 	{
 		return NB_NETPACKET_BAD_FRAME_COUNT;
 	}
-	for (i = 0; i < NB_NETPACKET_MAX_PACKET_FRAMES; i++)
-	{
-		parsed.frames[i].tick = nbNetPacketReadU32(&cursor);
-		parsed.frames[i].buttons = nbNetPacketReadU16(&cursor);
-		parsed.frames[i].stick_x = (s8)nbNetPacketReadU8(&cursor);
-		parsed.frames[i].stick_y = (s8)nbNetPacketReadU8(&cursor);
-	}
-	parsed.check_tick = nbNetPacketReadU32(&cursor);
-	parsed.check_hash = nbNetPacketReadU32(&cursor);
+	nbNetPacketReadFrames(&cursor, &parsed);
+
 	checksum = nbNetPacketReadU32(&cursor);
 	expected_checksum = nbNetPacketChecksumBytes(buffer,
 											   NB_NETPACKET_PACKET_BYTES - 4);
@@ -184,6 +213,8 @@ NBNetPacketStatus nbNetPacketParseInput(const u8 *buffer, s32 size,
 	}
 	return NB_NETPACKET_OK;
 }
+
+
 
 u32 nbNetPacketBuildControl(u8 *buffer, u16 packet_type, u32 session_id)
 {

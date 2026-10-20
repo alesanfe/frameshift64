@@ -638,16 +638,11 @@ static SYAudioPackage* parsePackage(const u8* data, size_t size, ALHeap* heap) {
 /* ========================================================================= */
 /*  Main loader                                                              */
 /* ========================================================================= */
+/*  Main loader                                                              */
+/* ========================================================================= */
 
-extern "C" void portAudioLoadAssets(void)
+static bool loadCoreAudioBlobs()
 {
-    spdlog::info("audio_bridge: loading audio assets from .o2r");
-
-    // Initialize heap
-    memset(sSYAudioCurrentSettings.heap_base, 0, sSYAudioCurrentSettings.heap_size);
-    alHeapInit(&sSYAudioHeap, sSYAudioCurrentSettings.heap_base,
-               (s32)sSYAudioCurrentSettings.heap_size);
-
     // BLOBs live at file scope so portAudioShutdownAssets() can release
     // them before Ship::Context tears down spdlog.  They keep data alive
     // for the entire session (wavetable base pointers reference TBL data
@@ -658,65 +653,29 @@ extern "C" void portAudioLoadAssets(void)
     ok = ok && loadBlob("audio/B1_sounds2_ctl", sounds2_ctl);
     ok = ok && loadBlob("audio/B1_sounds2_tbl", sounds2_tbl);
     ok = ok && loadBlob("audio/S1_music_sbk",   music_sbk);
+    return ok;
+}
 
-    if (!ok) {
-        spdlog::error("audio_bridge: failed to load core audio assets, audio disabled");
-        return;
-    }
-
+static ALBank *parseCtlBank(const AudioBlob &ctl, const AudioBlob &tbl,
+                            const char *ctlName, const char *targetDesc)
+{
     // TBL data is raw ADPCM samples — too large for the N64-sized audio heap
     // (~350KB).  Instead of copying, point wavetables directly into the Blob
     // data (kept alive by the static AudioBlob shared_ptrs above).
-    u8* tbl1 = const_cast<u8*>(sounds1_tbl.data);
-    u8* tbl2 = const_cast<u8*>(sounds2_tbl.data);
+    BankParser parser(ctl.data, ctl.size, const_cast<u8*>(tbl.data), tbl.size, &sSYAudioHeap);
+    ALBankFile* bf = parser.parseBankFile();
+    if (!bf || bf->bankCount < 1 || !bf->bankArray[0]) {
+        spdlog::error("audio_bridge: {} rejected by parser — audio disabled", ctlName);
+        return nullptr;
+    }
+    ALBank *bank = bf->bankArray[0];
+    spdlog::info("audio_bridge: parsed {} → {}: {} instruments, rate={}",
+                 ctlName, targetDesc, bank->instCount, bank->sampleRate);
+    return bank;
+}
 
-    // Bank → slot mapping must match the original game's SYAudioSettings:
-    //   bank1_start = B1_sounds2_ctl → sSYAudioSequenceBank1 (SFX direct-index)
-    //   bank2_start = B1_sounds1_ctl → sSYAudioSequenceBank2 (music CSP players)
-    // sys/audio.c then does n_alCSPSetBank(player, sSYAudioSequenceBank2) and
-    // reads SFX sounds from sSYAudioSequenceBank1->instArray[0]->soundArray.
-    // Loading the swapped pair (which the bridge previously did) feeds the
-    // music CSP a single-instrument 322-sound table with degenerate keymaps,
-    // and every NoteOn misses in __n_lookupSoundQuick → silent BGM.
-    {
-        BankParser parser(sounds1_ctl.data, sounds1_ctl.size, tbl1, sounds1_tbl.size, &sSYAudioHeap);
-        ALBankFile* bf = parser.parseBankFile();
-        if (!bf || bf->bankCount < 1 || !bf->bankArray[0]) {
-            spdlog::error("audio_bridge: sounds1_ctl rejected by parser — audio disabled");
-            return;
-        }
-        sSYAudioSequenceBank2 = bf->bankArray[0];
-        spdlog::info("audio_bridge: parsed sounds1_ctl → sSYAudioSequenceBank2 (music): {} instruments, rate={}",
-                     sSYAudioSequenceBank2->instCount, sSYAudioSequenceBank2->sampleRate);
-    }
-    {
-        BankParser parser(sounds2_ctl.data, sounds2_ctl.size, tbl2, sounds2_tbl.size, &sSYAudioHeap);
-        ALBankFile* bf = parser.parseBankFile();
-        if (!bf || bf->bankCount < 1 || !bf->bankArray[0]) {
-            spdlog::error("audio_bridge: sounds2_ctl rejected by parser — audio disabled");
-            return;
-        }
-        sSYAudioSequenceBank1 = bf->bankArray[0];
-        spdlog::info("audio_bridge: parsed sounds2_ctl → sSYAudioSequenceBank1 (SFX): {} instruments, rate={}",
-                     sSYAudioSequenceBank1->instCount, sSYAudioSequenceBank1->sampleRate);
-    }
-
-    // Parse sequence file
-    sSYAudioSeqFile = parseSeqFile(music_sbk.data, music_sbk.size, &sSYAudioHeap);
-    if (!sSYAudioSeqFile) {
-        spdlog::error("audio_bridge: seq file rejected by parser — audio disabled");
-        return;
-    }
-    spdlog::info("audio_bridge: parsed seq file: {} sequences", sSYAudioSeqFile->seqCount);
-
-    // Find max sequence length and allocate sequence data buffers
-    s32 maxSeqLen = 0;
-    for (s16 i = 0; i < sSYAudioSeqFile->seqCount; i++) {
-        sSYAudioSeqFile->seqArray[i].len += (sSYAudioSeqFile->seqArray[i].len & 1);
-        if (maxSeqLen < sSYAudioSeqFile->seqArray[i].len) {
-            maxSeqLen = sSYAudioSeqFile->seqArray[i].len;
-        }
-    }
+static void allocAudioRuntimeBuffers(s32 maxSeqLen)
+{
     // Allocate BGM sequence data buffers (one per BGM player — mirrors
     // SYAUDIO_BGMPLAYERS_NUM in decomp sys/audio.h, currently 1; keep the
     // loop bound in sync if that constant ever grows).
@@ -736,60 +695,118 @@ extern "C" void portAudioLoadAssets(void)
     sSYAudioDataBuffers[0] = (s16*)alHeapAlloc(&sSYAudioHeap, 1, 0xE60);
     sSYAudioDataBuffers[1] = (s16*)alHeapAlloc(&sSYAudioHeap, 1, 0xE60);
     sSYAudioDataBuffers[2] = (s16*)alHeapAlloc(&sSYAudioHeap, 1, 0xE60);
+}
 
-    // Load FGM packages (optional — game still works without SFX)
-    if (loadBlob("audio/fgm_unk", fgm_unk_blob)) {
-        /* fgm_unk holds a flat array of 16-byte envelope-modulator structs
-         * (ALWhatever8009EE0C_3): u8 unk0..unk3 then f32 unk4/unk8/unkC.
-         * The consumer (`unk_alsound_0x24[i]`) indexes with 16-byte stride,
-         * so `unk44` must point at the FIRST struct (not at parsePackage's
-         * pointer table). The f32 fields are stored BE in the ROM data and
-         * need per-word bswap32 on LE; the leading 4 u8s stay as-is.
-         *
-         * The pre-fix path (parsePackage + unk44 = pkg->data) treated this
-         * blob as a pointer table, so flat indexing landed inside the
-         * pointer table for the first ~50 entries and then drifted into
-         * adjacent heap memory. The float fields were also unswapped, so
-         * every envelope read produced f4=f8=fC≈0 → no envelope shaping →
-         * SFX voices played at the constant amplitude they were started at
-         * for the full duration of the bytecode. The Star-KO chime's
-         * 150-frame sustain made the bug audible as a high-pitched ring.
-         *
-         * Actual file layout (verified by diagnostic dump 2026-04-30):
-         *   [BE u32 count][16-byte struct[count]]
-         * No offset table — structs start at file offset 4 with 16-byte
-         * stride. (An earlier draft of this fix assumed an interleaved
-         * offset-table layout, which read struct[0]'s u8 fields as BE u32
-         * offsets and faulted with SIGBUS on the first iteration.) */
-        const u8 *raw = fgm_unk_blob.data;
-        size_t blob_size = fgm_unk_blob.size;
-        s32 count = (blob_size >= 4) ? readBE32s(raw) : 0;
-        s32 totalStructBytes = count * 16;
-        size_t neededBytes = 4 + (size_t)totalStructBytes;
-        if (count <= 0 || neededBytes > blob_size) {
-            spdlog::error("audio_bridge: fgm_unk parse rejected — count={} blob_size={} needed={}",
-                          (int)count, blob_size, neededBytes);
-        } else {
-            u8 *flat = (u8*)alHeapAlloc(&sSYAudioHeap, 1, totalStructBytes);
-            for (s32 i = 0; i < count; i++) {
-                const u8 *src = raw + 4 + i * 16;
-                u8 *dst = flat + i * 16;
-                /* u8 fields: copy as-is */
-                dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
-                /* f32 fields: bswap32 each word from BE → LE */
-                for (s32 w = 1; w < 4; w++) {
-                    dst[w*4 + 0] = src[w*4 + 3];
-                    dst[w*4 + 1] = src[w*4 + 2];
-                    dst[w*4 + 2] = src[w*4 + 1];
-                    dst[w*4 + 3] = src[w*4 + 0];
-                }
-            }
-            dSYAudioPublicSettings.unk4C = sSYAudioCurrentSettings.unk4C = (u16)count;
-            dSYAudioPublicSettings.unk44 = sSYAudioCurrentSettings.unk44 = reinterpret_cast<uintptr_t*>(flat);
-            spdlog::info("audio_bridge: fgm_unk parsed as flat envelope array ({} entries, {} bytes)",
-                         (int)count, (int)totalStructBytes);
+/* fgm_unk holds a flat array of 16-byte envelope-modulator structs
+ * (ALWhatever8009EE0C_3): u8 unk0..unk3 then f32 unk4/unk8/unkC.
+ * The consumer (`unk_alsound_0x24[i]`) indexes with 16-byte stride,
+ * so `unk44` must point at the FIRST struct (not at parsePackage's
+ * pointer table). The f32 fields are stored BE in the ROM data and
+ * need per-word bswap32 on LE; the leading 4 u8s stay as-is.
+ *
+ * The pre-fix path (parsePackage + unk44 = pkg->data) treated this
+ * blob as a pointer table, so flat indexing landed inside the
+ * pointer table for the first ~50 entries and then drifted into
+ * adjacent heap memory. The float fields were also unswapped, so
+ * every envelope read produced f4=f8=fC≈0 → no envelope shaping →
+ * SFX voices played at the constant amplitude they were started at
+ * for the full duration of the bytecode. The Star-KO chime's
+ * 150-frame sustain made the bug audible as a high-pitched ring.
+ *
+ * Actual file layout (verified by diagnostic dump 2026-04-30):
+ *   [BE u32 count][16-byte struct[count]]
+ * No offset table — structs start at file offset 4 with 16-byte
+ * stride. (An earlier draft of this fix assumed an interleaved
+ * offset-table layout, which read struct[0]'s u8 fields as BE u32
+ * offsets and faulted with SIGBUS on the first iteration.) */
+static void loadFgmUnkBlob()
+{
+    if (!loadBlob("audio/fgm_unk", fgm_unk_blob)) {
+        return;
+    }
+    const u8 *raw = fgm_unk_blob.data;
+    size_t blob_size = fgm_unk_blob.size;
+    s32 count = (blob_size >= 4) ? readBE32s(raw) : 0;
+    s32 totalStructBytes = count * 16;
+    size_t neededBytes = 4 + (size_t)totalStructBytes;
+    if (count <= 0 || neededBytes > blob_size) {
+        spdlog::error("audio_bridge: fgm_unk parse rejected — count={} blob_size={} needed={}",
+                      (int)count, blob_size, neededBytes);
+        return;
+    }
+    u8 *flat = (u8*)alHeapAlloc(&sSYAudioHeap, 1, totalStructBytes);
+    for (s32 i = 0; i < count; i++) {
+        const u8 *src = raw + 4 + i * 16;
+        u8 *dst = flat + i * 16;
+        /* u8 fields: copy as-is */
+        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+        /* f32 fields: bswap32 each word from BE → LE */
+        for (s32 w = 1; w < 4; w++) {
+            dst[w*4 + 0] = src[w*4 + 3];
+            dst[w*4 + 1] = src[w*4 + 2];
+            dst[w*4 + 2] = src[w*4 + 1];
+            dst[w*4 + 3] = src[w*4 + 0];
         }
     }
+    dSYAudioPublicSettings.unk4C = sSYAudioCurrentSettings.unk4C = (u16)count;
+    dSYAudioPublicSettings.unk44 = sSYAudioCurrentSettings.unk44 = reinterpret_cast<uintptr_t*>(flat);
+    spdlog::info("audio_bridge: fgm_unk parsed as flat envelope array ({} entries, {} bytes)",
+                 (int)count, (int)totalStructBytes);
+}
+
+extern "C" void portAudioLoadAssets(void)
+{
+    spdlog::info("audio_bridge: loading audio assets from .o2r");
+
+    // Initialize heap
+    memset(sSYAudioCurrentSettings.heap_base, 0, sSYAudioCurrentSettings.heap_size);
+    alHeapInit(&sSYAudioHeap, sSYAudioCurrentSettings.heap_base,
+               (s32)sSYAudioCurrentSettings.heap_size);
+
+    if (!loadCoreAudioBlobs()) {
+        spdlog::error("audio_bridge: failed to load core audio assets, audio disabled");
+        return;
+    }
+
+    // Bank → slot mapping must match the original game's SYAudioSettings:
+    //   bank1_start = B1_sounds2_ctl → sSYAudioSequenceBank1 (SFX direct-index)
+    //   bank2_start = B1_sounds1_ctl → sSYAudioSequenceBank2 (music CSP players)
+    // sys/audio.c then does n_alCSPSetBank(player, sSYAudioSequenceBank2) and
+    // reads SFX sounds from sSYAudioSequenceBank1->instArray[0]->soundArray.
+    // Loading the swapped pair (which the bridge previously did) feeds the
+    // music CSP a single-instrument 322-sound table with degenerate keymaps,
+    // and every NoteOn misses in __n_lookupSoundQuick → silent BGM.
+    sSYAudioSequenceBank2 = parseCtlBank(sounds1_ctl, sounds1_tbl,
+                                       "sounds1_ctl", "sSYAudioSequenceBank2 (music)");
+    if (!sSYAudioSequenceBank2) {
+        return;
+    }
+    sSYAudioSequenceBank1 = parseCtlBank(sounds2_ctl, sounds2_tbl,
+                                       "sounds2_ctl", "sSYAudioSequenceBank1 (SFX)");
+    if (!sSYAudioSequenceBank1) {
+        return;
+    }
+
+    // Parse sequence file
+    sSYAudioSeqFile = parseSeqFile(music_sbk.data, music_sbk.size, &sSYAudioHeap);
+    if (!sSYAudioSeqFile) {
+        spdlog::error("audio_bridge: seq file rejected by parser — audio disabled");
+        return;
+    }
+    spdlog::info("audio_bridge: parsed seq file: {} sequences", sSYAudioSeqFile->seqCount);
+
+    // Find max sequence length and allocate sequence data buffers
+    s32 maxSeqLen = 0;
+    for (s16 i = 0; i < sSYAudioSeqFile->seqCount; i++) {
+        sSYAudioSeqFile->seqArray[i].len += (sSYAudioSeqFile->seqArray[i].len & 1);
+        if (maxSeqLen < sSYAudioSeqFile->seqArray[i].len) {
+            maxSeqLen = sSYAudioSeqFile->seqArray[i].len;
+        }
+    }
+    allocAudioRuntimeBuffers(maxSeqLen);
+
+    // Load FGM packages (optional — game still works without SFX)
+    loadFgmUnkBlob();
 
     if (loadBlob("audio/fgm_tbl", fgm_tbl_blob)) {
         SYAudioPackage* pkg = parsePackage(fgm_tbl_blob.data, fgm_tbl_blob.size, &sSYAudioHeap);
@@ -809,6 +826,9 @@ extern "C" void portAudioLoadAssets(void)
 
     spdlog::info("audio_bridge: all audio assets loaded successfully");
 }
+
+
+
 
 extern "C" void portAudioShutdownAssets(void)
 {

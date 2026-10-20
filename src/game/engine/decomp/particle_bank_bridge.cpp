@@ -254,8 +254,44 @@ static bool byteSwapScriptBank(uint8_t *data, size_t size, const char *dbg) {
  *   Pixel data and palette data (outside the LBTexture struct) are raw and
  *   not swapped here — the TMEM/sprite pipeline handles their byte order.
  */
-static bool byteSwapTextureBank(uint8_t *data, size_t size, const char *dbg) {
+/* Byteswap one texture entry (6 u32/s32 header fields + data[]).
+ * `tex_off` is the already-swapped offset table entry. Returns false on
+ * any bounds violation. */
+static bool byteSwapOneTexture(uint8_t *data, size_t size,
+                               size_t tex_off, int32_t idx, const char *dbg) {
     static constexpr int32_t kImFmtCi = 2;  /* G_IM_FMT_CI */
+    if (tex_off + 0x18 > size) {
+        port_log("particle_bank[%s]: texture %d header at 0x%zX runs past end\n",
+                 dbg, idx, tex_off);
+        return false;
+    }
+    for (size_t k = 0; k < 6; k++) {
+        bswap32At(data, tex_off + k * 4);
+    }
+    uint32_t count = readNativeU32(data, tex_off + 0x00);
+    int32_t  fmt   = static_cast<int32_t>(readNativeU32(data, tex_off + 0x04));
+    uint32_t flags = readNativeU32(data, tex_off + 0x14);
+    if (count > 4096) {
+        port_log("particle_bank[%s]: texture %d absurd count=%u\n", dbg, idx, count);
+        return false;
+    }
+    uint32_t total_data_entries = count;
+    if (fmt == kImFmtCi) {
+        total_data_entries += (flags & 1) ? 1u : count;
+    }
+    const size_t data_end = tex_off + 0x18 + static_cast<size_t>(total_data_entries) * 4;
+    if (data_end > size) {
+        port_log("particle_bank[%s]: texture %d data[] (%zu) overflows blob (%zu)\n",
+                 dbg, idx, data_end, size);
+        return false;
+    }
+    for (uint32_t k = 0; k < total_data_entries; k++) {
+        bswap32At(data, tex_off + 0x18 + k * 4);
+    }
+    return true;
+}
+
+static bool byteSwapTextureBank(uint8_t *data, size_t size, const char *dbg) {
     if (size < 4) {
         port_log("particle_bank[%s]: texture blob too small (%zu bytes)\n", dbg, size);
         return false;
@@ -278,41 +314,10 @@ static bool byteSwapTextureBank(uint8_t *data, size_t size, const char *dbg) {
     for (int32_t i = 0; i < textures_num; i++) {
         bswap32At(data, 4 + i * 4);
     }
-    std::vector<uint32_t> offsets;
-    offsets.reserve(textures_num);
     for (int32_t i = 0; i < textures_num; i++) {
-        offsets.push_back(readNativeU32(data, 4 + i * 4));
-    }
-    for (int32_t i = 0; i < textures_num; i++) {
-        size_t tex_off = offsets[i];
-        if (tex_off + 0x18 > size) {
-            port_log("particle_bank[%s]: texture %d header at 0x%zX runs past end\n",
-                     dbg, i, tex_off);
+        if (!byteSwapOneTexture(data, size,
+                                readNativeU32(data, 4 + i * 4), i, dbg)) {
             return false;
-        }
-        /* 6 u32/s32 header fields */
-        for (size_t k = 0; k < 6; k++) {
-            bswap32At(data, tex_off + k * 4);
-        }
-        uint32_t count = readNativeU32(data, tex_off + 0x00);
-        int32_t  fmt   = static_cast<int32_t>(readNativeU32(data, tex_off + 0x04));
-        uint32_t flags = readNativeU32(data, tex_off + 0x14);
-        if (count > 4096) {
-            port_log("particle_bank[%s]: texture %d absurd count=%u\n", dbg, i, count);
-            return false;
-        }
-        uint32_t total_data_entries = count;
-        if (fmt == kImFmtCi) {
-            total_data_entries += (flags & 1) ? 1u : count;
-        }
-        const size_t data_end = tex_off + 0x18 + static_cast<size_t>(total_data_entries) * 4;
-        if (data_end > size) {
-            port_log("particle_bank[%s]: texture %d data[] (%zu) overflows blob (%zu)\n",
-                     dbg, i, data_end, size);
-            return false;
-        }
-        for (uint32_t k = 0; k < total_data_entries; k++) {
-            bswap32At(data, tex_off + 0x18 + k * 4);
         }
     }
     return true;

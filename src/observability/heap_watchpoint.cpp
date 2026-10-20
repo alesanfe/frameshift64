@@ -45,6 +45,7 @@ constexpr long kWatchReqMax = 2000;
  * kDrBase shifts logical slot i onto debug register 2+i so both systems
  * coexist without reprogramming each other's slots. */
 constexpr int kMaxWatch = 2;
+constexpr long kWatchVictimCenter = 835;
 constexpr int kDrBase   = 2;
 volatile uintptr_t gWatchAddrs[kMaxWatch] = {0, 0};
 volatile long      gWatchReqs[kMaxWatch] = {0, 0};
@@ -201,6 +202,21 @@ void dumpModuleMap() {
 static DWORD gArmedTids[256];
 static long  gArmedCount = 0;
 
+static bool watchTidKnown(DWORD tid) {
+	for (long k = 0; k < gArmedCount; ++k) {
+		if (gArmedTids[k] == tid) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void watchArmIfNew(DWORD tid) {
+	if (armThread(tid) && gArmedCount < 256) {
+		gArmedTids[gArmedCount++] = tid;
+	}
+}
+
 void armAllThreads() {
 	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
 	if (snap == INVALID_HANDLE_VALUE) {
@@ -216,30 +232,16 @@ void armAllThreads() {
 			if (te.th32OwnerProcessID != self || te.th32ThreadID == myTid) {
 				continue;
 			}
-			bool known = false;
-			for (long k = 0; k < gArmedCount; ++k) {
-				if (gArmedTids[k] == te.th32ThreadID) {
-					known = true;
-					break;
-				}
-			}
-			if (known) {
+			if (watchTidKnown(te.th32ThreadID)) {
 				continue;
 			}
-			if (armThread(te.th32ThreadID) && gArmedCount < 256) {
-				gArmedTids[gArmedCount++] = te.th32ThreadID;
-			}
+			watchArmIfNew(te.th32ThreadID);
 			++armed;
 		} while (Thread32Next(snap, &te));
 	}
 	CloseHandle(snap);
-	for (long k = 0; k < gArmedCount; ++k) {
-		if (gArmedTids[k] == myTid) {
-			return;
-		}
-	}
-	if (armThread(myTid) && gArmedCount < 256) {
-		gArmedTids[gArmedCount++] = myTid;
+	if (!watchTidKnown(myTid)) {
+		watchArmIfNew(myTid);
 	}
 	++armed;
 }
@@ -251,20 +253,60 @@ void armAllThreads() {
 // `prev` field (header+8) — in every observed break the stomped field was
 // a `prev` pointer of an early long-lived node (next->prev == victim
 // check fired on the node BEFORE the damaged one).
+// Lazily open the log + register the handler on first probe.
+static bool watchLogInit() {
+	if (gWatchLog != INVALID_HANDLE_VALUE) {
+		return true;
+	}
+	if (std::getenv("SSB64_HEAP_WATCH") == nullptr) {
+		return false;
+	}
+	gWatchLog = CreateFileA("heap_watch.log", GENERIC_WRITE,
+	                        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+	                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (gWatchLog == INVALID_HANDLE_VALUE) {
+		return false;
+	}
+	AddVectoredExceptionHandler(1, &watchVectoredHandler);
+	return true;
+}
+
+/* Track the kMaxWatch candidates CLOSEST to the observed victim cluster
+ * (~835), both in the per-walk buffer AND in the armed slots — the
+ * victim is allocated AFTER the first probe, so slots must upgrade as
+ * better candidates appear in later walks. The old code stopped
+ * collecting once armed, which guaranteed the victim (born mid-window)
+ * was never watched. */
+static void watchTrackCandidate(uintptr_t h, long requestNumber) {
+	if (gCandCount < kMaxWatch) {
+		gCand[gCandCount].hdr = h;
+		gCand[gCandCount].req = requestNumber;
+		++gCandCount;
+		return;
+	}
+	const long d0 = requestNumber - kWatchVictimCenter;
+	const long dist0 = d0 < 0 ? -d0 : d0;
+	int worst = -1;
+	long worstDist = -1;
+	for (int i = 0; i < gCandCount; ++i) {
+		const long d = gCand[i].req - kWatchVictimCenter;
+		const long dist = d < 0 ? -d : d;
+		if (dist > worstDist) {
+			worstDist = dist;
+			worst = i;
+		}
+	}
+	if (worst >= 0 && dist0 < worstDist) {
+		gCand[worst].hdr = h;
+		gCand[worst].req = requestNumber;
+	}
+}
+
 extern "C" __declspec(dllexport)
 void portHeapWatchCheck(void* header, long requestNumber,
                         unsigned long long dataSize, const void* fileName) {
-	if (gWatchLog == INVALID_HANDLE_VALUE) {
-		if (std::getenv("SSB64_HEAP_WATCH") == nullptr) {
-			return;
-		}
-		gWatchLog = CreateFileA("heap_watch.log", GENERIC_WRITE,
-		                        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-		                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (gWatchLog == INVALID_HANDLE_VALUE) {
-			return;
-		}
-		AddVectoredExceptionHandler(1, &watchVectoredHandler);
+	if (!watchLogInit()) {
+		return;
 	}
 	if (header == nullptr) {
 		// Re-arm request from an armed probe: cover late-spawned threads.
@@ -295,100 +337,76 @@ void portHeapWatchCheck(void* header, long requestNumber,
 			return;   // already buffered this walk
 		}
 	}
-	/* Track the kMaxWatch candidates CLOSEST to the observed victim cluster
-	 * (~835), both in the per-walk buffer AND in the armed slots — the
-	 * victim is allocated AFTER the first probe, so slots must upgrade as
-	 * better candidates appear in later walks. The old code stopped
-	 * collecting once armed, which guaranteed the victim (born mid-window)
-	 * was never watched. */
-	constexpr long kVictimCenter = 835;
-	const long d0 = requestNumber - kVictimCenter;
-	const long dist0 = d0 < 0 ? -d0 : d0;
-	if (gCandCount < kMaxWatch) {
-		gCand[gCandCount].hdr = h;
-		gCand[gCandCount].req = requestNumber;
-		++gCandCount;
-		return;
-	}
-	int worst = -1;
-	long worstDist = -1;
-	for (int i = 0; i < gCandCount; ++i) {
-		const long d = gCand[i].req - kVictimCenter;
-		const long dist = d < 0 ? -d : d;
-		if (dist > worstDist) {
-			worstDist = dist;
-			worst = i;
-		}
-	}
-	if (worst >= 0 && dist0 < worstDist) {
-		gCand[worst].hdr = h;
-		gCand[worst].req = requestNumber;
-	}
+	watchTrackCandidate(h, requestNumber);
 }
 
-extern "C" __declspec(dllexport) void portHeapWatchFlush() {
-	if (gWatchLog == INVALID_HANDLE_VALUE) {
-		return;
-	}
-	/* Handler-order fix: the game's portWindowsVectoredHandler registers
-	 * with firstHandler=1 during PortInit — AFTER our static-init
-	 * registration — so it sits ahead of us and sees every single-step hit
-	 * (2 GB of flood per run). Re-prepending on EVERY flush keeps us ahead
-	 * even if the engine re-registers later (late boot phases do). Remove
-	 * the stale entry first so the handler list doesn't grow per probe. */
+
+
+/* Handler-order fix: the game's portWindowsVectoredHandler registers
+ * with firstHandler=1 during PortInit — AFTER our static-init
+ * registration — so it sits ahead of us and sees every single-step hit
+ * (2 GB of flood per run). Re-prepending on EVERY flush keeps us ahead
+ * even if the engine re-registers later (late boot phases do). Remove
+ * the stale entry first so the handler list doesn't grow per probe. */
+static void watchRefreshHandler() {
 	static void* sHandle = nullptr;
 	void* h = AddVectoredExceptionHandler(1, &watchVectoredHandler);
 	if (sHandle != nullptr) {
 		RemoveVectoredExceptionHandler(sHandle);
 	}
 	sHandle = h;
-	if (gWModCount == 0) {
-		snapshotWModules();
+}
+
+// Merge this walk's best-4 into the armed set: for each candidate
+// closer to the victim cluster than a currently watched header, swap
+// the slot's target. Slots are stable unless a better victim appears —
+// re-arming only the changed slots keeps per-probe cost flat.
+// Returns true when any slot's target changed.
+static bool watchAlreadyArmed(uintptr_t addr) {
+	for (int i = 0; i < kMaxWatch; ++i) {
+		if (gWatchAddrs[i] == addr) {
+			return true;
+		}
 	}
-	const bool firstArm = (gWatchCount == 0);
-	// Merge this walk's best-4 into the armed set: for each candidate
-	// closer to the victim cluster than a currently watched header, swap
-	// the slot's target. Slots are stable unless a better victim appears —
-	// re-arming only the changed slots keeps per-probe cost flat.
-	constexpr long kVictimCenter = 835;
+	return false;
+}
+
+/* Pick a slot for a candidate: first empty slot, else the armed slot
+ * whose tracked req is farthest from the victim cluster — and only if
+ * the candidate is strictly better than that worst slot. -1 = keep as is. */
+static int watchPickSlot(long cdist) {
+	for (int i = 0; i < kMaxWatch; ++i) {
+		if (gWatchAddrs[i] == 0) {
+			return i;
+		}
+	}
+	int slot = -1;
+	long slotWorstDist = -1;
+	for (int i = 0; i < kMaxWatch; ++i) {
+		// Distance of the armed header's own req — we don't store it,
+		// so compare by candidate quality instead: swap only if the
+		// slot's req tracking shows a worse match. Keep req per slot.
+		const long sd = gWatchReqs[i] - kWatchVictimCenter;
+		const long sdist = sd < 0 ? -sd : sd;
+		if (sdist > slotWorstDist) {
+			slotWorstDist = sdist;
+			slot = i;
+		}
+	}
+	return (cdist < slotWorstDist) ? slot : -1;
+}
+
+static bool watchMergeCandidates(bool firstArm) {
 	bool changed = false;
 	for (int c = 0; c < gCandCount; ++c) {
-		const long cd = gCand[c].req - kVictimCenter;
+		const long cd = gCand[c].req - kWatchVictimCenter;
 		const long cdist = cd < 0 ? -cd : cd;
-		// Find this candidate's best slot: empty slot first, else the
-		// watched slot whose request is farthest from the cluster.
-		int slot = -1;
-		long slotWorstDist = -1;
-		for (int i = 0; i < kMaxWatch; ++i) {
-			if (gWatchAddrs[i] == gCand[c].hdr + 8) {
-				slot = -2;   // already armed
-				break;
-			}
-		}
-		if (slot == -2) {
+		if (watchAlreadyArmed(gCand[c].hdr + 8)) {
 			continue;
 		}
-		for (int i = 0; i < kMaxWatch; ++i) {
-			if (gWatchAddrs[i] == 0) {
-				slot = i;
-				break;
-			}
-		}
+		const int slot = watchPickSlot(cdist);
 		if (slot < 0) {
-			for (int i = 0; i < kMaxWatch; ++i) {
-				// Distance of the armed header's own req — we don't store it,
-				// so compare by candidate quality instead: swap only if the
-				// slot's req tracking shows a worse match. Keep req per slot.
-				const long sd = gWatchReqs[i] - kVictimCenter;
-				const long sdist = sd < 0 ? -sd : sd;
-				if (sdist > slotWorstDist) {
-					slotWorstDist = sdist;
-					slot = i;
-				}
-			}
-			if (cdist >= slotWorstDist) {
-				continue;   // new candidate not better than worst armed slot
-			}
+			continue;   // new candidate not better than worst armed slot
 		}
 		gWatchAddrs[slot] = gCand[c].hdr + 8;   // the node's `prev` field
 		gWatchReqs[slot] = gCand[c].req;
@@ -401,6 +419,19 @@ extern "C" __declspec(dllexport) void portHeapWatchFlush() {
 		changed = true;
 	}
 	gCandCount = 0;
+	return changed;
+}
+
+extern "C" __declspec(dllexport) void portHeapWatchFlush() {
+	if (gWatchLog == INVALID_HANDLE_VALUE) {
+		return;
+	}
+	watchRefreshHandler();
+	if (gWModCount == 0) {
+		snapshotWModules();
+	}
+	const bool firstArm = (gWatchCount == 0);
+	const bool changed = watchMergeCandidates(firstArm);
 	if (gWatchCount > 0 && (firstArm || changed)) {
 		if (firstArm) {
 			dumpModuleMap();
@@ -410,6 +441,8 @@ extern "C" __declspec(dllexport) void portHeapWatchFlush() {
 		watchLog("heap-watch: threads armed, %ld watch slots live\n", gWatchCount);
 	}
 }
+
+
 
 extern "C" __declspec(dllexport) int portHeapWatchArmed() {
 	return gWatchCount > 0;
@@ -423,12 +456,11 @@ extern "C" __declspec(dllexport) int portHeapWatchSaturated() {
 	if (gWatchCount == 0) {
 		return 0;
 	}
-	constexpr long kVictimCenter = 835;
 	for (long i = 0; i < gWatchCount; ++i) {
 		if (gWatchAddrs[i] == 0) {
 			return 0;
 		}
-		const long d = gWatchReqs[i] - kVictimCenter;
+		const long d = gWatchReqs[i] - kWatchVictimCenter;
 		const long dist = d < 0 ? -d : d;
 		if (dist > 60) {
 			return 0;

@@ -66,6 +66,95 @@ void close_handles(void)
     close_conn_parts(sConn);
 }
 
+struct WsDialTarget {
+    bool secure = false;
+    std::string hostport;
+    std::string host;
+    std::string path;
+    INTERNET_PORT port = INTERNET_DEFAULT_HTTP_PORT;
+};
+
+static bool ws_parse_dial_target(const std::string &url, WsDialTarget *t, std::string *err)
+{
+    std::string rest;
+    if (url.rfind("wss://", 0) == 0) {
+        t->secure = true;
+        rest = url.substr(6);
+    } else if (url.rfind("ws://", 0) == 0) {
+        rest = url.substr(5);
+    } else {
+        *err = "server URL must start with ws:// or wss://";
+        return false;
+    }
+    size_t slash = rest.find('/');
+    t->hostport = (slash == std::string::npos) ? rest : rest.substr(0, slash);
+    t->path = (slash == std::string::npos) ? "/" : rest.substr(slash);
+    t->host = t->hostport;
+    t->port = t->secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+    size_t colon = t->hostport.rfind(':');
+    if (colon != std::string::npos) {
+        t->host = t->hostport.substr(0, colon);
+        /* std::stoi would throw on a non-numeric port — this runs on the
+         * connect thread, so an exception is std::terminate. strtol fails
+         * soft into a clean dial error instead. */
+        const std::string portText = t->hostport.substr(colon + 1);
+        char *end = nullptr;
+        long p = std::strtol(portText.c_str(), &end, 10);
+        if (end == portText.c_str() || *end != '\0' || p <= 0 || p > 65535) {
+            *err = "invalid port in server URL";
+            return false;
+        }
+        t->port = static_cast<INTERNET_PORT>(p);
+    }
+    return true;
+}
+
+static void ws_open_request(Connection *c, const WsDialTarget &t)
+{
+    c->session = WinHttpOpen(L"BattleShip-Netplay/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!c->session) {
+        return;
+    }
+    /* Bounded receive: costs nothing where it does not apply to websocket
+     * receives and keeps long-lived sends from being starved where it does. */
+    WinHttpSetTimeouts(c->session, 5000, 5000, 5000, 200);
+    c->connect = WinHttpConnect(c->session, widen(t.host).c_str(), t.port, 0);
+    c->request = (c->connect != nullptr)
+        ? WinHttpOpenRequest(c->connect, L"GET", widen(t.path).c_str(), nullptr,
+                             WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                             t.secure ? WINHTTP_FLAG_SECURE : 0)
+        : nullptr;
+}
+
+/* Sends the upgrade request and completes the websocket handshake.
+ * On failure *err is set and nullptr returned (request still owned by c). */
+static HINTERNET ws_perform_upgrade(Connection *c, const WsDialTarget &t, std::string *err)
+{
+    if (!WinHttpSetOption(c->request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0) ||
+        !WinHttpSendRequest(c->request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) ||
+        !WinHttpReceiveResponse(c->request, nullptr)) {
+        *err = "couldn't connect to " + t.host + " (error " + std::to_string(GetLastError()) + ")";
+        return nullptr;
+    }
+    DWORD status = 0;
+    DWORD size = sizeof(status);
+    WinHttpQueryHeaders(c->request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr,
+                        &status, &size, nullptr);
+    if (status != 101) {
+        *err = "server answered HTTP " + std::to_string(status);
+        return nullptr;
+    }
+    HINTERNET socket = WinHttpWebSocketCompleteUpgrade(c->request, 0);
+    if (!socket) {
+        *err = "WebSocket upgrade failed";
+        return nullptr;
+    }
+    WinHttpCloseHandle(c->request);
+    c->request = nullptr;
+    return socket;
+}
+
 /* Blocking dial: URL parse, HTTP handshake, websocket upgrade. Returns the
  * upgraded socket handle, or nullptr with `err` set. While `live`/`mu` are
  * given the intermediate handles are published as they are obtained so a
@@ -73,36 +162,9 @@ void close_handles(void)
  * session/connect handles (the request is retired by the upgrade). */
 HINTERNET ws_dial(const std::string &url, std::mutex *mu, Connection *live, std::string *err)
 {
-    bool secure = false;
-    std::string rest;
-    if (url.rfind("wss://", 0) == 0) {
-        secure = true;
-        rest = url.substr(6);
-    } else if (url.rfind("ws://", 0) == 0) {
-        rest = url.substr(5);
-    } else {
-        *err = "server URL must start with ws:// or wss://";
+    WsDialTarget t;
+    if (!ws_parse_dial_target(url, &t, err)) {
         return nullptr;
-    }
-    size_t slash = rest.find('/');
-    std::string hostport = (slash == std::string::npos) ? rest : rest.substr(0, slash);
-    std::string path = (slash == std::string::npos) ? "/" : rest.substr(slash);
-    std::string host = hostport;
-    INTERNET_PORT port = secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
-    size_t colon = hostport.rfind(':');
-    if (colon != std::string::npos) {
-        host = hostport.substr(0, colon);
-        /* std::stoi would throw on a non-numeric port — this runs on the
-         * connect thread, so an exception is std::terminate. strtol fails
-         * soft into a clean dial error instead. */
-        const std::string portText = hostport.substr(colon + 1);
-        char *end = nullptr;
-        long p = std::strtol(portText.c_str(), &end, 10);
-        if (end == portText.c_str() || *end != '\0' || p <= 0 || p > 65535) {
-            *err = "invalid port in server URL";
-            return nullptr;
-        }
-        port = static_cast<INTERNET_PORT>(p);
     }
 
     Connection c;
@@ -119,45 +181,23 @@ HINTERNET ws_dial(const std::string &url, std::mutex *mu, Connection *live, std:
         return nullptr;
     };
 
-    c.session = WinHttpOpen(L"BattleShip-Netplay/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    ws_open_request(&c, t);
     if (!c.session) {
         return dead("WinHttpOpen failed");
     }
-    /* Bounded receive: costs nothing where it does not apply to websocket
-     * receives and keeps long-lived sends from being starved where it does. */
-    WinHttpSetTimeouts(c.session, 5000, 5000, 5000, 200);
-    c.connect = WinHttpConnect(c.session, widen(host).c_str(), port, 0);
-    c.request = (c.connect != nullptr)
-        ? WinHttpOpenRequest(c.connect, L"GET", widen(path).c_str(), nullptr,
-                             WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-                             secure ? WINHTTP_FLAG_SECURE : 0)
-        : nullptr;
     publish();
     if (!c.connect || !c.request) {
-        return dead("couldn't reach " + host);
+        return dead("couldn't reach " + t.host);
     }
-    if (!WinHttpSetOption(c.request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0) ||
-        !WinHttpSendRequest(c.request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) ||
-        !WinHttpReceiveResponse(c.request, nullptr)) {
-        return dead("couldn't connect to " + host + " (error " + std::to_string(GetLastError()) + ")");
-    }
-    DWORD status = 0;
-    DWORD size = sizeof(status);
-    WinHttpQueryHeaders(c.request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr,
-                        &status, &size, nullptr);
-    if (status != 101) {
-        return dead("server answered HTTP " + std::to_string(status));
-    }
-    HINTERNET socket = WinHttpWebSocketCompleteUpgrade(c.request, 0);
+    HINTERNET socket = ws_perform_upgrade(&c, t, err);
     if (!socket) {
-        return dead("WebSocket upgrade failed");
+        return dead(*err);
     }
-    WinHttpCloseHandle(c.request);
-    c.request = nullptr;
     publish();
     return socket;
 }
+
+
 
 void run(std::string url)
 {
@@ -268,76 +308,40 @@ int send_frame(const void *data, DWORD size, WINHTTP_WEB_SOCKET_BUFFER_TYPE type
  * and sidesteps ws proxies that mishandle it (observed with wrangler dev).
  * Once open, ALL outbound traffic prefers this socket - the control socket
  * only receives. */
-std::mutex sUpMutex;
-/* Serializes uplink sends vs close/re-dial so the socket is never closed
- * while a frame is being written to it. */
-std::mutex sUpIoMutex;
-std::atomic<int> sUpState{ PORT_WS_CLOSED };
+/* Uplink bookkeeping — the locking choreography is shared
+ * (websocket_transport_internal.h); this TU keeps only the handle set.
+ * The Connection wrapper lets close_conn_parts() free the whole chain
+ * whenever the uplink is torn down or re-dialed. */
+WsUplink sUp;
 Connection sUpConn;
-/* Lazy-reconnect state: the uplink is send-only, so a dead TCP shows up
- * only as send failures — without a re-dial a relayed peer went mute
- * until the match timed out. The last URL is remembered and re-dialed
- * inside send at a bounded cadence. */
-std::string sUpUrl;
-ULONGLONG sUpRetryAfterTick = 0;
-constexpr ULONGLONG kUpRedialMs = 2000;
 
-/* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
- * cadence when the link is dead. Returns 1 when the frame went out on the
- * uplink, -1 when the uplink is unusable and the caller should fall back
- * to the control socket — the frame is never dropped just because the
- * uplink died. */
 /* Returns a live uplink socket: the open one, or a fresh re-dial of the
- * remembered URL when the previous socket failed. The FAILED->claim->dial
- * path runs at a bounded cadence (sUpRetryAfterTick) with a single claimer
- * per window; CONNECTING is excluded so we never overlap an explicit
- * port_ws_uplink_connect dial. nullptr -> caller falls back to the control
- * socket. */
+ * remembered URL. The locking choreography lives in WsUplinkSocket —
+ * nullptr -> caller falls back to the control socket. */
 HINTERNET uplink_socket(void)
 {
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (sUpState == PORT_WS_OPEN && sUpConn.socket != nullptr) {
-            return sUpConn.socket;
-        }
-        if (sUpState != PORT_WS_FAILED || sUpUrl.empty() ||
-            GetTickCount64() < sUpRetryAfterTick) {
-            return nullptr;
-        }
-        sUpRetryAfterTick = GetTickCount64() + kUpRedialMs;
-    }
-    std::lock_guard<std::mutex> io(sUpIoMutex);
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (sUpState == PORT_WS_OPEN && sUpConn.socket != nullptr) {
-            return sUpConn.socket;    /* another sender re-dialed while we waited */
-        }
-    }
-    std::string url, err;
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        url = sUpUrl;
-    }
-    /* ws_dial publishes intermediate handles into sUpConn under sUpMutex -
-     * a concurrent close can still abort the dial. */
-    HINTERNET socket = ws_dial(url, &sUpMutex, &sUpConn, &err);
-    std::lock_guard<std::mutex> lock(sUpMutex);
-    if (socket == nullptr) {
-        sUpState = PORT_WS_FAILED;
-        return nullptr;
-    }
-    if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
-        if (sUpUrl.empty()) {
-            sUpState = PORT_WS_CLOSED;
-        }
-        close_conn_parts(sUpConn);
-        WinHttpCloseHandle(socket);
-        return nullptr;
-    }
-    sUpConn.socket = socket;
-    sUpState = PORT_WS_OPEN;
-    port_log("SSB64 WS: uplink reconnected\n");
-    return socket;
+    return WsUplinkSocket(sUp, GetTickCount64(), static_cast<HINTERNET>(nullptr),
+        sUpConn.socket,
+        [](const std::string &url) {
+            std::string err;
+            /* A send-fail only closes the socket — the session/connect
+             * handles from the dead link are still in sUpConn and
+             * ws_dial's publish would overwrite them. Retire them first,
+             * under the same mu ws_dial publishes with. */
+            {
+                std::lock_guard<std::mutex> g(sUp.mu);
+                close_conn_parts(sUpConn);
+            }
+            /* ws_dial publishes intermediate handles into sUpConn under
+             * sUp.mu — a concurrent close can still abort the dial. */
+            return ws_dial(url, &sUp.mu, &sUpConn, &err);
+        },
+        [](HINTERNET s) {
+            /* superseded socket: free the intermediates it published
+             * plus the socket itself — under sUp.mu. */
+            close_conn_parts(sUpConn);
+            WinHttpCloseHandle(s);
+        });
 }
 
 /* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
@@ -347,29 +351,10 @@ HINTERNET uplink_socket(void)
  * uplink died. */
 int uplink_send(const void *data, DWORD size, WINHTTP_WEB_SOCKET_BUFFER_TYPE type)
 {
-    HINTERNET socket = uplink_socket();
-    if (socket == nullptr) {
-        return -1;
-    }
-    std::lock_guard<std::mutex> io(sUpIoMutex);
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (sUpConn.socket != socket) {
-            return -1;    /* closed or swapped while we waited on the lock */
-        }
-    }
-    if (send_on(socket, data, size, type, 'U')) {
-        return 1;
-    }
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (sUpConn.socket == socket) {
-            sUpConn.socket = nullptr;
-            sUpState = PORT_WS_FAILED;
-        }
-    }
-    WinHttpCloseHandle(socket);
-    return -1;
+    return WsUplinkSend(sUp, sUpConn.socket, uplink_socket(),
+        static_cast<HINTERNET>(nullptr),
+        [&](HINTERNET s) { return send_on(s, data, size, type, 'U'); },
+        [](HINTERNET s) { WinHttpCloseHandle(s); });
 }
 
 } // namespace
@@ -418,20 +403,30 @@ extern "C" int port_ws_send_text(const char *text)
 {
     /* uplink first: sends on the control socket stall behind its receive;
      * a dead uplink falls back to the control socket rather than dropping */
-    if (uplink_send(text, static_cast<DWORD>(std::strlen(text)),
-                    WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE) > 0) {
-        return 1;
-    }
-    return send_frame(text, static_cast<DWORD>(std::strlen(text)), WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE);
+    return WsSend(sState, text, static_cast<int>(std::strlen(text)),
+        WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+        [](const void *d, int n, unsigned char t) {
+            return uplink_send(d, static_cast<DWORD>(n),
+                static_cast<WINHTTP_WEB_SOCKET_BUFFER_TYPE>(t));
+        },
+        [](const void *d, int n, unsigned char t) {
+            return send_frame(d, static_cast<DWORD>(n),
+                static_cast<WINHTTP_WEB_SOCKET_BUFFER_TYPE>(t));
+        });
 }
 
 extern "C" int port_ws_send_binary(const void *data, int size)
 {
-    if (uplink_send(data, static_cast<DWORD>(size),
-                    WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE) > 0) {
-        return 1;
-    }
-    return send_frame(data, static_cast<DWORD>(size), WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE);
+    return WsSend(sState, data, size,
+        WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE,
+        [](const void *d, int n, unsigned char t) {
+            return uplink_send(d, static_cast<DWORD>(n),
+                static_cast<WINHTTP_WEB_SOCKET_BUFFER_TYPE>(t));
+        },
+        [](const void *d, int n, unsigned char t) {
+            return send_frame(d, static_cast<DWORD>(n),
+                static_cast<WINHTTP_WEB_SOCKET_BUFFER_TYPE>(t));
+        });
 }
 
 extern "C" int port_ws_poll_text(char *out, int capacity)
@@ -449,55 +444,34 @@ extern "C" int port_ws_poll_binary(void *out, int capacity)
 extern "C" int port_ws_uplink_connect(const char *url)
 {
     port_ws_uplink_close();
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        sUpUrl = url != nullptr ? url : "";
-        sUpRetryAfterTick = 0;
-    }
-    sUpState = PORT_WS_CONNECTING;
-    std::string err;
-    HINTERNET socket = ws_dial(url != nullptr ? url : "", &sUpMutex, &sUpConn, &err);
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (socket == nullptr) {
-            port_log("SSB64 WS: uplink failed: %s\n", err.c_str());
-            sUpState = PORT_WS_FAILED;
-            return 0;
-        }
-        if (sUpUrl.empty()) {    /* closed while we were dialing */
+    return WsUplinkConnect(sUp, sUpConn.socket,
+        static_cast<HINTERNET>(nullptr), url,
+        [](const std::string &u, std::string &err) {
+            /* ws_dial publishes intermediate handles into sUpConn under
+             * sUp.mu — a concurrent close can still abort the dial. */
+            return ws_dial(u, &sUp.mu, &sUpConn, &err);
+        },
+        [](HINTERNET s) {
             close_conn_parts(sUpConn);
-            sUpState = PORT_WS_CLOSED;
-            WinHttpCloseHandle(socket);
-            return 0;
-        }
-        sUpConn.socket = socket;
-        sUpState = PORT_WS_OPEN;
-    }
-    return 1;
+            WinHttpCloseHandle(s);
+        });
 }
 
 extern "C" void port_ws_uplink_close(void)
 {
-    HINTERNET socket;
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        sUpUrl.clear();    /* explicit close — never resurrect */
-        socket = sUpConn.socket;
-        sUpConn.socket = nullptr;
-        close_conn_parts(sUpConn);
-        sUpState = PORT_WS_CLOSED;
-    }
-    if (socket != nullptr) {
-        /* sUpIoMutex waits out an in-flight send before the close. */
-        std::lock_guard<std::mutex> io(sUpIoMutex);
-        WinHttpWebSocketClose(socket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
-        WinHttpCloseHandle(socket);
-    }
+    /* Explicit close clears the remembered URL — never resurrect; the
+     * graceful close runs under ioMu to wait out an in-flight send. */
+    WsUplinkClose(sUp, sUpConn.socket, static_cast<HINTERNET>(nullptr),
+        [] { close_conn_parts(sUpConn); },
+        [](HINTERNET s) {
+            WinHttpWebSocketClose(s, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+            WinHttpCloseHandle(s);
+        });
 }
 
 extern "C" int port_ws_uplink_state(void)
 {
-    return sUpState;
+    return sUp.state;
 }
 
 extern "C" int port_ws_uplink_send(const void *data, int size)

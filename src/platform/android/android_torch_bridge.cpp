@@ -115,27 +115,41 @@ static bool read_file_bytes(const std::filesystem::path &path, std::vector<uint8
     return (bool)f.read(reinterpret_cast<char *>(out.data()), size);
 }
 
+static bool rom_has_magic(const std::vector<uint8_t> &rom,
+                          uint8_t a, uint8_t b, uint8_t c, uint8_t d4) {
+    return rom[0] == a && rom[1] == b && rom[2] == c && rom[3] == d4;
+}
+
+// Byte-swap every 16-bit word (v64 -> z64).
+static void rom_bswap16(std::vector<uint8_t> &rom) {
+    const size_t n = rom.size() & ~size_t{1};
+    for (size_t i = 0; i < n; i += 2) {
+        std::swap(rom[i], rom[i + 1]);
+    }
+}
+
+// Reverse every 32-bit word (n64 -> z64).
+static void rom_bswap32(std::vector<uint8_t> &rom) {
+    const size_t n = rom.size() & ~size_t{3};
+    for (size_t i = 0; i < n; i += 4) {
+        std::swap(rom[i + 0], rom[i + 3]);
+        std::swap(rom[i + 1], rom[i + 2]);
+    }
+}
+
 static bool normalize_rom_byte_order(std::vector<uint8_t> &rom) {
     if (rom.size() < 4) {
         return false;
     }
-
-    if (rom[0] == 0x80 && rom[1] == 0x37 && rom[2] == 0x12 && rom[3] == 0x40) {
+    if (rom_has_magic(rom, 0x80, 0x37, 0x12, 0x40)) {
         return true;
     }
-    if (rom[0] == 0x37 && rom[1] == 0x80 && rom[2] == 0x40 && rom[3] == 0x12) {
-        const size_t n = rom.size() & ~size_t{1};
-        for (size_t i = 0; i < n; i += 2) {
-            std::swap(rom[i], rom[i + 1]);
-        }
+    if (rom_has_magic(rom, 0x37, 0x80, 0x40, 0x12)) {
+        rom_bswap16(rom);
         return true;
     }
-    if (rom[0] == 0x40 && rom[1] == 0x12 && rom[2] == 0x37 && rom[3] == 0x80) {
-        const size_t n = rom.size() & ~size_t{3};
-        for (size_t i = 0; i < n; i += 4) {
-            std::swap(rom[i + 0], rom[i + 3]);
-            std::swap(rom[i + 1], rom[i + 2]);
-        }
+    if (rom_has_magic(rom, 0x40, 0x12, 0x37, 0x80)) {
+        rom_bswap32(rom);
         return true;
     }
     return false;
@@ -279,6 +293,60 @@ static std::vector<rgba> make_icon_bilinear(const std::vector<rgba> &src,
     return dst;
 }
 
+/* Decode every bitmap strip of the sprite into a contiguous RGBA pixel
+ * buffer (nbitmaps x bmwidth strips, rows capped at sp.bmheight). */
+static bool decode_stage_pixels(const std::vector<uint8_t> &file_data,
+                                const ParsedSprite &sp, uint32_t bm_array_start,
+                                const char *name, std::vector<rgba> &pixels) {
+    pixels.reserve((size_t)sp.width * sp.height);
+    for (int i = 0; i < sp.nbitmaps; ++i) {
+        ParsedBitmap bm{};
+        const uint32_t bm_off = bm_array_start + (uint32_t)i * kBitmapSize;
+        if (!parse_bitmap(file_data, bm_off, bm) || bm.width <= 0 || bm.actual_height <= 0) {
+            return false;
+        }
+        const size_t strip_bytes = (size_t)bm.width * (size_t)bm.actual_height * 2u;
+        if ((size_t)bm.buf_off + strip_bytes > file_data.size()) {
+            LOGE("CSS stage assets: %s bitmap[%d] out of range", name, i);
+            return false;
+        }
+        std::vector<uint8_t> strip(strip_bytes);
+        std::memcpy(strip.data(), file_data.data() + bm.buf_off, strip_bytes);
+        UnswizzleRgba16Strip(strip.data(), bm.width, bm.actual_height);
+        const int rendered_rows = std::min<int>(sp.bmheight, bm.actual_height);
+        for (int row = 0; row < rendered_rows; ++row) {
+            for (int x = 0; x < bm.width; ++x) {
+                const size_t off = ((size_t)row * bm.width + x) * 2u;
+                pixels.push_back(rgba16_pixel_to_rgba(strip[off], strip[off + 1]));
+            }
+        }
+    }
+    const size_t expected_pixels = (size_t)sp.width * sp.height;
+    if (pixels.size() < expected_pixels) {
+        LOGE("CSS stage assets: %s decoded %zu pixels, expected %zu",
+             name, pixels.size(), expected_pixels);
+        return false;
+    }
+    if (pixels.size() > expected_pixels) {
+        pixels.resize(expected_pixels);
+    }
+    return true;
+}
+
+/* Emit <name>_background.png (full sprite) + <name>_small.png (icon). */
+static bool write_stage_pngs(const std::filesystem::path &out_dir,
+                             const char *name,
+                             const std::vector<rgba> &pixels,
+                             int width, int height) {
+    const std::filesystem::path bg_path = out_dir / (std::string(name) + "_background.png");
+    const std::filesystem::path icon_path = out_dir / (std::string(name) + "_small.png");
+    if (!write_png_rgba(bg_path, pixels, width, height)) {
+        return false;
+    }
+    std::vector<rgba> icon = make_icon_bilinear(pixels, width, height);
+    return write_png_rgba(icon_path, icon, kIconW, kIconH);
+}
+
 static bool derive_stage_asset(const std::vector<uint8_t> &rom,
                                const AndroidCssStageDef &stage,
                                const std::filesystem::path &out_dir) {
@@ -301,55 +369,12 @@ static bool derive_stage_asset(const std::vector<uint8_t> &rom,
     }
 
     std::vector<rgba> pixels;
-    pixels.reserve((size_t)sp.width * sp.height);
-
-    for (int i = 0; i < sp.nbitmaps; ++i) {
-        ParsedBitmap bm{};
-        const uint32_t bm_off = bm_array_start + (uint32_t)i * kBitmapSize;
-        if (!parse_bitmap(file_data, bm_off, bm) || bm.width <= 0 || bm.actual_height <= 0) {
-            return false;
-        }
-
-        const size_t strip_bytes = (size_t)bm.width * (size_t)bm.actual_height * 2u;
-        if ((size_t)bm.buf_off + strip_bytes > file_data.size()) {
-            LOGE("CSS stage assets: %s bitmap[%d] out of range", stage.name, i);
-            return false;
-        }
-
-        std::vector<uint8_t> strip(strip_bytes);
-        std::memcpy(strip.data(), file_data.data() + bm.buf_off, strip_bytes);
-        UnswizzleRgba16Strip(strip.data(), bm.width, bm.actual_height);
-
-        const int rendered_rows = std::min<int>(sp.bmheight, bm.actual_height);
-        for (int row = 0; row < rendered_rows; ++row) {
-            for (int x = 0; x < bm.width; ++x) {
-                const size_t off = ((size_t)row * bm.width + x) * 2u;
-                pixels.push_back(rgba16_pixel_to_rgba(strip[off], strip[off + 1]));
-            }
-        }
-    }
-
-    const size_t expected_pixels = (size_t)sp.width * sp.height;
-    if (pixels.size() < expected_pixels) {
-        LOGE("CSS stage assets: %s decoded %zu pixels, expected %zu",
-             stage.name, pixels.size(), expected_pixels);
+    if (!decode_stage_pixels(file_data, sp, bm_array_start, stage.name, pixels)) {
         return false;
     }
-    if (pixels.size() > expected_pixels) {
-        pixels.resize(expected_pixels);
-    }
-
-    const std::filesystem::path bg_path = out_dir / (std::string(stage.name) + "_background.png");
-    const std::filesystem::path icon_path = out_dir / (std::string(stage.name) + "_small.png");
-    if (!write_png_rgba(bg_path, pixels, sp.width, sp.height)) {
+    if (!write_stage_pngs(out_dir, stage.name, pixels, sp.width, sp.height)) {
         return false;
     }
-
-    std::vector<rgba> icon = make_icon_bilinear(pixels, sp.width, sp.height);
-    if (!write_png_rgba(icon_path, icon, kIconW, kIconH)) {
-        return false;
-    }
-
     LOGI("CSS stage assets: derived %s background + icon", stage.name);
     return true;
 }

@@ -51,15 +51,8 @@
 #include <filesystem>
 
 
-/* Navigation globals owned by Menu.cpp — a "Go to" row writes them and the
- * menu's draw path jumps to the owning sidebar, scrolls the target into
- * view and flashes an accent outline (one frame, ~1.5 s TTL). */
-namespace Ship {
-extern bool navigateToWidget;
-extern std::string navigateMainEntry;
-extern std::string navigateSidebar;
-extern std::string navigateWidgetName;
-}
+/* Navigation globals owned by Menu.cpp — declared in Menu_internal.h. */
+#include "Menu_internal.h"
 
 namespace ssb64 {
 

@@ -21,6 +21,57 @@ static bool sScreenshotAllFrames = false;
 static std::unordered_set<int> sScreenshotFrames;
 static std::string sScreenshotDir;
 
+/* Parse comma-separated integer list into sScreenshotFrames.
+ * "all" captures every frame. Ignores malformed tokens. */
+static void screenshotParseFrames(const char *list)
+{
+	if (std::strcmp(list, "all") == 0) {
+		sScreenshotAllFrames = true;
+		return;
+	}
+	const char *p = list;
+	while (*p != '\0') {
+		while (*p == ',' || *p == ' ' || *p == '\t') {
+			p++;
+		}
+		if (*p == '\0') {
+			break;
+		}
+		char *end = nullptr;
+		long v = std::strtol(p, &end, 10);
+		if (end != p && v >= 0 && v <= 0x7FFFFFFF) {
+			sScreenshotFrames.insert(static_cast<int>(v));
+		}
+		if (end == p) {
+			/* Couldn't parse — skip a char to avoid infinite loop. */
+			p++;
+		} else {
+			p = end;
+		}
+	}
+}
+
+static void screenshotEnableAndLog(void)
+{
+	sScreenshotEnabled = sScreenshotAllFrames || !sScreenshotFrames.empty();
+	if (!sScreenshotEnabled) {
+		return;
+	}
+	std::error_code ec;
+	std::filesystem::create_directories(sScreenshotDir, ec);
+	if (ec) {
+		port_log("SSB64: screenshot: failed to create dir '%s': %s\n",
+			sScreenshotDir.c_str(), ec.message().c_str());
+	}
+	if (sScreenshotAllFrames) {
+		port_log("SSB64: screenshot capture ENABLED (all frames) dir='%s'\n",
+			sScreenshotDir.c_str());
+	} else {
+		port_log("SSB64: screenshot capture ENABLED (%zu frames) dir='%s'\n",
+			sScreenshotFrames.size(), sScreenshotDir.c_str());
+	}
+}
+
 static void port_screenshot_init_once(void)
 {
 	if (sScreenshotInited) {
@@ -39,50 +90,11 @@ static void port_screenshot_init_once(void)
 		? dir_env
 		: "debug_traces/screenshots";
 
-	if (std::strcmp(frames_env, "all") == 0) {
-		sScreenshotAllFrames = true;
-	} else {
-		/* Parse comma-separated integer list. Ignores malformed tokens. */
-		const char *p = frames_env;
-		while (*p != '\0') {
-			while (*p == ',' || *p == ' ' || *p == '\t') {
-				p++;
-			}
-			if (*p == '\0') {
-				break;
-			}
-			char *end = nullptr;
-			long v = std::strtol(p, &end, 10);
-			if (end != p && v >= 0 && v <= 0x7FFFFFFF) {
-				sScreenshotFrames.insert(static_cast<int>(v));
-			}
-			if (end == p) {
-				/* Couldn't parse — skip a char to avoid infinite loop. */
-				p++;
-			} else {
-				p = end;
-			}
-		}
-	}
-
-	sScreenshotEnabled = sScreenshotAllFrames || !sScreenshotFrames.empty();
-
-	if (sScreenshotEnabled) {
-		std::error_code ec;
-		std::filesystem::create_directories(sScreenshotDir, ec);
-		if (ec) {
-			port_log("SSB64: screenshot: failed to create dir '%s': %s\n",
-				sScreenshotDir.c_str(), ec.message().c_str());
-		}
-		if (sScreenshotAllFrames) {
-			port_log("SSB64: screenshot capture ENABLED (all frames) dir='%s'\n",
-				sScreenshotDir.c_str());
-		} else {
-			port_log("SSB64: screenshot capture ENABLED (%zu frames) dir='%s'\n",
-				sScreenshotFrames.size(), sScreenshotDir.c_str());
-		}
-	}
+	screenshotParseFrames(frames_env);
+	screenshotEnableAndLog();
 }
+
+
 
 static void port_screenshot_maybe_capture(int frame)
 {

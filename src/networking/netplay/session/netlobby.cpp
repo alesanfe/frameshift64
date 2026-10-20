@@ -31,38 +31,9 @@
  *                                             packets from another match can't be replayed into this
  *                                             one even when the seed is reused.
  *   SSBL GO <seed>                            client accepted the start packet */
-#include "netlobby.h"
 #include "netlobby_internal.h"
-#include "netlobby_util.h"
-#include "netfriends.h"
 #include "netleaderboard.h"
-#include "netstats.h"
-#include "udp_transport.h"
-#include "websocket_transport.h"
-#include "port_log.h"
-#include "netrules.h"
-#include "PortI18n.h"
-
-#include <libultraship/bridge/consolevariablebridge.h>
-
-#ifndef DISABLE_SCRIPTING
-#include "ModRegistry.h"
-#endif
-
-#include <algorithm>
 #include <cctype>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <random>
-#include <string>
-#include <vector>
-
-#include <ship/Context.h>
-
 /* Internal state + helpers live in netlobby_{state,transport,protocol}.cpp
  * (see netlobby_internal.h); state-free helpers in netlobby_util.cpp. */
 using namespace ssb64::netlobby;

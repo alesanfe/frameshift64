@@ -61,6 +61,34 @@ static void test_checksum_vectors(void)
 	/* FNV-1a("a") is a fixed published value. */
 	SMASH_EXPECT(nbNetPacketChecksumBytes(NULL, 0) == 2166136261U);
 	SMASH_EXPECT(nbNetPacketChecksumBytes((const u8 *)"a", 1) == 0xE40C292CU);
+
+	/* nbNetPacketChecksumAccumulateU32 folds the WHOLE word into the
+	 * running checksum — h = (h ^ v) * P — it is deliberately NOT the
+	 * byte-wise FNV-1a above. Golden vectors pin that word-fold so a
+	 * later "fix" to byte-wise breaks loudly: rollback code
+	 * (netinput.c published-history checksums) depends on the exact
+	 * value for desync detection. */
+	SMASH_EXPECT(nbNetPacketChecksumAccumulateU32(NB_NETPACKET_FNV_BASIS, 0) == 0x050C5D1FU);
+	SMASH_EXPECT(nbNetPacketChecksumAccumulateU32(NB_NETPACKET_FNV_BASIS, 1) == 0x040C5B8CU);
+	SMASH_EXPECT(nbNetPacketChecksumAccumulateU32(NB_NETPACKET_FNV_BASIS, 0xFFFFFFFFU) == 0xF9F3A14EU);
+	{
+		u32 h = NB_NETPACKET_FNV_BASIS;
+		h = nbNetPacketChecksumAccumulateU32(h, 1);
+		h = nbNetPacketChecksumAccumulateU32(h, 2);
+		h = nbNetPacketChecksumAccumulateU32(h, 3);
+		SMASH_EXPECT(h == 0x56CF37ABU);
+	}
+	/* The published-history checksum's exact field fold
+	 * (netinput.c: tick, buttons, (u8)stick_x, (u8)stick_y, source). */
+	{
+		u32 h = NB_NETPACKET_FNV_BASIS;
+		h = nbNetPacketChecksumAccumulateU32(h, 100);       /* tick */
+		h = nbNetPacketChecksumAccumulateU32(h, 0x8020);    /* buttons */
+		h = nbNetPacketChecksumAccumulateU32(h, 5);         /* stick_x */
+		h = nbNetPacketChecksumAccumulateU32(h, 253);       /* (u8)stick_y = -3 */
+		h = nbNetPacketChecksumAccumulateU32(h, 2);         /* source */
+		SMASH_EXPECT(h == 0x53E6F63BU);
+	}
 }
 
 /* ── INPUT round trip + rejections ──────────────────────────────────── */

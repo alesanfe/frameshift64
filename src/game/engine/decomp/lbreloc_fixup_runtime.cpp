@@ -43,6 +43,186 @@
 //
 // Idempotent at word granularity so overlapping runtime loads from different
 // starts cannot undo each other.
+// Log heap textures so we can spot any geometry texture that
+// somehow lives outside any reloc file (the "third path" case).
+static void runtime_tex_log_heap(const void *addr, unsigned int num_bytes)
+{
+	if (!tex_log_enabled()) return;
+	char heap_note[40];
+	std::snprintf(heap_note, sizeof(heap_note),
+	              "addr=0x%016llX",
+	              (unsigned long long)reinterpret_cast<uintptr_t>(addr));
+	tex_log_emit("runtime.heap", -1,
+	             0u, num_bytes, -1, -1, -1, addr, heap_note);
+}
+
+static void runtime_tex_log_skip(const void *addr, size_t target_offset,
+                                 unsigned int num_bytes)
+{
+	if (!tex_log_enabled()) return;
+	int rt_file_id = portRelocFindFileIdAndBase(addr, nullptr);
+	tex_log_emit("runtime.skip", rt_file_id,
+	             (uint32_t)target_offset, num_bytes,
+	             -1, -1, -1, addr, "already-fixed");
+}
+
+/* Clip the fix range so it can't enter a previously-registered protected
+ * struct array (bitmap array, sprite, mobjsub, ...). These are already in
+ * native byte order and a blind BSWAP32 pass would corrupt them. The
+ * typical offender is a CI8 palette load that Fast3D treats as a fixed
+ * 512-byte read even when the actual palette is smaller; the extra bytes
+ * happen to overlap the bitmap/sprite struct region on sprite files. */
+static unsigned int runtime_tex_clip_protected(uintptr_t target, unsigned int num_bytes)
+{
+	uintptr_t clip_end = target + num_bytes;
+	for (const auto &r : sProtectedStructRanges)
+	{
+		if (r.begin >= clip_end) continue;
+		if (r.end <= target) continue;
+		// Overlap. Only clip if the protected range starts *after* target,
+		// so we still fix the prefix that lives outside the struct. If
+		// the protected range starts at or before target, shrink num_bytes
+		// to zero — the whole range overlaps a struct and we should skip it.
+		if (r.begin > target)
+		{
+			if (r.begin < clip_end)
+				clip_end = r.begin;
+		}
+		else
+		{
+			clip_end = target;
+			break;
+		}
+	}
+	return (clip_end > target) ? (unsigned int)(clip_end - target) : 0u;
+}
+
+static void runtime_tex_trace(const void *addr, uintptr_t fileBase, size_t fileSize,
+                              size_t target_offset, unsigned int num_bytes)
+{
+	static unsigned int sRuntimeTexTraceCount = 0;
+	if (sRuntimeTexTraceCount >= 512) return;
+
+	uintptr_t descBase = 0;
+	size_t descSize = 0;
+	unsigned int descFileId = 0;
+	const char *descPath = nullptr;
+	int described = portRelocDescribePointer(addr, &descBase, &descSize, &descFileId, &descPath);
+	port_log("SSB64: runtimeTexFix addr=%p req=0x%x fileBase=%p fileSize=0x%zx off=0x%zx num=0x%x desc=%d file=%u descBase=%p descSize=0x%zx path=%s\n",
+	         addr, num_bytes, (void*)fileBase, fileSize, target_offset, num_bytes,
+	         described, descFileId, (void*)descBase,
+	         descSize, descPath ? descPath : "(unknown)");
+	sRuntimeTexTraceCount++;
+}
+
+/* Clamp the swap at the first tokenized reloc chain slot in the range.
+ *
+ * N64 LoadBlock/LoadTLUT legitimately over-read past the true texel
+ * span (fixed block sizes); on hardware the extra bytes only landed in
+ * TMEM and were never written back. This fixup MUTATES source memory,
+ * so swapping the over-read tail byte-reverses live tokens and struct
+ * words in place — observed as fighter-file DObjDesc arrays wholesale
+ * BSWAP32'd (tokens included), cascading into textureless objects,
+ * impossible-generation token warnings, and SIGSEGV in the desc walk.
+ *
+ * Texel data never contains chain slots, so the first slot marks the
+ * end of trustworthy texture bytes: swap up to it, leave the rest.
+ * The clamped tail stays in its live (already correct) byte order and
+ * the GPU merely samples a few nonsense over-read texels the original
+ * hardware also displayed as garbage-in-TMEM. */
+static unsigned int runtime_tex_clamp_at_chain_slot(const void *addr, uintptr_t target,
+                                                    unsigned int num_bytes)
+{
+	uintptr_t scan_end = target + num_bytes;
+	for (uintptr_t w = target; w < scan_end; w += 4)
+	{
+		if (!sChainSlotAddrs.count(w))
+			continue;
+		/* Registry entries can outlive their file epoch: a reload at
+		 * the same address (force-heap rewind, bump reuse) evicts only
+		 * the NEW file's smaller range, leaving corpse addresses from
+		 * the old file's tail. A live slot must hold a token that
+		 * actually resolves; anything else is a corpse — drop it and
+		 * keep the texture swap intact (clamping on a corpse truncates
+		 * real texels and renders the texture garbled). */
+		uint32_t slot_word = *reinterpret_cast<const uint32_t *>(w);
+		if (slot_word == 0 || portRelocTryResolvePointer(slot_word) == nullptr)
+		{
+			sChainSlotAddrs.erase(w);
+			continue;
+		}
+		static unsigned int sClampLogCount = 0;
+		if (sClampLogCount < 64)
+		{
+			int cl_file_id = portRelocFindFileIdAndBase(addr, nullptr);
+			port_log("SSB64: runtimeTexFix CLAMPED addr=%p num=0x%x->0x%x file=%d — "
+			         "live reloc chain slot at %p bounds the texel span\n",
+			         addr, num_bytes, (unsigned int)(w - target), cl_file_id, (void *)w);
+			sClampLogCount++;
+		}
+		return (unsigned int)(w - target);
+	}
+	return num_bytes;
+}
+
+/* Per-word idempotent BSWAP32 over [target, target+num_bytes): words
+ * already fixed by an overlapping earlier load are skipped. */
+static void runtime_tex_swap_words(uintptr_t target, unsigned int num_bytes,
+                                   size_t *fixed_words, size_t *skipped_words)
+{
+	uint32_t *region = reinterpret_cast<uint32_t *>(target);
+	size_t num_words = num_bytes / 4;
+	*fixed_words = 0;
+	*skipped_words = 0;
+	for (size_t i = 0; i < num_words; i++)
+	{
+		uintptr_t word_key = target + (uintptr_t)i * 4;
+		if (sTexFixupWords.count(word_key)) {
+			(*skipped_words)++;
+			continue;
+		}
+		sTexFixupWords.insert(word_key);
+		region[i] = BSWAP32(region[i]);
+		(*fixed_words)++;
+	}
+}
+
+/* Resolve the in-file offset of `target` and clamp/round `num_bytes`
+ * to the file bounds. Returns false when the range falls outside
+ * the containing file or collapses to zero.
+ *
+ * Round UP to next 4-byte boundary, then clamp to file bounds.
+ * Issue #4: a CI4 LOADTLUT with count=3 calls in with num_bytes=6,
+ * which under the old `&= ~3u` round-DOWN became 4 -- leaving the
+ * second 4-byte word (containing palette[2]'s low byte) in
+ * pass1-BSWAP state. The N64 LOADTLUT only copies 6 bytes into
+ * TMEM, but pass1 mangled the whole containing word, so we must
+ * un-mangle the whole word for the loaded portion to read
+ * correctly. Bounds-clamped because rounding up can't validly
+ * extend past file end. */
+static bool runtime_tex_resolve_bounds(uintptr_t target, uintptr_t fileBase,
+                                       size_t fileSize, size_t *target_offset,
+                                       unsigned int *num_bytes)
+{
+	*target_offset = target - fileBase;
+	if (*target_offset >= fileSize)
+	{
+		return false;
+	}
+	size_t available_bytes = fileSize - *target_offset;
+	if ((size_t)*num_bytes > available_bytes)
+	{
+		*num_bytes = (unsigned int)available_bytes;
+	}
+
+	*num_bytes = runtime_tex_clip_protected(target, *num_bytes);
+
+	*num_bytes = (unsigned int)(((size_t)*num_bytes + 3u) & ~(size_t)3u);
+	if ((size_t)*num_bytes > available_bytes)
+		*num_bytes = (unsigned int)(available_bytes & ~(size_t)3u);
+	return *num_bytes != 0;
+}
+
 extern "C" void portRelocFixupTextureAtRuntime(const void *addr, unsigned int num_bytes)
 {
 	if (addr == nullptr || num_bytes == 0) return;
@@ -56,177 +236,40 @@ extern "C" void portRelocFixupTextureAtRuntime(const void *addr, unsigned int nu
 	portStageAuditNoteTexDispatch(in_reloc_file);
 	if (!in_reloc_file)
 	{
-		// Log heap textures so we can spot any geometry texture that
-		// somehow lives outside any reloc file (the "third path" case).
-		if (tex_log_enabled()) {
-			char heap_note[40];
-			std::snprintf(heap_note, sizeof(heap_note),
-			              "addr=0x%016llX",
-			              (unsigned long long)reinterpret_cast<uintptr_t>(addr));
-			tex_log_emit("runtime.heap", -1,
-			             0u, num_bytes, -1, -1, -1, addr, heap_note);
-		}
+		runtime_tex_log_heap(addr, num_bytes);
 		return;
 	}
 
 	uintptr_t target = reinterpret_cast<uintptr_t>(addr);
-	size_t    target_offset = target - fileBase;
-	if (target_offset >= fileSize)
+	size_t    target_offset = 0;
+	if (!runtime_tex_resolve_bounds(target, fileBase, fileSize,
+	                                &target_offset, &num_bytes))
 	{
 		return;
 	}
-	size_t available_bytes = fileSize - target_offset;
-	if ((size_t)num_bytes > available_bytes)
-	{
-		num_bytes = (unsigned int)available_bytes;
-	}
-
-	// Clip the fix range so it can't enter a previously-registered protected
-	// struct array (bitmap array, sprite, mobjsub, ...). These are already in
-	// native byte order and a blind BSWAP32 pass would corrupt them. The
-	// typical offender is a CI8 palette load that Fast3D treats as a fixed
-	// 512-byte read even when the actual palette is smaller; the extra bytes
-	// happen to overlap the bitmap/sprite struct region on sprite files.
-	{
-		uintptr_t clip_end = target + num_bytes;
-		for (const auto &r : sProtectedStructRanges)
-		{
-			if (r.begin >= clip_end) continue;
-			if (r.end <= target) continue;
-			// Overlap. Only clip if the protected range starts *after* target,
-			// so we still fix the prefix that lives outside the struct. If
-			// the protected range starts at or before target, shrink num_bytes
-			// to zero — the whole range overlaps a struct and we should skip it.
-			if (r.begin > target)
-			{
-				if (r.begin < clip_end)
-					clip_end = r.begin;
-			}
-			else
-			{
-				clip_end = target;
-				break;
-			}
-		}
-		num_bytes = (clip_end > target) ? (unsigned int)(clip_end - target) : 0u;
-	}
-
-	// Round UP to next 4-byte boundary, then clamp to file bounds. Issue #4:
-	// a CI4 LOADTLUT with count=3 calls in with num_bytes=6, which under the
-	// old `&= ~3u` round-DOWN became 4 — leaving the second 4-byte word
-	// (containing palette[2]'s low byte) in pass1-BSWAP state. The N64
-	// LOADTLUT only copies 6 bytes into TMEM, but pass1 mangled the whole
-	// containing word, so we must un-mangle the whole word for the loaded
-	// portion to read correctly. Bounds-clamped because rounding up can't
-	// validly extend past file end.
-	num_bytes = (unsigned int)(((size_t)num_bytes + 3u) & ~(size_t)3u);
-	if ((size_t)num_bytes > available_bytes)
-		num_bytes = (unsigned int)(available_bytes & ~(size_t)3u);
-	if (num_bytes == 0) return;
 
 	// If pass2 or the chain walk already fixed this exact base and runtime has
 	// never seen it, keep the old conservative skip. Runtime-owned fixups below
 	// are tracked per word to handle overlapping TLUT/LOADBLOCK ranges.
 	if (sTexFixupExtent.find(target) == sTexFixupExtent.end() &&
 	    sStructU16Fixups.count(target)) {
-		if (tex_log_enabled()) {
-			int rt_file_id = portRelocFindFileIdAndBase(addr, nullptr);
-			tex_log_emit("runtime.skip", rt_file_id,
-			             (uint32_t)target_offset, num_bytes,
-			             -1, -1, -1, addr, "already-fixed");
-		}
+		runtime_tex_log_skip(addr, target_offset, num_bytes);
 		return;
 	}
 
-	static unsigned int sRuntimeTexTraceCount = 0;
-	if (sRuntimeTexTraceCount < 512)
-	{
-		uintptr_t descBase = 0;
-		size_t descSize = 0;
-		unsigned int descFileId = 0;
-		const char *descPath = nullptr;
-		int described = portRelocDescribePointer(addr, &descBase, &descSize, &descFileId, &descPath);
-		port_log("SSB64: runtimeTexFix addr=%p req=0x%x fileBase=%p fileSize=0x%zx off=0x%zx num=0x%x desc=%d file=%u descBase=%p descSize=0x%zx path=%s\n",
-		         addr, num_bytes, (void*)fileBase, fileSize, target_offset, num_bytes,
-		         described, descFileId, (void*)descBase,
-		         descSize, descPath ? descPath : "(unknown)");
-		sRuntimeTexTraceCount++;
-	}
+	runtime_tex_trace(addr, fileBase, fileSize, target_offset, num_bytes);
 
-	/* Clamp the swap at the first tokenized reloc chain slot in the range.
-	 *
-	 * N64 LoadBlock/LoadTLUT legitimately over-read past the true texel
-	 * span (fixed block sizes); on hardware the extra bytes only landed in
-	 * TMEM and were never written back. This fixup MUTATES source memory,
-	 * so swapping the over-read tail byte-reverses live tokens and struct
-	 * words in place — observed as fighter-file DObjDesc arrays wholesale
-	 * BSWAP32'd (tokens included), cascading into textureless objects,
-	 * impossible-generation token warnings, and SIGSEGV in the desc walk.
-	 *
-	 * Texel data never contains chain slots, so the first slot marks the
-	 * end of trustworthy texture bytes: swap up to it, leave the rest.
-	 * The clamped tail stays in its live (already correct) byte order and
-	 * the GPU merely samples a few nonsense over-read texels the original
-	 * hardware also displayed as garbage-in-TMEM. */
-	{
-		uintptr_t scan_end = target + num_bytes;
-		for (uintptr_t w = target; w < scan_end; w += 4)
-		{
-			if (!sChainSlotAddrs.count(w))
-				continue;
-			/* Registry entries can outlive their file epoch: a reload at
-			 * the same address (force-heap rewind, bump reuse) evicts only
-			 * the NEW file's smaller range, leaving corpse addresses from
-			 * the old file's tail. A live slot must hold a token that
-			 * actually resolves; anything else is a corpse — drop it and
-			 * keep the texture swap intact (clamping on a corpse truncates
-			 * real texels and renders the texture garbled). */
-			uint32_t slot_word = *reinterpret_cast<const uint32_t *>(w);
-			if (slot_word == 0 || portRelocTryResolvePointer(slot_word) == nullptr)
-			{
-				sChainSlotAddrs.erase(w);
-				continue;
-			}
-			static unsigned int sClampLogCount = 0;
-			if (sClampLogCount < 64)
-			{
-				int cl_file_id = portRelocFindFileIdAndBase(addr, nullptr);
-				port_log("SSB64: runtimeTexFix CLAMPED addr=%p num=0x%x->0x%x file=%d — "
-				         "live reloc chain slot at %p bounds the texel span\n",
-				         addr, num_bytes, (unsigned int)(w - target), cl_file_id, (void *)w);
-				sClampLogCount++;
-			}
-			num_bytes = (unsigned int)(w - target);
-			break;
-		}
-		if (num_bytes == 0)
-			return;
-	}
+	num_bytes = runtime_tex_clamp_at_chain_slot(addr, target, num_bytes);
+	if (num_bytes == 0)
+		return;
 
-	uint32_t *region = reinterpret_cast<uint32_t *>(target);
-	size_t num_words = num_bytes / 4;
 	size_t fixed_words = 0;
 	size_t skipped_words = 0;
-	for (size_t i = 0; i < num_words; i++)
-	{
-		uintptr_t word_key = target + (uintptr_t)i * 4;
-		if (sTexFixupWords.count(word_key)) {
-			skipped_words++;
-			continue;
-		}
-		sTexFixupWords.insert(word_key);
-		region[i] = BSWAP32(region[i]);
-		fixed_words++;
-	}
+	runtime_tex_swap_words(target, num_bytes, &fixed_words, &skipped_words);
 
 	if (fixed_words == 0)
 	{
-		if (tex_log_enabled()) {
-			int rt_file_id = portRelocFindFileIdAndBase(addr, nullptr);
-			tex_log_emit("runtime.skip", rt_file_id,
-			             (uint32_t)target_offset, num_bytes,
-			             -1, -1, -1, addr, "already-fixed");
-		}
+		runtime_tex_log_skip(addr, target_offset, num_bytes);
 		return;
 	}
 

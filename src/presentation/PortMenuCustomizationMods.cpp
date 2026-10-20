@@ -232,8 +232,8 @@ static void RenderModCard(const ssb64::appmods::ModEntry& mod) {
     ImGui::Separator();
 }
 
-static void RenderModsPanel() {
-    // --- Action bar -------------------------------------------------
+// --- Action bar: hot-reload, rescan, open-folder --------------------
+static void RenderModsActionBar() {
     if (ImGui::Button(TR("Hot Reload"))) {
         DoHotReload(); // re-snapshots s_modList when it finishes
         ToastInfo(TR("Reloading script mods..."));
@@ -257,25 +257,36 @@ static void RenderModsPanel() {
         fs::create_directories(modsPath, ec);
         SDL_OpenURL(std::string("file:///" + fs::absolute(modsPath).string()).c_str());
     }
+}
 
-    // A generic install that produced a script mod lands active via
-    // Hot Reload (mounts + compile + ModInit). The texture-pack case
-    // is handled by its own Done edge in RenderCuratedTexturePacks.
-    {
-        using namespace ssb64::enhancements;
-        const ModPackInstallPhase phase = GetModPackInstallPhase();
-        static ModPackInstallPhase s_prevPhase = ModPackInstallPhase::Idle;
-        if (phase == ModPackInstallPhase::Done &&
-            s_prevPhase != ModPackInstallPhase::Done &&
-            GetLastInstalledPackKind() == ModPackInstalledKind::ScriptMod) {
-            DoHotReload(); // re-snapshots s_modList when it finishes
-            ToastSuccess(TR("Mod installed — reloading"));
-        } else if (phase == ModPackInstallPhase::Error &&
-                   s_prevPhase != ModPackInstallPhase::Error) {
-            ToastError(TR("Mod install failed"));
-        }
-        s_prevPhase = phase;
+// A generic install that produced a script mod lands active via
+// Hot Reload (mounts + compile + ModInit). The texture-pack case
+// is handled by its own Done edge in RenderCuratedTexturePacks.
+static void WatchModPackInstallEdge() {
+    using namespace ssb64::enhancements;
+    const ModPackInstallPhase phase = GetModPackInstallPhase();
+    static ModPackInstallPhase s_prevPhase = ModPackInstallPhase::Idle;
+    if (phase == ModPackInstallPhase::Done &&
+        s_prevPhase != ModPackInstallPhase::Done &&
+        GetLastInstalledPackKind() == ModPackInstalledKind::ScriptMod) {
+        DoHotReload(); // re-snapshots s_modList when it finishes
+        ToastSuccess(TR("Mod installed — reloading"));
+    } else if (phase == ModPackInstallPhase::Error &&
+               s_prevPhase != ModPackInstallPhase::Error) {
+        ToastError(TR("Mod install failed"));
     }
+    s_prevPhase = phase;
+}
+
+static std::string ModNameLower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+}
+
+static void RenderModsPanel() {
+    RenderModsActionBar();
+    WatchModPackInstallEdge();
 
     ImGui::Spacing();
     RenderBundledModRows();
@@ -300,16 +311,11 @@ static void RenderModsPanel() {
         return;
     }
 
-    auto toLower = [](std::string s) {
-        std::transform(s.begin(), s.end(), s.begin(),
-                       [](unsigned char c) { return (char)std::tolower(c); });
-        return s;
-    };
-    const std::string needle = toLower(filter);
+    const std::string needle = ModNameLower(filter);
     auto matches = [&](const ssb64::appmods::ModEntry& mod) {
         return needle.empty() ||
-               toLower(mod.name).find(needle) != std::string::npos ||
-               toLower(mod.author).find(needle) != std::string::npos;
+               ModNameLower(mod.name).find(needle) != std::string::npos ||
+               ModNameLower(mod.author).find(needle) != std::string::npos;
     };
 
     // --- Mod cards --------------------------------------------------

@@ -92,7 +92,146 @@ smash_add_test(NAME ws_ingress_test TYPE unit TIMEOUT 15
     SOURCES unit/netplay/transport/ws_ingress_test.cpp
     LIBRARIES smash_test_support
     LABELS netplay transport deterministic)
-target_include_directories(ws_ingress_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(ws_ingress_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/observability
+    ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport)
+
+# Shared uplink choreography (WsUplink + WsUplinkSocket/Send/Connect/Close/
+# WsSend) — template helpers instantiated against a fake int-handle backend
+# with rendezvous gates; forces the close-during-dial, retarget, racing
+# send+close and cadence-gate interleavings the real backends can hit.
+# A lock-order inversion (mu -> ioMu) deadlocks the racing cases -> TIMEOUT.
+smash_add_test(NAME ws_uplink_test TYPE unit TIMEOUT 30
+    SOURCES unit/netplay/transport/ws_uplink_test.cpp
+    LIBRARIES smash_test_support
+    LABELS netplay transport concurrency)
+target_include_directories(ws_uplink_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/observability
+    ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport)
+
+# Emscripten WebSocket backend — the real TU compiled under a forced
+# __EMSCRIPTEN__ with the emsdk API replaced by the shim in
+# tests/support/emscripten_shim/ backed by fake_ems.cpp. Browser events
+# are replayed deterministically (Fire*), the clock is test-driven, and
+# new/delete counting pins handle balance. The __EMSCRIPTEN__ define is
+# scoped to the production TU only: the test TU stays a normal host
+# program driving the port_ws_* ABI.
+smash_add_test(NAME ws_web_test TYPE unit TIMEOUT 30
+    SOURCES
+        unit/netplay/transport/ws_web_test.cpp
+        support/fake_ems.cpp
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport/websocket_web.cpp
+    LIBRARIES smash_test_support
+    LABELS netplay transport web deterministic)
+target_include_directories(ws_web_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/observability
+    ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport
+    ${CMAKE_CURRENT_SOURCE_DIR}/support
+    ${CMAKE_CURRENT_SOURCE_DIR}/support/emscripten_shim)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport/websocket_web.cpp
+    TARGET_DIRECTORY ws_web_test
+    PROPERTIES COMPILE_DEFINITIONS __EMSCRIPTEN__)
+
+# Real-WinHTTP uplink leak check: the production backend TU compiled
+# straight into the test, driven through port_ws_uplink_* against a
+# loopback RFC6455 server; asserts the process handle count stays flat
+# across clean and send-fail/lazy-redial churn windows (the interleave
+# that orphaned session/connect handles). Windows-only by definition.
+if (WIN32)
+    add_executable(ws_win32_leak_test
+        integration/netplay/ws_win32_leak_test.cpp
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport/websocket_transport_win32.cpp)
+    target_link_libraries(ws_win32_leak_test PRIVATE smash_test_support winhttp)
+    target_include_directories(ws_win32_leak_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/observability
+        ${CMAKE_SOURCE_DIR}/src/shared
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport)
+    add_test(NAME ws_win32_leak_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/integration/netplay/ws_win32_leak_driver.py
+            $<TARGET_FILE:ws_win32_leak_test>)
+    set_tests_properties(ws_win32_leak_test PROPERTIES
+        LABELS "integration;netplay;transport;leak;loopback" TIMEOUT 300)
+
+    # Same churn, same OS-level handle accounting — against the curl and
+    # BSD-fallback backends forced on via SSB64_PORTABLE_WS. The defines
+    # are scoped to the production TU only (the test TU stays
+    # backend-agnostic; WS_LEAK_TEST_NAME just labels the report).
+    # Covers the real dial/send-fail/lazy-redial loops the fake-backend
+    # unit test can only approximate.
+    if (SSB64_CURL_HAS_WS)
+        add_executable(ws_curl_leak_test
+            integration/netplay/ws_win32_leak_test.cpp
+            ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport/websocket_transport_curl.cpp)
+        target_link_libraries(ws_curl_leak_test PRIVATE
+            smash_test_support CURL::libcurl ws2_32)
+        target_include_directories(ws_curl_leak_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/observability
+            ${CMAKE_SOURCE_DIR}/src/shared
+            ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport)
+        target_compile_definitions(ws_curl_leak_test PRIVATE
+            WS_LEAK_TEST_NAME="ws_curl_leak_test")
+        set_source_files_properties(
+            ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport/websocket_transport_curl.cpp
+            TARGET_DIRECTORY ws_curl_leak_test
+            PROPERTIES COMPILE_DEFINITIONS
+                "SSB64_HAVE_CURL_WS;SSB64_PORTABLE_WS;BATTLESHIP_CURRENT_VERSION=\"${BATTLESHIP_VERSION}\"")
+        # vcpkg libcurl is a dynamic triplet dep — stage the runtime
+        # DLLs next to the exe or the test fails to launch (exit 127).
+        # Single-config generators only (all verify builds are Ninja):
+        # the config-appropriate bin dir is resolved at configure time.
+        set(_vcpkg_inst "${VCPKG_INSTALLED_DIR}")
+        if (NOT _vcpkg_inst)
+            set(_vcpkg_inst "${_VCPKG_INSTALLED_DIR}")
+        endif()
+        if (_vcpkg_inst AND VCPKG_TARGET_TRIPLET AND NOT CMAKE_CONFIGURATION_TYPES)
+            if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+                set(_ws_dll_dir "${_vcpkg_inst}/${VCPKG_TARGET_TRIPLET}/debug/bin")
+            else()
+                set(_ws_dll_dir "${_vcpkg_inst}/${VCPKG_TARGET_TRIPLET}/bin")
+            endif()
+            file(GLOB _ws_dlls "${_ws_dll_dir}/*.dll")
+            add_custom_command(TARGET ws_curl_leak_test POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${_ws_dlls} $<TARGET_FILE_DIR:ws_curl_leak_test>
+                COMMAND_EXPAND_LISTS)
+        endif()
+        add_test(NAME ws_curl_leak_test
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/integration/netplay/ws_win32_leak_driver.py
+                $<TARGET_FILE:ws_curl_leak_test>)
+        set_tests_properties(ws_curl_leak_test PROPERTIES
+            LABELS "integration;netplay;transport;leak;loopback;curl" TIMEOUT 300)
+    endif()
+
+    add_executable(ws_fallback_leak_test
+        integration/netplay/ws_win32_leak_test.cpp
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport/websocket_transport_fallback.cpp)
+    target_link_libraries(ws_fallback_leak_test PRIVATE smash_test_support ws2_32)
+    target_include_directories(ws_fallback_leak_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/observability
+        ${CMAKE_SOURCE_DIR}/src/shared
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport)
+    target_compile_definitions(ws_fallback_leak_test PRIVATE
+        WS_LEAK_TEST_NAME="ws_fallback_leak_test")
+    set_source_files_properties(
+        ${CMAKE_SOURCE_DIR}/src/networking/netplay/transport/websocket_transport_fallback.cpp
+        TARGET_DIRECTORY ws_fallback_leak_test
+        PROPERTIES COMPILE_DEFINITIONS SSB64_PORTABLE_WS)
+    add_test(NAME ws_fallback_leak_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/integration/netplay/ws_win32_leak_driver.py
+            $<TARGET_FILE:ws_fallback_leak_test>)
+    set_tests_properties(ws_fallback_leak_test PROPERTIES
+        LABELS "integration;netplay;transport;leak;loopback;fallback" TIMEOUT 300)
+endif()
 
 # Persistence stores — SSB64_SAVE_PATH redirects them into a per-process
 # temp dir, so load/save runs fully offline. Each binary runs twice:

@@ -128,31 +128,51 @@ bool VerifyEd25519MinisigFields(const std::string& message,
     return true;
 }
 
+/* First 64 chars are hex and char 64 is a space/tab separator. */
+static bool SumsHexPrefix(const std::string& l) {
+    size_t sp = l.find_first_of(" \t", 64);
+    if (sp != 64) {
+        return false;
+    }
+    for (size_t i = 0; i < 64; i++) {
+        char c = l[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Parse one sha256sum-format line ("<64-hex><sp><sp-or-*><name>");
+ * return "sha256:<lower-hex>" when its name matches `asset_name`, else "". */
+static std::string SumsLineDigest(const std::string& l, const std::string& asset_name) {
+    if (l.size() <= 65) {
+        return "";
+    }
+    if (!SumsHexPrefix(l)) {
+        return "";
+    }
+    std::string name = l.substr(65);
+    while (!name.empty() && (name[0] == ' ' || name[0] == '\t' || name[0] == '*')) {
+        name.erase(0, 1);
+    }
+    if (name != asset_name) {
+        return "";
+    }
+    std::string dg = l.substr(0, 64);
+    for (char& c : dg) c = (char)tolower((unsigned char)c);
+    return "sha256:" + dg;
+}
+
 std::string SumsDigestForAsset(const std::string& sums_text, const std::string& asset_name) {
     size_t pos = 0;
     while (pos < sums_text.size()) {
         size_t end = sums_text.find('\n', pos);
         std::string l = sums_text.substr(pos, end == std::string::npos ? end : end - pos);
         if (!l.empty() && l.back() == '\r') l.pop_back();
-        /* sha256sum format: "<64-hex><sp><sp-or-*><name>". */
-        if (l.size() > 65) {
-            size_t sp = l.find_first_of(" \t", 64);
-            bool hex_ok = sp == 64;
-            for (size_t i = 0; hex_ok && i < 64; i++) {
-                char c = l[i];
-                hex_ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-            }
-            if (hex_ok) {
-                std::string name = l.substr(65);
-                while (!name.empty() && (name[0] == ' ' || name[0] == '\t' || name[0] == '*')) {
-                    name.erase(0, 1);
-                }
-                if (name == asset_name) {
-                    std::string d = l.substr(0, 64);
-                    for (char& c : d) c = (char)tolower((unsigned char)c);
-                    return "sha256:" + d;
-                }
-            }
+        std::string dg = SumsLineDigest(l, asset_name);
+        if (!dg.empty()) {
+            return dg;
         }
         if (end == std::string::npos) break;
         pos = end + 1;

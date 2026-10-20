@@ -1,36 +1,7 @@
 /* SSBL wire protocol: message handlers and roster tracking — split from netlobby.cpp; the wire-protocol overview lives there. */
-#include "netlobby.h"
 #include "netlobby_internal.h"
-#include "netlobby_util.h"
 #include "lobby_json.h"
-#include "netfriends.h"
-#include "netstats.h"
-#include "udp_transport.h"
 #include "fnv1a.h"
-#include "websocket_transport.h"
-#include "port_log.h"
-#include "netrules.h"
-#include "PortI18n.h"
-
-#include <libultraship/bridge/consolevariablebridge.h>
-
-#ifndef DISABLE_SCRIPTING
-#include "ModRegistry.h"
-#endif
-
-#include <algorithm>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <random>
-#include <string>
-#include <vector>
-
-#include <ship/Context.h>
-
 /* State-free helpers (compat token, env, split, rules reads) live in
  * netlobby_util.cpp; wire JSON parsing in lobby_json.cpp — the names
  * resolve unqualified here. */
@@ -256,6 +227,215 @@ static void on_peer_contact(Peer &p, const char *from)
     update_status();
 }
 
+/* Optional PICK trailing fields: self-declared rating and display name.
+ * The Elo is clamped to the leaderboard's accepted band (0..4000) so a
+ * hostile PICK can't push the local rating math with an absurd value. */
+static void pick_optional_fields(Peer &p, const std::vector<std::string> &args)
+{
+    if (args.size() >= 8) {   /* optional trailing fields: rating, name */
+        p.rating = std::clamp(std::atoi(args[7].c_str()), 0, 4000);
+        if (args.size() >= 9 && p.name.empty()) {
+            /* Wire contract: names are sanitized to the [alnum._-]
+             * alphabet and <=15 chars by local_player_name() — enforce
+             * both bounds on receive so a hostile PICK can't smuggle an
+             * oversized or quote/newline-laden label into the log/menu
+             * or, if it is ever persisted, into the JSON stores. */
+            for (const char c : args[8]) {
+                if (wire_name_char(static_cast<unsigned char>(c)) &&
+                    p.name.size() < kWireNameMax) {
+                    p.name += c;
+                }
+            }
+        }
+    }
+    if (!p.name_checked && !p.name.empty()) {
+        p.name_checked = true;
+        if (port_netfriends_is_blocked(p.name.c_str())) {
+            /* names are self-claimed, so this is a heads-up rather than
+             * an auto-drop: the host decides after seeing the warn */
+            port_log("SSB64 Lobby: BLOCKED player '%s' connected on slot %d\n",
+                     p.name.c_str(), p.slot);
+            sLobby.status = TR("A player on your block list joined - check the name above.");
+            update_status();
+        }
+    }
+}
+
+/* A PICK is only honored when the peer runs the same build: version
+ * mismatch and build/mod-token mismatch both reject it — on the host we
+ * drop just that peer, on a client we fail our own session. Returns
+ * false once the rejection has been handled. */
+static bool pick_compatible(Peer &p, const std::vector<std::string> &args)
+{
+    if (p.version != kGameVersion) {
+        /* On the host an incompatible peer must not kill the room for
+         * everyone: drop just that peer and keep waiting. On a client a
+         * mismatch with the host means WE should leave. */
+        if (sLobby.is_host) {
+            port_log("SSB64 Lobby: player %d version mismatch (%s != %s) - dropped\n",
+                     p.slot, p.version.c_str(), kGameVersion);
+            peer_drop(p.slot);
+            sLobby.status = TR("Dropped a peer on an incompatible version - waiting for players.");
+            update_status();
+        } else {
+            char ver_msg[256];
+            std::snprintf(ver_msg, sizeof(ver_msg), TR("Version mismatch - you're on %s, a peer is on %s."),
+                          kGameVersion, p.version.c_str());
+            fail(ver_msg);
+        }
+        return false;
+    }
+    if (args.size() >= 7) {
+        /* build+mod compatibility token: catches same-version builds that
+         * differ (dev trees, patched builds, different loaded mods) before
+         * they desync mid-match */
+        if (args[6] != compat_token()) {
+            if (sLobby.is_host) {
+                port_log("SSB64 Lobby: player %d build/mod mismatch - dropped\n", p.slot);
+                peer_drop(p.slot);
+                sLobby.status = TR("Dropped a peer with a different build or mod set.");
+                update_status();
+            } else {
+                fail(TR("Build or mod mismatch - all players must run the same build and mods."));
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
+static void msg_pick(Peer &p, const std::vector<std::string> &args)
+{
+    p.fkind = std::atoi(args[2].c_str());
+    p.tap_jump_off = std::atoi(args[4].c_str());
+    p.version = args[5].substr(0, 32);   /* display-only, but cap it */
+    p.got_pick = true;
+    pick_optional_fields(p, args);
+    if (!pick_compatible(p, args)) {
+        return;
+    }
+    std::string pong = "SSBL PONG " + args[3];
+    send_to_peer(p, pong.c_str());
+    update_status();
+}
+
+static void msg_pong(Peer &p, const std::vector<std::string> &args)
+{
+    unsigned int sent = static_cast<unsigned int>(std::strtoul(args[2].c_str(), nullptr, 10));
+    p.ping_ms = static_cast<int>(port_udp_now_ms() - sent) / 2;
+    p.got_pong = true;
+}
+
+/* STARTM roster, [<room_slot> <fk> <cos> <tj>] sorted by room slot — our
+ * position in the list is our game slot. Returns our game-slot index,
+ * or -1 when the roster doesn't include us (spectator / late joiner). */
+static int startm_parse_roster(const std::vector<std::string> &args, int n,
+                               int *wires, int *fkinds, int *costumes, int *tjs)
+{
+    int my_game = -1;
+    for (int i = 0; i < n; i++) {
+        wires[i] = std::atoi(args[12 + i * 4].c_str());
+        fkinds[i] = std::atoi(args[13 + i * 4].c_str());
+        costumes[i] = std::atoi(args[14 + i * 4].c_str());
+        tjs[i] = std::atoi(args[15 + i * 4].c_str());
+        if (wires[i] == sLobby.my_slot) {
+            my_game = i;
+        }
+    }
+    return my_game;
+}
+
+/* A spectator is never part of the player roster: it still gets STARTM
+ * (the host sends it to every spec link) and begins watching the moment
+ * the engine's forwarded inputs arrive. */
+static void startm_spectate(const std::vector<std::string> &args, int n,
+                            const int *fkinds, const int *costumes, const int *tjs,
+                            unsigned int session)
+{
+    sLobby.player_count = n;
+    port_netrules_set(std::atoi(args[7].c_str()), std::atoi(args[8].c_str()),
+                      std::atoi(args[9].c_str()), std::atoi(args[10].c_str()), tjs);
+    syNetPeerStartOnlineSpectate(n, std::strtoul(args[6].c_str(), nullptr, 10),
+                                 std::strtoul(args[2].c_str(), nullptr, 10),
+                                 std::strtoul(args[3].c_str(), nullptr, 10),
+                                 std::atoi(args[4].c_str()),
+                                 std::strtoul(args[5].c_str(), nullptr, 10),
+                                 session, fkinds, costumes);
+    begin_match();
+}
+
+/* client: full roster start; the last field is the host-generated
+ * session id */
+static void msg_startm(Peer &p, const std::vector<std::string> &args)
+{
+    int n = std::atoi(args[11].c_str());
+    if (sLobby.is_host || p.slot != 0 || n < 2 || n > 4 ||
+        args.size() < 13u + 4u * static_cast<unsigned int>(n)) {
+        return;
+    }
+    unsigned int session = std::strtoul(args[12 + n * 4].c_str(), nullptr, 10);
+    int wires[4] = {}, fkinds[4] = {}, costumes[4] = {}, tjs[4] = {};
+    int my_game = startm_parse_roster(args, n, wires, fkinds, costumes, tjs);
+    if (my_game < 0) {
+        if (sLobby.spectate) {
+            startm_spectate(args, n, fkinds, costumes, tjs, session);
+        }
+        return;     // host started without us
+    }
+    sLobby.player_count = n;
+    for (int i = 0; i < 5; i++) {
+        std::string go = "SSBL GO " + std::to_string(std::strtoul(args[5].c_str(), nullptr, 10));
+        send_to_peer(p, go.c_str());
+    }
+    apply_match_start(n, my_game, std::strtoul(args[2].c_str(), nullptr, 10),
+                      std::strtoul(args[3].c_str(), nullptr, 10),
+                      std::atoi(args[4].c_str()),
+                      std::strtoul(args[5].c_str(), nullptr, 10),
+                      std::strtoul(args[6].c_str(), nullptr, 10),
+                      std::atoi(args[7].c_str()), std::atoi(args[8].c_str()),
+                      std::atoi(args[9].c_str()), std::atoi(args[10].c_str()),
+                      fkinds, costumes, tjs, wires, session);
+    begin_match();
+}
+
+/* v1 dialect (host fk/cos, client fk/cos, optional rules) */
+static void msg_start(Peer &p, const std::vector<std::string> &args)
+{
+    if (sLobby.is_host || sLobby.my_slot != 1) {
+        return;
+    }
+    int stage = std::atoi(args[2].c_str());
+    int stocks = std::atoi(args[3].c_str());
+    int items = std::atoi(args[4].c_str());
+    unsigned int seed = std::strtoul(args[5].c_str(), nullptr, 10);
+    unsigned int delay = std::strtoul(args[6].c_str(), nullptr, 10);
+    int fkinds[4] = {}, costumes[4] = {}, tjs[4] = {};
+    int autoz = 0, comp = 0, neutral = 0, hazards = 0;
+    fkinds[0] = std::atoi(args[7].c_str());
+    costumes[0] = std::atoi(args[8].c_str());
+    fkinds[1] = std::atoi(args[9].c_str());
+    costumes[1] = std::atoi(args[10].c_str());
+    if (args.size() >= 17) {
+        autoz = std::atoi(args[11].c_str());
+        comp = std::atoi(args[12].c_str());
+        neutral = std::atoi(args[13].c_str());
+        hazards = std::atoi(args[14].c_str());
+        tjs[0] = std::atoi(args[15].c_str());
+        tjs[1] = std::atoi(args[16].c_str());
+    }
+    sLobby.player_count = 2;
+    for (int i = 0; i < 5; i++) {
+        send_to_peer(p, ("SSBL GO " + std::to_string(seed)).c_str());
+    }
+    /* optional trailing session id; old hosts don't send it and the
+     * engine falls back to the seed (legacy 1v1 compat) */
+    unsigned int session = (args.size() >= 18)
+        ? std::strtoul(args[17].c_str(), nullptr, 10) : 0;
+    apply_match_start(2, 1, stage, stocks, items, seed, delay, autoz, comp, neutral, hazards,
+                      fkinds, costumes, tjs, nullptr, session);
+    begin_match();
+}
+
 static void handle_game_message(Peer &p, const std::vector<std::string> &args)
 {
     if (args.size() < 2) {
@@ -264,186 +444,18 @@ static void handle_game_message(Peer &p, const std::vector<std::string> &args)
     const std::string &verb = args[1];
     p.last_heard_ms = port_udp_now_ms();
 
-    if (verb == "HELLO" || verb == "HELLOACK") {
-        return;     // handled by on_peer_contact
-    }
     if (verb == "PICK" && args.size() >= 6) {
-        p.fkind = std::atoi(args[2].c_str());
-        p.tap_jump_off = std::atoi(args[4].c_str());
-        p.version = args[5].substr(0, 32);   /* display-only, but cap it */
-        p.got_pick = true;
-        if (args.size() >= 8) {   /* optional trailing fields: rating, name */
-            /* Self-declared Elo — clamp to the leaderboard's accepted band
-             * (0..4000) so a hostile PICK can't push the local rating math
-             * with an absurd value. */
-            p.rating = std::clamp(std::atoi(args[7].c_str()), 0, 4000);
-            if (args.size() >= 9 && p.name.empty()) {
-                /* Wire contract: names are sanitized to the [alnum._-]
-                 * alphabet and <=15 chars by local_player_name() — enforce
-                 * both bounds on receive so a hostile PICK can't smuggle an
-                 * oversized or quote/newline-laden label into the log/menu
-                 * or, if it is ever persisted, into the JSON stores. */
-                for (const char c : args[8]) {
-                    if (wire_name_char(static_cast<unsigned char>(c)) &&
-                        p.name.size() < kWireNameMax) {
-                        p.name += c;
-                    }
-                }
-            }
-        }
-        if (!p.name_checked && !p.name.empty()) {
-            p.name_checked = true;
-            if (port_netfriends_is_blocked(p.name.c_str())) {
-                /* names are self-claimed, so this is a heads-up rather than
-                 * an auto-drop: the host decides after seeing the warn */
-                port_log("SSB64 Lobby: BLOCKED player '%s' connected on slot %d\n",
-                         p.name.c_str(), p.slot);
-                sLobby.status = TR("A player on your block list joined - check the name above.");
-                update_status();
-            }
-        }
-        if (p.version != kGameVersion) {
-            /* On the host an incompatible peer must not kill the room for
-             * everyone: drop just that peer and keep waiting. On a client a
-             * mismatch with the host means WE should leave. */
-            if (sLobby.is_host) {
-                port_log("SSB64 Lobby: player %d version mismatch (%s != %s) - dropped\n",
-                         p.slot, p.version.c_str(), kGameVersion);
-                peer_drop(p.slot);
-                sLobby.status = TR("Dropped a peer on an incompatible version - waiting for players.");
-                update_status();
-            } else {
-                char ver_msg[256];
-                std::snprintf(ver_msg, sizeof(ver_msg), TR("Version mismatch - you're on %s, a peer is on %s."),
-                              kGameVersion, p.version.c_str());
-                fail(ver_msg);
-            }
-            return;
-        }
-        if (args.size() >= 7) {
-            /* build+mod compatibility token: catches same-version builds that
-             * differ (dev trees, patched builds, different loaded mods) before
-             * they desync mid-match */
-            const std::string mine = compat_token();
-            if (args[6] != mine) {
-                if (sLobby.is_host) {
-                    port_log("SSB64 Lobby: player %d build/mod mismatch - dropped\n", p.slot);
-                    peer_drop(p.slot);
-                    sLobby.status = TR("Dropped a peer with a different build or mod set.");
-                    update_status();
-                } else {
-                    fail(TR("Build or mod mismatch - all players must run the same build and mods."));
-                }
-                return;
-            }
-        }
-        std::string pong = "SSBL PONG " + args[3];
-        send_to_peer(p, pong.c_str());
-        update_status();
-        return;
-    }
-    if (verb == "PONG" && args.size() >= 3) {
-        unsigned int sent = static_cast<unsigned int>(std::strtoul(args[2].c_str(), nullptr, 10));
-        p.ping_ms = static_cast<int>(port_udp_now_ms() - sent) / 2;
-        p.got_pong = true;
-        return;
-    }
-    if (verb == "GO") {
+        msg_pick(p, args);
+    } else if (verb == "PONG" && args.size() >= 3) {
+        msg_pong(p, args);
+    } else if (verb == "GO") {
         p.go = true;
-        return;
+    } else if (verb == "STARTM" && args.size() >= 12) {
+        msg_startm(p, args);
+    } else if (verb == "START" && args.size() >= 11) {
+        msg_start(p, args);
     }
-    if (verb == "STARTM" && args.size() >= 12) {
-        /* client: full roster start, [<room_slot> <fk> <cos> <tj>] sorted by
-         * room slot - our position in the list is our game slot; the last
-         * field is the host-generated session id */
-        int n = std::atoi(args[11].c_str());
-        if (sLobby.is_host || p.slot != 0 || n < 2 || n > 4 ||
-            args.size() < 13u + 4u * static_cast<unsigned int>(n)) {
-            return;
-        }
-        unsigned int session = std::strtoul(args[12 + n * 4].c_str(), nullptr, 10);
-        int wires[4] = {}, fkinds[4] = {}, costumes[4] = {}, tjs[4] = {};
-        int my_game = -1;
-        for (int i = 0; i < n; i++) {
-            wires[i] = std::atoi(args[12 + i * 4].c_str());
-            fkinds[i] = std::atoi(args[13 + i * 4].c_str());
-            costumes[i] = std::atoi(args[14 + i * 4].c_str());
-            tjs[i] = std::atoi(args[15 + i * 4].c_str());
-            if (wires[i] == sLobby.my_slot) {
-                my_game = i;
-            }
-        }
-        if (my_game < 0) {
-            /* a spectator is never part of the player roster: it still gets
-             * STARTM (the host sends it to every spec link) and begins
-             * watching the moment the engine's forwarded inputs arrive */
-            if (sLobby.spectate) {
-                sLobby.player_count = n;
-                port_netrules_set(std::atoi(args[7].c_str()), std::atoi(args[8].c_str()),
-                                  std::atoi(args[9].c_str()), std::atoi(args[10].c_str()), tjs);
-                syNetPeerStartOnlineSpectate(n, std::strtoul(args[6].c_str(), nullptr, 10),
-                                             std::strtoul(args[2].c_str(), nullptr, 10),
-                                             std::strtoul(args[3].c_str(), nullptr, 10),
-                                             std::atoi(args[4].c_str()),
-                                             std::strtoul(args[5].c_str(), nullptr, 10),
-                                             session, fkinds, costumes);
-                begin_match();
-            }
-            return;     // host started without us
-        }
-        sLobby.player_count = n;
-        for (int i = 0; i < 5; i++) {
-            std::string go = "SSBL GO " + std::to_string(std::strtoul(args[5].c_str(), nullptr, 10));
-            send_to_peer(p, go.c_str());
-        }
-        apply_match_start(n, my_game, std::strtoul(args[2].c_str(), nullptr, 10),
-                          std::strtoul(args[3].c_str(), nullptr, 10),
-                          std::atoi(args[4].c_str()),
-                          std::strtoul(args[5].c_str(), nullptr, 10),
-                          std::strtoul(args[6].c_str(), nullptr, 10),
-                          std::atoi(args[7].c_str()), std::atoi(args[8].c_str()),
-                          std::atoi(args[9].c_str()), std::atoi(args[10].c_str()),
-                          fkinds, costumes, tjs, wires, session);
-        begin_match();
-        return;
-    }
-    if (verb == "START" && args.size() >= 11) {
-        /* v1 dialect (host fk/cos, client fk/cos, optional rules) */
-        if (sLobby.is_host || sLobby.my_slot != 1) {
-            return;
-        }
-        int stage = std::atoi(args[2].c_str());
-        int stocks = std::atoi(args[3].c_str());
-        int items = std::atoi(args[4].c_str());
-        unsigned int seed = std::strtoul(args[5].c_str(), nullptr, 10);
-        unsigned int delay = std::strtoul(args[6].c_str(), nullptr, 10);
-        int fkinds[4] = {}, costumes[4] = {}, tjs[4] = {};
-        int autoz = 0, comp = 0, neutral = 0, hazards = 0;
-        fkinds[0] = std::atoi(args[7].c_str());
-        costumes[0] = std::atoi(args[8].c_str());
-        fkinds[1] = std::atoi(args[9].c_str());
-        costumes[1] = std::atoi(args[10].c_str());
-        if (args.size() >= 17) {
-            autoz = std::atoi(args[11].c_str());
-            comp = std::atoi(args[12].c_str());
-            neutral = std::atoi(args[13].c_str());
-            hazards = std::atoi(args[14].c_str());
-            tjs[0] = std::atoi(args[15].c_str());
-            tjs[1] = std::atoi(args[16].c_str());
-        }
-        sLobby.player_count = 2;
-        for (int i = 0; i < 5; i++) {
-            send_to_peer(p, ("SSBL GO " + std::to_string(seed)).c_str());
-        }
-        /* optional trailing session id; old hosts don't send it and the
-         * engine falls back to the seed (legacy 1v1 compat) */
-        unsigned int session = (args.size() >= 18)
-            ? std::strtoul(args[17].c_str(), nullptr, 10) : 0;
-        apply_match_start(2, 1, stage, stocks, items, seed, delay, autoz, comp, neutral, hazards,
-                          fkinds, costumes, tjs, nullptr, session);
-        begin_match();
-        return;
-    }
+    /* HELLO/HELLOACK are handled by on_peer_contact */
 }
 
 /* SSB64_LAN_KEY=<secret>: when the host sets it, LAN HELLOs must carry the
@@ -520,6 +532,61 @@ static Peer *lan_accept(const char *from, const std::vector<std::string> &args)
     return p;
 }
 
+/* A HELLO/HELLOACK from a known (or LAN-adoptable) endpoint: resend our
+ * ack while the peer is still handshaking; a LAN host assigns slots. */
+static void pump_hello(const char *from, const std::vector<std::string> &args)
+{
+    Peer *p = peer_for_source(from);
+    if (p == nullptr) {
+        p = lan_accept(from, args);
+    }
+    if (p == nullptr) {
+        if (diag_relay()) {
+            port_log("SSB64 Lobby: HELLO from unmatched source %s\n", from);
+        }
+        return;
+    }
+    if (p->connected && args[1] == "HELLO") {
+        /* the peer is still handshaking — its HELLO means it never
+         * heard our ack; resend it every time it asks */
+        send_to_peer(*p, "SSBL HELLOACK");
+    }
+    on_peer_contact(*p, from);
+    if (sLobby.lan && !sLobby.is_host && args[1] == "HELLOACK" && args.size() >= 3) {
+        sLobby.my_slot = std::atoi(args[2].c_str());   // host-assigned room slot
+    }
+}
+
+static void pump_datagram(uint8_t *buf, int size, const char *from)
+{
+    if (diag_relay()) {
+        port_log("SSB64 Lobby: udp recv %d bytes from=%s\n", size, from);
+    }
+    if (parse_stun(buf, size)) {
+        return;
+    }
+    buf[size] = '\0';
+    if (std::strncmp(reinterpret_cast<char *>(buf), "SSBL ", 5) != 0) {
+        return;   // not ours (could be a stray SSNP packet)
+    }
+    std::vector<std::string> args = split(reinterpret_cast<char *>(buf));
+    if (args.size() >= 2 && (args[1] == "HELLO" || args[1] == "HELLOACK")) {
+        pump_hello(from, args);
+        return;
+    }
+    Peer *p = peer_for_source(from);
+    if (p == nullptr) {
+        if (diag_relay()) {
+            port_log("SSB64 Lobby: packet from unmatched source %s\n", from);
+        }
+        return;
+    }
+    /* any authenticated message from a known endpoint proves the path —
+     * promote even if the one-shot HELLOACK was lost in transit */
+    on_peer_contact(*p, from);
+    handle_game_message(*p, args);
+}
+
 void pump_transport(void)
 {
     uint8_t buf[2048];
@@ -530,50 +597,7 @@ void pump_transport(void)
         if (size <= 0) {
             return;
         }
-        if (diag_relay()) {
-            port_log("SSB64 Lobby: udp recv %d bytes from=%s\n", size, from);
-        }
-        if (parse_stun(buf, size)) {
-            continue;
-        }
-        buf[size] = '\0';
-        if (std::strncmp(reinterpret_cast<char *>(buf), "SSBL ", 5) != 0) {
-            continue;   // not ours (could be a stray SSNP packet)
-        }
-        std::vector<std::string> args = split(reinterpret_cast<char *>(buf));
-        if (args.size() >= 2 && (args[1] == "HELLO" || args[1] == "HELLOACK")) {
-            Peer *p = peer_for_source(from);
-            if (p == nullptr) {
-                p = lan_accept(from, args);
-            }
-            if (p == nullptr) {
-                if (diag_relay()) {
-                    port_log("SSB64 Lobby: HELLO from unmatched source %s\n", from);
-                }
-                continue;
-            }
-            if (p->connected && args[1] == "HELLO") {
-                /* the peer is still handshaking — its HELLO means it never
-                 * heard our ack; resend it every time it asks */
-                send_to_peer(*p, "SSBL HELLOACK");
-            }
-            on_peer_contact(*p, from);
-            if (sLobby.lan && !sLobby.is_host && args[1] == "HELLOACK" && args.size() >= 3) {
-                sLobby.my_slot = std::atoi(args[2].c_str());   // host-assigned room slot
-            }
-            continue;
-        }
-        Peer *p = peer_for_source(from);
-        if (p == nullptr) {
-            if (diag_relay()) {
-                port_log("SSB64 Lobby: packet from unmatched source %s\n", from);
-            }
-            continue;
-        }
-        /* any authenticated message from a known endpoint proves the path —
-         * promote even if the one-shot HELLOACK was lost in transit */
-        on_peer_contact(*p, from);
-        handle_game_message(*p, args);
+        pump_datagram(buf, size, from);
     }
 }
 
@@ -609,6 +633,103 @@ static void update_peer_endpoints(int slot, const nlohmann::json &entry)
     }
 }
 
+/* Mid-match catch-up: hand the spec the current match's STARTM so it
+ * boots at tick 0, then arm the engine's history stream - it resimulates
+ * the recorded inputs faster than realtime and lands on the live edge. */
+static void roster_spec_catchup(Peer &p)
+{
+    port_log("SSB64 Lobby: spectator slot %d joined mid-match - catch-up stream armed\n", p.slot);
+    send_to_peer(p, sLobby.last_start_payload.c_str());
+    /* the engine cleared its spec-link list at match
+     * start - register this late joiner before arming */
+    syNetPeerAddSpecLink(p.slot);
+    syNetPeerBeginSpecCatchUp(p.slot);
+}
+
+/* Spectators have no endpoints to exchange: the host just opens a relay
+ * link and (mid-match) feeds it through the engine. */
+static void roster_spec_entry(int slot, const nlohmann::json &entry)
+{
+    if (!sLobby.is_host || json_str(entry, "role") != "spec") {
+        return;
+    }
+    Peer *p = peer_new(slot);
+    if (p == nullptr || p->connected) {
+        return;
+    }
+    p->connected = port_udp_link_set(slot, "relay") == 1;
+    p->last_heard_ms = p->joined_ms = port_udp_now_ms();
+    if (sLobby.state == PORT_NETLOBBY_IN_MATCH &&
+        !sLobby.last_start_payload.empty() &&
+        env("SSB64_SPECTATE_CATCHUP") == nullptr &&
+        syNetInputGetTick() < 21000) {   /* inside the 21600-tick recording cap */
+        roster_spec_catchup(*p);
+    } else {
+        /* catch-up disabled or past the recording cap:
+         * wait for the NEXT match's STARTM */
+        port_log("SSB64 Lobby: spectator slot %d%s\n", slot,
+                 (sLobby.state == PORT_NETLOBBY_IN_MATCH) ? " joined mid-match - watching next match" : "");
+    }
+}
+
+static void roster_player_entry(int slot, const nlohmann::json &entry)
+{
+    if (slot != sLobby.my_slot) {
+        update_peer_endpoints(slot, entry);
+        Peer *p = peer_for_slot(slot);
+        if (p != nullptr) {
+            p->ready = json_str(entry, "ready") == "true";
+        }
+    } else if (sLobby.server_version == 2 &&
+               (json_str(entry, "ready") == "true") != sLobby.my_ready) {
+        /* the room's copy of our flag went stale (a reconnect resets
+         * it server-side) - re-announce our truth */
+        send_ready_state();
+    }
+}
+
+static void roster_scan_entries(const nlohmann::json &players, bool *seen)
+{
+    for (const nlohmann::json &entry : players) {
+        if (!entry.is_object()) {
+            continue;
+        }
+        const int slot = json_int(entry, "slot");
+        if (slot >= 0 && slot < 8) {
+            seen[slot] = true;
+        }
+        if (is_spec_slot(slot)) {
+            roster_spec_entry(slot, entry);
+        } else if (slot >= 0 && slot <= 3) {
+            roster_player_entry(slot, entry);
+        }
+    }
+}
+
+static int roster_player_count(const bool *seen)
+{
+    int count = 0;
+    for (int i = 0; i < 4; i++) {      /* player_count never includes specs */
+        if (seen[i]) {
+            count++;
+        }
+    }
+    return count;
+}
+
+/* drop peers that vanished from the roster (left before the match) */
+static void roster_drop_vanished(const bool *seen)
+{
+    if (sLobby.state == PORT_NETLOBBY_IN_MATCH) {
+        return;
+    }
+    for (Peer &p : sLobby.peers) {
+        if (p.slot >= 0 && !seen[p.slot]) {
+            peer_drop(p.slot);
+        }
+    }
+}
+
 /* The "peers" roster (v2) lists every participant in a top-level "players"
  * array of objects — iterate it structurally (the old substring scan could
  * match "slot": inside a string value or a nested object). */
@@ -624,81 +745,197 @@ static void on_roster(const std::string &text)
     if (players == doc.end() || !players->is_array()) {
         return;
     }
-    for (const nlohmann::json &entry : *players) {
-        if (!entry.is_object()) {
-            continue;
-        }
-        const int slot = json_int(entry, "slot");
-        if (slot >= 0 && slot < 8) {
-            seen[slot] = true;
-        }
-        if (is_spec_slot(slot)) {
-            /* spectators have no endpoints to exchange: the host just opens
-             * a relay link and (mid-match) feeds it through the engine */
-            if (sLobby.is_host && json_str(entry, "role") == "spec") {
-                Peer *p = peer_new(slot);
-                if (p != nullptr && !p->connected) {
-                    p->connected = port_udp_link_set(slot, "relay") == 1;
-                    p->last_heard_ms = p->joined_ms = port_udp_now_ms();
-                    if (sLobby.state == PORT_NETLOBBY_IN_MATCH &&
-                        !sLobby.last_start_payload.empty() &&
-                        env("SSB64_SPECTATE_CATCHUP") == nullptr &&
-                        syNetInputGetTick() < 21000) {   /* inside the 21600-tick recording cap */
-                        /* mid-match catch-up: hand the spec the current
-                         * match's STARTM so it boots at tick 0, then arm the
-                         * engine's history stream - it resimulates the
-                         * recorded inputs faster than realtime and lands on
-                         * the live edge. */
-                        port_log("SSB64 Lobby: spectator slot %d joined mid-match - catch-up stream armed\n", slot);
-                        send_to_peer(*p, sLobby.last_start_payload.c_str());
-                        /* the engine cleared its spec-link list at match
-                         * start - register this late joiner before arming */
-                        syNetPeerAddSpecLink(p->slot);
-                        syNetPeerBeginSpecCatchUp(p->slot);
-                    } else {
-                        /* catch-up disabled or past the recording cap:
-                         * wait for the NEXT match's STARTM */
-                        port_log("SSB64 Lobby: spectator slot %d%s\n", slot,
-                                 (sLobby.state == PORT_NETLOBBY_IN_MATCH) ? " joined mid-match - watching next match" : "");
-                    }
-                }
-            }
-        } else if (slot >= 0 && slot <= 3) {
-            if (slot != sLobby.my_slot) {
-                update_peer_endpoints(slot, entry);
-                Peer *p = peer_for_slot(slot);
-                if (p != nullptr) {
-                    p->ready = json_str(entry, "ready") == "true";
-                }
-            } else if (sLobby.server_version == 2 &&
-                       (json_str(entry, "ready") == "true") != sLobby.my_ready) {
-                /* the room's copy of our flag went stale (a reconnect resets
-                 * it server-side) - re-announce our truth */
-                send_ready_state();
-            }
-        }
-    }
-    int count = 0;
-    for (int i = 0; i < 4; i++) {      /* player_count never includes specs */
-        if (seen[i]) {
-            count++;
-        }
-    }
+    roster_scan_entries(*players, seen);
     // room slots can be sparse; count who is here. Spectators keep their
     // own count unless the roster shows actual players.
+    const int count = roster_player_count(seen);
     if (!sLobby.spectate || count > 0) {
         sLobby.player_count = count;
     }
+    roster_drop_vanished(seen);
+    update_status();
+}
 
-    /* drop peers that vanished from the roster (left before the match) */
-    if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-        for (Peer &p : sLobby.peers) {
-            if (p.slot >= 0 && !seen[p.slot]) {
-                peer_drop(p.slot);
-            }
+/* Lobby-path RTT — measured off the periodic {"type":"ping"} the
+ * session sends once the endpoint is published. The value feeds
+ * the ms= hint on subsequent queue connects (see connect_server). */
+static void srv_keepalive_ack(void)
+{
+    if (sLobby.ping_sent_ms != 0) {
+        sLobby.lobby_rtt_ms = port_udp_now_ms() - sLobby.ping_sent_ms;
+    }
+}
+
+/* v2 welcome carries our room slot: set up relay framing and either the
+ * spectator's single host link or the player's uplink + roster. */
+static void welcome_v2_slot(const nlohmann::json &doc, const char *text)
+{
+    sLobby.server_version = 2;
+    sLobby.my_slot = json_int(doc, "slot");
+    sLobby.up_key = json_str(doc, "upkey");
+    port_udp_set_relay_framed(1);
+    port_udp_set_relay_hooks(relay_send, relay_recv);
+    if (sLobby.spectate) {
+        /* spectators are relay-only: a single framed link to the
+         * host (room slot 0), no uplink (a spec never sends game
+         * traffic - its PICKs ride the control socket framing) */
+        Peer *p = peer_new(0);
+        if (p != nullptr) {
+            p->connected = port_udp_link_set(0, "relay") == 1;
+            p->last_heard_ms = p->joined_ms = port_udp_now_ms();
+        }
+        sLobby.stun_done = true;
+        sLobby.endpoint_sent = true;
+    } else {
+        open_uplink();      // send-only channel for relayed game traffic
+        on_roster(text);    // v2 welcome carries the current roster
+    }
+}
+
+static void welcome_state(void)
+{
+    if (sLobby.spectate) {
+        char room_msg[160];
+        std::snprintf(room_msg, sizeof(room_msg),
+                      TR("Spectating room %s - waiting for the host to start."), sLobby.code.c_str());
+        set_state(PORT_NETLOBBY_CONNECTED, room_msg);
+    } else if (sLobby.is_host &&
+               (sLobby.state == PORT_NETLOBBY_CREATING ||
+                (sLobby.quickplay && sLobby.state == PORT_NETLOBBY_JOINING))) {
+        set_state(PORT_NETLOBBY_WAITING,
+                  sLobby.quickplay ? TR("Queue room open - waiting for an opponent.")
+                                   : TR("Room open - share the code, waiting for players."));
+    } else if (!sLobby.is_host && sLobby.state == PORT_NETLOBBY_JOINING) {
+        set_state(PORT_NETLOBBY_PUNCHING, TR("Joined room - connecting to host."));
+    }
+}
+
+static void srv_welcome(const nlohmann::json &doc, const char *text)
+{
+    sLobby.ws_welcomed = true;
+    sLobby.code = json_str(doc, "room");
+    sLobby.up_key = json_str(doc, "upkey");
+    if (sLobby.quickplay) {
+        /* role=queue: the room tells us which side we landed on */
+        sLobby.is_host = (json_str(doc, "role") == "host");
+    }
+    port_netstats_note_room(sLobby.code.c_str());
+    if (json_int(doc, "slot") >= 0) {
+        welcome_v2_slot(doc, text);
+    } else {
+        sLobby.server_version = 1;
+        sLobby.my_slot = sLobby.is_host ? 0 : 1;
+    }
+    welcome_state();
+    send_endpoint_if_ready();
+}
+
+static void srv_peer(const nlohmann::json &doc)          // v1: single opponent endpoints
+{
+    update_peer_endpoints(sLobby.is_host ? 1 : 0, doc);
+    sLobby.player_count = 2;
+    if (sLobby.state == PORT_NETLOBBY_WAITING || sLobby.state == PORT_NETLOBBY_JOINING) {
+        set_state(PORT_NETLOBBY_PUNCHING, TR("Peer joined - punching through NAT."));
+    }
+}
+
+static void srv_peer_relay(const nlohmann::json &doc)    // v2: one peer fell back to the relay
+{
+    const int slot = json_int(doc, "slot");
+    if (slot < 0) {
+        return;                /* absent/invalid — free peers are slot -1 */
+    }
+    Peer *p = peer_for_slot(slot);
+    /* A peer that asked for relay but already connected via direct is
+     * fine to leave alone *only* if the direct path is proven both ways
+     * (got_pong). Asymmetric NATs do receive our hellos but never deliver
+     * our replies — without the flip, that peer sits connected-but-deaf
+     * until it times out. */
+    if (p != nullptr && (!p->connected || !p->got_pong)) {
+        port_udp_link_set(slot, "relay");
+    }
+}
+
+static void srv_relaying(void)                           // v1: whole session goes through the relay
+{
+    port_udp_set_relay_hooks(relay_send, relay_recv);
+    for (Peer &p : sLobby.peers) {
+        if (p.slot >= 0 && !p.connected) {
+            port_udp_link_set(p.slot, "relay");
         }
     }
-    update_status();
+}
+
+static void srv_peer_left(const nlohmann::json &doc)
+{
+    const int left = json_int(doc, "slot");
+    if (left >= 0) {           // v2: one participant left
+        if (left == 0) {       // host left: the room is over
+            if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
+                fail(TR("Host left the room."));
+            }
+            return;
+        }
+        peer_drop(left);
+        update_status();
+        return;
+    }
+    /* v1: opponent left */
+    for (Peer &p : sLobby.peers) {
+        if (p.slot >= 0) {
+            peer_drop(p.slot);
+        }
+    }
+    sLobby.player_count = 1;
+    if (sLobby.is_host && sLobby.state != PORT_NETLOBBY_IN_MATCH) {
+        set_state(PORT_NETLOBBY_WAITING, TR("Peer left - waiting for players."));
+    } else if (!sLobby.is_host && sLobby.state != PORT_NETLOBBY_IN_MATCH) {
+        fail(TR("Host left the room."));
+    }
+}
+
+/* A full queue room rolls to the next well-known QUEUE<n> code; when the
+ * pool is exhausted (or this wasn't a queue join) it's a plain failure. */
+static void srv_queue_full(void)
+{
+    if (sLobby.quickplay && sLobby.queue_idx + 1 < kQueueRoomCount) {
+        sLobby.queue_idx++;
+        char code[16];
+        std::snprintf(code, sizeof(code), "QUEUE%d", 2 + sLobby.queue_idx);
+        sLobby.code = code;
+        port_ws_close();
+        port_ws_uplink_close();
+        connect_server();
+        char msgbuf[128];
+        std::snprintf(msgbuf, sizeof(msgbuf), TR("Queue %d full - trying the next one..."),
+                      2 + sLobby.queue_idx);
+        sLobby.status = msgbuf;
+        return;
+    }
+    fail(TR("Room is full (4 players)."));
+}
+
+static void srv_error(const nlohmann::json &doc)
+{
+    std::string msg = json_str(doc, "reason");
+    if (msg.empty()) {
+        msg = json_str(doc, "message");
+    }
+    if (msg == "room-full") {
+        srv_queue_full();
+    } else if (msg == "version-mismatch") {
+        fail(TR("Room runs a different netplay build."));
+    } else if (msg == "room-in-use") {
+        fail(TR("Room code already in use - try hosting again."));
+    } else if (msg == "no-such-room") {
+        fail(TR("No such room."));
+    } else if (msg == "bad-code") {
+        fail(TR("Invalid room code."));
+    } else {
+        char err[256];
+        std::snprintf(err, sizeof(err), TR("Server error: %s"), msg.c_str());
+        fail(err);
+    }
 }
 
 void on_server_text(const char *text)
@@ -707,177 +944,108 @@ void on_server_text(const char *text)
     const std::string type = json_str(doc, "type");
 
     if (type == "keepalive_ack") {
-        /* Lobby-path RTT — measured off the periodic {"type":"ping"} the
-         * session sends once the endpoint is published. The value feeds
-         * the ms= hint on subsequent queue connects (see connect_server). */
-        if (sLobby.ping_sent_ms != 0) {
-            sLobby.lobby_rtt_ms = port_udp_now_ms() - sLobby.ping_sent_ms;
-        }
-        return;
-    }
-
-    if (type == "welcome") {
-        sLobby.ws_welcomed = true;
-        sLobby.code = json_str(doc, "room");
-        sLobby.up_key = json_str(doc, "upkey");
-        if (sLobby.quickplay) {
-            /* role=queue: the room tells us which side we landed on */
-            sLobby.is_host = (json_str(doc, "role") == "host");
-        }
-        port_netstats_note_room(sLobby.code.c_str());
-        const int slot = json_int(doc, "slot");
-        if (slot >= 0) {
-            sLobby.server_version = 2;
-            sLobby.my_slot = slot;
-            sLobby.up_key = json_str(doc, "upkey");
-            port_udp_set_relay_framed(1);
-            port_udp_set_relay_hooks(relay_send, relay_recv);
-            if (sLobby.spectate) {
-                /* spectators are relay-only: a single framed link to the
-                 * host (room slot 0), no uplink (a spec never sends game
-                 * traffic - its PICKs ride the control socket framing) */
-                Peer *p = peer_new(0);
-                if (p != nullptr) {
-                    p->connected = port_udp_link_set(0, "relay") == 1;
-                    p->last_heard_ms = p->joined_ms = port_udp_now_ms();
-                }
-                sLobby.stun_done = true;
-                sLobby.endpoint_sent = true;
-            } else {
-                open_uplink();      // send-only channel for relayed game traffic
-                on_roster(text);    // v2 welcome carries the current roster
-            }
-        } else {
-            sLobby.server_version = 1;
-            sLobby.my_slot = sLobby.is_host ? 0 : 1;
-        }
-        if (sLobby.spectate) {
-            char room_msg[160];
-            std::snprintf(room_msg, sizeof(room_msg),
-                          TR("Spectating room %s - waiting for the host to start."), sLobby.code.c_str());
-            set_state(PORT_NETLOBBY_CONNECTED, room_msg);
-        } else if (sLobby.is_host &&
-                   (sLobby.state == PORT_NETLOBBY_CREATING ||
-                    (sLobby.quickplay && sLobby.state == PORT_NETLOBBY_JOINING))) {
-            set_state(PORT_NETLOBBY_WAITING,
-                      sLobby.quickplay ? TR("Queue room open - waiting for an opponent.")
-                                       : TR("Room open - share the code, waiting for players."));
-        } else if (!sLobby.is_host && sLobby.state == PORT_NETLOBBY_JOINING) {
-            set_state(PORT_NETLOBBY_PUNCHING, TR("Joined room - connecting to host."));
-        }
-        send_endpoint_if_ready();
-        return;
-    }
-    if (type == "peers") {         // v2 roster broadcast
+        srv_keepalive_ack();
+    } else if (type == "welcome") {
+        srv_welcome(doc, text);
+    } else if (type == "peers") {         // v2 roster broadcast
         on_roster(text);
-        return;
-    }
-    if (type == "peer") {          // v1: single opponent endpoints
-        update_peer_endpoints(sLobby.is_host ? 1 : 0, doc);
-        sLobby.player_count = 2;
-        if (sLobby.state == PORT_NETLOBBY_WAITING || sLobby.state == PORT_NETLOBBY_JOINING) {
-            set_state(PORT_NETLOBBY_PUNCHING, TR("Peer joined - punching through NAT."));
-        }
-        return;
-    }
-    if (type == "peer_relay") {    // v2: one peer fell back to the relay
-        const int slot = json_int(doc, "slot");
-        if (slot < 0) {
-            return;                /* absent/invalid — free peers are slot -1 */
-        }
-        Peer *p = peer_for_slot(slot);
-        /* A peer that asked for relay but already connected via direct is
-         * fine to leave alone *only* if the direct path is proven both ways
-         * (got_pong). Asymmetric NATs do receive our hellos but never deliver
-         * our replies — without the flip, that peer sits connected-but-deaf
-         * until it times out. */
-        if (p != nullptr && (!p->connected || !p->got_pong)) {
-            port_udp_link_set(slot, "relay");
-        }
-        return;
-    }
-    if (type == "relaying") {      // v1: whole session goes through the relay
-        port_udp_set_relay_hooks(relay_send, relay_recv);
-        for (Peer &p : sLobby.peers) {
-            if (p.slot >= 0 && !p.connected) {
-                port_udp_link_set(p.slot, "relay");
-            }
-        }
-        return;
-    }
-    if (type == "peer_left") {
-        const int left = json_int(doc, "slot");
-        if (left >= 0) {           // v2: one participant left
-            if (left == 0) {       // host left: the room is over
-                if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-                    fail(TR("Host left the room."));
-                }
-                return;
-            }
-            peer_drop(left);
-            update_status();
-            return;
-        }
-        /* v1: opponent left */
-        for (Peer &p : sLobby.peers) {
-            if (p.slot >= 0) {
-                peer_drop(p.slot);
-            }
-        }
-        sLobby.player_count = 1;
-        if (sLobby.is_host && sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-            set_state(PORT_NETLOBBY_WAITING, TR("Peer left - waiting for players."));
-        } else if (!sLobby.is_host && sLobby.state != PORT_NETLOBBY_IN_MATCH) {
-            fail(TR("Host left the room."));
-        }
-        return;
-    }
-    if (type == "host_left") {
+    } else if (type == "peer") {
+        srv_peer(doc);
+    } else if (type == "peer_relay") {
+        srv_peer_relay(doc);
+    } else if (type == "relaying") {
+        srv_relaying();
+    } else if (type == "peer_left") {
+        srv_peer_left(doc);
+    } else if (type == "host_left") {
         if (sLobby.state != PORT_NETLOBBY_IN_MATCH) {
             fail(TR("Host left the room."));
         }
-        return;
-    }
-    if (type == "error") {
-        std::string msg = json_str(doc, "reason");
-        if (msg.empty()) {
-            msg = json_str(doc, "message");
-        }
-        if (msg == "room-full") {
-            if (sLobby.quickplay && sLobby.queue_idx + 1 < kQueueRoomCount) {
-                /* queue code is full — roll to the next well-known room */
-                sLobby.queue_idx++;
-                char code[16];
-                std::snprintf(code, sizeof(code), "QUEUE%d", 2 + sLobby.queue_idx);
-                sLobby.code = code;
-                port_ws_close();
-                port_ws_uplink_close();
-                connect_server();
-                char msgbuf[128];
-                std::snprintf(msgbuf, sizeof(msgbuf), TR("Queue %d full - trying the next one..."),
-                              2 + sLobby.queue_idx);
-                sLobby.status = msgbuf;
-                return;
-            }
-            fail(TR("Room is full (4 players)."));
-        } else if (msg == "version-mismatch") {
-            fail(TR("Room runs a different netplay build."));
-        } else if (msg == "room-in-use") {
-            fail(TR("Room code already in use - try hosting again."));
-        } else if (msg == "no-such-room") {
-            fail(TR("No such room."));
-        } else if (msg == "bad-code") {
-            fail(TR("Invalid room code."));
-        } else {
-            char err[256];
-            std::snprintf(err, sizeof(err), TR("Server error: %s"), msg.c_str());
-            fail(err);
-        }
-        return;
+    } else if (type == "error") {
+        srv_error(doc);
     }
 }
 
 /* ---- per-frame update ---- */
+
+/* Unconnected peer: keep punching (direct + optional relay request) and
+ * give up on it past the join timeout. Returns true when fail() fired —
+ * the caller must stop iterating: fail() tears the lobby state down. */
+static bool peer_punch(Peer &p, unsigned int now)
+{
+    /* SSB64_LOBBY_FORCE_RELAY skips the direct path entirely
+     * (unattended relay testing); otherwise the client (or anyone
+     * on a v1 room) asks the room to relay once punching has had
+     * its chance */
+    const bool force_relay = env("SSB64_LOBBY_FORCE_RELAY") != nullptr;
+    if (p.relay_requested == 0 && !sLobby.lan &&
+        (!sLobby.is_host || sLobby.server_version < 2) &&
+        (force_relay || now - p.joined_ms > kPunchTimeoutMs)) {
+        port_ws_send_text("{\"type\":\"relay\"}");
+        p.relay_requested = 1;
+    }
+    if (now - p.last_send_ms >= kHelloMs) {
+        p.last_send_ms = now;
+        if (port_udp_link_is_set(p.slot)) {
+            send_to_peer(p, lan_hello().c_str());   // relay path
+        }
+        if (!force_relay) {
+            const std::string hello = lan_hello();
+            for (const std::string &endpoint : p.candidates) {
+                port_udp_send_to(endpoint.c_str(), hello.c_str(), (int)hello.size());
+            }
+        }
+    }
+    if (now - p.joined_ms > kPeerJoinTimeoutMs) {
+        port_log("SSB64 Lobby: player %d unreachable (punch + relay failed)\n", p.slot);
+        if (!sLobby.is_host) {
+            fail(TR("Could not reach the host."));
+            return true;
+        }
+        peer_drop(p.slot);
+        update_status();
+    }
+    return false;
+}
+
+/* Connected peer: PICK doubles as the game-plane keepalive - fast until
+ * the peer echoes PONG, then a slower cadence so a long lobby wait
+ * doesn't read as silence and trip the peer timeout. Returns true on
+ * fail() (same contract as peer_punch). */
+static bool peer_keepalive(Peer &p, unsigned int now)
+{
+    unsigned int interval = (p.got_pong != false) ? kIdlePingMs : kPickMs;
+    if (now - p.last_send_ms >= interval) {
+        p.last_send_ms = now;
+        char msg[160];
+        /* compat_token() always returns "<sha>:<hash>:<hash>" —
+         * pre-handshake peers just omit the field, we always send ours. */
+        const std::string token = compat_token();
+        const std::string pname = local_player_name();
+        std::snprintf(msg, sizeof(msg), "SSBL PICK %d %u %d %s %s %d %s", sLobby.my_fkind,
+                      port_udp_now_ms(), local_tap_jump_off(), kGameVersion,
+                      token.c_str(), port_netstats_rating(), pname.c_str());
+        send_to_peer(p, msg);
+    }
+    /* spec peers are optional and can sit silent through a whole match
+     * (lobby traffic stops while the engine owns the socket); the
+     * roster's peer_left is the truth for them. Same for a spectator's
+     * host link: the websocket already reports the host's death. */
+    if (is_spec_slot(p.slot) || (sLobby.spectate && p.slot == 0)) {
+        return false;
+    }
+    if (sLobby.state != PORT_NETLOBBY_STARTING && p.last_heard_ms > 0 &&
+        now - p.last_heard_ms > kPeerTimeoutMs) {
+        port_log("SSB64 Lobby: player %d timed out\n", p.slot);
+        if (!sLobby.is_host) {
+            fail(TR("Lost connection to the host."));
+            return true;
+        }
+        peer_drop(p.slot);
+        update_status();
+    }
+    return false;
+}
 
 void pump_peers(unsigned int now)
 {
@@ -888,72 +1056,13 @@ void pump_peers(unsigned int now)
         }
         if (!p.connected) {
             any_connecting = true;
-            /* SSB64_LOBBY_FORCE_RELAY skips the direct path entirely
-             * (unattended relay testing); otherwise the client (or anyone
-             * on a v1 room) asks the room to relay once punching has had
-             * its chance */
-            const bool force_relay = env("SSB64_LOBBY_FORCE_RELAY") != nullptr;
-            if (p.relay_requested == 0 && !sLobby.lan &&
-                (!sLobby.is_host || sLobby.server_version < 2) &&
-                (force_relay || now - p.joined_ms > kPunchTimeoutMs)) {
-                port_ws_send_text("{\"type\":\"relay\"}");
-                p.relay_requested = 1;
-            }
-            if (now - p.last_send_ms >= kHelloMs) {
-                p.last_send_ms = now;
-                if (port_udp_link_is_set(p.slot)) {
-                    send_to_peer(p, lan_hello().c_str());   // relay path
-                }
-                if (!force_relay) {
-                    const std::string hello = lan_hello();
-                    for (const std::string &endpoint : p.candidates) {
-                        port_udp_send_to(endpoint.c_str(), hello.c_str(), (int)hello.size());
-                    }
-                }
-            }
-            if (now - p.joined_ms > kPeerJoinTimeoutMs) {
-                port_log("SSB64 Lobby: player %d unreachable (punch + relay failed)\n", p.slot);
-                if (!sLobby.is_host) {
-                    fail(TR("Could not reach the host."));
-                    return;
-                }
-                peer_drop(p.slot);
-                update_status();
-            }
-            continue;
-        }
-        /* connected: PICK doubles as the game-plane keepalive - fast until
-         * the peer echoes PONG, then a slower cadence so a long lobby wait
-         * doesn't read as silence and trip the peer timeout */
-        unsigned int interval = (p.got_pong != false) ? kIdlePingMs : kPickMs;
-        if (now - p.last_send_ms >= interval) {
-            p.last_send_ms = now;
-            char msg[160];
-            /* compat_token() always returns "<sha>:<hash>:<hash>" —
-             * pre-handshake peers just omit the field, we always send ours. */
-            const std::string token = compat_token();
-            const std::string pname = local_player_name();
-            std::snprintf(msg, sizeof(msg), "SSBL PICK %d %u %d %s %s %d %s", sLobby.my_fkind,
-                          port_udp_now_ms(), local_tap_jump_off(), kGameVersion,
-                          token.c_str(), port_netstats_rating(), pname.c_str());
-            send_to_peer(p, msg);
-        }
-        /* spec peers are optional and can sit silent through a whole match
-         * (lobby traffic stops while the engine owns the socket); the
-         * roster's peer_left is the truth for them. Same for a spectator's
-         * host link: the websocket already reports the host's death. */
-        if (is_spec_slot(p.slot) || (sLobby.spectate && p.slot == 0)) {
-            continue;
-        }
-        if (sLobby.state != PORT_NETLOBBY_STARTING && p.last_heard_ms > 0 &&
-            now - p.last_heard_ms > kPeerTimeoutMs) {
-            port_log("SSB64 Lobby: player %d timed out\n", p.slot);
-            if (!sLobby.is_host) {
-                fail(TR("Lost connection to the host."));
+            if (peer_punch(p, now)) {
                 return;
             }
-            peer_drop(p.slot);
-            update_status();
+            continue;
+        }
+        if (peer_keepalive(p, now)) {
+            return;
         }
     }
     if (any_connecting && sLobby.state == PORT_NETLOBBY_CONNECTED) {

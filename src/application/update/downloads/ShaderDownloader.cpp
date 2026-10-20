@@ -269,39 +269,45 @@ bool WritesPartialFragColor(const std::string& source) {
 //
 // Plain `Texture` is the legacy alias for our `Source` slot and
 // stays valid; only the digit-suffixed forms are unsupported.
-bool ReferencesUnsupportedHistoryBinding(const std::string& source) {
-    auto isDigit = [](char c) { return c >= '0' && c <= '9'; };
-    auto isIdChar = [&](char c) {
-        return isDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-    };
-    auto findUnboundedSemantic = [&](const std::string& prefix) -> bool {
-        // Scan for `<prefix><digits>Texture` as a whole identifier.
-        size_t pos = 0;
-        while ((pos = source.find(prefix, pos)) != std::string::npos) {
-            const bool leftOk = (pos == 0) || !isIdChar(source[pos - 1]);
-            size_t end = pos + prefix.size();
-            // Must have at least one digit after the prefix.
-            const size_t digitsBegin = end;
-            while (end < source.size() && isDigit(source[end])) {
-                ++end;
-            }
-            if (end > digitsBegin) {
-                static const std::string kSuffix = "Texture";
-                if (end + kSuffix.size() <= source.size() &&
-                    source.compare(end, kSuffix.size(), kSuffix) == 0) {
-                    const size_t after = end + kSuffix.size();
-                    const bool rightOk = (after >= source.size()) || !isIdChar(source[after]);
-                    if (leftOk && rightOk) {
-                        return true;
-                    }
+static bool ShaderSourceHasSemantic(const std::string& source,
+                                    const std::string& prefix,
+                                    bool (*isDigit)(char),
+                                    bool (*isIdChar)(char)) {
+    // Scan for `<prefix><digits>Texture` as a whole identifier.
+    size_t pos = 0;
+    while ((pos = source.find(prefix, pos)) != std::string::npos) {
+        const bool leftOk = (pos == 0) || !isIdChar(source[pos - 1]);
+        size_t end = pos + prefix.size();
+        // Must have at least one digit after the prefix.
+        const size_t digitsBegin = end;
+        while (end < source.size() && isDigit(source[end])) {
+            ++end;
+        }
+        if (end > digitsBegin) {
+            static const std::string kSuffix = "Texture";
+            if (end + kSuffix.size() <= source.size() &&
+                source.compare(end, kSuffix.size(), kSuffix) == 0) {
+                const size_t after = end + kSuffix.size();
+                const bool rightOk = (after >= source.size()) || !isIdChar(source[after]);
+                if (leftOk && rightOk) {
+                    return true;
                 }
             }
-            pos += prefix.size();
         }
-        return false;
-    };
-    return findUnboundedSemantic("PassPrev") || findUnboundedSemantic("Pass");
+        pos += prefix.size();
+    }
+    return false;
 }
+
+bool ReferencesUnsupportedHistoryBinding(const std::string& source) {
+    auto isDigit = [](char c) { return c >= '0' && c <= '9'; };
+    auto isIdChar = [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+    };
+    return ShaderSourceHasSemantic(source, "PassPrev", isDigit, isIdChar) ||
+           ShaderSourceHasSemantic(source, "Pass", isDigit, isIdChar);
+}
+
 
 // Platform requirements for the downloader — after the
 // HttpDownloadToFile / ZipExtractToDir refactor there are no external
@@ -383,12 +389,102 @@ bool LooksLikeMultiPassComponent(const std::string& stem) {
 //
 // `repoRoot` points at the libretro repo root (after the
 // `glsl-shaders-master/` zip wrapper has been peeled off).
+// Resolve stem collisions deterministically — first the parent
+// dir name, then the category, then a numeric suffix. Mirrors
+// the previous installer so on-disk filenames don't churn for
+// users between releases.
+static std::string ResolveCandidateStem(const std::filesystem::path& path,
+                                        const std::string& categoryHint,
+                                        std::set<std::string>& usedStems) {
+    std::string stem = path.stem().string();
+    if (usedStems.count(stem) != 0) {
+        const std::string parent = path.parent_path().filename().string();
+        if (!parent.empty() && parent != "shaders") {
+            stem = parent + "-" + stem;
+        } else if (!categoryHint.empty()) {
+            stem = categoryHint + "-" + stem;
+        }
+    }
+    if (usedStems.count(stem) != 0) {
+        int n = 2;
+        const std::string base = stem;
+        while (usedStems.count(stem) != 0) {
+            stem = base + "-" + std::to_string(n++);
+        }
+    }
+    usedStems.insert(stem);
+    return stem;
+}
+
+static void ConsiderShaderCandidate(const std::filesystem::path& path,
+                                    const std::string& categoryHint,
+                                    uint64_t gen,
+                                    std::set<std::string>& usedStems,
+                                    std::vector<PendingCandidate>& out) {
+    if (s_generation.load() != gen) {
+        return;
+    }
+    std::string stem = path.stem().string();
+    if (stem.empty() || LooksLikeMultiPassComponent(stem)) {
+        return;
+    }
+    const std::string source = ReadCandidateShader(path);
+    if (source.empty() || !LooksLikeSingleFileShader(source)) {
+        return;
+    }
+    if (!TranspilesUnderCurrentNormalizer(source) ||
+        ReferencesUnsupportedHistoryBinding(source) ||
+        WritesPartialFragColor(source)) {
+        s_skippedUnsupported.fetch_add(1);
+        return;
+    }
+    PendingCandidate cand;
+    cand.sourcePath  = path;
+    cand.finalStem   = ResolveCandidateStem(path, categoryHint, usedStems);
+    cand.displayLabel = DeriveLabel(cand.finalStem);
+    out.push_back(std::move(cand));
+}
+
+// Scans `<cat>/shaders/` top-level .glsl files plus one level of
+// subdirectories (skipping `_`-prefixed private dirs).
+static void ScanShaderCategoryDir(const std::filesystem::path& catShaders,
+                                  const std::string& category,
+                                  uint64_t gen,
+                                  std::set<std::string>& usedStems,
+                                  std::vector<PendingCandidate>& out) {
+    std::error_code catEc;
+    for (const auto& entry : std::filesystem::directory_iterator(catShaders, catEc)) {
+        if (catEc) break;
+        std::error_code entEc;
+        if (entry.is_regular_file(entEc) && entry.path().extension() == ".glsl") {
+            ConsiderShaderCandidate(entry.path(), category, gen, usedStems, out);
+        }
+    }
+    for (const auto& entry : std::filesystem::directory_iterator(catShaders, catEc)) {
+        if (catEc) break;
+        std::error_code entEc;
+        if (!entry.is_directory(entEc)) {
+            continue;
+        }
+        const std::string subName = entry.path().filename().string();
+        if (!subName.empty() && subName[0] == '_') {
+            continue;
+        }
+        for (const auto& sub : std::filesystem::directory_iterator(entry.path(), catEc)) {
+            if (catEc) break;
+            std::error_code subEc;
+            if (sub.is_regular_file(subEc) && sub.path().extension() == ".glsl") {
+                ConsiderShaderCandidate(sub.path(), category, gen, usedStems, out);
+            }
+        }
+    }
+}
+
 void EnumerateCandidates(const std::filesystem::path& repoRoot,
                          std::vector<PendingCandidate>& out,
                          uint64_t gen) {
     out.clear();
     std::set<std::string> usedStems;
-    auto aborted = [gen]() { return s_generation.load() != gen; };
 
     // Categories whose `shaders/` subdir holds effects useful as a
     // post-process on an N64 game. Other libretro categories
@@ -398,84 +494,13 @@ void EnumerateCandidates(const std::filesystem::path& repoRoot,
         "crt", "scanlines", "ntsc", "handheld", "dithering",
     };
 
-    auto considerOne = [&](const std::filesystem::path& path,
-                           const std::string& categoryHint) {
-        if (aborted()) {
-            return;
-        }
-        std::string stem = path.stem().string();
-        if (stem.empty() || LooksLikeMultiPassComponent(stem)) {
-            return;
-        }
-        const std::string source = ReadCandidateShader(path);
-        if (source.empty() || !LooksLikeSingleFileShader(source)) {
-            return;
-        }
-        if (!TranspilesUnderCurrentNormalizer(source) ||
-            ReferencesUnsupportedHistoryBinding(source) ||
-            WritesPartialFragColor(source)) {
-            s_skippedUnsupported.fetch_add(1);
-            return;
-        }
-        // Resolve stem collisions deterministically — first the parent
-        // dir name, then the category, then a numeric suffix. Mirrors
-        // the previous installer so on-disk filenames don't churn for
-        // users between releases.
-        if (usedStems.count(stem) != 0) {
-            const std::string parent = path.parent_path().filename().string();
-            if (!parent.empty() && parent != "shaders") {
-                stem = parent + "-" + stem;
-            } else if (!categoryHint.empty()) {
-                stem = categoryHint + "-" + stem;
-            }
-        }
-        if (usedStems.count(stem) != 0) {
-            int n = 2;
-            const std::string base = stem;
-            while (usedStems.count(stem) != 0) {
-                stem = base + "-" + std::to_string(n++);
-            }
-        }
-        usedStems.insert(stem);
-
-        PendingCandidate cand;
-        cand.sourcePath  = path;
-        cand.finalStem   = stem;
-        cand.displayLabel = DeriveLabel(stem);
-        out.push_back(std::move(cand));
-    };
-
     for (const char* category : kCategories) {
         const std::filesystem::path catShaders = repoRoot / category / "shaders";
         std::error_code catEc;
         if (!std::filesystem::is_directory(catShaders, catEc)) {
             continue;
         }
-        for (const auto& entry : std::filesystem::directory_iterator(catShaders, catEc)) {
-            if (catEc) break;
-            std::error_code entEc;
-            if (entry.is_regular_file(entEc) && entry.path().extension() == ".glsl") {
-                considerOne(entry.path(), category);
-            }
-        }
-        for (const auto& entry : std::filesystem::directory_iterator(catShaders, catEc)) {
-            if (catEc) break;
-            std::error_code entEc;
-            if (!entry.is_directory(entEc)) {
-                continue;
-            }
-            const std::string subName = entry.path().filename().string();
-            if (!subName.empty() && subName[0] == '_') {
-                continue;
-            }
-            for (const auto& sub : std::filesystem::directory_iterator(entry.path(), catEc)) {
-                if (catEc) break;
-                std::error_code subEc;
-                if (sub.is_regular_file(subEc) && sub.path().extension() == ".glsl") {
-                    considerOne(sub.path(), category);
-                }
-            }
-        }
+        ScanShaderCategoryDir(catShaders, category, gen, usedStems, out);
     }
     // Stable, alphabetical order so the modal's checklist is
     // predictable across rebuilds.
@@ -484,6 +509,8 @@ void EnumerateCandidates(const std::filesystem::path& repoRoot,
                   return a.displayLabel < b.displayLabel;
               });
 }
+
+
 
 // Pure tempdir teardown without touching phase / status. Used by the
 // worker-thread error paths so a failed download doesn't leave the
@@ -563,6 +590,129 @@ bool IsShaderPackDownloadComplete() {
     return s_phase.load() == ShaderPackPhase::Done;
 }
 
+static void CatalogWorkerFail(const char *status)
+{
+    SetStatus(status);
+    WipeTempDir();
+    s_phase.store(ShaderPackPhase::Error);
+}
+
+static bool CatalogWorkerDownload(const std::filesystem::path &zipPath,
+                                  uint64_t gen)
+{
+    const std::string url =
+        "https://github.com/libretro/glsl-shaders/archive/refs/heads/master.zip";
+    SetStatus("Downloading libretro/glsl-shaders...");
+    SPDLOG_INFO("Shader pack: downloading {} -> {}", url, zipPath.string());
+    if (!HttpDownloadToFile(url, zipPath)) {
+        if (s_generation.load() == gen) {
+            SPDLOG_ERROR("Shader pack: download failed");
+            CatalogWorkerFail("Error: download failed");
+        }
+        return false;
+    }
+    return true;
+}
+
+static bool CatalogWorkerExtract(const std::filesystem::path &zipPath,
+                                 const std::filesystem::path &extractDir,
+                                 uint64_t gen)
+{
+    s_phase.store(ShaderPackPhase::ExtractingCatalog);
+    SetStatus("Extracting...");
+    SPDLOG_INFO("Shader pack: extracting {} -> {}", zipPath.string(), extractDir.string());
+    if (!ZipExtractToDir(zipPath, extractDir)) {
+        if (s_generation.load() == gen) {
+            SPDLOG_ERROR("Shader pack: extract failed");
+            CatalogWorkerFail("Error: extract failed");
+        }
+        return false;
+    }
+    return true;
+}
+
+static bool CatalogWorkerEnumerate(const std::filesystem::path &extractDir,
+                                   uint64_t gen)
+{
+    s_phase.store(ShaderPackPhase::EnumeratingCatalog);
+    SetStatus("Validating shaders...");
+    SPDLOG_INFO("Shader pack: enumerating candidates");
+    // The libretro zip wraps everything in `glsl-shaders-master/`;
+    // fall back to the extract root if that ever changes.
+    std::filesystem::path repoRoot = extractDir / "glsl-shaders-master";
+    std::error_code rrEc;
+    if (!std::filesystem::is_directory(repoRoot, rrEc)) {
+        repoRoot = extractDir;
+    }
+
+    std::vector<PendingCandidate> staged;
+    EnumerateCandidates(repoRoot, staged, gen);
+    if (s_generation.load() != gen) {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_candidatesMutex);
+        s_candidates = std::move(staged);
+    }
+    const size_t total = [] {
+        std::lock_guard<std::mutex> lock(s_candidatesMutex);
+        return s_candidates.size();
+    }();
+    if (total == 0) {
+        SPDLOG_WARN("Shader pack: enumeration produced 0 candidates");
+        SetStatus("No supported shaders in this build");
+        WipeTempDir();
+        s_phase.store(ShaderPackPhase::Error);
+        return false;
+    }
+    SPDLOG_INFO("Shader pack: catalog ready with {} candidates", total);
+    SetStatus(std::to_string(total) + " shaders available");
+    return true;
+}
+
+static void CatalogFetchWorker(uint64_t gen)
+{
+    SPDLOG_INFO("Shader pack: worker thread started");
+    auto cancelled = [gen]() { return s_generation.load() != gen; };
+#if defined(__ANDROID__)
+    // No shared /tmp on Android — stage in the app-private files
+    // dir, which needs no permission and is wiped on uninstall.
+    const std::filesystem::path tempDir = std::filesystem::path(
+        Ship::Context::GetPathRelativeToAppDirectory("shader-pack-tmp"));
+#else
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() /
+                                          "battleship-shader-pack";
+#endif
+    const std::filesystem::path zipPath = tempDir / "glsl-shaders.zip";
+    const std::filesystem::path extractDir = tempDir / "extract";
+
+    std::error_code ec;
+    std::filesystem::remove_all(tempDir, ec);
+    std::filesystem::create_directories(extractDir, ec);
+    if (ec) {
+        SetStatus("Error: could not create temp dir");
+        s_phase.store(ShaderPackPhase::Error);
+        // No tempdir to wipe — create_directories failed before
+        // we published the path to s_tempDir.
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_candidatesMutex);
+        s_tempDir = tempDir;
+    }
+
+    if (!CatalogWorkerDownload(zipPath, gen) || cancelled()) {
+        return;
+    }
+    if (!CatalogWorkerExtract(zipPath, extractDir, gen) || cancelled()) {
+        return;
+    }
+    if (!CatalogWorkerEnumerate(extractDir, gen) || cancelled()) {
+        return;
+    }
+    s_phase.store(ShaderPackPhase::AwaitingSelection);
+}
+
 void FetchShaderPackCatalogAsync() {
     // Idempotent: only Idle / Done / Error are entry points. From
     // AwaitingSelection the user should pick or cancel; from any
@@ -581,110 +731,10 @@ void FetchShaderPackCatalogAsync() {
     SetStatus("Starting download...");
     const uint64_t gen = s_generation.load();
 
-    std::thread([gen]() {
-        SPDLOG_INFO("Shader pack: worker thread started");
-        auto cancelled = [gen]() { return s_generation.load() != gen; };
-#if defined(__ANDROID__)
-        // No shared /tmp on Android — stage in the app-private files
-        // dir, which needs no permission and is wiped on uninstall.
-        const std::filesystem::path tempDir = std::filesystem::path(
-            Ship::Context::GetPathRelativeToAppDirectory("shader-pack-tmp"));
-#else
-        const std::filesystem::path tempDir = std::filesystem::temp_directory_path() /
-                                              "battleship-shader-pack";
-#endif
-        const std::filesystem::path zipPath = tempDir / "glsl-shaders.zip";
-        const std::filesystem::path extractDir = tempDir / "extract";
-
-        std::error_code ec;
-        std::filesystem::remove_all(tempDir, ec);
-        std::filesystem::create_directories(extractDir, ec);
-        if (ec) {
-            SetStatus("Error: could not create temp dir");
-            s_phase.store(ShaderPackPhase::Error);
-            // No tempdir to wipe — create_directories failed before
-            // we published the path to s_tempDir.
-            return;
-        }
-        {
-            std::lock_guard<std::mutex> lock(s_candidatesMutex);
-            s_tempDir = tempDir;
-        }
-
-        SetStatus("Downloading libretro/glsl-shaders...");
-        const std::string url =
-            "https://github.com/libretro/glsl-shaders/archive/refs/heads/master.zip";
-        SPDLOG_INFO("Shader pack: downloading {} -> {}", url, zipPath.string());
-        if (!HttpDownloadToFile(url, zipPath)) {
-            if (cancelled()) {
-                return;
-            }
-            SPDLOG_ERROR("Shader pack: download failed");
-            SetStatus("Error: download failed");
-            WipeTempDir();
-            s_phase.store(ShaderPackPhase::Error);
-            return;
-        }
-        if (cancelled()) {
-            return;
-        }
-
-        s_phase.store(ShaderPackPhase::ExtractingCatalog);
-        SetStatus("Extracting...");
-        SPDLOG_INFO("Shader pack: extracting {} -> {}", zipPath.string(), extractDir.string());
-        if (!ZipExtractToDir(zipPath, extractDir)) {
-            if (cancelled()) {
-                return;
-            }
-            SPDLOG_ERROR("Shader pack: extract failed");
-            SetStatus("Error: extract failed");
-            WipeTempDir();
-            s_phase.store(ShaderPackPhase::Error);
-            return;
-        }
-        if (cancelled()) {
-            return;
-        }
-
-        s_phase.store(ShaderPackPhase::EnumeratingCatalog);
-        SetStatus("Validating shaders...");
-        SPDLOG_INFO("Shader pack: enumerating candidates");
-        // The libretro zip wraps everything in `glsl-shaders-master/`;
-        // fall back to the extract root if that ever changes.
-        std::filesystem::path repoRoot = extractDir / "glsl-shaders-master";
-        std::error_code rrEc;
-        if (!std::filesystem::is_directory(repoRoot, rrEc)) {
-            repoRoot = extractDir;
-        }
-
-        std::vector<PendingCandidate> staged;
-        EnumerateCandidates(repoRoot, staged, gen);
-        if (cancelled()) {
-            return;
-        }
-        {
-            std::lock_guard<std::mutex> lock(s_candidatesMutex);
-            s_candidates = std::move(staged);
-        }
-        const size_t total = [] {
-            std::lock_guard<std::mutex> lock(s_candidatesMutex);
-            return s_candidates.size();
-        }();
-        if (total == 0) {
-            SPDLOG_WARN("Shader pack: enumeration produced 0 candidates");
-            SetStatus("No supported shaders in this build");
-            WipeTempDir();
-            s_phase.store(ShaderPackPhase::Error);
-            return;
-        }
-        SPDLOG_INFO("Shader pack: catalog ready with {} candidates", total);
-        SetStatus(std::to_string(total) + " shaders available");
-        if (cancelled()) {
-            return;
-        }
-        s_phase.store(ShaderPackPhase::AwaitingSelection);
-    }).detach();
+    std::thread([gen]() { CatalogFetchWorker(gen); }).detach();
 }
+
+
 
 void InstallSelectedShaderPackAsync(const std::vector<std::string>& selectedStems) {
     if (s_phase.load() != ShaderPackPhase::AwaitingSelection) {

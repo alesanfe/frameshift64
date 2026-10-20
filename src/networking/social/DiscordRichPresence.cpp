@@ -255,6 +255,34 @@ bool OpenEndpoint() {
 /* Parses the first handshake reply frame: returns true and logs the user
  * when Discord answered READY/DISPATCH. A non-READY first frame (e.g. an
  * error) returns false so the caller closes and retries later. */
+/* READY evt or DISPATCH cmd — the two shapes a successful handshake
+ * response takes. */
+bool IsHandshakeReady(const nlohmann::json& resp) {
+    const auto evt = resp.find("evt");
+    const auto cmd = resp.find("cmd");
+    return (evt != resp.end() && evt->is_string() &&
+            evt->get_ref<const std::string&>() == "READY") ||
+           (cmd != resp.end() && cmd->is_string() &&
+            cmd->get_ref<const std::string&>() == "DISPATCH");
+}
+
+/* data.user.username, or empty when absent. */
+std::string HandshakeUsername(const nlohmann::json& resp) {
+    const auto data = resp.find("data");
+    if (data == resp.end() || !data->is_object()) {
+        return {};
+    }
+    const auto user = data->find("user");
+    if (user == data->end() || !user->is_object()) {
+        return {};
+    }
+    const auto un = user->find("username");
+    if (un == user->end() || !un->is_string()) {
+        return {};
+    }
+    return un->get_ref<const std::string&>();
+}
+
 bool ReadHandshakeReply() {
     uint32_t op;
     std::string payload;
@@ -263,26 +291,10 @@ bool ReadHandshakeReply() {
     }
     const nlohmann::json resp =
         nlohmann::json::parse(payload, nullptr, /*exceptions*/ false);
-    const auto evt = resp.find("evt");
-    const auto cmd = resp.find("cmd");
-    const bool ready =
-        (evt != resp.end() && evt->is_string() &&
-         evt->get_ref<const std::string&>() == "READY") ||
-        (cmd != resp.end() && cmd->is_string() &&
-         cmd->get_ref<const std::string&>() == "DISPATCH");
-    if (!ready) {
+    if (!IsHandshakeReady(resp)) {
         return false;
     }
-    std::string name;
-    const auto data = resp.find("data");
-    if (data != resp.end() && data->is_object()) {
-        const auto user = data->find("user");
-        if (user != data->end() && user->is_object()) {
-            const auto un = user->find("username");
-            if (un != user->end() && un->is_string())
-                name = un->get_ref<const std::string&>();
-        }
-    }
+    const std::string name = HandshakeUsername(resp);
     port_log("SSB64 DRP: Connected to Discord%s%s\n",
              name.empty() ? "" : " as ", name.c_str());
     return true;

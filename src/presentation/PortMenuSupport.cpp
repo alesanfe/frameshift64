@@ -76,62 +76,141 @@ using namespace UIWidgets;
  * bug report needs — version/region, renderer + audio backend, game-data
  * integrity, mod inventory, and live lobby state. Plain text, no secrets
  * (room codes and paths are not included). */
-static void RenderDiagnostics(WidgetInfo&) {
+struct DiagInfo {
+    const char* region;
+    const char* backend;
+    const char* audio;
+    bool o2rOk;
+    int mountedMods;
+    int loadedMods;
+    int badMods;
+};
+
+static DiagInfo CollectDiagInfo() {
+    DiagInfo d;
 #if defined(REGION_JP)
-    const char* region = "JP";
+    d.region = "JP";
 #else
-    const char* region = "US";
+    d.region = "US";
 #endif
-    const char* backend = "unknown";
+    d.backend = "unknown";
     const auto wb = Ship::Context::GetInstance()->GetWindow()->GetWindowBackend();
     if (windowBackendsMap.contains(wb)) {
-        backend = windowBackendsMap.at(wb);
+        d.backend = windowBackendsMap.at(wb);
     }
-    const char* audio = "unknown";
+    d.audio = "unknown";
     const auto ab = Ship::Context::GetInstance()->GetAudio()->GetCurrentAudioBackend();
     if (audioBackendsMap.contains(ab)) {
-        audio = audioBackendsMap.at(ab);
+        d.audio = audioBackendsMap.at(ab);
     }
     const std::string o2rPath = ssb64::LocateExistingFile(SSB64_O2R_NAME);
-    const bool o2rOk = !o2rPath.empty();
+    d.o2rOk = !o2rPath.empty();
 
-    int mountedMods = 0, loadedMods = 0, badMods = 0;
+    d.mountedMods = 0, d.loadedMods = 0, d.badMods = 0;
 #ifndef DISABLE_SCRIPTING
     const auto mods = ssb64::appmods::Snapshot();
-    mountedMods = static_cast<int>(mods.size());
+    d.mountedMods = static_cast<int>(mods.size());
     for (const auto& m : mods) {
         if (m.state == ssb64::appmods::ModStatus::Loaded) {
-            loadedMods++;
+            d.loadedMods++;
         }
         if (m.signature == ssb64::appmods::SignatureStatus::Invalid ||
             m.state == ssb64::appmods::ModStatus::InvalidManifest) {
-            badMods++;
+            d.badMods++;
         }
     }
 #endif
+    return d;
+}
 
+static void RenderDiagCard(const DiagInfo& d) {
     ImGui::BeginChild("##diag_card", ImVec2(0, 0), ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::Text(TR("Version:     %s (%s)"), BATTLESHIP_CURRENT_VERSION, region);
-    ImGui::Text(TR("Renderer:    %s"), backend);
-    ImGui::Text(TR("Audio:       %s"), audio);
-    ImGui::Text(TR("Game data:   %s"), o2rOk ? "Verified present" : "MISSING — first-run will re-extract");
-    ImGui::Text(TR("Mods:        %d mounted, %d loaded, %d problem%s"), mountedMods, loadedMods, badMods, badMods == 1 ? "" : "s");
+    ImGui::Text(TR("Version:     %s (%s)"), BATTLESHIP_CURRENT_VERSION, d.region);
+    ImGui::Text(TR("Renderer:    %s"), d.backend);
+    ImGui::Text(TR("Audio:       %s"), d.audio);
+    ImGui::Text(TR("Game data:   %s"), d.o2rOk ? "Verified present" : "MISSING — first-run will re-extract");
+    ImGui::Text(TR("Mods:        %d mounted, %d loaded, %d problem%s"), d.mountedMods, d.loadedMods, d.badMods, d.badMods == 1 ? "" : "s");
     ImGui::Text(TR("Netplay:     %s"), TR(port_netlobby_status()));
     if (port_diag_safe_mode_active()) {
         ImGui::TextColored(SemanticColors::Warning, "%s",
                            TR("Safe mode:   ON — mods & texture packs skipped this run"));
     }
     ImGui::EndChild();
+}
+
+static std::string DiagSummaryText(const DiagInfo& d) {
+    return fmt::format(fmt::runtime(TR("BattleShip {} ({})\nRenderer: {}\nAudio: {}\nGame data: {}\nMods: {} mounted, {} loaded, {} problems\nNetplay: {}\nSafe mode: {}")),
+                       BATTLESHIP_CURRENT_VERSION, d.region, d.backend, d.audio,
+                       d.o2rOk ? "present" : "MISSING", d.mountedMods, d.loadedMods, d.badMods,
+                       port_netlobby_status(),
+                       port_diag_safe_mode_active() ? "ON" : "off");
+}
+
+/* One-click support bundle: a folder a user can attach to a bug report
+ * — report.txt (the same summary as the card + platform/build), a copy
+ * of ssb64.log, and the config file. Mirrors the crash-bundle layout so
+ * triage tooling reads both paths the same way. */
+static void WriteDiagnosticsBundle(const DiagInfo& d) {
+    std::error_code ec;
+    const fs::path logDir = fs::path(Ship::Context::GetPathRelativeToAppDirectory("logs"));
+    char stamp[24] = {};
+    {
+        const std::time_t now = std::time(nullptr);
+        std::tm tmv{};
+#ifdef _WIN32
+        localtime_s(&tmv, &now);
+#else
+        localtime_r(&now, &tmv);
+#endif
+        std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tmv);
+    }
+    const fs::path dir = logDir / ("report-" + std::string(stamp));
+    fs::create_directories(dir, ec);
+    if (ec) {
+        ssb64::ToastInfo(TR("Could not write the diagnostics bundle"));
+        return;
+    }
+    {
+        std::ofstream info(dir / "report.txt", std::ios::binary);
+        info << "version=" << BATTLESHIP_CURRENT_VERSION << "\n"
+             << "build_sha=" << BATTLESHIP_BUILD_SHA << "\n"
+             << "platform="
+#if defined(_WIN32)
+             << "windows"
+#elif defined(__APPLE__)
+             << "macos"
+#elif defined(__linux__)
+             << "linux"
+#else
+             << "other"
+#endif
+             << "\nrenderer=" << d.backend << "\naudio=" << d.audio
+             << "\nsafe_mode=" << (port_diag_safe_mode_active() ? "on" : "off")
+             << "\nmods=" << d.mountedMods << " mounted, " << d.loadedMods
+             << " loaded, " << d.badMods << " problems\n"
+             << "netplay=" << port_netlobby_status() << "\n";
+    }
+    std::error_code cec;
+    const fs::path log = Ship::Context::GetPathRelativeToAppDirectory("logs/ssb64.log");
+    if (fs::exists(log, cec)) {
+        fs::copy_file(log, dir / "ssb64.log", fs::copy_options::overwrite_existing, cec);
+    }
+    const fs::path cfg = Ship::Context::GetPathRelativeToAppDirectory("BattleShip.cfg.json");
+    if (fs::exists(cfg, cec)) {
+        fs::copy_file(cfg, dir / "BattleShip.cfg.json", fs::copy_options::overwrite_existing, cec);
+    }
+    ToastSuccess(fmt::format(fmt::runtime(TR("Bundle written: {}")), dir.string()));
+    SDL_OpenURL(std::string("file:///" + fs::absolute(dir, ec).string()).c_str());
+}
+
+static void RenderDiagnostics(WidgetInfo&) {
+    const DiagInfo d = CollectDiagInfo();
+    RenderDiagCard(d);
 
     ImGui::SeparatorText(TR("Actions"));
     if (ImGui::Button(TR("Copy diagnostics summary"))) {
-        std::string summary =
-            fmt::format(fmt::runtime(TR("BattleShip {} ({})\nRenderer: {}\nAudio: {}\nGame data: {}\nMods: {} mounted, {} loaded, {} problems\nNetplay: {}\nSafe mode: {}")),
-                        BATTLESHIP_CURRENT_VERSION, region, backend, audio,
-                        o2rOk ? "present" : "MISSING", mountedMods, loadedMods, badMods,
-                        port_netlobby_status(),
-                        port_diag_safe_mode_active() ? "ON" : "off");
+        const std::string summary = DiagSummaryText(d);
         ImGui::SetClipboardText(summary.c_str());
         ToastSuccess(TR("Diagnostics copied to clipboard"));
     }
@@ -143,61 +222,8 @@ static void RenderDiagnostics(WidgetInfo&) {
         SDL_OpenURL(std::string("file:///" + fs::absolute(appPath).string()).c_str());
     }
 
-    /* One-click support bundle: a folder a user can attach to a bug report
-     * — report.txt (the same summary above + platform/build), a copy of
-     * ssb64.log, and the config file. Mirrors the crash-bundle layout so
-     * triage tooling reads both paths the same way. */
     if (ImGui::Button(TR("Write diagnostics bundle"))) {
-        std::error_code ec;
-        const fs::path logDir = fs::path(Ship::Context::GetPathRelativeToAppDirectory("logs"));
-        char stamp[24] = {};
-        {
-            const std::time_t now = std::time(nullptr);
-            std::tm tmv{};
-#ifdef _WIN32
-            localtime_s(&tmv, &now);
-#else
-            localtime_r(&now, &tmv);
-#endif
-            std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tmv);
-        }
-        const fs::path dir = logDir / ("report-" + std::string(stamp));
-        fs::create_directories(dir, ec);
-        if (!ec) {
-            {
-                std::ofstream info(dir / "report.txt", std::ios::binary);
-                info << "version=" << BATTLESHIP_CURRENT_VERSION << "\n"
-                     << "build_sha=" << BATTLESHIP_BUILD_SHA << "\n"
-                     << "platform="
-#if defined(_WIN32)
-                     << "windows"
-#elif defined(__APPLE__)
-                     << "macos"
-#elif defined(__linux__)
-                     << "linux"
-#else
-                     << "other"
-#endif
-                     << "\nrenderer=" << backend << "\naudio=" << audio
-                     << "\nsafe_mode=" << (port_diag_safe_mode_active() ? "on" : "off")
-                     << "\nmods=" << mountedMods << " mounted, " << loadedMods
-                     << " loaded, " << badMods << " problems\n"
-                     << "netplay=" << port_netlobby_status() << "\n";
-            }
-            std::error_code cec;
-            const fs::path log = Ship::Context::GetPathRelativeToAppDirectory("logs/ssb64.log");
-            if (fs::exists(log, cec)) {
-                fs::copy_file(log, dir / "ssb64.log", fs::copy_options::overwrite_existing, cec);
-            }
-            const fs::path cfg = Ship::Context::GetPathRelativeToAppDirectory("BattleShip.cfg.json");
-            if (fs::exists(cfg, cec)) {
-                fs::copy_file(cfg, dir / "BattleShip.cfg.json", fs::copy_options::overwrite_existing, cec);
-            }
-            ToastSuccess(fmt::format(fmt::runtime(TR("Bundle written: {}")), dir.string()));
-            SDL_OpenURL(std::string("file:///" + fs::absolute(dir, ec).string()).c_str());
-        } else {
-            ssb64::ToastInfo(TR("Could not write the diagnostics bundle"));
-        }
+        WriteDiagnosticsBundle(d);
     }
     ImGui::SameLine();
     ImGui::TextDisabled("%s", TR("report.txt + ssb64.log + config → attach to a bug report"));

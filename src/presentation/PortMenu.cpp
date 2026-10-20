@@ -51,15 +51,8 @@
 
 namespace fs = std::filesystem;
 
-/* Navigation globals owned by Menu.cpp — a "Go to" row writes them and the
- * menu's draw path jumps to the owning sidebar, scrolls the target into
- * view and flashes an accent outline (one frame, ~1.5 s TTL). */
-namespace Ship {
-extern bool navigateToWidget;
-extern std::string navigateMainEntry;
-extern std::string navigateSidebar;
-extern std::string navigateWidgetName;
-}
+/* Navigation globals owned by Menu.cpp — declared in Menu_internal.h. */
+#include "Menu_internal.h"
 
 namespace ssb64 {
 
@@ -96,6 +89,63 @@ void PortMenu::AddSidebarEntry(std::string sectionName, std::string sidebarName,
     menuEntries.at(sectionName).sidebarOrder.push_back(sidebarName);
 }
 
+/* Sidebar/type-derived default flags — applied before callers' own
+ * fluent overrides so .Advanced()/.Impact()/.StableId() still win. */
+static void ApplyWidgetDefaults(WidgetInfo& widget, const WidgetPath& pathInfo, WidgetType widgetType) {
+    /* Sidebars whose whole page is non-casual get their flags for free so
+     * individual widgets don't each repeat .Advanced()/.Impact(). */
+    if (pathInfo.sidebarName == "Advanced") {
+        widget.advanced = true;
+    }
+    if (pathInfo.sidebarName == "Developer") {
+        widget.impact = SettingImpact::DeveloperOnly;
+        /* impact is metadata-only; advanced is what SidebarAdvancedOnly checks
+         * when hiding the page in Simple mode. */
+        widget.advanced = true;
+    }
+    /* Backend switches only take effect after a relaunch — declared once
+     * here instead of relying on each widget's tooltip to say it. */
+    if (widgetType == WIDGET_VIDEO_BACKEND || widgetType == WIDGET_AUDIO_BACKEND) {
+        widget.applyPolicy = ApplyPolicy::RequiresRestart;
+    }
+}
+
+/* Factory adapter: MakeFn returns shared_ptr<WidgetOptions>, so the
+ * per-type makers must name the base explicitly (function pointers
+ * don't do covariant returns). */
+template <typename T>
+static std::shared_ptr<WidgetOptions> MakeWidgetOptionsOf() {
+    return std::make_shared<T>();
+}
+
+static std::shared_ptr<WidgetOptions> MakeWidgetOptions(WidgetType widgetType) {
+    using MakeFn = std::shared_ptr<WidgetOptions> (*)();
+    static const std::pair<WidgetType, MakeFn> kFactories[] = {
+        { WIDGET_CHECKBOX,          &MakeWidgetOptionsOf<CheckboxOptions> },
+        { WIDGET_CVAR_CHECKBOX,     &MakeWidgetOptionsOf<CheckboxOptions> },
+        { WIDGET_SLIDER_FLOAT,      &MakeWidgetOptionsOf<FloatSliderOptions> },
+        { WIDGET_CVAR_SLIDER_FLOAT, &MakeWidgetOptionsOf<FloatSliderOptions> },
+        { WIDGET_CVAR_BTN_SELECTOR, &MakeWidgetOptionsOf<BtnSelectorOptions> },
+        { WIDGET_SLIDER_INT,        &MakeWidgetOptionsOf<IntSliderOptions> },
+        { WIDGET_CVAR_SLIDER_INT,   &MakeWidgetOptionsOf<IntSliderOptions> },
+        { WIDGET_COMBOBOX,          &MakeWidgetOptionsOf<ComboboxOptions> },
+        { WIDGET_CVAR_COMBOBOX,     &MakeWidgetOptionsOf<ComboboxOptions> },
+        { WIDGET_AUDIO_BACKEND,     &MakeWidgetOptionsOf<ComboboxOptions> },
+        { WIDGET_VIDEO_BACKEND,     &MakeWidgetOptionsOf<ComboboxOptions> },
+        { WIDGET_BUTTON,            &MakeWidgetOptionsOf<ButtonOptions> },
+        { WIDGET_WINDOW_BUTTON,     &MakeWidgetOptionsOf<WindowButtonOptions> },
+        { WIDGET_CVAR_COLOR_PICKER, &MakeWidgetOptionsOf<ColorPickerOptions> },
+        { WIDGET_SEPARATOR_TEXT,    &MakeWidgetOptionsOf<TextOptions> },
+        { WIDGET_TEXT,              &MakeWidgetOptionsOf<TextOptions> },
+    };
+    for (const auto& [type, make] : kFactories) {
+        if (type == widgetType) {
+            return make();
+        }
+    }
+    return std::make_shared<WidgetOptions>();
+}
+
 WidgetInfo& PortMenu::AddWidget(WidgetPath& pathInfo, std::string widgetName, WidgetType widgetType) {
     assert(!widgetName.empty());
     assert(menuEntries.contains(pathInfo.sectionName));
@@ -116,66 +166,8 @@ WidgetInfo& PortMenu::AddWidget(WidgetPath& pathInfo, std::string widgetName, Wi
      * can replace it. Also searchable: a test or support doc can reference
      * "settings.display.vsync" and search finds it. */
     widget.stableId = derivedId;
-    /* Sidebars whose whole page is non-casual get their flags for free so
-     * individual widgets don't each repeat .Advanced()/.Impact(). */
-    if (pathInfo.sidebarName == "Advanced") {
-        widget.advanced = true;
-    }
-    if (pathInfo.sidebarName == "Developer") {
-        widget.impact = SettingImpact::DeveloperOnly;
-        /* impact is metadata-only; advanced is what SidebarAdvancedOnly checks
-         * when hiding the page in Simple mode. */
-        widget.advanced = true;
-    }
-    /* Backend switches only take effect after a relaunch — declared once
-     * here instead of relying on each widget's tooltip to say it. */
-    if (widgetType == WIDGET_VIDEO_BACKEND || widgetType == WIDGET_AUDIO_BACKEND) {
-        widget.applyPolicy = ApplyPolicy::RequiresRestart;
-    }
-
-    switch (widgetType) {
-        case WIDGET_CHECKBOX:
-        case WIDGET_CVAR_CHECKBOX:
-            widget.options = std::make_shared<CheckboxOptions>();
-            break;
-        case WIDGET_SLIDER_FLOAT:
-        case WIDGET_CVAR_SLIDER_FLOAT:
-            widget.options = std::make_shared<FloatSliderOptions>();
-            break;
-        case WIDGET_CVAR_BTN_SELECTOR:
-            widget.options = std::make_shared<BtnSelectorOptions>();
-            break;
-        case WIDGET_SLIDER_INT:
-        case WIDGET_CVAR_SLIDER_INT:
-            widget.options = std::make_shared<IntSliderOptions>();
-            break;
-        case WIDGET_COMBOBOX:
-        case WIDGET_CVAR_COMBOBOX:
-        case WIDGET_AUDIO_BACKEND:
-        case WIDGET_VIDEO_BACKEND:
-            widget.options = std::make_shared<ComboboxOptions>();
-            break;
-        case WIDGET_BUTTON:
-            widget.options = std::make_shared<ButtonOptions>();
-            break;
-        case WIDGET_WINDOW_BUTTON:
-            widget.options = std::make_shared<WindowButtonOptions>();
-            break;
-        case WIDGET_CVAR_COLOR_PICKER:
-        case WIDGET_COLOR_PICKER:
-            widget.options = std::make_shared<ColorPickerOptions>();
-            break;
-        case WIDGET_SEPARATOR_TEXT:
-        case WIDGET_TEXT:
-            widget.options = std::make_shared<TextOptions>();
-            break;
-        case WIDGET_SEARCH:
-        case WIDGET_SEPARATOR:
-        default:
-            widget.options = std::make_shared<WidgetOptions>();
-            break;
-    }
-
+    ApplyWidgetDefaults(widget, pathInfo, widgetType);
+    widget.options = MakeWidgetOptions(widgetType);
     return widget;
 }
 
@@ -213,72 +205,26 @@ static void RefreshReplayList() {
     s_replayListScanned = true;
 }
 
-static void RenderReplayBrowser(WidgetInfo&) {
-    if (!s_replayListScanned) {
-        RefreshReplayList();
-    }
-    const int lobbyState = port_netlobby_state();
-    const bool netBusy = lobbyState != PORT_NETLOBBY_IDLE && lobbyState != PORT_NETLOBBY_FAILED;
-    if (netBusy) {
-        ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.25f, 1.0f),
-                           "Online session in progress — leave it from Online -> Netplay first.");
-    }
-    if (s_replayFiles.empty()) {
-        ImGui::TextWrapped(TR("No replays found. Online matches record automatically and land in\n%s"), ReplayDir().c_str());
-        if (ImGui::Button(TR("Rescan"))) {
-            RefreshReplayList();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button(TR("Open Folder"))) {
-            std::error_code ec;
-            fs::create_directories(ReplayDir(), ec);
-            SDL_OpenURL(("file:///" + fs::absolute(ReplayDir()).string()).c_str());
-        }
-        return;
-    }
+static void ReplayOpenFolder() {
+    std::error_code ec;
+    fs::create_directories(ReplayDir(), ec);
+    SDL_OpenURL(("file:///" + fs::absolute(ReplayDir()).string()).c_str());
+}
 
-    static int s_replayIndex = 0;
-    if (s_replayIndex >= static_cast<int>(s_replayFiles.size())) {
-        s_replayIndex = 0;
-    }
-    ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::BeginCombo("##replayfile", s_replayFiles[s_replayIndex].c_str())) {
-        for (int i = 0; i < static_cast<int>(s_replayFiles.size()); i++) {
-            if (ImGui::Selectable(s_replayFiles[i].c_str(), i == s_replayIndex)) {
-                s_replayIndex = i;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::BeginDisabled(netBusy);
-    if (ImGui::Button(TR("Play Replay"))) {
-        const std::string fullPath = ReplayDir() + "/" + s_replayFiles[s_replayIndex];
-        if (portNetReplayPlayFile(fullPath.c_str())) {
-            ToastInfo(TR("Loading replay..."));
-        } else {
-            ToastError(TR("Replay file rejected — see the log for details"));
-        }
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
+static void RenderReplayEmptyState() {
+    ImGui::TextWrapped(TR("No replays found. Online matches record automatically and land in\n%s"), ReplayDir().c_str());
     if (ImGui::Button(TR("Rescan"))) {
         RefreshReplayList();
     }
     ImGui::SameLine();
     if (ImGui::Button(TR("Open Folder"))) {
-        std::error_code ec;
-        fs::create_directories(ReplayDir(), ec);
-        SDL_OpenURL(("file:///" + fs::absolute(ReplayDir()).string()).c_str());
+        ReplayOpenFolder();
     }
-    ImGui::SameLine();
-    ImGui::BeginDisabled(netBusy || port_netleaderboard_share_state() == 1);
-    if (ImGui::Button(TR("Share"))) {
-        const std::string fullPath = ReplayDir() + "/" + s_replayFiles[s_replayIndex];
-        port_netleaderboard_share_replay(
-            CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER),
-            fullPath.c_str());
-    }
-    ImGui::EndDisabled();
+}
+
+/* Share-state feedback tail after the Share button: progress, failure,
+ * or the copyable link once the upload completes. */
+static void RenderReplayShareTail() {
     const int shareState = port_netleaderboard_share_state();
     if (shareState == 1) {
         ImGui::SameLine();
@@ -297,62 +243,141 @@ static void RenderReplayBrowser(WidgetInfo&) {
             ImGui::SetTooltip("%s", link);
         }
     }
-    /* Community-shared replays live on the lobby service — fetch the
-     * index on demand, download lands the .ssr in the local replays dir. */
-    if (ImGui::TreeNode(TR("Shared replays"))) {
-        const int srvState = port_netleaderboard_replays_state();
-        if (ImGui::SmallButton(TR("Refresh##sharedreplays"))) {
-            port_netleaderboard_fetch_replays(
-                CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER));
-        }
-        if (srvState == 1) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", TR("Loading..."));
-        } else if (srvState == -1) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s",
-                               TR("Could not load the shared replay list."));
-        } else if (srvState == 2) {
-            const int shared = port_netleaderboard_replays_count();
-            if (shared == 0) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("%s", TR("none shared yet"));
-            }
-            for (int i = 0; i < shared && i < 25; i++) {
-                char id[40] = {}, by[128] = {}, stamp[24] = {};
-                if (!port_netleaderboard_replays_at(i, id, sizeof(id),
-                                                    by, sizeof(by),
-                                                    stamp, sizeof(stamp))) {
-                    continue;
-                }
-                ImGui::BulletText("%s", stamp[0] ? stamp : id);
-                ImGui::SameLine();
-                ImGui::TextDisabled("%s", by[0] ? by : "-");
-                ImGui::SameLine();
-                ImGui::PushID(i);
-                if (ImGui::SmallButton(TR("Download"))) {
-                    port_netleaderboard_replay_download(
-                        CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER),
-                        id);
-                }
-                ImGui::PopID();
-            }
-        }
-        const int dlState = port_netleaderboard_replay_dl_state();
-        if (dlState == 1) {
-            ImGui::TextDisabled("%s", TR("Downloading..."));
-        } else if (dlState == -1) {
-            ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s",
-                               TR("Download failed."));
-        } else if (dlState == 2) {
-            char dlPath[600] = {};
-            port_netleaderboard_replay_dl_path(dlPath, sizeof(dlPath));
-            ImGui::TextColored(ImVec4(0.35f, 0.9f, 0.45f, 1.0f),
-                               TR("Saved %s — pick it above after Rescan"),
-                               dlPath);
-        }
-        ImGui::TreePop();
+}
+
+/* One row of the community-shared replay list: timestamp, uploader,
+ * and a per-row Download button. */
+static void RenderSharedReplayRow(int i) {
+    char id[40] = {}, by[128] = {}, stamp[24] = {};
+    if (!port_netleaderboard_replays_at(i, id, sizeof(id),
+                                        by, sizeof(by),
+                                        stamp, sizeof(stamp))) {
+        return;
     }
+    ImGui::BulletText("%s", stamp[0] ? stamp : id);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", by[0] ? by : "-");
+    ImGui::SameLine();
+    ImGui::PushID(i);
+    if (ImGui::SmallButton(TR("Download"))) {
+        port_netleaderboard_replay_download(
+            CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER),
+            id);
+    }
+    ImGui::PopID();
+}
+
+/* Community-shared replays live on the lobby service — fetch the
+ * index on demand, download lands the .ssr in the local replays dir. */
+static void RenderSharedReplays() {
+    if (!ImGui::TreeNode(TR("Shared replays"))) {
+        return;
+    }
+    const int srvState = port_netleaderboard_replays_state();
+    if (ImGui::SmallButton(TR("Refresh##sharedreplays"))) {
+        port_netleaderboard_fetch_replays(
+            CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER));
+    }
+    if (srvState == 1) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", TR("Loading..."));
+    } else if (srvState == -1) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s",
+                           TR("Could not load the shared replay list."));
+    } else if (srvState == 2) {
+        const int shared = port_netleaderboard_replays_count();
+        if (shared == 0) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", TR("none shared yet"));
+        }
+        for (int i = 0; i < shared && i < 25; i++) {
+            RenderSharedReplayRow(i);
+        }
+    }
+    const int dlState = port_netleaderboard_replay_dl_state();
+    if (dlState == 1) {
+        ImGui::TextDisabled("%s", TR("Downloading..."));
+    } else if (dlState == -1) {
+        ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s",
+                           TR("Download failed."));
+    } else if (dlState == 2) {
+        char dlPath[600] = {};
+        port_netleaderboard_replay_dl_path(dlPath, sizeof(dlPath));
+        ImGui::TextColored(ImVec4(0.35f, 0.9f, 0.45f, 1.0f),
+                           TR("Saved %s — pick it above after Rescan"),
+                           dlPath);
+    }
+    ImGui::TreePop();
+}
+
+static int s_replayIndex = 0;
+
+static void RenderReplayFilePicker() {
+    if (s_replayIndex >= static_cast<int>(s_replayFiles.size())) {
+        s_replayIndex = 0;
+    }
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::BeginCombo("##replayfile", s_replayFiles[s_replayIndex].c_str())) {
+        for (int i = 0; i < static_cast<int>(s_replayFiles.size()); i++) {
+            if (ImGui::Selectable(s_replayFiles[i].c_str(), i == s_replayIndex)) {
+                s_replayIndex = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
+}
+
+/* Play / Rescan / Open Folder / Share for the currently selected file. */
+static void RenderReplayActionButtons(bool netBusy) {
+    ImGui::BeginDisabled(netBusy);
+    if (ImGui::Button(TR("Play Replay"))) {
+        const std::string fullPath = ReplayDir() + "/" + s_replayFiles[s_replayIndex];
+        if (portNetReplayPlayFile(fullPath.c_str())) {
+            ToastInfo(TR("Loading replay..."));
+        } else {
+            ToastError(TR("Replay file rejected — see the log for details"));
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(TR("Rescan"))) {
+        RefreshReplayList();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(TR("Open Folder"))) {
+        ReplayOpenFolder();
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(netBusy || port_netleaderboard_share_state() == 1);
+    if (ImGui::Button(TR("Share"))) {
+        const std::string fullPath = ReplayDir() + "/" + s_replayFiles[s_replayIndex];
+        port_netleaderboard_share_replay(
+            CVarGetString("gNetplay.Server", PORT_NETLOBBY_DEFAULT_SERVER),
+            fullPath.c_str());
+    }
+    ImGui::EndDisabled();
+}
+
+static void RenderReplayBrowser(WidgetInfo&) {
+    if (!s_replayListScanned) {
+        RefreshReplayList();
+    }
+    const int lobbyState = port_netlobby_state();
+    const bool netBusy = lobbyState != PORT_NETLOBBY_IDLE && lobbyState != PORT_NETLOBBY_FAILED;
+    if (netBusy) {
+        ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.25f, 1.0f),
+                           "Online session in progress — leave it from Online -> Netplay first.");
+    }
+    if (s_replayFiles.empty()) {
+        RenderReplayEmptyState();
+        return;
+    }
+
+    RenderReplayFilePicker();
+    RenderReplayActionButtons(netBusy);
+    RenderReplayShareTail();
+    RenderSharedReplays();
     ImGui::TextDisabled("%s", TR("Playback runs the recorded inputs; the match ends into the results screen."));
 }
 
@@ -655,21 +680,16 @@ void PortMenu::Draw() {
     Ship::Menu::Draw();
 }
 
-void PortMenu::DrawElement() {
-    if (mMenuElementsInitialized) {
-        Ship::Menu::DrawElement();
-    }
-
-    // Re-extract confirmation: render as an in-context ImGui modal rather
-    // than calling SDL_ShowSimpleMessageBox, which would nest a blocking
-    // native modal (NSAlert / Win32 MessageBox) inside the in-progress
-    // ImGui frame and the GPU command encode for that frame. ImGui's own
-    // popup runs in the same context with no thread/native-modal nesting.
+/* Re-extract confirmation: rendered as an in-context ImGui modal rather
+ * than SDL_ShowSimpleMessageBox, which would nest a blocking native modal
+ * (NSAlert / Win32 MessageBox) inside the in-progress ImGui frame and the
+ * GPU command encode for that frame. ImGui's own popup runs in the same
+ * context with no thread/native-modal nesting. */
+void PortMenu::DrawReextractModal(const ImVec2& viewportCenter) {
     if (mShowReextractMessage) {
         ImGui::OpenPopup("Re-extract scheduled");
         mShowReextractMessage = false;
     }
-    const ImVec2 viewportCenter = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(viewportCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopupModal("Re-extract scheduled", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
@@ -681,9 +701,11 @@ void PortMenu::DrawElement() {
         }
         ImGui::EndPopup();
     }
+}
 
-    /* Display-change auto-revert: countdown modal after toggling fullscreen.
-     * Keep commits the new mode; timeout or Revert undoes the toggle. */
+/* Display-change auto-revert: countdown modal after toggling fullscreen.
+ * Keep commits the new mode; timeout or Revert undoes the toggle. */
+void PortMenu::DrawDisplayRevertModal(const ImVec2& viewportCenter) {
     if (mDisplayRevertArmed) {
         ImGui::OpenPopup("Keep this display mode?");
     }
@@ -714,7 +736,9 @@ void PortMenu::DrawElement() {
         }
         ImGui::EndPopup();
     }
+}
 
+void PortMenu::DrawQuitConfirmModal(const ImVec2& viewportCenter) {
     if (mShowQuitConfirm) {
         ImGui::OpenPopup("Quit during online session?");
         mShowQuitConfirm = false;
@@ -734,6 +758,17 @@ void PortMenu::DrawElement() {
         }
         ImGui::EndPopup();
     }
+}
+
+void PortMenu::DrawElement() {
+    if (mMenuElementsInitialized) {
+        Ship::Menu::DrawElement();
+    }
+
+    const ImVec2 viewportCenter = ImGui::GetMainViewport()->GetCenter();
+    DrawReextractModal(viewportCenter);
+    DrawDisplayRevertModal(viewportCenter);
+    DrawQuitConfirmModal(viewportCenter);
 
     RenderPostProcessLowResWarnModal();
 #if !defined(BATTLESHIP_UWP)

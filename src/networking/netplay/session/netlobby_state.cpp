@@ -1,35 +1,6 @@
 /* Lobby state objects and peer bookkeeping — split from netlobby.cpp; the wire-protocol overview lives there. */
-#include "netlobby.h"
 #include "netlobby_internal.h"
-#include "netlobby_util.h"
-#include "netfriends.h"
-#include "netstats.h"
-#include "udp_transport.h"
-#include "websocket_transport.h"
-#include "port_log.h"
-#include "netrules.h"
-#include "PortI18n.h"
-
-#include <libultraship/bridge/consolevariablebridge.h>
-
-#ifndef DISABLE_SCRIPTING
-#include "ModRegistry.h"
-#endif
-
-#include <algorithm>
 #include <cctype>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <random>
-#include <string>
-#include <vector>
-
-#include <ship/Context.h>
-
 /* State-free helpers (compat token, env, split, rules reads)
  * live in netlobby_util.cpp; wire JSON parsing in lobby_json.cpp. */
 using namespace ssb64::netlobby;

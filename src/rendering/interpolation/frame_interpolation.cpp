@@ -215,37 +215,50 @@ void apply_effective_rate(int targetFps)
 /*  Public API                                                               */
 /* ========================================================================= */
 
+/* One-shot env reads. */
+static void interpReadEnvOnce(void) {
+    if (sEnvInited) {
+        return;
+    }
+    sEnvInited = true;
+    const char *env = std::getenv("SSB64_INTERP_FPS");
+    sEnvFps = (env != nullptr && env[0] != '\0') ? std::atoi(env) : -1;
+    const char *snap = std::getenv("SSB64_INTERP_SNAP_DIST");
+    if (snap != nullptr && snap[0] != '\0') {
+        sSnapDist = static_cast<float>(std::atof(snap));
+    }
+    sStatsLog = (std::getenv("SSB64_INTERP_LOG") != nullptr);
+    /* Draw-dump diagnostics expect one interpreter walk per tick. */
+    sForceDisabled = (std::getenv("SSB64_DUMP_DRAWS") != nullptr);
+    sRecords.reserve(kMaxRecords);
+}
+
+/* Resolve the target fps: env override, display-match mode, else CVar. */
+static int interpResolveFps(void) {
+    if (sEnvFps >= 0) {
+        return sEnvFps;
+    }
+    if (!display_match_enabled()) {
+        return CVarGetInteger(PORT_INTERP_CVAR_FPS, 0);
+    }
+    auto* window = get_fast3d_window();
+    const uint32_t refresh = window != nullptr ? window->GetCurrentRefreshRate() : 60;
+    // Keep the 60 Hz simulation fixed while matching arbitrary display
+    // rates. A fractional cadence distributes ceil(fps / 60) subframes
+    // across ticks and computes their true temporal phases, so 90, 144,
+    // and 165 Hz panels are paced exactly instead of being rounded down.
+    const int fps = clamp_display_fps(refresh);
+    port_log("SSB64: interp — display reports %u Hz; match mode selected %d fps\n", refresh, fps);
+    return fps;
+}
+
 extern "C" void portInterpApplyConfig(void)
 {
     sConfigInited = true;
+    interpReadEnvOnce();
 
-    /* One-shot env reads. */
-    if (!sEnvInited) {
-        sEnvInited = true;
-        const char *env = std::getenv("SSB64_INTERP_FPS");
-        sEnvFps = (env != nullptr && env[0] != '\0') ? std::atoi(env) : -1;
-        const char *snap = std::getenv("SSB64_INTERP_SNAP_DIST");
-        if (snap != nullptr && snap[0] != '\0') {
-            sSnapDist = static_cast<float>(std::atof(snap));
-        }
-        sStatsLog = (std::getenv("SSB64_INTERP_LOG") != nullptr);
-        /* Draw-dump diagnostics expect one interpreter walk per tick. */
-        sForceDisabled = (std::getenv("SSB64_DUMP_DRAWS") != nullptr);
-        sRecords.reserve(kMaxRecords);
-    }
-
-    int fps = (sEnvFps >= 0) ? sEnvFps : CVarGetInteger(PORT_INTERP_CVAR_FPS, 0);
-    if (sEnvFps < 0 && display_match_enabled()) {
-        auto* window = get_fast3d_window();
-        const uint32_t refresh = window != nullptr ? window->GetCurrentRefreshRate() : 60;
-        // Keep the 60 Hz simulation fixed while matching arbitrary display
-        // rates. A fractional cadence distributes ceil(fps / 60) subframes
-        // across ticks and computes their true temporal phases, so 90, 144,
-        // and 165 Hz panels are paced exactly instead of being rounded down.
-        fps = clamp_display_fps(refresh);
-        port_log("SSB64: interp — display reports %u Hz; match mode selected %d fps\n", refresh, fps);
-    }
     const bool matchDisplay = sEnvFps < 0 && display_match_enabled();
+    const int fps = interpResolveFps();
     int k = (fps >= 60) ? (matchDisplay ? (fps + 59) / 60 : (fps + 30) / 60) : 1;
     if (k < 1) k = 1;
     if (k > kMaxSubframes) k = kMaxSubframes;

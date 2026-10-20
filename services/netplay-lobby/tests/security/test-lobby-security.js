@@ -36,13 +36,17 @@ const closed = (ws) => Promise.race([
 ]);
 
 async function main() {
-  // node-lobby persists the leaderboard to services/netplay-lobby/
-  // leaderboard.json — wipe it first so rating assertions aren't
-  // order-dependent across runs.
+  // node-lobby persists the leaderboard under its data dir — wipe it
+  // first so rating assertions aren't order-dependent across runs.
+  // LOBBY_SCRIPT/LOBBY_DATA_DIR let mutation harnesses point this suite
+  // at a mutated source tree.
   try {
-    fs.unlinkSync(path.join(__dirname, "..", "..", "leaderboard.json"));
+    fs.unlinkSync(path.join(process.env.LOBBY_DATA_DIR ||
+      path.join(__dirname, "..", ".."), "leaderboard.json"));
   } catch { /* first run or already clean */ }
-  const srv = spawn("node", [path.join(__dirname, "..", "..", "src", "infrastructure", "local", "node-lobby.mjs"), String(PORT)], { stdio: "pipe" });
+  const lobbyScript = process.env.LOBBY_SCRIPT ||
+    path.join(__dirname, "..", "..", "src", "infrastructure", "local", "node-lobby.mjs");
+  const srv = spawn("node", [lobbyScript, String(PORT)], { stdio: "pipe" });
   /* Wait for a real bind — race the stdout banner against an active
    * /health poll (a swallowed banner must not stall the suite) and
    * early exit; stderr rides along so a timeout reports the cause. */
@@ -277,12 +281,78 @@ async function main() {
   const badId = await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
     match_id: "nope!", won: 1, duration: 10 });
   ok("hostile match_id rejected", badId.status === 400);
+  const nonHexId = await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
+    match_id: "zzzzzzzzzzzzzzzz", won: 1, duration: 10 });
+  ok("non-hex match_id (8+ chars) rejected", nonHexId.status === 400);
+  /* Cross-paired reports: A reports "beat C", D reports "beat B" under the
+   * same match_id — names don't mirror, so it's a mismatch, not a verify. */
+  const cp1 = await (await postRes({ name: "AliceT", opp_name: "CarolT", key: KEY_C,
+    match_id: "cc00dd11ee22ff33", won: 1, duration: 50 })).json();
+  ok("cross-pair first report pending", cp1.kind === "pending");
+  /* Second report has the mirrored OUTCOME (loss vs prior's win) but names
+   * that don't mirror the pairing — must mismatch, never verify. */
+  const cp2 = await (await postRes({ name: "DaveT", opp_name: "BobT",
+    key: "1234abcd1234abcd1234abcd1234abcd",
+    match_id: "cc00dd11ee22ff33", won: 0, duration: 50 })).json();
+  ok("cross-paired reports mismatch, not verify", cp2.kind === "mismatch");
   const badKey = await postRes({ name: "AliceT", opp_name: "BobT", key: "x",
     match_id: "1122334455667788", won: 1, duration: 10 });
   ok("weak claim key rejected", badKey.status === 400);
   const badWon = await postRes({ name: "AliceT", opp_name: "BobT", key: KEY_C,
     match_id: "1122334455667788", won: 7, duration: 10 });
   ok("out-of-range result rejected", badWon.status === 400);
+  ok("mirror-verified reports are trusted=mirror", v1.trusted === "mirror");
+
+  // --- server-issued match tokens: /match/begin mints the match_id and a
+  // per-participant token, so a fabricated id can't reach the stronger
+  // verification path; issued ids are consumed on settle. Dedicated
+  // players keep this off AliceT's history/count assertions. ---
+  const KEY_G1 = "12121212121212121212121212121212";
+  const KEY_G2 = "34343434343434343434343434343434";
+  await post({ name: "GwenT", key: KEY_G1, rating: 1500, wins: 0, losses: 0 });
+  await post({ name: "HankT", key: KEY_G2, rating: 1500, wins: 0, losses: 0 });
+  const postMatch = (p, body) => fetch(`${lbBase}${p}`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const begin = await (await postMatch("/match/begin", {
+    name: "GwenT", key: KEY_G1, opp_name: "HankT" })).json();
+  ok("match begin mints id + caller token",
+     begin.kind === "ok" && typeof begin.id === "string" &&
+     typeof begin.token === "string");
+  const badBegin = await postMatch("/match/begin", {
+    name: "CarolT", key: "badbadbadbadbadb", opp_name: "HankT" });
+  ok("match begin requires claim key", badBegin.status === 400);
+  const beginStranger = await postMatch("/match/begin", {
+    name: "GwenT", key: KEY_G1, opp_name: "Nobody" });
+  ok("match begin requires claimed opponent", beginStranger.status === 400);
+  const badClaim = await postMatch("/match/claim", {
+    id: begin.id, name: "HankT", key: "badbadbadbadbadb" });
+  ok("claim rejects foreign key", badClaim.status === 400);
+  const claim = await (await postMatch("/match/claim", {
+    id: begin.id, name: "HankT", key: KEY_G2 })).json();
+  ok("opponent claims own token",
+     claim.kind === "ok" && typeof claim.token === "string");
+
+  const noTok = await postRes({ name: "GwenT", opp_name: "HankT", key: KEY_G1,
+    match_id: begin.id, won: 1, duration: 5000 });
+  ok("issued match requires token", noTok.status === 400);
+  const wrongTok = await postRes({ name: "GwenT", opp_name: "HankT", key: KEY_G1,
+    match_id: begin.id, won: 1, duration: 5000, token: "f".repeat(32) });
+  ok("wrong token rejected", wrongTok.status === 400);
+  const foreignKey = await postRes({ name: "GwenT", opp_name: "HankT", key: KEY_G2,
+    match_id: begin.id, won: 1, duration: 5000, token: claim.token });
+  ok("token must name its own slot", foreignKey.status === 400);
+  const tp1 = await (await postRes({ name: "GwenT", opp_name: "HankT", key: KEY_G1,
+    match_id: begin.id, won: 1, duration: 5000, token: begin.token })).json();
+  ok("token report is pending", tp1.kind === "pending");
+  const tv1 = await (await postRes({ name: "HankT", opp_name: "GwenT", key: KEY_G2,
+    match_id: begin.id, won: 0, duration: 5000, token: claim.token })).json();
+  ok("token path verifies trusted=token",
+     tv1.kind === "verified" && tv1.trusted === "token");
+  const reuse = await postRes({ name: "GwenT", opp_name: "HankT", key: KEY_G1,
+    match_id: begin.id, won: 1, duration: 5000, token: begin.token });
+  ok("issued id consumed after settle", reuse.status === 400);
 
   // --- moderation: /report needs a claimed reporter key; three distinct
   // reporters inside the window flag the target banned, and a banned key
@@ -484,6 +554,55 @@ async function main() {
   const histNobody = await (await fetch(`${lbBase}/history?name=NobodyHere`)).json();
   ok("history ?name= for stranger is empty",
      Array.isArray(histNobody.matches) && histNobody.matches.length === 0);
+
+  // --- per-room join flood: upgrade attempts to one room are bounded at
+  // MAX_JOINS_PER_WINDOW (24/10s) — the room code is the only secret, so
+  // guessing costs connections. 26 joins to a live room → rate-limited. ---
+  {
+    const rlHost = await connect("room=RATELM&role=host&v=2");
+    await jmsgWait(rlHost, "welcome");
+    let roomRejects = 0;
+    const roomAttempts = [];
+    for (let i = 0; i < 26; i++) {
+      roomAttempts.push(connect("room=RATELM&role=join&v=2")
+        .then(async (c) => {
+          const m = await jmsgWait(c, "error", 1500);
+          c.ws.close();
+          return m && m.reason === "rate-limited" ? "rate-limited" : "open";
+        })
+        .catch(() => "rate-limited"));
+    }
+    for (const r of await Promise.all(roomAttempts)) {
+      if (r === "rate-limited") roomRejects++;
+    }
+    ok("per-room join flood rate-limited", roomRejects >= 1);
+    rlHost.ws.close();
+  }
+
+  // --- per-IP join flood: the cross-code scan throttle caps join
+  // attempts per IP per window (AUD-25). 40 rapid joins to distinct
+  // rooms from this host must see at least one "rate-limited" close. ---
+  {
+    let joinRejects = 0;
+    const attempts = [];
+    for (let i = 0; i < 40; i++) {
+      // CODE_RE charset excludes 0/1/I/O — derive codes from A–H, J–N, P–Z, 2–9.
+      const alpha = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      const room = "FL" + alpha[(i * 7) % alpha.length] + alpha[(i * 13) % alpha.length]
+        + alpha[(i * 5) % alpha.length] + alpha[i % alpha.length];
+      attempts.push(connect(`room=${room}&role=join&v=2`)
+        .then(async (c) => {
+          const m = await jmsgWait(c, "error", 1500);
+          c.ws.close();
+          return m && m.reason === "rate-limited" ? "rate-limited" : "open";
+        })
+        .catch(() => "rate-limited"));
+    }
+    for (const r of await Promise.all(attempts)) {
+      if (r === "rate-limited") joinRejects++;
+    }
+    ok("join flood rate-limited", joinRejects >= 1);
+  }
 
   host.ws.close(); c1.ws.close(); c2.ws.close(); up1.ws.close();
   host2.ws.close(); spec.ws.close(); cSpec.ws.close();

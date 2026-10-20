@@ -122,6 +122,21 @@ private:
     static void *AllocThunk(void *initial_target);
     static void  SetThunkTarget(void *thunk, void *new_target);
     static void  FreeThunk(void *thunk);
+
+    /* InstallHook split by chain state: the target is either virgin
+     * (first detour, allocates inner_thunk) or already detoured (rebuild
+     * the funchook handle with the new fn as outermost). */
+    static int InstallFirstHook(const char *symbol_name, void *target,
+                                void *replacement, void **original_out);
+    static int InstallChainTopHook(const char *symbol_name, void *target,
+                                   ChainState &st, void *replacement,
+                                   void **original_out);
+
+    /* Removes chain[i] (owned) from st, re-linking survivors and freeing
+     * the entry's thunk. Caller restarts its scan after the mutation. */
+    static void UninstallChainEntry(
+        std::map<void *, ChainState>::iterator chain_it, ChainState &st,
+        const std::string &oid, int i, int *removed);
 };
 
 } // namespace ssb64::mods

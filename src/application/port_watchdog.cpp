@@ -250,6 +250,15 @@ bool ProbeReadable(uintptr_t addr, size_t len) {
     return false;
 }
 
+/* Basic sanity: FP must be aligned, not absurdly small, and the
+ * two-slot frame record must actually be mapped — a corrupt chain
+ * would otherwise re-fault inside the crash handler (signal is
+ * blocked here, so the kernel would kill us with no log output). */
+static bool FpSane(uintptr_t fp) {
+    if (fp < 0x1000 || (fp & 0x7) != 0) return false;
+    return ProbeReadable(fp, 2 * sizeof(uintptr_t));
+}
+
 int WalkFPChain(const CrashRegs &r, void **frames, int max_frames) {
     if (!r.valid || max_frames <= 0) return 0;
     int n = 0;
@@ -259,12 +268,7 @@ int WalkFPChain(const CrashRegs &r, void **frames, int max_frames) {
 #endif
     uintptr_t fp = r.fp;
     while (n < max_frames && fp != 0) {
-        /* Basic sanity: FP must be aligned, not absurdly small, and the
-         * two-slot frame record must actually be mapped — a corrupt chain
-         * would otherwise re-fault inside the crash handler (signal is
-         * blocked here, so the kernel would kill us with no log output). */
-        if (fp < 0x1000 || (fp & 0x7) != 0) break;
-        if (!ProbeReadable(fp, 2 * sizeof(uintptr_t))) break;
+        if (!FpSane(fp)) break;
         auto *fp_ptr = reinterpret_cast<uintptr_t *>(fp);
         uintptr_t saved_fp = fp_ptr[0];
         uintptr_t saved_ret = fp_ptr[1];

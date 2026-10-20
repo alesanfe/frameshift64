@@ -65,18 +65,10 @@ std::thread sThread;
 std::atomic<bool> sStop{ false };
 
 std::mutex sSendMutex;
-std::mutex sUpMutex;
-/* Serializes uplink sends vs close/re-dial so a socket is never closed
- * while a frame is being written to it. */
-std::mutex sUpIoMutex;
-std::atomic<int> sUpState{ PORT_WS_CLOSED };
+/* Uplink bookkeeping — the locking choreography is shared
+ * (websocket_transport_internal.h); this TU keeps only the socket. */
+WsUplink sUp;
 ws_sock_t sUpSock = WS_SOCK_BAD;
-/* Lazy-reconnect state — same contract as the libcurl branch: the
- * uplink is send-only so a dead link only surfaces on send; re-dial the
- * remembered URL at a bounded cadence instead of going mute. */
-std::string sUpUrl;
-std::chrono::steady_clock::time_point sUpRetryAfter{};
-constexpr auto kUpRedialMs = std::chrono::milliseconds(2000);
 
 unsigned int sMaskRng = 0;
 
@@ -160,113 +152,148 @@ struct Reader {
     }
 };
 
+struct WsDialUrl {
+	std::string hostport;
+	std::string host;
+	std::string port;
+	std::string path;
+};
+
+static bool ws_parse_dial_url(const std::string &url, WsDialUrl *out, std::string *err)
+{
+	if (url.rfind("wss://", 0) == 0) {
+		*err = "wss:// needs TLS — this build lacks WebSocket TLS support; use ws:// for a local lobby";
+		return false;
+	}
+	if (url.rfind("ws://", 0) != 0) {
+		*err = "server URL must start with ws:// or wss://";
+		return false;
+	}
+	std::string rest = url.substr(5);
+	size_t slash = rest.find('/');
+	out->hostport = (slash == std::string::npos) ? rest : rest.substr(0, slash);
+	out->path = (slash == std::string::npos) ? "/" : rest.substr(slash);
+	out->host = out->hostport;
+	out->port = "80";
+	size_t colon = out->hostport.rfind(':');
+	if (colon != std::string::npos) {
+		out->host = out->hostport.substr(0, colon);
+		out->port = out->hostport.substr(colon + 1);
+	}
+	return true;
+}
+
+static ws_sock_t ws_tcp_connect(const std::string &host, const std::string &port,
+                                std::string *err)
+{
+	addrinfo hints{};
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	addrinfo *list = nullptr;
+	if (getaddrinfo(host.c_str(), port.c_str(), &hints, &list) != 0 || list == nullptr) {
+		*err = "couldn't resolve " + host;
+		return WS_SOCK_BAD;
+	}
+	ws_sock_t s = WS_SOCK_BAD;
+	for (addrinfo *it = list; it != nullptr && s == WS_SOCK_BAD; it = it->ai_next) {
+		s = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
+		if (s == WS_SOCK_BAD) {
+			continue;
+		}
+		if (connect(s, it->ai_addr, static_cast<int>(it->ai_addrlen)) != 0) {
+			ws_close_sock(s);
+			s = WS_SOCK_BAD;
+		}
+	}
+	freeaddrinfo(list);
+	if (s == WS_SOCK_BAD) {
+		*err = "couldn't connect to " + host;
+	}
+	return s;
+}
+
+/* Sends the upgrade request and reads the reply headers. On failure the
+ * socket is closed and WS_SOCK_BAD returned. */
+static ws_sock_t ws_do_handshake(ws_sock_t s, const WsDialUrl &u,
+                                 std::vector<unsigned char> *leftover,
+                                 std::string *err)
+{
+	unsigned char key_bytes[16];
+	for (auto &b : key_bytes) { b = static_cast<unsigned char>(next_rand()); }
+	std::string request =
+	    "GET " + u.path + " HTTP/1.1\r\n"
+	    "Host: " + u.hostport + "\r\n"
+	    "Upgrade: websocket\r\n"
+	    "Connection: Upgrade\r\n"
+	    "Sec-WebSocket-Key: " + ssb64::Base64Encode(key_bytes, sizeof(key_bytes)) + "\r\n"
+	    "Sec-WebSocket-Version: 13\r\n\r\n";
+	if (!send_all(s, request.data(), request.size())) {
+		ws_close_sock(s);
+		*err = "handshake send failed";
+		return WS_SOCK_BAD;
+	}
+
+	std::string reply;
+	char chunk[512];
+	int waited_ms = 0;
+	while (reply.find("\r\n\r\n") == std::string::npos && reply.size() < 8192) {
+		if (!wait_readable(s, 500)) {
+			if ((waited_ms += 500) >= 5000) {
+				ws_close_sock(s);
+				*err = "handshake timed out";
+				return WS_SOCK_BAD;
+			}
+			continue;
+		}
+		int n = recv(s, chunk, sizeof(chunk), 0);
+		if (n <= 0) {
+			ws_close_sock(s);
+			*err = "handshake failed";
+			return WS_SOCK_BAD;
+		}
+		reply.append(chunk, static_cast<size_t>(n));
+	}
+	/* "HTTP/1.1 101" (or HTTP/1.0) — a non-upgrade HTTP reply never has it. */
+	if (reply.find(" 101") == std::string::npos) {
+		ws_close_sock(s);
+		*err = "server refused the WebSocket upgrade";
+		return WS_SOCK_BAD;
+	}
+	size_t hdr_end = reply.find("\r\n\r\n") + 4;
+	if (leftover != nullptr && reply.size() > hdr_end) {
+		leftover->assign(reply.begin() + static_cast<long>(hdr_end), reply.end());
+	}
+	return s;
+}
+
 /* ws://host[:port]/path -> connected + upgraded socket; `leftover` gets
  * any frame bytes that rode in past the \r\n\r\n. err set on failure. */
 ws_sock_t ws_dial(const std::string &url, std::string *err,
                   std::vector<unsigned char> *leftover)
 {
 #if defined(_WIN32)
-    static bool sWsaStarted = false;
-    if (!sWsaStarted) {
-        WSADATA data;
-        if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
-            *err = "WSAStartup failed";
-            return WS_SOCK_BAD;
-        }
-        sWsaStarted = true;
-    }
+	static bool sWsaStarted = false;
+	if (!sWsaStarted) {
+		WSADATA data;
+		if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
+			*err = "WSAStartup failed";
+			return WS_SOCK_BAD;
+		}
+		sWsaStarted = true;
+	}
 #endif
-    if (url.rfind("wss://", 0) == 0) {
-        *err = "wss:// needs TLS — this build lacks WebSocket TLS support; use ws:// for a local lobby";
-        return WS_SOCK_BAD;
-    }
-    if (url.rfind("ws://", 0) != 0) {
-        *err = "server URL must start with ws:// or wss://";
-        return WS_SOCK_BAD;
-    }
-    std::string rest = url.substr(5);
-    size_t slash = rest.find('/');
-    std::string hostport = (slash == std::string::npos) ? rest : rest.substr(0, slash);
-    std::string path = (slash == std::string::npos) ? "/" : rest.substr(slash);
-    std::string host = hostport, port = "80";
-    size_t colon = hostport.rfind(':');
-    if (colon != std::string::npos) {
-        host = hostport.substr(0, colon);
-        port = hostport.substr(colon + 1);
-    }
-
-    addrinfo hints{};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    addrinfo *list = nullptr;
-    if (getaddrinfo(host.c_str(), port.c_str(), &hints, &list) != 0 || list == nullptr) {
-        *err = "couldn't resolve " + host;
-        return WS_SOCK_BAD;
-    }
-    ws_sock_t s = WS_SOCK_BAD;
-    for (addrinfo *it = list; it != nullptr && s == WS_SOCK_BAD; it = it->ai_next) {
-        s = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
-        if (s == WS_SOCK_BAD) {
-            continue;
-        }
-        if (connect(s, it->ai_addr, static_cast<int>(it->ai_addrlen)) != 0) {
-            ws_close_sock(s);
-            s = WS_SOCK_BAD;
-        }
-    }
-    freeaddrinfo(list);
-    if (s == WS_SOCK_BAD) {
-        *err = "couldn't connect to " + host;
-        return WS_SOCK_BAD;
-    }
-
-    unsigned char key_bytes[16];
-    for (auto &b : key_bytes) { b = static_cast<unsigned char>(next_rand()); }
-    std::string request =
-        "GET " + path + " HTTP/1.1\r\n"
-        "Host: " + hostport + "\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        "Sec-WebSocket-Key: " + ssb64::Base64Encode(key_bytes, sizeof(key_bytes)) + "\r\n"
-        "Sec-WebSocket-Version: 13\r\n\r\n";
-    if (!send_all(s, request.data(), request.size())) {
-        ws_close_sock(s);
-        *err = "handshake send failed";
-        return WS_SOCK_BAD;
-    }
-
-    std::string reply;
-    char chunk[512];
-    int waited_ms = 0;
-    while (reply.find("\r\n\r\n") == std::string::npos && reply.size() < 8192) {
-        if (!wait_readable(s, 500)) {
-            if ((waited_ms += 500) >= 5000) {
-                ws_close_sock(s);
-                *err = "handshake timed out";
-                return WS_SOCK_BAD;
-            }
-            continue;
-        }
-        int n = recv(s, chunk, sizeof(chunk), 0);
-        if (n <= 0) {
-            ws_close_sock(s);
-            *err = "handshake failed";
-            return WS_SOCK_BAD;
-        }
-        reply.append(chunk, static_cast<size_t>(n));
-    }
-    /* "HTTP/1.1 101" (or HTTP/1.0) — a non-upgrade HTTP reply never has it. */
-    if (reply.find(" 101") == std::string::npos) {
-        ws_close_sock(s);
-        *err = "server refused the WebSocket upgrade";
-        return WS_SOCK_BAD;
-    }
-    size_t hdr_end = reply.find("\r\n\r\n") + 4;
-    if (leftover != nullptr && reply.size() > hdr_end) {
-        leftover->assign(reply.begin() + static_cast<long>(hdr_end), reply.end());
-    }
-    return s;
+	WsDialUrl u;
+	if (!ws_parse_dial_url(url, &u, err)) {
+		return WS_SOCK_BAD;
+	}
+	ws_sock_t s = ws_tcp_connect(u.host, u.port, err);
+	if (s == WS_SOCK_BAD) {
+		return WS_SOCK_BAD;
+	}
+	return ws_do_handshake(s, u, leftover, err);
 }
+
+
 
 /* Sends one client frame (always masked, single fragment). */
 int send_frame(ws_sock_t s, const void *data, int size, unsigned char opcode)
@@ -313,6 +340,50 @@ int send_frame(ws_sock_t s, const void *data, int size, unsigned char opcode)
 /* Reads one complete frame. Returns opcode (0 continuation..0xF) with the
  * FIN bit in `*fin`, payload in `out` (unmasked — servers must not mask).
  * -1 on failure, -2 for a frame to drop (masked server frame). */
+/* Decode the 7-bit/16-bit/64-bit payload length that follows head[1].
+ * Returns 0 on a short read. */
+static int read_frame_len(Reader *r, unsigned char head1, unsigned long long *len)
+{
+    *len = head1 & 0x7F;
+    if (*len == 126) {
+        unsigned char ext[2];
+        if (!r->read(ext, 2)) {
+            return 0;
+        }
+        *len = (static_cast<unsigned long long>(ext[0]) << 8) | ext[1];
+    } else if (*len == 127) {
+        unsigned char ext[8];
+        if (!r->read(ext, 8)) {
+            return 0;
+        }
+        *len = 0;
+        for (int i = 0; i < 8; i++) {
+            *len = (*len << 8) | ext[i];
+        }
+    }
+    return 1;
+}
+
+/* Consume-and-drop a masked server frame (protocol garbage). Returns -2
+ * when the frame was dropped, -1 on a short read. */
+static int drop_masked_frame(Reader *r, std::vector<unsigned char> *out,
+                             unsigned long long len)
+{
+    unsigned char mask[4];
+    if (!r->read(mask, 4)) {
+        return -1;
+    }
+    /* A masked server frame is protocol garbage; consume-and-drop. */
+    out->assign(static_cast<size_t>(len), 0);
+    if (len != 0 && !r->read(out->data(), static_cast<size_t>(len))) {
+        return -1;
+    }
+    for (size_t i = 0; i < out->size(); i++) {
+        (*out)[i] ^= mask[i & 3];
+    }
+    return -2;
+}
+
 int recv_frame(Reader *r, std::vector<unsigned char> *out, int *fin)
 {
     unsigned char head[2];
@@ -321,22 +392,9 @@ int recv_frame(Reader *r, std::vector<unsigned char> *out, int *fin)
     }
     *fin = (head[0] & 0x80) != 0;
     int opcode = head[0] & 0x0F;
-    unsigned long long len = head[1] & 0x7F;
-    if (len == 126) {
-        unsigned char ext[2];
-        if (!r->read(ext, 2)) {
-            return -1;
-        }
-        len = (static_cast<unsigned long long>(ext[0]) << 8) | ext[1];
-    } else if (len == 127) {
-        unsigned char ext[8];
-        if (!r->read(ext, 8)) {
-            return -1;
-        }
-        len = 0;
-        for (int i = 0; i < 8; i++) {
-            len = (len << 8) | ext[i];
-        }
+    unsigned long long len = 0;
+    if (!read_frame_len(r, head[1], &len)) {
+        return -1;
     }
     /* Cap before either branch allocates: a masked frame is already
      * protocol garbage, and an unmasked frame only ever carries ≤4MiB —
@@ -346,19 +404,7 @@ int recv_frame(Reader *r, std::vector<unsigned char> *out, int *fin)
         return -1;
     }
     if ((head[1] & 0x80) != 0) {
-        unsigned char mask[4];
-        if (!r->read(mask, 4)) {
-            return -1;
-        }
-        /* A masked server frame is protocol garbage; consume-and-drop. */
-        out->assign(static_cast<size_t>(len), 0);
-        if (len != 0 && !r->read(out->data(), static_cast<size_t>(len))) {
-            return -1;
-        }
-        for (size_t i = 0; i < out->size(); i++) {
-            (*out)[i] ^= mask[i & 3];
-        }
-        return -2;  /* drop */
+        return drop_masked_frame(r, out, len);
     }
     if (len > 0) {
         out->resize(static_cast<size_t>(len));
@@ -369,6 +415,55 @@ int recv_frame(Reader *r, std::vector<unsigned char> *out, int *fin)
         out->clear();
     }
     return opcode;
+}
+
+/* Handles one decoded frame. Returns false when the loop should break. */
+static bool run_dispatch_frame(ws_sock_t s, int opcode, int fin,
+                               std::vector<unsigned char> &payload,
+                               std::vector<unsigned char> &message,
+                               int *message_kind)
+{
+    if (opcode == -2) {
+        return true;    /* masked server frame: dropped */
+    }
+    if (opcode == 0x8) {                       /* close */
+        unsigned int code = payload.size() >= 2
+            ? (static_cast<unsigned int>(payload[0]) << 8) | payload[1] : 0;
+        port_log("SSB64 WS: close frame code=%u len=%u\n",
+                 code, (unsigned)payload.size());
+        if (!sStop) { fail("server closed the connection"); }
+        return false;
+    }
+    if (opcode == 0x9) {                       /* ping -> pong */
+        send_frame(s, payload.data(), static_cast<int>(payload.size()), 0xA);
+        return true;
+    }
+    if (opcode == 0xA) {
+        return true;                           /* pong: nothing to track */
+    }
+    if (opcode != 0) {                         /* first fragment of a message */
+        *message_kind = opcode;
+        message.clear();
+    }
+    message.insert(message.end(), payload.begin(), payload.end());
+    if (message.size() > kMaxWsMessageBytes) {
+        fail("server sent an oversized message");
+        return false;
+    }
+    if (fin != 0 && *message_kind >= 0) {
+        /* The game thread drains these lazily — cap them like the UDP
+         * ingress queue so a flooding server can't exhaust memory
+         * while we're stalled. Overflow means the consumer is dead;
+         * failing the connection beats a silent desync. */
+        if (!WsEnqueueBounded(sMutex, sTextQueue, sBinaryQueue,
+                              message, *message_kind == 0x1)) {
+            fail("message queue overflow");
+            return false;
+        }
+        message.clear();
+        *message_kind = -1;
+    }
+    return true;
 }
 
 void run(std::string url)
@@ -402,102 +497,25 @@ void run(std::string url)
             if (!sStop) { fail("connection to the server was lost"); }
             break;
         }
-        if (opcode == -2) {
-            continue;   /* masked server frame: dropped */
-        }
-        if (opcode == 0x8) {                       /* close */
-            unsigned int code = payload.size() >= 2
-                ? (static_cast<unsigned int>(payload[0]) << 8) | payload[1] : 0;
-            port_log("SSB64 WS: close frame code=%u len=%u\n",
-                     code, (unsigned)payload.size());
-            if (!sStop) { fail("server closed the connection"); }
+        if (!run_dispatch_frame(s, opcode, fin, payload, message, &message_kind)) {
             break;
-        }
-        if (opcode == 0x9) {                       /* ping -> pong */
-            send_frame(s, payload.data(), static_cast<int>(payload.size()), 0xA);
-            continue;
-        }
-        if (opcode == 0xA) {
-            continue;                              /* pong: nothing to track */
-        }
-        if (opcode != 0) {                         /* first fragment of a message */
-            message_kind = opcode;
-            message.clear();
-        }
-        message.insert(message.end(), payload.begin(), payload.end());
-        if (message.size() > kMaxWsMessageBytes) {
-            fail("server sent an oversized message");
-            break;
-        }
-        if (fin != 0 && message_kind >= 0) {
-            /* The game thread drains these lazily — cap them like the UDP
-             * ingress queue so a flooding server can't exhaust memory
-             * while we're stalled. Overflow means the consumer is dead;
-             * failing the connection beats a silent desync. */
-            if (!WsEnqueueBounded(sMutex, sTextQueue, sBinaryQueue,
-                                  message, message_kind == 0x1)) {
-                fail("message queue overflow");
-                break;
-            }
-            message.clear();
-            message_kind = -1;
         }
     }
 }
 
-/* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
- * cadence when the link is dead. Returns 1 when the frame went out on the
- * uplink, -1 when the uplink is unusable and the caller should fall back
- * to the control socket — the frame is never dropped just because the
- * uplink died. */
+
+
 /* Returns a live uplink socket: the open one, or a fresh re-dial of the
- * remembered URL when the previous socket failed. The FAILED->claim->dial
- * path runs at a bounded cadence (sUpRetryAfter) with a single claimer per
- * window; CONNECTING is excluded so we never overlap an explicit
- * port_ws_uplink_connect dial. WS_SOCK_BAD -> caller falls back to the
- * control socket. */
+ * remembered URL. The locking choreography lives in WsUplinkSocket —
+ * WS_SOCK_BAD -> caller falls back to the control socket. */
 ws_sock_t uplink_socket(void)
 {
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (sUpState == PORT_WS_OPEN && sUpSock != WS_SOCK_BAD) {
-            return sUpSock;
-        }
-        if (sUpState != PORT_WS_FAILED || sUpUrl.empty() ||
-            std::chrono::steady_clock::now() < sUpRetryAfter) {
-            return WS_SOCK_BAD;
-        }
-        sUpRetryAfter = std::chrono::steady_clock::now() + kUpRedialMs;
-    }
-    std::lock_guard<std::mutex> io(sUpIoMutex);
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (sUpState == PORT_WS_OPEN && sUpSock != WS_SOCK_BAD) {
-            return sUpSock;    /* another sender re-dialed while we waited */
-        }
-    }
-    std::string url, err;
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        url = sUpUrl;
-    }
-    ws_sock_t s = ws_dial(url, &err, nullptr);
-    std::lock_guard<std::mutex> lock(sUpMutex);
-    if (s == WS_SOCK_BAD) {
-        sUpState = PORT_WS_FAILED;
-        return WS_SOCK_BAD;
-    }
-    if (sUpUrl != url) {    /* closed or re-targeted while we dialed */
-        if (sUpUrl.empty()) {
-            sUpState = PORT_WS_CLOSED;
-        }
-        ws_close_sock(s);
-        return WS_SOCK_BAD;
-    }
-    sUpSock = s;
-    sUpState = PORT_WS_OPEN;
-    port_log("SSB64 WS: uplink reconnected\n");
-    return s;
+    return WsUplinkSocket(sUp, WsSteadyMs(), WS_SOCK_BAD, sUpSock,
+        [](const std::string &url) {
+            std::string err;
+            return ws_dial(url, &err, nullptr);
+        },
+        [](ws_sock_t s) { ws_close_sock(s); });
 }
 
 /* Send on the dedicated uplink, re-dialing the remembered URL at a bounded
@@ -507,30 +525,9 @@ ws_sock_t uplink_socket(void)
  * uplink died. */
 int uplink_send(const void *data, int size, unsigned char opcode)
 {
-    ws_sock_t s = uplink_socket();
-    if (s == WS_SOCK_BAD) {
-        return -1;
-    }
-    std::lock_guard<std::mutex> io(sUpIoMutex);
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (sUpSock != s) {
-            return -1;    /* closed or swapped while we waited on the lock */
-        }
-    }
-    if (send_frame(s, data, size, opcode)) {
-        return 1;
-    }
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (sUpSock == s) {
-            sUpSock = WS_SOCK_BAD;
-            sUpState = PORT_WS_FAILED;
-        }
-    }
-    shutdown(s, 2);
-    ws_close_sock(s);
-    return -1;
+    return WsUplinkSend(sUp, sUpSock, uplink_socket(), WS_SOCK_BAD,
+        [&](ws_sock_t s) { return send_frame(s, data, size, opcode); },
+        [](ws_sock_t s) { shutdown(s, 2); ws_close_sock(s); });
 }
 
 } // namespace
@@ -577,24 +574,24 @@ extern "C" const char *port_ws_error(void)
 
 extern "C" int port_ws_send_text(const char *text)
 {
-    if (uplink_send(text, static_cast<int>(std::strlen(text)), 0x1) > 0) {
-        return 1;
-    }
-    if (sState != PORT_WS_OPEN) {
-        return 0;
-    }
-    return send_frame(sSock, text, static_cast<int>(std::strlen(text)), 0x1);
+    return WsSend(sState, text, static_cast<int>(std::strlen(text)), 0x1,
+        [](const void *d, int n, unsigned char op) {
+            return uplink_send(d, n, op);
+        },
+        [](const void *d, int n, unsigned char op) {
+            return send_frame(sSock, d, n, op);
+        });
 }
 
 extern "C" int port_ws_send_binary(const void *data, int size)
 {
-    if (uplink_send(data, size, 0x2) > 0) {
-        return 1;
-    }
-    if (sState != PORT_WS_OPEN) {
-        return 0;
-    }
-    return send_frame(sSock, data, size, 0x2);
+    return WsSend(sState, data, size, 0x2,
+        [](const void *d, int n, unsigned char op) {
+            return uplink_send(d, n, op);
+        },
+        [](const void *d, int n, unsigned char op) {
+            return send_frame(sSock, d, n, op);
+        });
 }
 
 extern "C" int port_ws_poll_text(char *out, int capacity)
@@ -610,53 +607,24 @@ extern "C" int port_ws_poll_binary(void *out, int capacity)
 extern "C" int port_ws_uplink_connect(const char *url)
 {
     port_ws_uplink_close();
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        sUpUrl = url != nullptr ? url : "";
-        sUpRetryAfter = std::chrono::steady_clock::time_point{};
-    }
-    sUpState = PORT_WS_CONNECTING;
-    std::string err;
-    /* send-only socket: handshake leftovers (if any) are discarded —
-     * nothing reads this side. */
-    ws_sock_t s = ws_dial(url != nullptr ? url : "", &err, nullptr);
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        if (s == WS_SOCK_BAD) {
-            port_log("SSB64 WS: uplink failed: %s\n", err.c_str());
-            sUpState = PORT_WS_FAILED;
-            return 0;
-        }
-        if (sUpUrl.empty()) {    /* closed while we were dialing */
-            ws_close_sock(s);
-            sUpState = PORT_WS_CLOSED;
-            return 0;
-        }
-        sUpSock = s;
-        sUpState = PORT_WS_OPEN;
-    }
-    return 1;
+    return WsUplinkConnect(sUp, sUpSock, WS_SOCK_BAD, url,
+        [](const std::string &u, std::string &err) {
+            /* send-only socket: handshake leftovers (if any) are
+             * discarded — nothing reads this side. */
+            return ws_dial(u, &err, nullptr);
+        },
+        [](ws_sock_t s) { ws_close_sock(s); });
 }
 
 extern "C" void port_ws_uplink_close(void)
 {
-    ws_sock_t s;
-    {
-        std::lock_guard<std::mutex> lock(sUpMutex);
-        sUpUrl.clear();    /* explicit close — never resurrect */
-        s = sUpSock;
-        sUpSock = WS_SOCK_BAD;
-        sUpState = PORT_WS_CLOSED;
-    }
-    if (s != WS_SOCK_BAD) {
-        /* sUpIoMutex waits out an in-flight send before the close. */
-        std::lock_guard<std::mutex> io(sUpIoMutex);
-        shutdown(s, 2);
-        ws_close_sock(s);
-    }
+    /* Explicit close clears the remembered URL — never resurrect. */
+    WsUplinkClose(sUp, sUpSock, WS_SOCK_BAD,
+        [] {},
+        [](ws_sock_t s) { shutdown(s, 2); ws_close_sock(s); });
 }
 
-extern "C" int port_ws_uplink_state(void) { return sUpState; }
+extern "C" int port_ws_uplink_state(void) { return sUp.state; }
 
 extern "C" int port_ws_uplink_send(const void *data, int size)
 {

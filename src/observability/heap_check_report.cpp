@@ -68,16 +68,9 @@ void describePtr(const void* p, char* out, size_t outSize) {
 	}
 }
 
-// Print the victim header's fields numerically — _file_name may itself be
-// stomped, so it is rendered as a pointer and only dereferenced (bounded,
-// SEH-guarded) after a plausibility check.
-void describeVictim(const ShadowCrtHeader* h, const char* why, const char* tag) {
-	probeLog("*** HEAP-AUTOPSY %s [%s]: header=%p user=%p next=%p prev=%p "
-	         "file_name=%p line=%d use=%d size=%llu req=%ld ***\n",
-	         why, tag, (const void*)h, (const void*)(h + 1),
-	         (const void*)h->next, (const void*)h->prev,
-	         (const void*)h->file_name, h->line_number, h->block_use,
-	         (unsigned long long)h->data_size, h->request_number);
+// Bounded, SEH-guarded render of h->file_name — the field may itself be
+// stomped, so it is dereferenced only after a plausibility check.
+static void describeVictimFileName(const ShadowCrtHeader* h) {
 	if (addrLooksMapped(h->file_name)) {
 		__try {
 			char nameBuf[128];
@@ -91,6 +84,9 @@ void describeVictim(const ShadowCrtHeader* h, const char* why, const char* tag) 
 			probeLog("    alloc site: (file_name %p unreadable)\n", (const void*)h->file_name);
 		}
 	}
+}
+
+static void describeVictimHeaderBytes(const ShadowCrtHeader* h) {
 	__try {
 		const unsigned char* b = (const unsigned char*)h;
 		probeLog("    header bytes:");
@@ -104,10 +100,40 @@ void describeVictim(const ShadowCrtHeader* h, const char* why, const char* tag) 
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
 		probeLog("    (header partially unreadable)\n");
 	}
-	/* Cross-link truth: for a "next->prev broken"/"prev->next broken"
-	 * report the value the neighbor ACTUALLY holds — that is the stomp
-	 * payload (a foreign pointer, -1 fill, dead-land bytes) and often
-	 * identifies the writer. */
+}
+
+/* When next->prev points elsewhere, that "skip" node is the competing
+ * claimant for the list position — inspect whether it is still alive
+ * (use/gaps intact) or freed (0xDD fill). A live skip node means h->next
+ * was overwritten by a wild pointer store; a dead one means an unlink
+ * replayed stale links (double-free / free of an already-removed node). */
+static void describeVictimSkipNode(const ShadowCrtHeader* h) {
+	const ShadowCrtHeader* skip = h->next->prev;
+	if (skip == h || !addrLooksMapped(skip)) {
+		return;
+	}
+	probeLog("    skip-node %p: next=%p prev=%p file=%p line=%d "
+	         "use=%d size=%llu req=%ld\n",
+	         (const void*)skip, (const void*)skip->next,
+	         (const void*)skip->prev, (const void*)skip->file_name,
+	         skip->line_number, skip->block_use,
+	         (unsigned long long)skip->data_size, skip->request_number);
+	if (addrLooksMapped(skip->file_name)) {
+		char nb[128];
+		size_t i = 0;
+		for (; i < sizeof(nb) - 1 && skip->file_name[i] != '\0'; ++i) {
+			nb[i] = skip->file_name[i];
+		}
+		nb[i] = '\0';
+		probeLog("    skip-node alloc site: %s:%d\n", nb, skip->line_number);
+	}
+}
+
+/* Cross-link truth: for a "next->prev broken"/"prev->next broken"
+ * report the value the neighbor ACTUALLY holds — that is the stomp
+ * payload (a foreign pointer, -1 fill, dead-land bytes) and often
+ * identifies the writer. */
+static void describeVictimNeighbors(const ShadowCrtHeader* h) {
 	__try {
 		if (addrLooksMapped(h->next)) {
 			probeLog("    next(%p)->prev = %p%s\n", (const void*)h->next,
@@ -128,30 +154,7 @@ void describeVictim(const ShadowCrtHeader* h, const char* why, const char* tag) 
 				         nn->line_number, nn->block_use,
 				         (unsigned long long)nn->data_size, nn->request_number);
 			}
-			/* When next->prev points elsewhere, that "skip" node is the
-			 * competing claimant for the list position — inspect whether it
-			 * is still alive (use/gaps intact) or freed (0xDD fill). A live
-			 * skip node means h->next was overwritten by a wild pointer
-			 * store; a dead one means an unlink replayed stale links
-			 * (double-free / free of an already-removed node). */
-			const ShadowCrtHeader* skip = h->next->prev;
-			if (skip != h && addrLooksMapped(skip)) {
-				probeLog("    skip-node %p: next=%p prev=%p file=%p line=%d "
-				         "use=%d size=%llu req=%ld\n",
-				         (const void*)skip, (const void*)skip->next,
-				         (const void*)skip->prev, (const void*)skip->file_name,
-				         skip->line_number, skip->block_use,
-				         (unsigned long long)skip->data_size, skip->request_number);
-				if (addrLooksMapped(skip->file_name)) {
-					char nb[128];
-					size_t i = 0;
-					for (; i < sizeof(nb) - 1 && skip->file_name[i] != '\0'; ++i) {
-						nb[i] = skip->file_name[i];
-					}
-					nb[i] = '\0';
-					probeLog("    skip-node alloc site: %s:%d\n", nb, skip->line_number);
-				}
-			}
+			describeVictimSkipNode(h);
 		}
 		if (addrLooksMapped(h->prev)) {
 			probeLog("    prev(%p)->next = %p%s\n", (const void*)h->prev,
@@ -163,6 +166,23 @@ void describeVictim(const ShadowCrtHeader* h, const char* why, const char* tag) 
 	}
 }
 
+// Print the victim header's fields numerically — _file_name may itself be
+// stomped, so it is rendered as a pointer and only dereferenced (bounded,
+// SEH-guarded) after a plausibility check.
+void describeVictim(const ShadowCrtHeader* h, const char* why, const char* tag) {
+	probeLog("*** HEAP-AUTOPSY %s [%s]: header=%p user=%p next=%p prev=%p "
+	         "file_name=%p line=%d use=%d size=%llu req=%ld ***\n",
+	         why, tag, (const void*)h, (const void*)(h + 1),
+	         (const void*)h->next, (const void*)h->prev,
+	         (const void*)h->file_name, h->line_number, h->block_use,
+	         (unsigned long long)h->data_size, h->request_number);
+	describeVictimFileName(h);
+	describeVictimHeaderBytes(h);
+	describeVictimNeighbors(h);
+}
+
+
+
 // Cheap plausibility for pointers: no VirtualQuery — a dereference of a
 // non-committed address is caught by the caller's __try anyway, and this
 // runs per free, so syscall-per-field is the difference between seconds
@@ -172,16 +192,8 @@ bool addrPlausible(const void* p) {
 	return a >= 0x10000 && a < 0x0000800000000000ull;
 }
 
-// Returns why-string if the header's list links or gaps are inconsistent.
-// All dereferences run under the caller's __try — a faulted read means the
-// header itself is the damage; the caller reports it.
-const char* checkHeader(const ShadowCrtHeader* h) {
-	if (!addrPlausible(h)) {
-		return "header ptr implausible";
-	}
-	if (h->block_use != 1 && h->block_use != 2 && h->block_use != 4) {
-		return "bad block_use";
-	}
+// List-link integrity: next->prev and prev->next must point back at h.
+static const char* checkHeaderLinks(const ShadowCrtHeader* h) {
 	if (h->next != nullptr) {
 		if (!addrPlausible(h->next)) {
 			return "next implausible";
@@ -198,16 +210,24 @@ const char* checkHeader(const ShadowCrtHeader* h) {
 			return "prev->next broken";
 		}
 	}
-	/* file_name/line/request live in the same header as the links — a wild
-	 * write that hits only those fields (observed: file_name stomped to -1,
-	 * which then kills _CrtDbgReport's strnlen) leaves links+gaps intact and
-	 * would pass every check above. Validate the pointer too. */
+	return nullptr;
+}
+
+/* file_name/line/request live in the same header as the links — a wild
+ * write that hits only those fields (observed: file_name stomped to -1,
+ * which then kills _CrtDbgReport's strnlen) leaves links+gaps intact and
+ * would pass every check above. Validate the pointer too. */
+static const char* checkHeaderMeta(const ShadowCrtHeader* h) {
 	if (h->file_name != nullptr && !addrPlausible(h->file_name)) {
 		return "file_name implausible";
 	}
 	if (h->file_name == nullptr && h->line_number != 0) {
 		return "line set but file null";
 	}
+	return nullptr;
+}
+
+static const char* checkHeaderGaps(const ShadowCrtHeader* h) {
 	for (int i = 0; i < 4; ++i) {
 		if (h->gap[i] != 0xFD) {
 			return "head gap";
@@ -223,6 +243,27 @@ const char* checkHeader(const ShadowCrtHeader* h) {
 	}
 	return nullptr;
 }
+
+// Returns why-string if the header's list links or gaps are inconsistent.
+// All dereferences run under the caller's __try — a faulted read means the
+// header itself is the damage; the caller reports it.
+const char* checkHeader(const ShadowCrtHeader* h) {
+	if (!addrPlausible(h)) {
+		return "header ptr implausible";
+	}
+	if (h->block_use != 1 && h->block_use != 2 && h->block_use != 4) {
+		return "bad block_use";
+	}
+	const char* why = checkHeaderLinks(h);
+	if (why == nullptr) {
+		why = checkHeaderMeta(h);
+	}
+	if (why == nullptr) {
+		why = checkHeaderGaps(h);
+	}
+	return why;
+}
+
 
 
 

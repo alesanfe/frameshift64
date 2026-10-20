@@ -64,8 +64,8 @@ static int sMainReady;
 static uint32_t sNextSerial;
 static PortCoroutine *sLive;        /* intrusive list, newest first */
 
-#define ASYNCIFY_STACK_BYTES (128 * 1024)
-#define MAIN_ASYNCIFY_STACK_BYTES (64 * 1024)
+#define ASYNCIFY_STACK_BYTES (512 * 1024)
+#define MAIN_ASYNCIFY_STACK_BYTES (256 * 1024)
 static void *sMainAsyncifyStack;
 
 static void stack_canary_init(PortCoroutine *co)
@@ -94,6 +94,8 @@ static void coroutine_trampoline(void *arg)
 {
 	PortCoroutine *co = (PortCoroutine *)arg;
 
+	fprintf(stderr, "CT%d tramp co=%p entry=%p\n", co->serial, (void *)co,
+	        (void *)co->entry);
 	co->entry(co->arg);
 	stack_canary_check(co, "exit");
 	co->finished = 1;
@@ -175,7 +177,9 @@ void port_coroutine_resume(PortCoroutine *co)
 	co->caller = resumer;
 	co->caller_co = prev;
 	sCurrent = co;
+	fprintf(stderr, "CT%d resume swap-in\n", co->serial);
 	emscripten_fiber_swap(resumer, &co->fiber);
+	fprintf(stderr, "CT%d resume swap-back\n", co->serial);
 	stack_canary_check(co, "resume-return");
 	/* Control returns here when `co` yields or finishes. Restore the
 	 * resumer's coroutine identity — NULL when that was the main fiber.

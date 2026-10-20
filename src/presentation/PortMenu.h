@@ -71,6 +71,9 @@ class PortMenu : public Ship::Menu {
      * the timeout also fires with the menu closed (Draw runs per-frame). */
     bool mDisplayRevertArmed = false;
     std::chrono::steady_clock::time_point mDisplayRevertDeadline{};
+    void DrawReextractModal(const ImVec2& viewportCenter);
+    void DrawDisplayRevertModal(const ImVec2& viewportCenter);
+    void DrawQuitConfirmModal(const ImVec2& viewportCenter);
 };
 
 } // namespace ssb64

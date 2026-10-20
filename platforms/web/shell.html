@@ -148,6 +148,10 @@ async function stageFsAndStart(Module) {
   }
 }
 
+/* Debug/support handle: lets test rigs and the support console reach FS
+ * and runtime methods without re-running the module factory. */
+window.BattleShip = Module;
+
 BattleShipModule(Module).then(stageFsAndStart).catch(e => {
   setStatus('Failed to load wasm: ' + e);
   console.error('wasm boot failure:', e && e.stack ? e.stack : e);

@@ -19,77 +19,82 @@ u8 port_diag_get_scene_prev(void)
 	return gSCManagerSceneData.scene_prev;
 }
 
+/* id -> name table; SCKind is contiguous so a direct index replaces the
+ * case-per-scene switch. Unlisted ids (or future enum additions) read as
+ * NULL and report "?". */
+static const char *const kPortSceneNames[] = {
+	[nSCKindNoController]        = "NoController",
+	[nSCKindTitle]               = "Title",
+	[nSCKindDebugMaps]           = "DebugMaps",
+	[nSCKindDebugCube]           = "DebugCube",
+	[nSCKindDebugBattle]         = "DebugBattle",
+	[nSCKindDebugFalls]          = "DebugFalls",
+	[nSCKindDebugUnknown]        = "DebugUnknown",
+	[nSCKindModeSelect]          = "ModeSelect",
+	[nSCKind1PMode]              = "1PMode",
+	[nSCKindVSMode]              = "VSMode",
+	[nSCKindVSOptions]           = "VSOptions",
+	[nSCKindVSItemSwitch]        = "VSItemSwitch",
+	[nSCKindMessage]             = "Message",
+	[nSCKind1PChallenger]        = "1PChallenger",
+	[nSCKind1PIntro]             = "1PIntro",
+	[nSCKindScreenAdjust]        = "ScreenAdjust",
+	[nSCKindPlayersVS]           = "PlayersVS",
+	[nSCKind1PGamePlayers]       = "1PGamePlayers",
+	[nSCKindPlayers1PTraining]   = "Players1PTraining",
+	[nSCKind1PBonus1Players]     = "1PBonus1Players",
+	[nSCKind1PBonus2Players]     = "1PBonus2Players",
+	[nSCKindMaps]                = "Maps",
+	[nSCKindVSBattle]            = "VSBattle",
+	[nSCKindUnknownMario]        = "UnknownMario",
+	[nSCKindVSResults]           = "VSResults",
+	[nSCKindVSRecord]            = "VSRecord",
+	[nSCKindCharacters]          = "Characters",
+#if defined(REGION_US)
+	[nSCKindStartup]             = "Startup",
+#endif
+	[nSCKindOpeningRoom]         = "OpeningRoom",
+	[nSCKindOpeningPortraits]    = "OpeningPortraits",
+	[nSCKindOpeningMario]        = "OpeningMario",
+	[nSCKindOpeningDonkey]       = "OpeningDonkey",
+	[nSCKindOpeningSamus]        = "OpeningSamus",
+	[nSCKindOpeningFox]          = "OpeningFox",
+	[nSCKindOpeningLink]         = "OpeningLink",
+	[nSCKindOpeningYoshi]        = "OpeningYoshi",
+	[nSCKindOpeningPikachu]      = "OpeningPikachu",
+	[nSCKindOpeningKirby]        = "OpeningKirby",
+	[nSCKindOpeningRun]          = "OpeningRun",
+	[nSCKindOpeningYoster]       = "OpeningYoster",
+	[nSCKindOpeningCliff]        = "OpeningCliff",
+	[nSCKindOpeningStandoff]     = "OpeningStandoff",
+	[nSCKindOpeningYamabuki]     = "OpeningYamabuki",
+	[nSCKindOpeningClash]        = "OpeningClash",
+	[nSCKindOpeningSector]       = "OpeningSector",
+	[nSCKindOpeningJungle]       = "OpeningJungle",
+	[nSCKindOpeningNewcomers]    = "OpeningNewcomers",
+	[nSCKindBackupClear]         = "BackupClear",
+	[nSCKindEnding]              = "Ending",
+	[nSCKind1PContinue]          = "1PContinue",
+	[nSCKind1PScoreUnk]          = "1PScoreUnk",
+	[nSCKind1PStageClear]        = "1PStageClear",
+	[nSCKind1PGame]              = "1PGame",
+	[nSCKind1PBonusStage]        = "1PBonusStage",
+	[nSCKind1PTrainingMode]      = "1PTrainingMode",
+#if defined(REGION_US)
+	[nSCKindCongra]              = "Congra",
+#endif
+	[nSCKindStaffroll]           = "Staffroll",
+	[nSCKindOption]              = "Option",
+	[nSCKindData]                = "Data",
+	[nSCKindSoundTest]           = "SoundTest",
+	[nSCKindExplain]             = "Explain",
+	[nSCKindAutoDemo]            = "AutoDemo",
+};
+
 const char *port_diag_get_scene_name(u8 id)
 {
-	switch (id) {
-	case nSCKindNoController:     return "NoController";
-	case nSCKindTitle:            return "Title";
-	case nSCKindDebugMaps:        return "DebugMaps";
-	case nSCKindDebugCube:        return "DebugCube";
-	case nSCKindDebugBattle:      return "DebugBattle";
-	case nSCKindDebugFalls:       return "DebugFalls";
-	case nSCKindDebugUnknown:     return "DebugUnknown";
-	case nSCKindModeSelect:       return "ModeSelect";
-	case nSCKind1PMode:           return "1PMode";
-	case nSCKindVSMode:           return "VSMode";
-	case nSCKindVSOptions:        return "VSOptions";
-	case nSCKindVSItemSwitch:     return "VSItemSwitch";
-	case nSCKindMessage:          return "Message";
-	case nSCKind1PChallenger:     return "1PChallenger";
-	case nSCKind1PIntro:          return "1PIntro";
-	case nSCKindScreenAdjust:     return "ScreenAdjust";
-	case nSCKindPlayersVS:        return "PlayersVS";
-	case nSCKind1PGamePlayers:    return "1PGamePlayers";
-	case nSCKindPlayers1PTraining:return "Players1PTraining";
-	case nSCKind1PBonus1Players:  return "1PBonus1Players";
-	case nSCKind1PBonus2Players:  return "1PBonus2Players";
-	case nSCKindMaps:             return "Maps";
-	case nSCKindVSBattle:         return "VSBattle";
-	case nSCKindUnknownMario:     return "UnknownMario";
-	case nSCKindVSResults:        return "VSResults";
-	case nSCKindVSRecord:         return "VSRecord";
-	case nSCKindCharacters:       return "Characters";
-#if defined(REGION_US)
-	case nSCKindStartup:          return "Startup";
-#endif
-	case nSCKindOpeningRoom:      return "OpeningRoom";
-	case nSCKindOpeningPortraits: return "OpeningPortraits";
-	case nSCKindOpeningMario:     return "OpeningMario";
-	case nSCKindOpeningDonkey:    return "OpeningDonkey";
-	case nSCKindOpeningSamus:     return "OpeningSamus";
-	case nSCKindOpeningFox:       return "OpeningFox";
-	case nSCKindOpeningLink:      return "OpeningLink";
-	case nSCKindOpeningYoshi:     return "OpeningYoshi";
-	case nSCKindOpeningPikachu:   return "OpeningPikachu";
-	case nSCKindOpeningKirby:     return "OpeningKirby";
-	case nSCKindOpeningRun:       return "OpeningRun";
-	case nSCKindOpeningYoster:    return "OpeningYoster";
-	case nSCKindOpeningCliff:     return "OpeningCliff";
-	case nSCKindOpeningStandoff:  return "OpeningStandoff";
-	case nSCKindOpeningYamabuki:  return "OpeningYamabuki";
-	case nSCKindOpeningClash:     return "OpeningClash";
-	case nSCKindOpeningSector:    return "OpeningSector";
-	case nSCKindOpeningJungle:    return "OpeningJungle";
-	case nSCKindOpeningNewcomers: return "OpeningNewcomers";
-	case nSCKindBackupClear:      return "BackupClear";
-	case nSCKindEnding:           return "Ending";
-	case nSCKind1PContinue:       return "1PContinue";
-	case nSCKind1PScoreUnk:       return "1PScoreUnk";
-	case nSCKind1PStageClear:     return "1PStageClear";
-	case nSCKind1PGame:           return "1PGame";
-	case nSCKind1PBonusStage:     return "1PBonusStage";
-	case nSCKind1PTrainingMode:   return "1PTrainingMode";
-#if defined(REGION_US)
-	case nSCKindCongra:           return "Congra";
-#endif
-	case nSCKindStaffroll:        return "Staffroll";
-	case nSCKindOption:           return "Option";
-	case nSCKindData:             return "Data";
-	case nSCKindSoundTest:        return "SoundTest";
-	case nSCKindExplain:          return "Explain";
-	case nSCKindAutoDemo:         return "AutoDemo";
-	default:                      return "?";
-	}
+	const char *name = (id < ARRAY_COUNT(kPortSceneNames)) ? kPortSceneNames[id] : NULL;
+	return (name != NULL) ? name : "?";
 }
 
 /* Whether the current scene has authored climax-freeze frames whose timing
@@ -111,30 +116,10 @@ const char *port_diag_get_scene_name(u8 id)
  */
 sb32 port_scene_wants_freeze_simulation(u8 scene_id)
 {
-	switch (scene_id) {
-	case nSCKindOpeningRoom:
-	case nSCKindOpeningPortraits:
-	case nSCKindOpeningMario:
-	case nSCKindOpeningDonkey:
-	case nSCKindOpeningSamus:
-	case nSCKindOpeningFox:
-	case nSCKindOpeningLink:
-	case nSCKindOpeningYoshi:
-	case nSCKindOpeningPikachu:
-	case nSCKindOpeningKirby:
-	case nSCKindOpeningRun:
-	case nSCKindOpeningYoster:
-	case nSCKindOpeningCliff:
-	case nSCKindOpeningStandoff:
-	case nSCKindOpeningYamabuki:
-	case nSCKindOpeningClash:
-	case nSCKindOpeningSector:
-	case nSCKindOpeningJungle:
-	case nSCKindOpeningNewcomers:
-	case nSCKindEnding:
-	case nSCKindAutoDemo:
+	/* Intro-scene range is contiguous (OpeningRoom..Newcomers);
+	 * Ending and AutoDemo sit outside it. */
+	if (scene_id >= nSCKindOpeningRoom && scene_id <= nSCKindOpeningNewcomers) {
 		return TRUE;
-	default:
-		return FALSE;
 	}
+	return scene_id == nSCKindEnding || scene_id == nSCKindAutoDemo;
 }

@@ -116,6 +116,25 @@ export function createLobbyApp(deps) {
     return json(c, result);
   });
 
+  /* Server-issued match: mints match_id + per-participant tokens. The
+   * begin caller proves their own claim key; the opponent retrieves their
+   * token via /match/claim. Reports on an issued match must present the
+   * participant's token — so a fabricated match_id can't move Elo. */
+  app.post("/match/begin", async (c) => {
+    const lb = await deps.loadLb();
+    const result = lb.beginMatch(await readBody(c, 4096));
+    if (result.kind !== "ok") return json(c, { error: result.reason }, 400);
+    await deps.saveLb(lb);
+    return json(c, result);
+  });
+
+  app.post("/match/claim", async (c) => {
+    const lb = await deps.loadLb();
+    const result = lb.claimMatch(await readBody(c, 4096));
+    if (result.kind !== "ok") return json(c, { error: result.reason }, 400);
+    return json(c, result);
+  });
+
   /* Community moderation report — BAN_REPORTS distinct keys in 24h flag
    * the name banned; banned keys stop mutating the board. */
   app.post("/report", async (c) => {

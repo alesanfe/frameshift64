@@ -301,6 +301,349 @@ void ResetDownloadStateForNewCheck() {
     SetDownloadStatus("");
 }
 
+#ifndef __SWITCH__
+
+/* Snapshot of the shared update state the download thread works from —
+ * taken once under s_stringMutex so the thread never touches the
+ * globals again. */
+struct UpdateJob {
+    std::string url;
+    long long expectedSize;
+    std::string expectedDigest;
+    std::string version;
+    std::string sumsUrl;
+    std::string sigUrl;
+};
+
+bool UpdateDownloadProgress(unsigned long long now, unsigned long long total) {
+    if (total == 0) return true;
+    std::ostringstream s;
+    s << "Downloading... " << std::fixed << std::setprecision(1)
+      << (100.0 * static_cast<double>(now) / static_cast<double>(total)) << "%";
+    SetDownloadStatus(s.str());
+    return true;
+}
+
+void FailUpdate(const std::string& message) {
+    SetDownloadStatus("Error: " + message);
+    s_isDownloading.store(false);
+}
+
+bool ReadTextFile(const std::string& p, std::string& out) {
+    std::ifstream in(p, std::ios::binary);
+    out.assign(std::istreambuf_iterator<char>(in),
+               std::istreambuf_iterator<char>());
+    return !out.empty();
+}
+
+/* TD-009 — the digest GitHub's API reports for the asset travels the
+ * same channel as the payload, so it proves integrity, not authenticity.
+ * When a release pubkey is embedded, the authoritative digest instead
+ * comes from SHA256SUMS.txt verified against its minisign signature — a
+ * forged release would need the offline signing key, not just GitHub API
+ * access. `tmpPath` is the platform's already-downloaded artifact path
+ * (the manifest files park beside it as *.sums / *.minisig). On success
+ * `digest` holds the authoritative "sha256:<hex>" for this platform's
+ * asset. */
+bool FetchAuthoritativeDigest(const UpdateJob& job, const std::string& tmpPath,
+                              std::string& digest, std::string& err) {
+    if (!ReleaseSignatureSupported()) {
+        port_log_ex(PORT_LOG_WARN, "updater",
+                    "Updater: WARNING — no release pubkey embedded; "
+                    "falling back to unauthenticated API digest\n");
+        digest = job.expectedDigest;
+        return true;
+    }
+    if (job.sumsUrl.empty() || job.sigUrl.empty()) {
+        err = "release lacks a signed manifest (SHA256SUMS.txt/.minisig)";
+        return false;
+    }
+    const std::string sumsPath = tmpPath + ".sums";
+    const std::string sigPath  = tmpPath + ".minisig";
+    std::remove(sumsPath.c_str());
+    std::remove(sigPath.c_str());
+    if (!FetchToFile(job.sumsUrl, sumsPath) || !FetchToFile(job.sigUrl, sigPath)) {
+        err = "could not download the signed release manifest";
+        return false;
+    }
+    std::string sums, sig;
+    const bool read_ok = ReadTextFile(sumsPath, sums) && ReadTextFile(sigPath, sig);
+    std::remove(sumsPath.c_str());
+    std::remove(sigPath.c_str());
+    if (!read_ok) {
+        err = "signed release manifest is empty";
+        return false;
+    }
+    if (!VerifyReleaseSignature(sums, sig, err)) {
+        return false;
+    }
+    digest = SumsDigestForAsset(sums, kPlatformAssetName);
+    if (digest.empty()) {
+        err = "signed manifest has no entry for this platform";
+        return false;
+    }
+    return true;
+}
+
+/* Shared verify tail: authoritative digest + size/hash match. */
+bool VerifyUpdateDownload(const UpdateJob& job, const std::string& tmpPath, std::string& err) {
+    std::string authDigest;
+    return FetchAuthoritativeDigest(job, tmpPath, authDigest, err) &&
+           DownloadedFileMatches(tmpPath, job.expectedSize, authDigest, err);
+}
+
+/* The signed manifest assets may sit anywhere in the release's asset
+ * list (the platform pass breaks early), so grab their URLs on a
+ * separate pass. Only URLs passing the same trust gate as the payload
+ * are kept — they go straight to libcurl. */
+void GrabManifestUrls(const nlohmann::json& release) {
+    if (!release.contains("assets") || !release["assets"].is_array()) {
+        return;
+    }
+    std::string sums, sig;
+    for (const auto& asset : release["assets"]) {
+        if (!asset.contains("name") || !asset["name"].is_string() ||
+            !asset.contains("browser_download_url") || !asset["browser_download_url"].is_string()) {
+            continue;
+        }
+        const std::string an = asset["name"].get<std::string>();
+        const std::string au = asset["browser_download_url"].get<std::string>();
+        if (an == "SHA256SUMS.txt") sums = au;
+        else if (an == "SHA256SUMS.txt.minisig") sig = au;
+    }
+    std::lock_guard<std::mutex> lock(s_stringMutex);
+    s_sumsUrl = (!sums.empty() && IsTrustedDownloadUrl(sums)) ? sums : "";
+    s_sigUrl  = (!sig.empty()  && IsTrustedDownloadUrl(sig))  ? sig  : "";
+}
+
+/* Locate this platform's asset in the release and publish its download
+ * fields under the lock. */
+/* True when the release asset is the platform package with a usable URL. */
+static bool IsMatchingAsset(const nlohmann::json& asset) {
+    return asset.contains("name") && asset["name"].is_string() &&
+           asset["name"].get<std::string>() == kPlatformAssetName &&
+           asset.contains("browser_download_url") && asset["browser_download_url"].is_string();
+}
+
+bool FindPlatformAsset(const nlohmann::json& release) {
+    if (!release.contains("assets") || !release["assets"].is_array()) {
+        return false;
+    }
+    for (const auto& asset : release["assets"]) {
+        if (!IsMatchingAsset(asset)) {
+            continue;
+        }
+        std::string url = asset["browser_download_url"].get<std::string>();
+        long long size = (asset.contains("size") && asset["size"].is_number()) ? asset["size"].get<long long>() : 0;
+        if (!IsTrustedDownloadUrl(url) || size <= 0) {
+            port_log("Updater: rejecting release asset %s\n", url.c_str());
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(s_stringMutex);
+        s_downloadUrl = url;
+        s_assetSize = size;
+        s_assetDigest = (asset.contains("digest") && asset["digest"].is_string())
+                            ? asset["digest"].get<std::string>() : std::string();
+        return true;
+    }
+    return false;
+}
+
+/* Parse the latest-release response and publish the outcome. Throws on
+ * malformed JSON. */
+void ProcessLatestRelease(const std::string& response) {
+    auto release = nlohmann::json::parse(response);
+    if (!release.contains("tag_name") || !release["tag_name"].is_string()) {
+        throw std::runtime_error("latest release missing tag_name");
+    }
+    std::string latestTag = release["tag_name"].get<std::string>();
+    std::string notes = (release.contains("body") && release["body"].is_string())
+                            ? release["body"].get<std::string>() : std::string();
+    {
+        std::lock_guard<std::mutex> lock(s_stringMutex);
+        s_latestVersion = latestTag;
+        s_releaseNotes = notes;
+        s_downloadUrl.clear();
+        s_assetSize = 0;
+        s_assetDigest.clear();
+        s_sumsUrl.clear();
+        s_sigUrl.clear();
+    }
+    if (CompareVersions(latestTag, BATTLESHIP_CURRENT_VERSION) <= 0) {
+        SetUpdateStatus("Up to date (" + std::string(BATTLESHIP_CURRENT_VERSION) + ").");
+        return;
+    }
+    GrabManifestUrls(release);
+    if (FindPlatformAsset(release)) {
+        s_updateAvailable.store(true);
+        SetUpdateStatus("");
+        port_log("Updater: %s available (have %s)\n", latestTag.c_str(), BATTLESHIP_CURRENT_VERSION);
+    } else {
+        s_updateCheckFailed.store(true);
+        SetUpdateStatus("Latest release has no update for this platform.");
+    }
+}
+
+#if defined(_WIN32)
+/* Write the embedded installer script, launch it hidden, and wait for
+ * its .started marker — only then is it safe for the game to quit. */
+bool LaunchWindowsInstaller(const std::string& exeDir, const std::string& updatesDir,
+                            const std::string& exePath, const std::string& zipPath,
+                            const std::string& version, std::string& err) {
+    std::string scriptPath = updatesDir + "\\install_update.ps1";
+    {
+        std::ofstream script(scriptPath, std::ios::binary | std::ios::trunc);
+        script << kWindowsInstallerScript;
+        if (!script) {
+            err = "could not prepare the installer.";
+            return false;
+        }
+    }
+    char systemRoot[MAX_PATH] = "C:\\Windows";
+    GetEnvironmentVariableA("SystemRoot", systemRoot, MAX_PATH);
+    std::string cmd = std::string("\"") + systemRoot + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\"" +
+                      " -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass" +
+                      " -File \"" + scriptPath + "\"" +
+                      " -WaitForPid " + std::to_string(GetCurrentProcessId()) +
+                      " -ZipPath \"" + zipPath + "\"" +
+                      " -InstallDir \"" + exeDir + "\"" +
+                      " -GamePath \"" + exePath + "\"" +
+                      " -Version \"" + version + "\"";
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    /* A hidden console of its own (PowerShell won't run detached from
+     * any console). Break away from the game's job object if there is
+     * one, so the installer outlives the game; not every job allows
+     * that, so fall back to a plain launch. */
+    std::string cmdBreakaway = cmd;
+    if (!CreateProcessA(nullptr, cmdBreakaway.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi) &&
+        !CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
+                        exeDir.c_str(), &si, &pi)) {
+        err = "could not start the installer.";
+        return false;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    /* Quit only once the installer is confirmed running; it waits for
+     * this process to exit before touching any files. */
+    std::string marker = zipPath + ".started";
+    bool started = false;
+    for (int i = 0; i < 300 && !started; i++) {     // PowerShell can take a while to cold-start
+        Sleep(100);
+        started = GetFileAttributesA(marker.c_str()) != INVALID_FILE_ATTRIBUTES;
+    }
+    if (!started) {
+        err = "the installer did not start.";
+        return false;
+    }
+    return true;
+}
+#endif
+
+void RunPlatformUpdate(const UpdateJob& job);
+
+#if defined(_WIN32)
+void RunPlatformUpdate(const UpdateJob& job) {
+    std::string exePath = ExecutablePath();
+    size_t slash = exePath.find_last_of("\\/");
+    if (slash == std::string::npos) {
+        FailUpdate("could not locate the install folder.");
+        return;
+    }
+    std::string exeDir = exePath.substr(0, slash);
+    std::string updatesDir = exeDir + "\\updates";
+    CreateDirectoryA(updatesDir.c_str(), nullptr);
+    std::string zipPath = updatesDir + "\\update.zip";
+    std::remove(zipPath.c_str());
+    std::remove((zipPath + ".started").c_str());
+
+    if (!FetchToFile(job.url, zipPath, UpdateDownloadProgress)) {
+        std::remove(zipPath.c_str());
+        FailUpdate("download failed.");
+        return;
+    }
+    SetDownloadStatus("Verifying...");
+    {
+        std::string err;
+        if (!VerifyUpdateDownload(job, zipPath, err)) {
+            std::remove(zipPath.c_str());
+            FailUpdate(err);
+            return;
+        }
+    }
+    std::string err;
+    if (!LaunchWindowsInstaller(exeDir, updatesDir, exePath, zipPath, job.version, err)) {
+        FailUpdate(err);
+        return;
+    }
+    SetDownloadStatus("Installing " + job.version + " - the game will restart...");
+    s_downloadComplete.store(true);
+    port_log("Updater: installer started for %s, closing the game\n", job.version.c_str());
+    s_quitForUpdate.store(true);    // TickUpdater closes the window on the main thread
+}
+#elif defined(__linux__)
+void RunPlatformUpdate(const UpdateJob& job) {
+    const char* appImagePath = getenv("APPIMAGE");
+    if (!appImagePath) {
+        FailUpdate("not running as an AppImage.");
+        return;
+    }
+    std::string tempPath = std::string(appImagePath) + ".part";
+    if (!FetchToFile(job.url, tempPath, UpdateDownloadProgress)) {
+        std::remove(tempPath.c_str());
+        FailUpdate("download failed.");
+        return;
+    }
+    SetDownloadStatus("Verifying...");
+    {
+        std::string err;
+        if (!VerifyUpdateDownload(job, tempPath, err)) {
+            std::remove(tempPath.c_str());
+            FailUpdate(err);
+            return;
+        }
+    }
+    chmod(tempPath.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    if (std::rename(tempPath.c_str(), appImagePath) != 0) {
+        FailUpdate("could not replace the AppImage.");
+        return;
+    }
+    SetDownloadStatus("Update complete! Please restart the game.");
+    s_downloadComplete.store(true);
+}
+#elif defined(__APPLE__)
+void RunPlatformUpdate(const UpdateJob& job) {
+    std::string tempDmg = "/tmp/SmashClassic_Update.dmg";
+    if (!FetchToFile(job.url, tempDmg, UpdateDownloadProgress)) {
+        std::remove(tempDmg.c_str());
+        FailUpdate("download failed.");
+        return;
+    }
+    SetDownloadStatus("Verifying...");
+    {
+        std::string err;
+        if (!VerifyUpdateDownload(job, tempDmg, err)) {
+            std::remove(tempDmg.c_str());
+            FailUpdate(err);
+            return;
+        }
+    }
+    SetDownloadStatus("Download complete! Opening DMG...");
+    s_downloadComplete.store(true);
+    const char* argv[] = { "open", tempDmg.c_str(), nullptr };
+    SpawnDetached(argv, /*strip_ld_env=*/false);
+}
+#else
+void RunPlatformUpdate(const UpdateJob&) {
+}
+#endif
+
+#endif // __SWITCH__
+
+
 bool LaunchCheckDisabled() {
     const char* env = std::getenv("SSB64_NO_UPDATE_CHECK");
     if (env != nullptr && env[0] != '\0' && env[0] != '0') return true;
@@ -349,79 +692,7 @@ void CheckForUpdatesAsync(bool force) {
             return;
         }
         try {
-            auto release = nlohmann::json::parse(response);
-            if (!release.contains("tag_name") || !release["tag_name"].is_string()) {
-                throw std::runtime_error("latest release missing tag_name");
-            }
-            std::string latestTag = release["tag_name"].get<std::string>();
-            std::string notes = (release.contains("body") && release["body"].is_string())
-                                    ? release["body"].get<std::string>() : std::string();
-            {
-                std::lock_guard<std::mutex> lock(s_stringMutex);
-                s_latestVersion = latestTag;
-                s_releaseNotes = notes;
-                s_downloadUrl.clear();
-                s_assetSize = 0;
-                s_assetDigest.clear();
-                s_sumsUrl.clear();
-                s_sigUrl.clear();
-            }
-            if (CompareVersions(latestTag, BATTLESHIP_CURRENT_VERSION) <= 0) {
-                SetUpdateStatus("Up to date (" + std::string(BATTLESHIP_CURRENT_VERSION) + ").");
-            } else {
-                bool found = false;
-                if (release.contains("assets") && release["assets"].is_array()) {
-                    /* The signed manifest assets may sit anywhere in the
-                     * list (the platform loop below breaks early), so grab
-                     * their URLs on a separate pass. */
-                    {
-                        std::string sums, sig;
-                        for (const auto& asset : release["assets"]) {
-                            if (!asset.contains("name") || !asset["name"].is_string() ||
-                                !asset.contains("browser_download_url") || !asset["browser_download_url"].is_string()) {
-                                continue;
-                            }
-                            const std::string an = asset["name"].get<std::string>();
-                            const std::string au = asset["browser_download_url"].get<std::string>();
-                            if (an == "SHA256SUMS.txt") sums = au;
-                            else if (an == "SHA256SUMS.txt.minisig") sig = au;
-                        }
-                        /* Only keep URLs that pass the same trust gate as
-                         * the payload — they go straight to libcurl. */
-                        std::lock_guard<std::mutex> lock(s_stringMutex);
-                        s_sumsUrl = (!sums.empty() && IsTrustedDownloadUrl(sums)) ? sums : "";
-                        s_sigUrl  = (!sig.empty()  && IsTrustedDownloadUrl(sig))  ? sig  : "";
-                    }
-                    for (const auto& asset : release["assets"]) {
-                        if (!asset.contains("name") || !asset["name"].is_string() ||
-                            asset["name"].get<std::string>() != kPlatformAssetName ||
-                            !asset.contains("browser_download_url") || !asset["browser_download_url"].is_string()) {
-                            continue;
-                        }
-                        std::string url = asset["browser_download_url"].get<std::string>();
-                        long long size = (asset.contains("size") && asset["size"].is_number()) ? asset["size"].get<long long>() : 0;
-                        if (!IsTrustedDownloadUrl(url) || size <= 0) {
-                            port_log("Updater: rejecting release asset %s\n", url.c_str());
-                            break;
-                        }
-                        std::lock_guard<std::mutex> lock(s_stringMutex);
-                        s_downloadUrl = url;
-                        s_assetSize = size;
-                        s_assetDigest = (asset.contains("digest") && asset["digest"].is_string())
-                                            ? asset["digest"].get<std::string>() : std::string();
-                        found = true;
-                        break;
-                    }
-                }
-                if (found) {
-                    s_updateAvailable.store(true);
-                    SetUpdateStatus("");
-                    port_log("Updater: %s available (have %s)\n", latestTag.c_str(), BATTLESHIP_CURRENT_VERSION);
-                } else {
-                    s_updateCheckFailed.store(true);
-                    SetUpdateStatus("Latest release has no update for this platform.");
-                }
-            }
+            ProcessLatestRelease(response);
         } catch (...) {
             s_updateCheckFailed.store(true);
             SetUpdateStatus("Unable to read update information.");
@@ -436,12 +707,7 @@ void StartGameUpdate() {
     if (s_isDownloading.load()) return;
     s_isDownloading.store(true);
 
-    std::string url;
-    long long expectedSize;
-    std::string expectedDigest;
-    std::string version;
-    std::string sumsUrl;
-    std::string sigUrl;
+    UpdateJob job;
     {
         std::lock_guard<std::mutex> lock(s_stringMutex);
         if (s_downloadUrl.empty()) {
@@ -450,216 +716,16 @@ void StartGameUpdate() {
             return;
         }
         s_downloadStatus = "Starting download...";
-        url = s_downloadUrl;
-        expectedSize = s_assetSize;
-        expectedDigest = s_assetDigest;
-        version = s_latestVersion;
-        sumsUrl = s_sumsUrl;
-        sigUrl = s_sigUrl;
+        job.url = s_downloadUrl;
+        job.expectedSize = s_assetSize;
+        job.expectedDigest = s_assetDigest;
+        job.version = s_latestVersion;
+        job.sumsUrl = s_sumsUrl;
+        job.sigUrl = s_sigUrl;
     }
 
-    std::thread([url, expectedSize, expectedDigest, version, sumsUrl, sigUrl]() {
-        auto onProgress = [](unsigned long long now, unsigned long long total) {
-            if (total == 0) return true;
-            std::ostringstream s;
-            s << "Downloading... " << std::fixed << std::setprecision(1)
-              << (100.0 * static_cast<double>(now) / static_cast<double>(total)) << "%";
-            SetDownloadStatus(s.str());
-            return true;
-        };
-        auto fail = [](const std::string& message) {
-            SetDownloadStatus("Error: " + message);
-            s_isDownloading.store(false);
-        };
-
-        /* TD-009 — the digest GitHub's API reports for the asset travels
-         * the same channel as the payload, so it proves integrity, not
-         * authenticity. When a release pubkey is embedded, the authoritative
-         * digest instead comes from SHA256SUMS.txt verified against its
-         * minisign signature — a forged release would need the offline
-         * signing key, not just GitHub API access. `tmpPath` is the
-         * platform's already-downloaded artifact path (the manifest files
-         * park beside it as *.sums / *.minisig). On success `digest` holds
-         * the authoritative "sha256:<hex>" for this platform's asset. */
-        auto authoritative_digest = [&sumsUrl, &sigUrl, expectedDigest](const std::string& tmpPath,
-                                                       std::string& digest, std::string& err) -> bool {
-            if (!ReleaseSignatureSupported()) {
-                port_log_ex(PORT_LOG_WARN, "updater",
-                            "Updater: WARNING — no release pubkey embedded; "
-                            "falling back to unauthenticated API digest\n");
-                digest = expectedDigest;
-                return true;
-            }
-            if (sumsUrl.empty() || sigUrl.empty()) {
-                err = "release lacks a signed manifest (SHA256SUMS.txt/.minisig)";
-                return false;
-            }
-            const std::string sumsPath = tmpPath + ".sums";
-            const std::string sigPath  = tmpPath + ".minisig";
-            std::remove(sumsPath.c_str());
-            std::remove(sigPath.c_str());
-            if (!FetchToFile(sumsUrl, sumsPath) || !FetchToFile(sigUrl, sigPath)) {
-                err = "could not download the signed release manifest";
-                return false;
-            }
-            auto read_text = [](const std::string& p, std::string& out) {
-                std::ifstream in(p, std::ios::binary);
-                out.assign(std::istreambuf_iterator<char>(in),
-                           std::istreambuf_iterator<char>());
-                return !out.empty();
-            };
-            std::string sums, sig;
-            const bool read_ok = read_text(sumsPath, sums) && read_text(sigPath, sig);
-            std::remove(sumsPath.c_str());
-            std::remove(sigPath.c_str());
-            if (!read_ok) {
-                err = "signed release manifest is empty";
-                return false;
-            }
-            if (!VerifyReleaseSignature(sums, sig, err)) {
-                return false;
-            }
-            digest = SumsDigestForAsset(sums, kPlatformAssetName);
-            if (digest.empty()) {
-                err = "signed manifest has no entry for this platform";
-                return false;
-            }
-            return true;
-        };
-
-#if defined(_WIN32)
-        std::string exePath = ExecutablePath();
-        size_t slash = exePath.find_last_of("\\/");
-        if (slash == std::string::npos) {
-            fail("could not locate the install folder.");
-            return;
-        }
-        std::string exeDir = exePath.substr(0, slash);
-        std::string updatesDir = exeDir + "\\updates";
-        CreateDirectoryA(updatesDir.c_str(), nullptr);
-        std::string zipPath = updatesDir + "\\update.zip";
-        std::remove(zipPath.c_str());
-        std::remove((zipPath + ".started").c_str());
-
-        if (!FetchToFile(url, zipPath, onProgress)) {
-            std::remove(zipPath.c_str());
-            fail("download failed.");
-            return;
-        }
-        SetDownloadStatus("Verifying...");
-        {
-            std::string authDigest, err;
-            if (!authoritative_digest(zipPath, authDigest, err) ||
-                !DownloadedFileMatches(zipPath, expectedSize, authDigest, err)) {
-                std::remove(zipPath.c_str());
-                fail(err);
-                return;
-            }
-        }
-        std::string scriptPath = updatesDir + "\\install_update.ps1";
-        {
-            std::ofstream script(scriptPath, std::ios::binary | std::ios::trunc);
-            script << kWindowsInstallerScript;
-            if (!script) {
-                fail("could not prepare the installer.");
-                return;
-            }
-        }
-        char systemRoot[MAX_PATH] = "C:\\Windows";
-        GetEnvironmentVariableA("SystemRoot", systemRoot, MAX_PATH);
-        std::string cmd = std::string("\"") + systemRoot + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\"" +
-                          " -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass" +
-                          " -File \"" + scriptPath + "\"" +
-                          " -WaitForPid " + std::to_string(GetCurrentProcessId()) +
-                          " -ZipPath \"" + zipPath + "\"" +
-                          " -InstallDir \"" + exeDir + "\"" +
-                          " -GamePath \"" + exePath + "\"" +
-                          " -Version \"" + version + "\"";
-        STARTUPINFOA si{};
-        si.cb = sizeof(si);
-        PROCESS_INFORMATION pi{};
-        /* A hidden console of its own (PowerShell won't run detached from
-         * any console). Break away from the game's job object if there is
-         * one, so the installer outlives the game; not every job allows
-         * that, so fall back to a plain launch. */
-        std::string cmdBreakaway = cmd;
-        if (!CreateProcessA(nullptr, cmdBreakaway.data(), nullptr, nullptr, FALSE,
-                            CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi) &&
-            !CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
-                            exeDir.c_str(), &si, &pi)) {
-            fail("could not start the installer.");
-            return;
-        }
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-
-        /* Quit only once the installer is confirmed running; it waits for
-         * this process to exit before touching any files. */
-        std::string marker = zipPath + ".started";
-        bool started = false;
-        for (int i = 0; i < 300 && !started; i++) {     // PowerShell can take a while to cold-start
-            Sleep(100);
-            started = GetFileAttributesA(marker.c_str()) != INVALID_FILE_ATTRIBUTES;
-        }
-        if (!started) {
-            fail("the installer did not start.");
-            return;
-        }
-        SetDownloadStatus("Installing " + version + " - the game will restart...");
-        s_downloadComplete.store(true);
-        port_log("Updater: installer started for %s, closing the game\n", version.c_str());
-        s_quitForUpdate.store(true);    // TickUpdater closes the window on the main thread
-#elif defined(__linux__)
-        const char* appImagePath = getenv("APPIMAGE");
-        if (!appImagePath) {
-            fail("not running as an AppImage.");
-            return;
-        }
-        std::string tempPath = std::string(appImagePath) + ".part";
-        if (!FetchToFile(url, tempPath, onProgress)) {
-            std::remove(tempPath.c_str());
-            fail("download failed.");
-            return;
-        }
-        SetDownloadStatus("Verifying...");
-        {
-            std::string authDigest, err;
-            if (!authoritative_digest(tempPath, authDigest, err) ||
-                !DownloadedFileMatches(tempPath, expectedSize, authDigest, err)) {
-                std::remove(tempPath.c_str());
-                fail(err);
-                return;
-            }
-        }
-        chmod(tempPath.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-        if (std::rename(tempPath.c_str(), appImagePath) != 0) {
-            fail("could not replace the AppImage.");
-            return;
-        }
-        SetDownloadStatus("Update complete! Please restart the game.");
-        s_downloadComplete.store(true);
-#elif defined(__APPLE__)
-        std::string tempDmg = "/tmp/SmashClassic_Update.dmg";
-        if (!FetchToFile(url, tempDmg, onProgress)) {
-            std::remove(tempDmg.c_str());
-            fail("download failed.");
-            return;
-        }
-        SetDownloadStatus("Verifying...");
-        {
-            std::string authDigest, err;
-            if (!authoritative_digest(tempDmg, authDigest, err) ||
-                !DownloadedFileMatches(tempDmg, expectedSize, authDigest, err)) {
-                std::remove(tempDmg.c_str());
-                fail(err);
-                return;
-            }
-        }
-        SetDownloadStatus("Download complete! Opening DMG...");
-        s_downloadComplete.store(true);
-        const char* argv[] = { "open", tempDmg.c_str(), nullptr };
-        SpawnDetached(argv, /*strip_ld_env=*/false);
-#endif
+    std::thread([job]() {
+        RunPlatformUpdate(job);
         s_isDownloading.store(false);
     }).detach();
 #endif

@@ -28,78 +28,67 @@ void gwatchDescribeAddr(uintptr_t a, char* out, size_t outSize) {
 }
 
 namespace {
-LONG CALLBACK gwatchVectored(PEXCEPTION_POINTERS ep) {
-	if (ep->ExceptionRecord->ExceptionCode != STATUS_SINGLE_STEP) {
-		return EXCEPTION_CONTINUE_SEARCH;
-	}
-	const unsigned fired = (unsigned)(ep->ContextRecord->Dr6 & 0xF);
-	/* Own only slots 0-1 — bits 2-3 belong to the victim watchpoint's
-	 * handler; swallowing them here would hide the corruptor's RIP. */
-	if (fired == 0 || (fired & ~0x3u) != 0) {
-		return EXCEPTION_CONTINUE_SEARCH;
-	}
-	int idx = 0;
-	for (int i = 0; i < 4; ++i) {
-		if (fired & (1u << i)) idx = i;
-	}
-	/* Braid detection beats RIP dedup: a legit CRT writer CAN still braid —
-	 * e.g. a head-pop writing first_block = <node from another list>
-	 * because the list was already tangled. Read the value just stored and
-	 * inspect the new head's prev: a legit prepend publishes prev==nullptr;
-	 * a head-pop leaves a TRANSIENT non-null prev pointing at the old head,
-	 * but that node's next still points back — only a prev whose own next
-	 * doesn't return to the head is genuinely foreign. */
+/* Braid detection beats RIP dedup: a legit CRT writer CAN still braid —
+ * e.g. a head-pop writing first_block = <node from another list>
+ * because the list was already tangled. Read the value just stored and
+ * inspect the new head's prev: a legit prepend publishes prev==nullptr;
+ * a head-pop leaves a TRANSIENT non-null prev pointing at the old head,
+ * but that node's next still points back — only a prev whose own next
+ * doesn't return to the head is genuinely foreign. */
+static void gwatchCheckBraid(PEXCEPTION_POINTERS ep, int idx) {
 	uintptr_t written = 0;
 	__try {
 		written = *(volatile uintptr_t*)gGWAddr[idx];
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
 	}
-	if (written != 0) {
-		ShadowCrtHeader* wprev = nullptr;
-		void* wprevNext = nullptr;
-		__try {
-			wprev = ((const ShadowCrtHeader*)written)->prev;
-			if (wprev != nullptr) {
-				wprevNext = wprev->next;
-			}
-		} __except (EXCEPTION_EXECUTE_HANDLER) {
-		}
-		/* Legit head-pop leaves a transient non-null prev pointing at the
-		 * old head — but that node's next still points back at the new
-		 * head (unlink doesn't clear the removed node's links). A foreign
-		 * node's next points at ITS own list's successor → mismatch =
-		 * braid, topology-independent. */
-		if (wprev != nullptr && wprevNext != (void*)written) {
-			char rm[160];
-			gwatchDescribeAddr(
-			    (uintptr_t)ep->ExceptionRecord->ExceptionAddress, rm, sizeof(rm));
-			probeLog("*** GWATCH BRAID %s <= %p (head.prev=%p whose "
-			         "next=%p != head) by rip=%s tid=%lu ***\n",
-			         gGWName[idx] ? gGWName[idx] : "?",
-			         (void*)written, (void*)wprev, wprevNext, rm,
-			         GetCurrentThreadId());
-		}
+	if (written == 0) {
+		return;
 	}
-	/* Dedup by writer RIP: ucrt's own insert/unlink write first_block on
-	 * EVERY alloc/free — logging each hit floods the log and costs a WriteFile
-	 * per malloc. Only a previously-unseen writer instruction is the signal
-	 * a wild store carries. */
+	ShadowCrtHeader* wprev = nullptr;
+	void* wprevNext = nullptr;
+	__try {
+		wprev = ((const ShadowCrtHeader*)written)->prev;
+		if (wprev != nullptr) {
+			wprevNext = wprev->next;
+		}
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+	}
+	/* Legit head-pop leaves a transient non-null prev pointing at the
+	 * old head — but that node's next still points back at the new
+	 * head (unlink doesn't clear the removed node's links). A foreign
+	 * node's next points at ITS own list's successor → mismatch =
+	 * braid, topology-independent. */
+	if (wprev != nullptr && wprevNext != (void*)written) {
+		char rm[160];
+		gwatchDescribeAddr(
+		    (uintptr_t)ep->ExceptionRecord->ExceptionAddress, rm, sizeof(rm));
+		probeLog("*** GWATCH BRAID %s <= %p (head.prev=%p whose "
+		         "next=%p != head) by rip=%s tid=%lu ***\n",
+		         gGWName[idx] ? gGWName[idx] : "?",
+		         (void*)written, (void*)wprev, wprevNext, rm,
+		         GetCurrentThreadId());
+	}
+}
+
+/* Dedup by writer RIP: ucrt's own insert/unlink write first_block on
+ * EVERY alloc/free — logging each hit floods the log and costs a WriteFile
+ * per malloc. Only a previously-unseen writer instruction is the signal
+ * a wild store carries. Returns false when the RIP was already reported. */
+static bool gwatchRipIsNew(uintptr_t rip) {
 	static uintptr_t sSeenRip[64] = {0};
 	static volatile long sSeenCount = 0;
-	const uintptr_t rip = (uintptr_t)ep->ExceptionRecord->ExceptionAddress;
 	for (int i = 0; i < 64; ++i) {
 		if (sSeenRip[i] == rip) {
-			return EXCEPTION_CONTINUE_EXECUTION;
+			return false;
 		}
 	}
 	if (sSeenCount < 64) {
 		sSeenRip[InterlockedIncrement(&sSeenCount) - 1] = rip;
 	}
-	char ripMod[160];
-	gwatchDescribeAddr(rip, ripMod, sizeof(ripMod));
-	probeLog("*** GWATCH HIT %s (%p) written by rip=%s tid=%lu ***\n",
-	         gGWName[idx] ? gGWName[idx] : "?", (void*)gGWAddr[idx],
-	         ripMod, GetCurrentThreadId());
+	return true;
+}
+
+static void gwatchDumpStackRefs(PEXCEPTION_POINTERS ep) {
 	__try {
 		uintptr_t sp = ep->ContextRecord->Rsp;
 		for (int i = 0; i < 24; ++i) {
@@ -115,6 +104,33 @@ LONG CALLBACK gwatchVectored(PEXCEPTION_POINTERS ep) {
 		}
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
 	}
+}
+
+LONG CALLBACK gwatchVectored(PEXCEPTION_POINTERS ep) {
+	if (ep->ExceptionRecord->ExceptionCode != STATUS_SINGLE_STEP) {
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+	const unsigned fired = (unsigned)(ep->ContextRecord->Dr6 & 0xF);
+	/* Own only slots 0-1 — bits 2-3 belong to the victim watchpoint's
+	 * handler; swallowing them here would hide the corruptor's RIP. */
+	if (fired == 0 || (fired & ~0x3u) != 0) {
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+	int idx = 0;
+	for (int i = 0; i < 4; ++i) {
+		if (fired & (1u << i)) idx = i;
+	}
+	gwatchCheckBraid(ep, idx);
+	const uintptr_t rip = (uintptr_t)ep->ExceptionRecord->ExceptionAddress;
+	if (!gwatchRipIsNew(rip)) {
+		return EXCEPTION_CONTINUE_EXECUTION;
+	}
+	char ripMod[160];
+	gwatchDescribeAddr(rip, ripMod, sizeof(ripMod));
+	probeLog("*** GWATCH HIT %s (%p) written by rip=%s tid=%lu ***\n",
+	         gGWName[idx] ? gGWName[idx] : "?", (void*)gGWAddr[idx],
+	         ripMod, GetCurrentThreadId());
+	gwatchDumpStackRefs(ep);
 	return EXCEPTION_CONTINUE_EXECUTION;
 }
 
@@ -123,7 +139,6 @@ int gwatchArmThread(DWORD tid) {
 	 * watch — the helper clears just our DR7 fields. */
 	return armDebugWatchOnThread(tid, gGWAddr, 2, 0);
 }
-
 } // namespace
 
 /* Same starvation fix as heap_watchpoint's armed-tid memoization: the
@@ -132,6 +147,21 @@ int gwatchArmThread(DWORD tid) {
  * never change after install, so a thread armed once stays correct. */
 static DWORD gGArmedTids[256];
 static long  gGArmedCount = 0;
+
+static bool gwatchTidKnown(DWORD tid) {
+	for (long k = 0; k < gGArmedCount; ++k) {
+		if (gGArmedTids[k] == tid) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void gwatchArmIfNew(DWORD tid) {
+	if (gwatchArmThread(tid) && gGArmedCount < 256) {
+		gGArmedTids[gGArmedCount++] = tid;
+	}
+}
 
 void gwatchArmAll() {
 	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -144,33 +174,59 @@ void gwatchArmAll() {
 			if (te.th32OwnerProcessID != self || te.th32ThreadID == myTid) {
 				continue;
 			}
-			bool known = false;
-			for (long k = 0; k < gGArmedCount; ++k) {
-				if (gGArmedTids[k] == te.th32ThreadID) {
-					known = true;
-					break;
-				}
-			}
-			if (known) {
+			if (gwatchTidKnown(te.th32ThreadID)) {
 				continue;
 			}
-			if (gwatchArmThread(te.th32ThreadID) && gGArmedCount < 256) {
-				gGArmedTids[gGArmedCount++] = te.th32ThreadID;
-			}
+			gwatchArmIfNew(te.th32ThreadID);
 		} while (Thread32Next(snap, &te));
 	}
 	CloseHandle(snap);
-	for (long k = 0; k < gGArmedCount; ++k) {
-		if (gGArmedTids[k] == myTid) {
-			return;
-		}
-	}
-	if (gwatchArmThread(myTid) && gGArmedCount < 256) {
-		gGArmedTids[gGArmedCount++] = myTid;
+	if (!gwatchTidKnown(myTid)) {
+		gwatchArmIfNew(myTid);
 	}
 }
 
+/* Locate a CRT module's __acrt_first_block without a PDB: it is a static
+ * pointer in the module's .data whose value is always the live list
+ * head — a valid debug header with prev==nullptr. Scan the module's
+ * committed image for any qword holding such a pointer, then verify the
+ * target by following a few `next` links (a real head chains through
+ * valid headers; a coincidental pointer to freed data does not). Works
+ * for the exe's own /MTd image too. */
+/* A candidate list head: valid debug header, prev==nullptr, next either
+ * null or plausible, gap bytes intact. */
+static bool looksLikeListHead(const ShadowCrtHeader* h) {
+	bool looks = false;
+	__try {
+		looks = (h->block_use == 1 || h->block_use == 2 || h->block_use == 4) &&
+		        h->prev == nullptr &&
+		        (h->next == nullptr || addrPlausible(h->next)) &&
+		        h->gap[0] == 0xFD && h->gap[1] == 0xFD;
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+	}
+	return looks;
+}
 
+/* Verify: follow next links; every hop must be a valid header.
+ * Three good hops from a prev==null node makes "this static points
+ * at the real list head" near-certain. */
+static bool verifyListChain(const ShadowCrtHeader* h) {
+	int hops = 0;
+	const ShadowCrtHeader* cur = h;
+	__try {
+		while (cur->next != nullptr && hops < 3) {
+			const ShadowCrtHeader* nx = cur->next;
+			if (!addrPlausible(nx)) break;
+			if (nx->block_use != 1 && nx->block_use != 2 &&
+			    nx->block_use != 4) break;
+			if (nx->gap[0] != 0xFD || nx->gap[1] != 0xFD) break;
+			cur = nx;
+			++hops;
+		}
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+	}
+	return hops >= 3;
+}
 
 /* Locate a CRT module's __acrt_first_block without a PDB: it is a static
  * pointer in the module's .data whose value is always the live list
@@ -197,40 +253,17 @@ uintptr_t findListHeadGlobal(HMODULE ucrt) {
 			continue;
 		}
 		const ShadowCrtHeader* h = (const ShadowCrtHeader*)v;
-		bool looks = false;
-		__try {
-			looks = (h->block_use == 1 || h->block_use == 2 || h->block_use == 4) &&
-			        h->prev == nullptr &&
-			        (h->next == nullptr || addrPlausible(h->next)) &&
-			        h->gap[0] == 0xFD && h->gap[1] == 0xFD;
-		} __except (EXCEPTION_EXECUTE_HANDLER) {
-		}
-		if (!looks) {
+		if (!looksLikeListHead(h)) {
 			continue;
 		}
-		/* Verify: follow next links; every hop must be a valid header.
-		 * Three good hops from a prev==null node makes "this static points
-		 * at the real list head" near-certain. */
-		int hops = 0;
-		const ShadowCrtHeader* cur = h;
-		__try {
-			while (cur->next != nullptr && hops < 3) {
-				const ShadowCrtHeader* nx = cur->next;
-				if (!addrPlausible(nx)) break;
-				if (nx->block_use != 1 && nx->block_use != 2 &&
-				    nx->block_use != 4) break;
-				if (nx->gap[0] != 0xFD || nx->gap[1] != 0xFD) break;
-				cur = nx;
-				++hops;
-			}
-		} __except (EXCEPTION_EXECUTE_HANDLER) {
-		}
-		if (hops >= 3) {
+		if (verifyListChain(h)) {
 			return q;
 		}
 	}
 	return 0;
 }
+
+
 
 void installGlobalsWatch() {
 	if (std::getenv("SSB64_HEAP_GWATCH") == nullptr) {

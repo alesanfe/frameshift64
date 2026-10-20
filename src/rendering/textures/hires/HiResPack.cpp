@@ -1,6 +1,7 @@
 #include "HiResPack.h"
 
 #include "port_log.h"
+#include "fnv1a.h"
 
 #include <libultraship/libultraship.h>
 #include <ship/utils/filesystemtools/Directory.h>
@@ -46,14 +47,14 @@ struct HashKeyHasher {
         // CRC32 itself already approximates uniform distribution; folding
         // (fmt|siz) avoids degenerate collisions when packs duplicate the
         // same RGBA8 image across multiple N64 formats.
-        uint64_t h = 1469598103934665603ULL;
+        uint64_t h = ssb64::kFnv1a64Basis;
         for (int i = 0; i < 4; i++) {
             h ^= (k.rgba8Crc >> (i * 8)) & 0xFFu;
-            h *= 1099511628211ULL;
+            h *= ssb64::kFnv1a64Prime;
         }
         h ^= (uint64_t)k.fmt << 32;
         h ^= (uint64_t)k.siz << 40;
-        h *= 1099511628211ULL;
+        h *= ssb64::kFnv1a64Prime;
         return (size_t)h;
     }
 };
@@ -283,46 +284,61 @@ bool ParseSingleDigit(std::string_view s, uint8_t* out) noexcept {
  * readable hint, but they're folded into the HashKey so two textures whose
  * decoded RGBA8 happens to collide across formats stay distinct.
  */
-std::optional<HashKey> ParseFilename(std::string_view filename) {
-    // Strip trailing ".png" (case-insensitive).
-    if (filename.size() < 5) return std::nullopt;
+/* Trailing ".png" (case-insensitive) must be present. */
+static bool HasPngExtension(std::string_view filename) {
+    if (filename.size() < 5) return false;
     std::string_view ext = filename.substr(filename.size() - 4);
-    bool isPng = (ext.size() == 4)
-        && (ext[0] == '.')
+    return (ext[0] == '.')
         && ((ext[1] | 0x20) == 'p')
         && ((ext[2] | 0x20) == 'n')
         && ((ext[3] | 0x20) == 'g');
-    if (!isPng) return std::nullopt;
-    std::string_view stem = filename.substr(0, filename.size() - 4);
+}
 
-    // Optional trailing _<fmtTag>: strip everything from the rightmost '_'
-    // forward IF it sits after the last '#' (so we don't eat underscores
-    // inside the prefix).
+/* Optional trailing _<fmtTag>: strip everything from the rightmost '_'
+ * forward IF it sits after the last '#' (so we don't eat underscores
+ * inside the prefix). */
+static std::string_view StripFmtTag(std::string_view stem) {
     size_t lastHash = stem.rfind('#');
     size_t lastUnder = stem.rfind('_');
-    if (lastUnder != std::string_view::npos && (lastHash == std::string_view::npos || lastUnder > lastHash)) {
+    if (lastUnder != std::string_view::npos &&
+        (lastHash == std::string_view::npos || lastUnder > lastHash)) {
         stem = stem.substr(0, lastUnder);
     }
+    return stem;
+}
 
-    // Split the body on '#' from the right: <prefix>#<crc>#<fmt>#<siz>.
+/* Split "<prefix>#<crc>#<fmt>#<siz>" on '#' from the right. */
+static bool SplitHashFields(std::string_view stem,
+                            std::string_view* crcField,
+                            std::string_view* fmtField,
+                            std::string_view* sizField) {
     size_t h3 = stem.rfind('#');
-    if (h3 == std::string_view::npos) return std::nullopt;
+    if (h3 == std::string_view::npos) return false;
     size_t h2 = stem.rfind('#', h3 - 1);
-    if (h2 == std::string_view::npos) return std::nullopt;
+    if (h2 == std::string_view::npos) return false;
     size_t h1 = stem.rfind('#', h2 - 1);
-    if (h1 == std::string_view::npos) return std::nullopt;
+    if (h1 == std::string_view::npos) return false;
+    *crcField = stem.substr(h1 + 1, h2 - h1 - 1);
+    *fmtField = stem.substr(h2 + 1, h3 - h2 - 1);
+    *sizField = stem.substr(h3 + 1);
+    return true;
+}
 
-    std::string_view crcField = stem.substr(h1 + 1, h2 - h1 - 1);
-    std::string_view fmtField = stem.substr(h2 + 1, h3 - h2 - 1);
-    std::string_view sizField = stem.substr(h3 + 1);
+std::optional<HashKey> ParseFilename(std::string_view filename) {
+    if (!HasPngExtension(filename)) return std::nullopt;
+    std::string_view stem = StripFmtTag(filename.substr(0, filename.size() - 4));
 
+    std::string_view crcField, fmtField, sizField;
+    if (!SplitHashFields(stem, &crcField, &fmtField, &sizField)) {
+        return std::nullopt;
+    }
     HashKey key{};
     if (!ParseHex32(crcField, &key.rgba8Crc)) return std::nullopt;
     if (!ParseSingleDigit(fmtField, &key.fmt)) return std::nullopt;
     if (!ParseSingleDigit(sizField, &key.siz)) return std::nullopt;
-
     return key;
 }
+
 
 // Basename (after the last '/' or '\\') of a path or zip entry name.
 std::string_view Basename(std::string_view p) noexcept {
@@ -778,6 +794,71 @@ const DecodedTexture* HiResPack::Lookup(uint8_t fmt, uint8_t siz,
     return mLastReturned.get();
 }
 
+/* Create the dump dir once (next to the app directory). */
+static void EnsureDumpDir() {
+    if (gDumpDirReady) return;
+    try {
+        gDumpDir = Ship::Context::GetPathRelativeToAppDirectory("hires_dump");
+    } catch (...) { gDumpDir = "hires_dump"; }
+    std::error_code ec;
+    std::filesystem::create_directories(gDumpDir, ec);
+    gDumpDirReady = true;
+    port_log("HiResPack: dump-source mode active, writing to %s\n", gDumpDir.c_str());
+}
+
+/* Filename includes source-byte CRC + (optionally) palette CRC so the
+ * offline conversion tool can pair each .bin with its Reloaded PNG by
+ * looking up Rice CRC of the dumped texel bytes. */
+static std::string MakeDumpFilename(uint8_t fmt, uint8_t siz,
+                                    uint32_t texelCrc, uint32_t palCrc,
+                                    uint32_t paletteBytes) {
+    char namebuf[96];
+    if (palCrc != 0 || paletteBytes > 0) {
+        std::snprintf(namebuf, sizeof(namebuf),
+                      "ssb64src#%08X#%X#%X#%08X.bin",
+                      texelCrc, fmt, siz, palCrc);
+    } else {
+        std::snprintf(namebuf, sizeof(namebuf),
+                      "ssb64src#%08X#%X#%X.bin",
+                      texelCrc, fmt, siz);
+    }
+    return gDumpDir + "/" + namebuf;
+}
+
+/* Write header + active texel rows + optional palette to `path`.
+ * Texel rows are written at bpl stride (only the first bytesPerLine bytes
+ * of each row are live). Returns false when the file cannot be opened. */
+static bool WriteDumpFile(const std::string& path, uint8_t fmt, uint8_t siz,
+                          const uint8_t* texels, uint16_t width,
+                          uint16_t height, uint32_t bpl,
+                          const uint8_t* palette, uint32_t paletteBytes) {
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (f == nullptr) {
+        port_log("HiResPack: dump-source open failed: %s\n", path.c_str());
+        return false;
+    }
+    DumpHeader hdr{};
+    hdr.magic = kDumpMagic;
+    hdr.version = kDumpVersion;
+    hdr.width = width;
+    hdr.height = height;
+    hdr.bpl = bpl;
+    const uint32_t bytesPerLine = (uint32_t)((width << siz) >> 1);
+    hdr.texelBytes = bytesPerLine * height;
+    hdr.paletteBytes = paletteBytes;
+    hdr.fmt = fmt;
+    hdr.siz = siz;
+    std::fwrite(&hdr, sizeof(hdr), 1, f);
+    for (uint32_t y = 0; y < height; y++) {
+        std::fwrite(texels + (size_t)y * bpl, 1, bytesPerLine, f);
+    }
+    if (paletteBytes > 0 && palette != nullptr) {
+        std::fwrite(palette, 1, paletteBytes, f);
+    }
+    std::fclose(f);
+    return true;
+}
+
 void HiResPack::MaybeDumpSource(uint8_t fmt, uint8_t siz,
                                  const uint8_t* texels, uint16_t width, uint16_t height, uint32_t bpl,
                                  const uint8_t* palette, uint32_t paletteBytes) {
@@ -794,60 +875,10 @@ void HiResPack::MaybeDumpSource(uint8_t fmt, uint8_t siz,
     uint64_t dedup = SourceDumpDedupId(fmt, siz, texelCrc, palCrc);
     if (!gDumpedKeys.insert(dedup).second) return; // already dumped this run
 
-    if (!gDumpDirReady) {
-        try {
-            gDumpDir = Ship::Context::GetPathRelativeToAppDirectory("hires_dump");
-        } catch (...) { gDumpDir = "hires_dump"; }
-        std::error_code ec;
-        std::filesystem::create_directories(gDumpDir, ec);
-        gDumpDirReady = true;
-        port_log("HiResPack: dump-source mode active, writing to %s\n", gDumpDir.c_str());
-    }
-
-    // Filename includes source-byte CRC + (optionally) palette CRC so the
-    // offline conversion tool can pair each .bin with its Reloaded PNG by
-    // looking up Rice CRC of the dumped texel bytes.
-    char namebuf[96];
-    if (palCrc != 0 || paletteBytes > 0) {
-        std::snprintf(namebuf, sizeof(namebuf),
-                      "ssb64src#%08X#%X#%X#%08X.bin",
-                      texelCrc, fmt, siz, palCrc);
-    } else {
-        std::snprintf(namebuf, sizeof(namebuf),
-                      "ssb64src#%08X#%X#%X.bin",
-                      texelCrc, fmt, siz);
-    }
-
-    std::string path = gDumpDir + "/" + namebuf;
-    FILE* f = std::fopen(path.c_str(), "wb");
-    if (f == nullptr) {
-        port_log("HiResPack: dump-source open failed: %s\n", path.c_str());
-        return;
-    }
-
-    DumpHeader hdr{};
-    hdr.magic = kDumpMagic;
-    hdr.version = kDumpVersion;
-    hdr.width = width;
-    hdr.height = height;
-    hdr.bpl = bpl;
-    const uint32_t bytesPerLine = (uint32_t)((width << siz) >> 1);
-    hdr.texelBytes = bytesPerLine * height;
-    hdr.paletteBytes = paletteBytes;
-    hdr.fmt = fmt;
-    hdr.siz = siz;
-
-    std::fwrite(&hdr, sizeof(hdr), 1, f);
-    // Texel bytes — write only the active rows (bytesPerLine each, row-by-
-    // row at bpl stride). The conversion tool reads them as a contiguous
-    // bytesPerLine*height blob, no stride.
-    for (uint32_t y = 0; y < height; y++) {
-        std::fwrite(texels + (size_t)y * bpl, 1, bytesPerLine, f);
-    }
-    if (paletteBytes > 0 && palette != nullptr) {
-        std::fwrite(palette, 1, paletteBytes, f);
-    }
-    std::fclose(f);
+    EnsureDumpDir();
+    const std::string path = MakeDumpFilename(fmt, siz, texelCrc, palCrc, paletteBytes);
+    WriteDumpFile(path, fmt, siz, texels, width, height, bpl, palette, paletteBytes);
 }
+
 
 } // namespace ssb64::hires

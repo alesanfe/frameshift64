@@ -6,3 +6,4 @@ leaderboard.json
 brackets.json
 crashes.jsonl
 replays/
+.mutation-*

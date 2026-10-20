@@ -49,11 +49,10 @@ std::string ProfilePath(const char* name) {
 
 } // namespace
 
-extern "C" int port_profile_save(const char* name) {
-    if (!NameValid(name)) return -1;
-    auto cvars = Ship::Context::GetInstance()->GetConsoleVariables();
-    if (cvars == nullptr) return -1;
 
+/* Serialize every in-scope cvar into a sorted JSON array. Colors under
+ * profile prefixes are rare; skip rather than guess the serialization. */
+static nlohmann::json CollectProfileEntries(Ship::ConsoleVariable* cvars) {
     nlohmann::json entries = nlohmann::json::array();
     for (const std::string& key : cvars->GetVariableNames()) {
         if (!InProfileScope(key)) continue;
@@ -70,8 +69,6 @@ extern "C" int port_profile_save(const char* name) {
                 e["t"] = "s"; e["v"] = var->String != nullptr ? var->String : ""; break;
             case Ship::ConsoleVariableType::Color:
             case Ship::ConsoleVariableType::Color24:
-                /* Colors under profile prefixes are rare; skip rather than
-                 * guess the serialization. */
                 continue;
         }
         entries.push_back(e);
@@ -80,6 +77,15 @@ extern "C" int port_profile_save(const char* name) {
               [](const nlohmann::json& a, const nlohmann::json& b) {
                   return a["k"].get<std::string>() < b["k"].get<std::string>();
               });
+    return entries;
+}
+
+extern "C" int port_profile_save(const char* name) {
+    if (!NameValid(name)) return -1;
+    auto cvars = Ship::Context::GetInstance()->GetConsoleVariables();
+    if (cvars == nullptr) return -1;
+
+    nlohmann::json entries = CollectProfileEntries(cvars.get());
 
     nlohmann::json doc;
     doc["version"] = 1;
@@ -91,6 +97,35 @@ extern "C" int port_profile_save(const char* name) {
     if (!out) return -1;
     out << doc.dump(2) << "\n";
     return out.good() ? 0 : -1;
+}
+
+/* Apply each in-scope cvar entry from the profile document. */
+static void ProfileApplyCvars(const nlohmann::json& doc,
+                              const std::shared_ptr<Ship::ConsoleVariable>& cvars) {
+    for (const auto& e : doc["cvars"]) {
+        const std::string key = e.value("k", "");
+        const std::string t = e.value("t", "");
+        if (key.empty() || !InProfileScope(key)) continue; /* refuse out-of-scope keys */
+        if (t == "i" && e["v"].is_number_integer()) {
+            cvars->SetInteger(key.c_str(), e["v"].get<int32_t>());
+        } else if (t == "f" && e["v"].is_number()) {
+            cvars->SetFloat(key.c_str(), e["v"].get<float>());
+        } else if (t == "s" && e["v"].is_string()) {
+            cvars->SetString(key.c_str(), e["v"].get<std::string>().c_str());
+        }
+    }
+}
+
+/* Push the restored mappings into the live controllers. */
+static void ProfileReloadControllers() {
+    auto deck = Ship::Context::GetInstance()->GetControlDeck();
+    if (deck == nullptr) {
+        return;
+    }
+    for (uint8_t port = 0; port < 4; port++) {
+        auto controller = deck->GetControllerByPort(port);
+        if (controller != nullptr) controller->ReloadAllMappingsFromConfig();
+    }
 }
 
 extern "C" int port_profile_load(const char* name) {
@@ -111,30 +146,12 @@ extern "C" int port_profile_load(const char* name) {
     auto cvars = Ship::Context::GetInstance()->GetConsoleVariables();
     if (cvars == nullptr) return -1;
 
-    for (const auto& e : doc["cvars"]) {
-        const std::string key = e.value("k", "");
-        const std::string t = e.value("t", "");
-        if (key.empty() || !InProfileScope(key)) continue; /* refuse out-of-scope keys */
-        if (t == "i" && e["v"].is_number_integer()) {
-            cvars->SetInteger(key.c_str(), e["v"].get<int32_t>());
-        } else if (t == "f" && e["v"].is_number()) {
-            cvars->SetFloat(key.c_str(), e["v"].get<float>());
-        } else if (t == "s" && e["v"].is_string()) {
-            cvars->SetString(key.c_str(), e["v"].get<std::string>().c_str());
-        }
-    }
+    ProfileApplyCvars(doc, cvars);
     cvars->Save();
-
-    /* Push the restored mappings into the live controllers. */
-    auto deck = Ship::Context::GetInstance()->GetControlDeck();
-    if (deck != nullptr) {
-        for (uint8_t port = 0; port < 4; port++) {
-            auto controller = deck->GetControllerByPort(port);
-            if (controller != nullptr) controller->ReloadAllMappingsFromConfig();
-        }
-    }
+    ProfileReloadControllers();
     return 0;
 }
+
 
 extern "C" int port_profile_delete(const char* name) {
     if (!NameValid(name)) return -1;

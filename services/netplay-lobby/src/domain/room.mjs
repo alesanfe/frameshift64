@@ -322,6 +322,7 @@ export class LobbyRoom {
         }
         break;
       case "relay":
+        if (process.env.LOBBY_DEBUG) console.log(`[room ${this.code}] slot ${wi.slot} requests relay (v${wi.version})`);
         if (wi.version === 2) {
           // Per-link relay: this client's path to the host goes over the
           // WebSocket. Mark the socket and tell both ends.
@@ -374,11 +375,18 @@ export class LobbyRoom {
       if (toSlot === src.slot || (src.slot !== 0 && toSlot !== 0)) return;
       if (src.slot !== 0 && !src.relay) return;
       const target = this.socketForSlot(toSlot);
-      if (!target || target === ws || target === info.owner) return;
+      if (!target || target === ws || target === info.owner) {
+        if (process.env.LOBBY_DEBUG) console.log(`[room ${this.code}] drop binary: no target for slot ${toSlot} from slot ${src.slot}`);
+        return;
+      }
       if (src.slot === 0) {
         const ti = this.info(target);
-        if (!ti || !ti.relay) return;
+        if (!ti || !ti.relay) {
+          if (process.env.LOBBY_DEBUG) console.log(`[room ${this.code}] drop binary: target slot ${toSlot} not relay-marked`);
+          return;
+        }
       }
+      if (process.env.LOBBY_DEBUG) console.log(`[room ${this.code}] relay ${bytes.length}B slot ${src.slot} -> ${toSlot}`);
       const framed = new Uint8Array(bytes.length);
       framed[0] = src.slot;
       framed.set(bytes.subarray(1), 1);

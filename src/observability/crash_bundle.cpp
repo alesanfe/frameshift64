@@ -236,8 +236,71 @@ extern "C" void port_diag_write_crash_marker(const char *reason, uintptr_t fault
 
 namespace ssb64::diag {
 
+namespace fs = std::filesystem;
+
+/* crash_info.txt: marker fields + build identity + scene names so a
+ * report is actionable without asking the user for versions. */
+static void writeCrashInfo(const fs::path &bundle, const std::string &marker_text) {
+    std::ofstream info(bundle / "crash_info.txt", std::ios::binary);
+    info << marker_text
+         << "version=" << BATTLESHIP_CURRENT_VERSION << '\n'
+         << "build_sha=" << BATTLESHIP_BUILD_SHA << '\n'
+         << "platform="
+#if defined(_WIN32)
+         << "windows"
+#elif defined(__APPLE__)
+         << "macos"
+#elif defined(__ANDROID__)
+         << "android"
+#elif defined(__SWITCH__)
+         << "switch"
+#else
+         << "linux"
+#endif
+         << '\n'
+         << "collected_at=" << UtcStamp() << '\n';
+    const std::string scene = MarkerField(marker_text, "scene");
+    if (!scene.empty()) {
+        info << "scene_name="
+             << port_diag_get_scene_name(
+                    (unsigned char)std::strtoul(scene.c_str(), nullptr, 10))
+             << '\n';
+    }
+}
+
+/* previous.log: the dead run's ssb64.log — holds the crash
+ * handler's backtrace. Copied BEFORE port_log_init truncates it. */
+static void copyPreviousLog(const std::string &log_path, const fs::path &bundle) {
+    std::error_code ec2;
+    if (fs::exists(log_path, ec2) && fs::file_size(log_path, ec2) > 0) {
+        fs::copy_file(log_path, bundle / "previous.log",
+                      fs::copy_options::overwrite_existing, ec2);
+    }
+}
+
+#if defined(_WIN32)
+/* Minidumps land in the process CWD (portWriteMinidump) — sweep any
+ * strays into the bundle so they travel with the report. Each dir
+ * gets a fresh error_code so one unreadable dir doesn't skip the
+ * other. */
+static void sweepMinidumps(const fs::path &log_dir, const fs::path &bundle) {
+    std::error_code cwd_ec;
+    const fs::path cwd = fs::current_path(cwd_ec);
+    for (const fs::path &dir : {cwd, log_dir.parent_path()}) {
+        if (dir.empty()) continue;
+        std::error_code dec;
+        for (const auto &e : fs::directory_iterator(dir, dec)) {
+            const std::string fn = e.path().filename().string();
+            if (e.is_regular_file() && fn.rfind("crash_", 0) == 0 &&
+                e.path().extension() == ".dmp") {
+                fs::rename(e.path(), bundle / fn, dec);
+            }
+        }
+    }
+}
+#endif
+
 std::string CollectPendingCrashBundle(const std::string &log_path) {
-    namespace fs = std::filesystem;
     try {
         const fs::path log_dir = DirOf(log_path);
         const fs::path marker = log_dir / "crash.marker";
@@ -263,64 +326,11 @@ std::string CollectPendingCrashBundle(const std::string &log_path) {
         fs::create_directories(bundle, ec);
         if (ec) return "";
 
-        /* crash_info.txt: marker fields + build identity + scene names so a
-         * report is actionable without asking the user for versions. */
-        {
-            std::ofstream info(bundle / "crash_info.txt", std::ios::binary);
-            info << marker_text
-                 << "version=" << BATTLESHIP_CURRENT_VERSION << '\n'
-                 << "build_sha=" << BATTLESHIP_BUILD_SHA << '\n'
-                 << "platform="
+        writeCrashInfo(bundle, marker_text);
+        copyPreviousLog(log_path, bundle);
 #if defined(_WIN32)
-                 << "windows"
-#elif defined(__APPLE__)
-                 << "macos"
-#elif defined(__ANDROID__)
-                 << "android"
-#elif defined(__SWITCH__)
-                 << "switch"
-#else
-                 << "linux"
+        sweepMinidumps(log_dir, bundle);
 #endif
-                 << '\n'
-                 << "collected_at=" << UtcStamp() << '\n';
-            const std::string scene = MarkerField(marker_text, "scene");
-            if (!scene.empty()) {
-                info << "scene_name="
-                     << port_diag_get_scene_name(
-                            (unsigned char)std::strtoul(scene.c_str(), nullptr, 10))
-                     << '\n';
-            }
-        }
-
-        /* previous.log: the dead run's ssb64.log — holds the crash
-         * handler's backtrace. Copied BEFORE port_log_init truncates it. */
-        std::error_code ec2;
-        if (fs::exists(log_path, ec2) && fs::file_size(log_path, ec2) > 0) {
-            fs::copy_file(log_path, bundle / "previous.log",
-                          fs::copy_options::overwrite_existing, ec2);
-        }
-
-#if defined(_WIN32)
-        /* Minidumps land in the process CWD (portWriteMinidump) — sweep any
-         * strays into the bundle so they travel with the report. Each dir
-         * gets a fresh error_code so one unreadable dir doesn't skip the
-         * other. */
-        std::error_code cwd_ec;
-        const fs::path cwd = fs::current_path(cwd_ec);
-        for (const fs::path &dir : {cwd, log_dir.parent_path()}) {
-            if (dir.empty()) continue;
-            std::error_code dec;
-            for (const auto &e : fs::directory_iterator(dir, dec)) {
-                const std::string fn = e.path().filename().string();
-                if (e.is_regular_file() && fn.rfind("crash_", 0) == 0 &&
-                    e.path().extension() == ".dmp") {
-                    fs::rename(e.path(), bundle / fn, dec);
-                }
-            }
-        }
-#endif
-
         fs::remove(marker, ec);
         RotateBundles(root);
         return bundle.string();
@@ -328,6 +338,8 @@ std::string CollectPendingCrashBundle(const std::string &log_path) {
         return ""; /* diagnostics must never break boot */
     }
 }
+
+
 
 /* ------------------------------------------------------------------ */
 /* Opt-in crash telemetry — gCrashReports.Enabled (default OFF). The   */
