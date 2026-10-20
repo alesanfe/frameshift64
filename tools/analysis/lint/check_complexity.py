@@ -112,15 +112,8 @@ def lizard_exe() -> str:
     sys.exit("lizard not found — pip install lizard (or tools/analysis/lint/requirements.txt)")
 
 
-def collect_violations() -> dict[str, list[tuple[str, int, int]]]:
+def parse_lizard_xml(xml_path: str | Path) -> dict[str, list[tuple[str, int, int]]]:
     """relpath -> [(func, ccn, nloc)] for functions over budget."""
-    with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
-        xml_path = tmp.name
-    # -l cpp restricts to C/C++ (vendored Java/JS/Python stay out); relative
-    # dirs keep the item names repo-relative for stable baseline keys.
-    dirs = [d for d in SCAN_DIRS if (ROOT / d).exists()]
-    subprocess.run([lizard_exe(), "-l", "cpp", "--xml", "-C", str(CCN_LIMIT), "-L", str(NLOC_LIMIT), "-x", "*/node_modules/*", "-o", xml_path, *dirs],
-                   check=True, capture_output=True, cwd=ROOT)
     violations: dict[str, list[tuple[str, int, int]]] = {}
     for item in ET.parse(xml_path).getroot().iter("item"):  # nosec B314 - parses lizard's own -o output, not untrusted input
         # cppncss-style: <item name="func(...) at rel/path.cpp:line">
@@ -135,21 +128,56 @@ def collect_violations() -> dict[str, list[tuple[str, int, int]]]:
         if ccn < CCN_LIMIT and nloc < NLOC_LIMIT:
             continue
         violations.setdefault(Path(path).as_posix(), []).append((func, ccn, nloc))
+    return violations
+
+
+def collect_violations() -> dict[str, list[tuple[str, int, int]]]:
+    with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+        xml_path = tmp.name
+    # -l cpp restricts to C/C++ (vendored Java/JS/Python stay out); relative
+    # dirs keep the item names repo-relative for stable baseline keys.
+    dirs = [d for d in SCAN_DIRS if (ROOT / d).exists()]
+    subprocess.run([lizard_exe(), "-l", "cpp", "--xml", "-C", str(CCN_LIMIT), "-L", str(NLOC_LIMIT), "-x", "*/node_modules/*", "-o", xml_path, *dirs],
+                   check=True, capture_output=True, cwd=ROOT)
+    violations = parse_lizard_xml(xml_path)
     Path(xml_path).unlink(missing_ok=True)
     return violations
 
 
-def load_baseline() -> dict[str, int]:
+def load_baseline(path: str | Path = BASELINE) -> dict[str, int]:
     out: dict[str, int] = {}
-    if not BASELINE.exists():
+    if not Path(path).exists():
         return out
-    for line in BASELINE.read_text(encoding="utf-8").splitlines():
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
         line = line.split("#", 1)[0].strip()
         if not line:
             continue
         path, _, count = line.rpartition(" ")
         out[path.strip()] = int(count)
     return out
+
+
+def compare_to_baseline(
+    violations: dict[str, list[tuple[str, int, int]]],
+    baseline: dict[str, int],
+) -> tuple[list[tuple[str, int, int]], list[tuple[str, int, int]]]:
+    """Split violations vs baseline into (regressions, improvements).
+
+    regressions — files whose live violation count exceeds their quota
+                (absent-from-baseline files have quota 0).
+    failures    — baseline entries whose file is now clean; the entry
+                should be dropped to lock in the improvement.
+    """
+    regressions = []
+    failures = []
+    for path, found in sorted(violations.items()):
+        allowed = baseline.get(path, 0)
+        if len(found) > allowed:
+            regressions.append((path, len(found), allowed))
+    for path, allowed in sorted(baseline.items()):
+        if path not in violations:
+            failures.append((path, 0, allowed))
+    return regressions, failures
 
 
 def main() -> int:
@@ -180,15 +208,7 @@ def main() -> int:
         return 0
 
     baseline = load_baseline()
-    failures = []
-    regressions = []
-    for path, found in sorted(violations.items()):
-        allowed = baseline.get(path, 0)
-        if len(found) > allowed:
-            regressions.append((path, len(found), allowed))
-    for path, allowed in sorted(baseline.items()):
-        if path not in violations:
-            failures.append((path, 0, allowed))  # improved to zero
+    regressions, failures = compare_to_baseline(violations, baseline)
 
     for path, found, allowed in regressions:
         names = ", ".join(f"{f}(CCN={c})" for f, c, _ in violations[path])
