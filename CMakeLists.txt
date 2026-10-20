@@ -1063,6 +1063,19 @@ include(cmake/StageAssetRecipes.cmake)
 ssb64_stage_asset_recipes("${CMAKE_CURRENT_SOURCE_DIR}" "${SSB64_RECIPE_DIR}" "${SSB64_VERSION}")
 file(GENERATE OUTPUT ${SSB64_RECIPE_DIR}/recipe.sha1 CONTENT "${SSB64_ASSET_RECIPE_HASH}\n")
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # files.txt: manifest the web shell consumes when extracting a
+    # browser-uploaded ROM — it fetches this list, then stages each recipe
+    # file into torch.js's MEMFS before Companion::Process runs.
+    file(GLOB_RECURSE _recipe_files RELATIVE ${SSB64_RECIPE_DIR}
+         ${SSB64_RECIPE_DIR}/*)
+    list(FILTER _recipe_files EXCLUDE REGEX "^files\.txt$")
+    list(SORT _recipe_files)
+    string(REPLACE ";" "\n" _recipe_manifest "${_recipe_files}")
+    file(GENERATE OUTPUT ${SSB64_RECIPE_DIR}/files.txt
+         CONTENT "${_recipe_manifest}\n")
+endif()
+
 # Test hooks (SSB64_NETPLAY_MUTANT, SSB64_NETPLAY_PACKETFUZZ,
 # SSB64_ROLLBACK_MUTANT, SSB64_NETPLAY_TEST_DESYNC, SSB64_COMPAT_TOKEN)
 # weaken packet validation and forge identity for the determinism/mutation
@@ -1418,18 +1431,38 @@ endif()
 ssb64_apply_static_analysis(${PROJECT_NAME})
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # Two official builds (docs §4): the default threaded variant needs
+    # SharedArrayBuffer + cross-origin isolation (COOP/COEP headers); the
+    # single-thread variant (SSB64_WEB_SINGLE_THREAD=ON, preset web-wasm-st,
+    # output name BattleShipST) is the capability fallback for environments
+    # where those guarantees do not hold. Emscripten cannot degrade one
+    # pthreads binary to single-thread at runtime — two links are required.
+    option(SSB64_WEB_SINGLE_THREAD "Emscripten build without pthreads/SAB" OFF)
+    if(SSB64_WEB_SINGLE_THREAD)
+        set(SSB64_WEB_THREADS OFF)
+    else()
+        set(SSB64_WEB_THREADS ON)
+    endif()
     # Browser target flags. -sUSE_SDL=2 is both a compile flag (SDL2 include
     # paths) and a link flag (the SDL2 wasm port), so it goes on the shared
     # options interface — every module lib links ssb64_port_options. -pthread
     # likewise must reach every TU: without it libc++ is built in
     # -fno-exceptions+no-threads mode and any std::thread construction
     # (spdlog's async pool, ResourceManager futures) aborts at startup.
-    target_compile_options(ssb64_port_options INTERFACE -sUSE_SDL=2 -pthread)
+    if(SSB64_WEB_THREADS)
+        target_compile_options(ssb64_port_options INTERFACE -sUSE_SDL=2 -pthread)
+    else()
+        target_compile_options(ssb64_port_options INTERFACE -sUSE_SDL=2)
+        # Serial-path code paths (watchdog, downloaders, ResourceManager,
+        # GCAdapter) read this macro to skip std::thread construction.
+        target_compile_definitions(ssb64_port_options INTERFACE SSB64_WEB_SINGLE_THREAD=1)
+    endif()
     target_link_options(${PROJECT_NAME} PRIVATE
         -sUSE_SDL=2
-        -pthread
-        -sUSE_PTHREADS
-        -sPTHREAD_POOL_SIZE=12              # spdlog(1) + ResourceManager(≤3,
+        $<$<BOOL:${SSB64_WEB_THREADS}>:-pthread>
+        $<$<BOOL:${SSB64_WEB_THREADS}>:-sUSE_PTHREADS>
+        $<$<BOOL:${SSB64_WEB_THREADS}>:-sPTHREAD_POOL_SIZE=12>
+                                            # spdlog(1) + ResourceManager(≤3,
                                             # capped in LUS) + watchdog +
                                             # audio + headroom for async
         # NOTE: no PROXY_TO_PTHREAD — main() runs on the browser thread.
@@ -1469,6 +1502,36 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
                                             # stacks resolve to function names
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
+    # The single-thread variant ships next to the threaded one as
+    # BattleShipST.html — the threaded shell redirects here when SAB/COI
+    # are unavailable (docs §4 capability selection).
+    if(NOT SSB64_WEB_THREADS)
+        set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "BattleShipST")
+    endif()
+    # --shell-file is only a LINK_FLAGS string — ninja/emcc's depfile does not
+    # report it as an input, so edits to the shell would never trigger a
+    # relink and the generated page would silently go stale.
+    set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/platforms/web/shell.html)
+
+    # PWA/product-shell static files ship next to the game page. sw.js is
+    # stamped with the wasm content hash so a real rebuild produces a
+    # byte-different service worker and wakes the browser update check.
+    set(SSB64_WEB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/platforms/web)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${SSB64_WEB_DIR}/manifest.webmanifest
+            ${SSB64_WEB_DIR}/extract_worker.js
+            ${CMAKE_CURRENT_BINARY_DIR}/
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${SSB64_WEB_DIR}/icons
+            ${CMAKE_CURRENT_BINARY_DIR}/icons
+        COMMAND ${CMAKE_COMMAND}
+            -DIN=${SSB64_WEB_DIR}/sw.js.in
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/sw.js
+            -DWASM=${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_FILE_BASE_NAME:${PROJECT_NAME}>.wasm
+            -P ${SSB64_WEB_DIR}/stamp_sw.cmake
+        VERBATIM)
 endif()
 
 # Share the runtime destination with the staging prerequisite. Referencing
@@ -2044,7 +2107,13 @@ if(EXISTS "${SSB64_BASEROM}")
         DEPENDS TorchExternal ${TORCH_EXECUTABLE} ${SSB64_BASEROM}
                 ${SSB64_RECIPE_INPUTS} ${SSB64_RECIPE_DIR}/recipe.sha1
         COMMAND ${CMAKE_COMMAND} -E make_directory ${SSB64_O2R_DIR}
-        COMMAND ${TORCH_EXECUTABLE} o2r ${SSB64_BASEROM} -s ${SSB64_RECIPE_DIR} -d ${SSB64_O2R_DIR}
+        # SOURCE_DATE_EPOCH pins zip member timestamps (see
+        # game-runtime/lib/miniz SOURCE_DATE_EPOCH support): same ROM +
+        # same recipes -> byte-identical BattleShip.o2r on any host.
+        # DOS zip timestamps can't represent dates before 1980-01-01, so
+        # the pin uses the DOS floor: timestamps carry no information.
+        COMMAND ${CMAKE_COMMAND} -E env SOURCE_DATE_EPOCH=315532800
+            ${TORCH_EXECUTABLE} o2r ${SSB64_BASEROM} -s ${SSB64_RECIPE_DIR} -d ${SSB64_O2R_DIR}
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${SSB64_RECIPE_DIR}/recipe.sha1 ${SSB64_O2R}.recipe
         COMMENT "Extracting ${SSB64_VERSION} assets from ${SSB64_BASEROM} -> ${SSB64_O2R}"

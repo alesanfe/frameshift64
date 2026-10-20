@@ -150,6 +150,21 @@
     "CMAKE_C_FLAGS": "-pthread",
     "CMAKE_CXX_FLAGS": "-pthread"
    }
+  },
+  {
+   "name": "web-wasm-st",
+   "displayName": "Web WASM single-thread (Emscripten, US)",
+   "inherits": "ninja-base",
+   "toolchainFile": "${sourceDir}/out/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+   "binaryDir": "${sourceDir}/out/build/web-wasm-st",
+   "cacheVariables": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "SSB64_VERSION": "us",
+    "NON_PORTABLE": "OFF",
+    "SSB64_WEB_SINGLE_THREAD": "ON",
+    "CMAKE_C_FLAGS": "-DSSB64_WEB_SINGLE_THREAD=1",
+    "CMAKE_CXX_FLAGS": "-DSSB64_WEB_SINGLE_THREAD=1"
+   }
   }
  ],
  "buildPresets": [

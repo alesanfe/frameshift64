@@ -564,9 +564,16 @@ extern "C" void port_watchdog_init(void) {
     sigaction(SIGFPE,  &csa, nullptr);
     sigaction(SIGABRT, &csa, nullptr);
 #endif
+#ifdef SSB64_WEB_SINGLE_THREAD
+    /* No pthreads in the single-thread Emscripten build — the hang
+     * detector can't run. Signal handlers above still install, which
+     * is the useful half on the web (crash diagnostics). */
+    port_log("SSB64: watchdog disabled (single-thread build)\n");
+#else
     sWatchdogThread = std::thread(WatchdogLoop);
     port_log("SSB64: watchdog started (hang threshold=%llums)\n",
              (unsigned long long)kHangThresholdMs);
+#endif
 }
 
 extern "C" void port_watchdog_shutdown(void) {

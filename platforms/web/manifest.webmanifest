@@ -1,0 +1,16 @@
+{
+  "name": "BattleShip",
+  "short_name": "BattleShip",
+  "description": "Super Smash Bros. 64 PC decomp port — web build. Your ROM is processed locally and never uploaded.",
+  "start_url": "BattleShip.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0b0e13",
+  "theme_color": "#0b0e13",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

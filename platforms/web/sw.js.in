@@ -1,0 +1,86 @@
+/* BattleShip service worker — offline shell + safe updates.
+ *
+ * SW_VERSION is stamped at link time with the wasm SHA-256 (stamp_sw.cmake),
+ * so a rebuild that changes BattleShip.wasm yields a byte-different sw.js —
+ * that is what wakes the browser's SW updater. Precache is core-shell only:
+ * the user's ROM-derived BattleShip.o2r and any picked .z64/.o2r NEVER pass
+ * through the Cache API (they live in IDBFS and stay on the device).
+ *
+ * Update flow: install fills the cache and the SW stays `waiting`; the page
+ * shows an "update available" affordance and posts SKIP_WAITING on a real
+ * user gesture — we never activate mid-game on our own.
+ */
+const SW_VERSION = '@SSB64_SW_VERSION@';
+const CACHE = 'battleship-' + SW_VERSION;
+
+const CORE = [
+  './', 'BattleShip.html', 'BattleShip.js', 'BattleShip.wasm',
+  'manifest.webmanifest', 'extract_worker.js',
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
+  'f3d.o2r', 'gamecontrollerdb.txt',
+  'torch/torch.js', 'torch/torch.wasm', 'asset-recipes/files.txt',
+];
+/* Present in some configurations — cached when found, skipped otherwise. */
+const OPTIONAL_CORE = ['BattleShip.worker.js'];
+/* User-provided content must never enter the Cache API. */
+const NEVER_CACHE = /\.(o2r|z64|n64|v64)(\?|$)/i;
+
+async function precache() {
+  const cache = await caches.open(CACHE);
+  const urls = CORE.concat(OPTIONAL_CORE);
+  /* Best-effort per file: an absent optional file must not sink install. */
+  await Promise.allSettled(urls.map(async u => {
+    const r = await fetch(u);
+    if (r.ok) await cache.put(u, r);
+  }));
+  /* Asset recipe tree for offline first-run extraction — the manifest is
+   * already in CORE; fetch it and stage every listed recipe path. */
+  try {
+    const man = await fetch('asset-recipes/files.txt');
+    if (man.ok) {
+      const rels = (await man.text()).split('\n').map(s => s.trim()).filter(Boolean);
+      await Promise.allSettled(rels.map(async rel => {
+        const r = await fetch('asset-recipes/' + rel);
+        if (r.ok) await cache.put('asset-recipes/' + rel, r);
+      }));
+    }
+  } catch (_) { /* offline install just skips the recipe tree */ }
+}
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(precache());
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys
+      .filter(k => k.startsWith('battleship-') && k !== CACHE)
+      .map(k => caches.delete(k)));
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  /* ROM-derived user data: network/IDBFS only, never the Cache API. */
+  if (NEVER_CACHE.test(url.pathname)) return;
+  e.respondWith((async () => {
+    const hit = await caches.match(req);
+    if (hit) return hit;
+    const res = await fetch(req);
+    /* Fill the runtime cache for unlisted same-origin files so a later
+     * offline session still boots (dev.html, extra tooling, ...). */
+    if (res.ok) {
+      try { (await caches.open(CACHE)).put(req, res.clone()); } catch (_) {}
+    }
+    return res;
+  })());
+});

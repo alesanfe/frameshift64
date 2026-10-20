@@ -275,11 +275,15 @@ void PortMenu::AddMenuSupport() {
         .HideInSearch(true)
         .CustomFunction(RenderDiagnostics);
 
-#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP)
+#if !defined(__ANDROID__) && !defined(BATTLESHIP_UWP) && !defined(__EMSCRIPTEN__)
     // BUILT-IN UPDATER — hidden on Android. App updates come through the
     // Play Store on mobile; a curl-driven GitHub-releases updater can't
     // replace a system-managed installation, and the curl shell-out
     // (Updater.cpp) isn't built on Android in the first place.
+    // Emscripten is excluded the same way: web updates are delivered by
+    // the service worker's versioned cache, not an in-game downloader —
+    // and on the single-thread build CheckForUpdatesAsync's std::thread
+    // would abort outright.
     // The background check still fires when the menu loads.
     ssb64::enhancements::CheckForUpdatesAsync(false);
 

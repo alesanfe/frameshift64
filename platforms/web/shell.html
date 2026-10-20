@@ -3,24 +3,108 @@
 <head>
 <meta charset="utf-8">
 <title>BattleShip</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0b0e13">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
 <style>
   html, body { margin: 0; padding: 0; background: #0b0e13; color: #cfd8e3;
                font: 14px/1.4 system-ui, sans-serif; height: 100%; }
   #stage { display: flex; flex-direction: column; align-items: center;
-           justify-content: center; min-height: 100%; gap: 12px; }
+           justify-content: center; height: 100dvh; gap: 12px; }
   /* No border/padding on the canvas: SDL2's Emscripten driver probes the
    * canvas at 1x1 and reads back its CSS box to detect external sizing —
    * a 1px border inflates that to 3px and the game surface ends up 3x3.
-   * outline renders the same border without changing the layout box. */
-  canvas.emscripten { outline: 1px solid #26303c; background: #000;
-                      max-width: 100vw; max-height: 80vh; }
+   * outline renders the same border without changing the layout box.
+   * fitCanvas() (below) sizes the element to fill the tab preserving the
+   * game's aspect; SDL's Emscripten backend tracks the element box each
+   * pump so the internal framebuffer follows the CSS size — this is a
+   * real-resolution scale, not just a GPU upscale. */
+  canvas.emscripten { outline: 1px solid #26303c; background: #000; }
   #status { white-space: pre-wrap; color: #8fa3b8; }
   #picker { display: none; }
   button { background: #1d2733; color: #cfd8e3; border: 1px solid #3a4a5c;
            padding: 8px 16px; border-radius: 4px; cursor: pointer; }
   button:hover { background: #263444; }
   .hidden { display: none !important; }
+  #startButton { font-size: 18px; padding: 12px 32px; }
+  #privacy { color: #6b7d8f; font-size: 12px; max-width: 52ch;
+             text-align: center; }
+  #capError { color: #e2a0a0; white-space: pre-wrap; max-width: 60ch;
+              text-align: center; }
+  .errcode { color: #8fa3b8; font: 11px/1.3 ui-monospace, monospace; }
+  #romInfo { color: #9fb4c8; font: 12px/1.4 ui-monospace, monospace;
+             white-space: pre-wrap; max-width: 60ch; text-align: center; }
+  #extractCancel { display: none; font-size: 12px; padding: 4px 12px; }
+  /* ── Storage / diagnostics panel ─────────────────────────────────── */
+  #gearBtn { position: fixed; right: 10px; top: 10px; z-index: 40;
+             background: none; border: 1px solid #3a4a5c; border-radius: 4px;
+             color: #8fa3b8; font-size: 15px; padding: 4px 8px; opacity: .8; }
+  #gearBtn:hover { opacity: 1; }
+  #storagePanel { position: fixed; right: 10px; top: 44px; z-index: 40;
+                  width: 260px; background: #131a23; border: 1px solid #3a4a5c;
+                  border-radius: 6px; padding: 12px; display: none;
+                  font-size: 12px; }
+  #storagePanel.on { display: block; }
+  #storagePanel .row { display: flex; justify-content: space-between;
+                       margin: 4px 0; }
+  #storagePanel .val { color: #9fb4c8; font-family: ui-monospace, monospace; }
+  #storagePanel button { width: 100%; margin-top: 8px; font-size: 12px;
+                         padding: 6px 8px; }
+  #storagePanel button.danger { border-color: #6c3a3a; color: #d8a0a0; }
+  #storageBar { height: 6px; background: #1d2733; border-radius: 3px;
+                overflow: hidden; margin: 6px 0 2px; }
+  #storageBarFill { height: 100%; background: #4a7ec2; width: 0; }
+  /* ── Service-worker update toast ─────────────────────────────────── */
+  #swupdate { position: fixed; right: 16px; top: 16px; z-index: 40;
+              background: #1d2733;
+              border: 1px solid #4a7ec2; border-radius: 6px; padding: 8px 14px;
+              display: none; font-size: 13px; }
+  #swupdate.on { display: flex; gap: 12px; align-items: center; }
+  #swupdate button { font-size: 12px; padding: 4px 10px; }
+  /* ── Safe-mode / build-switch hints on error screens ─────────────── */
+  #safeLink, #stLink { display: none; color: #8fa3b8; font-size: 12px;
+              text-decoration: underline; cursor: pointer; background: none;
+              border: none; }
+
+  /* ── On-screen touch controls (mobile) ───────────────────────────────
+   * DOM controls synthesize KeyboardEvents into LUS's keyboard device
+   * (see the touch-overlay script below + src/platform/web/
+   * web_touch_overlay.cpp for the menu-toggle glue). Shown only on touch
+   * devices with no physical gamepad, and hidden while the ImGui menu is
+   * open so menu taps reach the canvas. ?touch=1 / ?touch=0 force on/off. */
+  body.touch-mode { touch-action: none; }
+  body.touch-mode canvas.emscripten { touch-action: none; max-height: 100vh;
+                                      outline: none; }
+  #touchui { position: fixed; inset: 0; z-index: 10; display: none;
+             pointer-events: none; -webkit-user-select: none;
+             user-select: none; -webkit-touch-callout: none; }
+  #touchui.on { display: block; }
+  .tbtn, .cbtn { position: fixed; display: flex; align-items: center;
+                 justify-content: center; border-radius: 50%;
+                 border: 2px solid rgba(255,255,255,.30);
+                 background: rgba(70,80,100,.35); color: rgba(255,255,255,.9);
+                 font: 600 20px/1 system-ui, sans-serif;
+                 pointer-events: auto; touch-action: none;
+                 -webkit-tap-highlight-color: transparent; }
+  .tbtn.down, .cbtn.down { background: rgba(120,160,220,.55); }
+  .cbtn { font-size: 13px; background: rgba(110,90,40,.35); }
+  #stickzone { position: fixed; left: 0; top: 0; width: 45vw; height: 100vh;
+               pointer-events: auto; touch-action: none; }
+  #stickbase, #sticknub { position: fixed; border-radius: 50%; display: none;
+                          transform: translate(-50%,-50%); pointer-events: none; }
+  #stickbase { width: 150px; height: 150px;
+               border: 2px solid rgba(255,255,255,.25);
+               background: rgba(60,70,90,.25); }
+  #sticknub  { width: 64px; height: 64px;
+               background: rgba(150,170,200,.5);
+               border: 2px solid rgba(255,255,255,.4); }
+  #kbproxy { position: fixed; left: 0; right: 0; bottom: 0; height: 7vh;
+             min-height: 34px; font-size: 16px; padding: 0 12px;
+             background: rgba(20,26,34,.94); color: #e8eef6; z-index: 30;
+             border: 1px solid #3a4a5c; border-width: 1px 0 0;
+             display: none; outline: none; }
+  #kbproxy.on { display: block; }
 </style>
 </head>
 <body>
@@ -28,9 +112,62 @@
   <canvas class="emscripten" id="canvas" width="960" height="540"
           oncontextmenu="event.preventDefault()"></canvas>
   <div id="status">Loading…</div>
-  <button id="romButton" class="hidden">Choose extracted assets (BattleShip.o2r)</button>
-  <input id="picker" type="file" accept=".o2r">
+  <button id="startButton" class="hidden">&#9208; Start BattleShip</button>
+  <button id="romButton" class="hidden">Choose BattleShip.o2r or ROM (.z64/.n64/.v64) — or drop it anywhere</button>
+  <button id="extractCancel">Cancel extraction</button>
+  <div id="romInfo" class="hidden"></div>
+  <div id="privacy" class="hidden">Your ROM is processed entirely in your browser — it is never uploaded.</div>
+  <div id="capError" class="hidden"></div>
+  <button id="diagBtn" class="hidden" style="font-size:12px">Copy diagnostics</button>
+  <button id="safeLink">Restart in safe mode (no mods)</button>
+  <button id="stLink">Try single-thread build</button>
+  <input id="picker" type="file" accept=".o2r,.z64,.n64,.v64">
 </div>
+<!-- Storage management: usage bar, persistence request, clear derived
+     assets (saves/config/mods are kept — only the regenerable .o2r is
+     removed). Gear is always reachable so a broken cache never strands
+     the user. -->
+<button id="gearBtn" title="Storage &amp; diagnostics" aria-label="Storage and diagnostics">&#9881;</button>
+<div id="storagePanel" role="dialog" aria-label="Storage">
+  <div class="row"><span>Storage used</span><span class="val" id="stUsed">—</span></div>
+  <div class="row"><span>Available</span><span class="val" id="stQuota">—</span></div>
+  <div id="storageBar"><div id="storageBarFill"></div></div>
+  <div class="row"><span>Persistent</span><span class="val" id="stPersist">—</span></div>
+  <button id="stPersistBtn">Protect data (request persistence)</button>
+  <button id="stExportBtn">Export saves &amp; settings</button>
+  <button id="stImportBtn">Import saves &amp; settings</button>
+  <input id="stImportFile" type="file" accept=".json,.bssave" style="display:none">
+  <button id="stClearBtn" class="danger">Clear game assets (keep saves)</button>
+  <button id="stDiagBtn">Copy diagnostics</button>
+</div>
+<div id="swupdate"><span>Update ready</span><button id="swupdateBtn">Restart to apply</button></div>
+<!-- Touch controls — button sizes scale with vmin so the layout holds
+     from small phones to tablets. Layout mirrors the Android
+     TouchOverlay plus a C-button cluster; each control synthesizes the
+     KeyboardEvent of the matching LUS keyboard mapping. -->
+<div id="touchui" aria-hidden="true">
+  <div id="stickzone"></div>
+  <div id="stickbase"></div>
+  <div id="sticknub"></div>
+  <div class="tbtn" id="tZ"     style="right:19vw; top:4vh;  width:13vmin; height:13vmin">Z</div>
+  <div class="tbtn" id="tR"     style="right:2vw;  top:4vh;  width:13vmin; height:13vmin">R</div>
+  <div class="tbtn" id="tL"     style="left:2vw;   top:12vh; width:10vmin; height:10vmin">L</div>
+  <div class="tbtn" id="tMenu"  style="left:2vw;   top:2vh;  width:9vmin;  height:9vmin">&#8801;</div>
+  <div class="cbtn" id="tCup"   style="right:16vw; bottom:38vh; width:8vmin; height:8vmin">&#9650;</div>
+  <div class="cbtn" id="tCleft" style="right:24vw; bottom:30vh; width:8vmin; height:8vmin">&#9664;</div>
+  <div class="cbtn" id="tCright" style="right:8vw; bottom:30vh; width:8vmin; height:8vmin">&#9654;</div>
+  <div class="cbtn" id="tCdown" style="right:16vw; bottom:22vh; width:8vmin; height:8vmin">&#9660;</div>
+  <div class="tbtn" id="tB"     style="right:20vw; bottom:10vh; width:12vmin; height:12vmin">B</div>
+  <div class="tbtn" id="tA"     style="right:4vw;  bottom:14vh; width:15vmin; height:15vmin">A</div>
+  <div class="tbtn" id="tStart" style="left:50%; transform:translateX(-50%); bottom:3vh;
+                                     width:10vmin; height:10vmin; font-size:14px">&#9208;</div>
+</div>
+<!-- Virtual-keyboard proxy: SDL-Emscripten has no StartTextInput, so
+     when ImGui wants text the wasm side sets __ssb64_wants_keyboard and
+     this input gets focus — the browser opens its OS keyboard and the
+     real keystrokes feed SDL exactly like physical typing. -->
+<input id="kbproxy" type="text" autocomplete="off" autocapitalize="none"
+       autocorrect="off" spellcheck="false" aria-label="Text input">
 {{{ SCRIPT }}}
 <script>
 /* Web loader for the Emscripten build.
@@ -48,6 +185,9 @@
 var statusEl = document.getElementById('status');
 var picker = document.getElementById('picker');
 var romButton = document.getElementById('romButton');
+var startButton = document.getElementById('startButton');
+var privacyEl = document.getElementById('privacy');
+var capErrorEl = document.getElementById('capError');
 var O2R = 'BattleShip.o2r';
 /* Companion files the runtime also looks up relative to cwd — small and
  * fetchable; each failure just skips that file (game continues without). */
@@ -57,80 +197,462 @@ var started = false;
 
 function setStatus(t) { statusEl.textContent = t; }
 
+/* Typed fatal-ish errors (docs §18/§25): the code is greppable for support
+ * and the user gets a copyable diagnostics bundle instead of a dead page. */
+var diagBtn = document.getElementById('diagBtn');
+var safeLink = document.getElementById('safeLink');
+var lastError = null;
+function fail(code, msg) {
+  lastError = { code: code, message: msg, when: new Date().toISOString() };
+  capErrorEl.classList.remove('hidden');
+  capErrorEl.innerHTML = '';
+  capErrorEl.appendChild(document.createTextNode(msg));
+  var c = document.createElement('div');
+  c.className = 'errcode';
+  c.textContent = code;
+  capErrorEl.appendChild(c);
+  diagBtn.classList.remove('hidden');
+  safeLink.style.display = '';
+  stLink.style.display = '';
+  console.error('[web] ' + code + ': ' + msg);
+}
+async function diag() {
+  var st = {};
+  try { st = await navigator.storage.estimate(); } catch (e) {}
+  return {
+    code: lastError ? lastError.code : null,
+    error: lastError ? lastError.message : null,
+    status: statusEl.textContent,
+    ua: navigator.userAgent,
+    coi: self.crossOriginIsolated,
+    sab: typeof SharedArrayBuffer !== 'undefined',
+    webgl2: (function () { try { return !!document.createElement('canvas').getContext('webgl2'); } catch (e) { return false; } })(),
+    workers: typeof Worker !== 'undefined',
+    idb: typeof indexedDB !== 'undefined',
+    sw: 'serviceWorker' in navigator,
+    glContextLost: ctxLost,
+    storage: st,
+    dpr: devicePixelRatio,
+    viewport: [innerWidth, innerHeight],
+    time: new Date().toISOString(),
+  };
+}
+function copyDiag() {
+  diag().then(d =>
+    navigator.clipboard.writeText(JSON.stringify(d, null, 2))
+      .then(() => { diagBtn.textContent = 'Copied'; setTimeout(() => { diagBtn.textContent = 'Copy diagnostics'; }, 1500); },
+            () => {}));
+}
+diagBtn.onclick = copyDiag;
+document.getElementById('stDiagBtn').onclick = copyDiag;
+safeLink.onclick = () => {
+  var p = new URLSearchParams(location.search);
+  p.set('SSB64_SAFE_MODE', '1');
+  location.search = '?' + p.toString();
+};
+var stLink = document.getElementById('stLink');
+var onST = /BattleShipST\.html$/.test(location.pathname);
+if (onST) stLink.textContent = 'Try threaded build';
+stLink.onclick = () => {
+  var p = new URLSearchParams(location.search);
+  p.delete('st');
+  var target = onST ? 'BattleShip.html' : 'BattleShipST.html';
+  var base = location.pathname.replace(/BattleShipST?\.html$/, target);
+  location.href = base + (p.toString() ? '?' + p.toString() : '');
+};
+
+/* ── Storage management (docs §9) ─────────────────────────────────── */
+var storagePanel = document.getElementById('storagePanel');
+function fmtMB(n) { return n == null ? '—' : (n / 1048576).toFixed(1) + ' MB'; }
+async function refreshStorage() {
+  try {
+    var est = await navigator.storage.estimate();
+    document.getElementById('stUsed').textContent = fmtMB(est.usage);
+    document.getElementById('stQuota').textContent = fmtMB(est.quota);
+    document.getElementById('storageBarFill').style.width =
+      (est.quota ? Math.min(100, 100 * est.usage / est.quota) : 0) + '%';
+  } catch (e) {}
+  try {
+    var p = await navigator.storage.persisted();
+    document.getElementById('stPersist').textContent = p ? 'yes' : 'no';
+    document.getElementById('stPersistBtn').style.display = p ? 'none' : '';
+  } catch (e) {}
+}
+document.getElementById('gearBtn').onclick = () => {
+  storagePanel.classList.toggle('on');
+  if (storagePanel.classList.contains('on')) refreshStorage();
+};
+document.getElementById('stPersistBtn').onclick = async () => {
+  try { await navigator.storage.persist(); } catch (e) {}
+  refreshStorage();
+};
+document.getElementById('stClearBtn').onclick = () => {
+  if (!window.BattleShip || !window.BattleShip.FS) { location.reload(); return; }
+  var FS = window.BattleShip.FS;
+  /* Only the regenerable .o2r goes — saves/config/mods live beside it in
+   * /persist as separate files and are kept on purpose. */
+  try { FS.unlink(PERSIST + '/' + O2R); } catch (e) {}
+  try { FS.syncfs(false, () => {}); } catch (e) {}
+  if (confirm('Game assets cleared. The page will now reload and ask for ' +
+              'a ROM or .o2r again. Saves and settings were kept.\n\nReload now?'))
+    location.reload();
+};
+
+/* ── Save/settings export & import (docs §8): the bundle is plain JSON
+ * {files:[{p,d(b64)}]} covering everything in /persist EXCEPT derived
+ * assets — the .o2r is regenerated from the ROM and must never ride a
+ * backup (privacy + size). Chunked base64 keeps multi-MB files safe. */
+function b64enc(u8) {
+  var s = '';
+  for (var i = 0; i < u8.length; i += 32768)
+    s += String.fromCharCode.apply(null, u8.subarray(i, i + 32768));
+  return btoa(s);
+}
+function b64dec(s) {
+  var bin = atob(s), u8 = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+function persistTree(FS, dir, out) {
+  out = out || [];
+  FS.readdir(dir).forEach(name => {
+    if (name === '.' || name === '..') return;
+    var p = dir + '/' + name;
+    var st = FS.stat(p);
+    if (FS.isDir(st.mode)) { persistTree(FS, p, out); return; }
+    var rel = p.slice((PERSIST + '/').length);
+    /* Skip derived/regenerable data — backup is personal data only. */
+    if (rel === O2R || /\.(o2r|z64|n64|v64)$/i.test(rel)) return;
+    out.push(rel);
+  });
+  return out;
+}
+document.getElementById('stExportBtn').onclick = () => {
+  var M = window.BattleShip;
+  if (!M || !M.FS) { alert('Game has not started yet — nothing to export.'); return; }
+  var files = [], skipped = [];
+  persistTree(M.FS, PERSIST).forEach(rel => {
+    var data = M.FS.readFile(PERSIST + '/' + rel);
+    if (data.length > 32 * 1024 * 1024) { skipped.push(rel); return; }
+    files.push({ p: rel, d: b64enc(data) });
+  });
+  var blob = new Blob([JSON.stringify({
+    app: 'battleship-web', v: 1, date: new Date().toISOString(), files: files,
+  })], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'battleship-backup-' + new Date().toISOString().slice(0, 10) + '.bssave';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  if (skipped.length)
+    alert('Exported ' + files.length + ' files. Skipped (too large/derived): ' + skipped.join(', '));
+};
+var stImportFile = document.getElementById('stImportFile');
+document.getElementById('stImportBtn').onclick = () => stImportFile.click();
+stImportFile.onchange = () => {
+  var f = stImportFile.files[0];
+  stImportFile.value = '';
+  if (!f) return;
+  var M = window.BattleShip;
+  if (!M || !M.FS) { alert('Game has not started yet.'); return; }
+  f.text().then(txt => {
+    var bundle;
+    try { bundle = JSON.parse(txt); }
+    catch (e) { alert('Not a BattleShip backup file.'); return; }
+    if (!bundle || bundle.app !== 'battleship-web' || !Array.isArray(bundle.files)) {
+      alert('Not a BattleShip backup file.'); return;
+    }
+    var ok = 0, fail = [];
+    bundle.files.forEach(ent => {
+      /* Path hygiene: no traversal, no absolute paths, no derived assets. */
+      var p = String(ent.p || '');
+      if (!p || p.indexOf('..') !== -1 || p[0] === '/' || /[\0]/.test(p)
+          || /\.(o2r|z64|n64|v64)$/i.test(p)) { fail.push(p); return; }
+      try {
+        var abs = PERSIST + '/' + p;
+        var dir = abs.slice(0, abs.lastIndexOf('/'));
+        if (dir) M.FS.mkdirTree(dir);
+        M.FS.writeFile(abs, b64dec(ent.d));
+        ok++;
+      } catch (e) { fail.push(p); }
+    });
+    try { M.FS.syncfs(false, () => {}); } catch (e) {}
+    var msg = 'Imported ' + ok + ' files.'
+      + (fail.length ? '\nSkipped/failed: ' + fail.join(', ') : '')
+      + '\n\nReload now to pick up the imported data?';
+    if (confirm(msg)) location.reload();
+  });
+};
+
+/* ── Service worker: offline shell + user-gated updates (docs §16) ── */
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+  var toast = document.getElementById('swupdate');
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    function offer() {
+      if (!reg.waiting) return;
+      toast.classList.add('on');
+      document.getElementById('swupdateBtn').onclick = () => {
+        reg.waiting.postMessage('SKIP_WAITING');
+      };
+    }
+    if (reg.waiting) offer();
+    reg.addEventListener('updatefound', () => {
+      var w = reg.installing;
+      if (w) w.addEventListener('statechange', () => {
+        if (w.state === 'installed') offer();
+      });
+    });
+  }).catch(e => console.warn('SW registration failed:', e));
+  /* Reload only when an *update* takes over — the first-ever activation
+   * must not reload: it would nuke an in-flight ROM extraction (and any
+   * running game). hadController is captured before registration. */
+  var hadController = !!navigator.serviceWorker.controller;
+  var reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded || !hadController) return;
+    reloaded = true;
+    location.reload();
+  });
+})();
+
+/* ── ROM header sniffing (docs §3 visible verification): pure client-
+ * side peek at the first 64 bytes — region/name shown before extract. */
+var romInfoEl = document.getElementById('romInfo');
+function describeRom(f, head) {
+  if (!head || head.byteLength < 0x40) return null;
+  var b = new Uint8Array(head);
+  /* 0x80371240 big-endian=z64; byteswapped=v64; little-endian=n64. */
+  function u32(o) { return (b[o] << 24 | b[o+1] << 16 | b[o+2] << 8 | b[o+3]) >>> 0; }
+  var magic = u32(0), swap = 0;
+  if (magic === 0x80371240) swap = 0;          /* z64 big-endian */
+  else if (magic === 0x37804012) swap = 1;     /* v64 16-bit pair swap */
+  else if (magic === 0x40123780) swap = 3;     /* n64 32-bit word swap */
+  else return { ok: false, text: f.name + ' — not an N64 ROM image (bad magic)' };
+  function be8(o) { return b[o ^ swap]; }
+  var name = '';
+  for (var i = 0x20; i < 0x34; i++) {
+    var ch = be8(i);
+    name += (ch >= 0x20 && ch < 0x7f) ? String.fromCharCode(ch) : ' ';
+  }
+  var cart = String.fromCharCode(be8(0x3B), be8(0x3C), be8(0x3D), be8(0x3E));
+  var regions = { E: 'NTSC-U', J: 'NTSC-J', P: 'PAL', D: 'PAL-D', F: 'PAL-F',
+                  I: 'PAL-I', S: 'PAL-S', U: 'PAL-AU', X: 'PAL-X', Y: 'PAL-EU' };
+  return { ok: true, text: f.name + ' · ' + (f.size / 1048576).toFixed(1) + ' MB\n' +
+           name.trim() + ' · ' + cart.slice(0, 3) + ' · ' +
+           (regions[cart[3]] || 'region ' + cart[3]) + ' · processed locally' };
+}
+
+/* In-browser extraction runs in extract_worker.js — a module worker that
+ * imports torch.js (EXPORT_ES6) and runs Companion::Process off the page
+ * thread, so the tab stays responsive during the multi-second extract and
+ * the job can be cancelled cleanly via worker.terminate(). ROM bytes cross
+ * as a transferred ArrayBuffer; recipe files are fetched by the worker
+ * itself. A fresh worker per attempt leaves no half-state behind. */
+var extractWorker = null;
+var extractSeq = 0;
+function extractRomInBrowser(f) {
+  const id = ++extractSeq;
+  const cancelBtn = document.getElementById('extractCancel');
+  return new Promise((resolve, reject) => {
+    const w = new Worker('extract_worker.js', { type: 'module' });
+    extractWorker = w;
+    function cleanup() {
+      extractWorker = null;
+      cancelBtn.style.display = 'none';
+      w.terminate();
+    }
+    cancelBtn.style.display = '';
+    cancelBtn.onclick = () => {
+      cleanup();
+      reject(Object.assign(new Error('extraction cancelled'),
+                           { code: 'EXTRACT_CANCELLED' }));
+    };
+    w.onmessage = (e) => {
+      const m = e.data || {};
+      if (m.id !== id) return;                 /* stale job */
+      if (m.phase === 'load') setStatus('Loading extractor (torch.wasm)…');
+      else if (m.phase === 'recipes')
+        setStatus('Staging recipes' + (m.total ? ' ' + (m.done || 0) + '/' + m.total : '') + '…');
+      else if (m.phase === 'extract') setStatus('Extracting assets from ROM (first run only)…');
+      else if (m.phase === 'log') console.log('[torch] ' + m.text);
+      else if (m.ok) { cleanup(); resolve(new Uint8Array(m.o2r)); }
+      else {
+        cleanup();
+        reject(Object.assign(new Error(m.message || 'extraction failed'),
+                             { code: m.code || 'EXTRACT_ERROR' }));
+      }
+    };
+    w.onerror = (e) => {
+      cleanup();
+      reject(Object.assign(new Error('extractor worker crashed: ' + (e.message || 'unknown')),
+                           { code: 'WORKER_CRASH' }));
+    };
+    f.arrayBuffer().then(buf => {
+      setStatus('Reading ' + f.name + '…');
+      w.postMessage({ id: id, rom: buf }, [buf]);
+    }).catch(err => {
+      cleanup();
+      reject(Object.assign(err, { code: 'ROM_READ_FAILED' }));
+    });
+  });
+}
+
+/* Fill the tab preserving the game's aspect. SDL's Emscripten backend
+ * re-reads the canvas CSS box every pump and resizes the window (and the
+ * GL drawing buffer, honoring devicePixelRatio) when it changes — so
+ * setting style.width/height here is a true resolution scale, and it
+ * also keeps mouse-coordinate mapping correct. The MutationObserver
+ * refits when the game itself changes the aspect (widescreen CVar
+ * rewrites the canvas attrs). */
+var canvasEl = document.getElementById('canvas');
+function fitCanvas() {
+  const aspect = (canvasEl.width && canvasEl.height)
+    ? canvasEl.width / canvasEl.height : 4 / 3;
+  const chrome = statusEl.offsetHeight + romButton.offsetHeight
+               + startButton.offsetHeight + 28;
+  const vw = window.innerWidth, vh = window.innerHeight - chrome;
+  let w = vw, h = vw / aspect;
+  if (h > vh) { h = vh; w = h * aspect; }
+  canvasEl.style.width = Math.max(1, Math.floor(w)) + 'px';
+  canvasEl.style.height = Math.max(1, Math.floor(h)) + 'px';
+}
+window.addEventListener('resize', fitCanvas);
+new MutationObserver(fitCanvas)
+  .observe(canvasEl, { attributes: true, attributeFilter: ['width', 'height'] });
+new MutationObserver(fitCanvas)
+  .observe(statusEl, { childList: true, characterData: true, subtree: true });
+fitCanvas();
+
+/* ── WebGL context loss (docs §10): preventDefault is REQUIRED or the
+ * browser will never fire webglcontextrestored. Emscripten's GL layer
+ * rebuilds the context and re-uploads resources on restore; we surface
+ * the state so the canvas never just goes silently black. If the wasm
+ * side fails to recover, the user still gets an actionable status. */
+var ctxLost = 0;
+canvasEl.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  ctxLost++;
+  console.warn('[web] WebGL context lost (#' + ctxLost + ')');
+  setStatus('Graphics context lost — recovering…\n'
+          + 'If the picture does not return in a few seconds, reload the page: '
+          + 'your saves live in persistent storage.');
+});
+canvasEl.addEventListener('webglcontextrestored', () => {
+  console.log('[web] WebGL context restored');
+  setStatus('Graphics context restored — resuming.');
+});
+
 var Module = {
   canvas: document.getElementById('canvas'),
   noInitialRun: true,
   print: function (t) { console.log(t); },
   printErr: function (t) { console.warn(t); },
   setStatus: setStatus,
-  onAbort: function (what) { setStatus('Crashed: ' + what); },
+  onAbort: function (what) { fail('WASM_ABORT', 'Crashed: ' + what); },
 };
 
 async function stageFsAndStart(Module) {
   const FS = Module.FS;
+  const flush = () => { try { FS.syncfs(false, () => {}); } catch (e) {} };
   try {
     FS.mkdir(PERSIST);
     FS.mount(FS.filesystems.IDBFS, {}, PERSIST);
     await new Promise((res, rej) =>
       FS.syncfs(true, e => (e ? rej(e) : res())));
+    /* cwd → the persisted tree: LUS resolves its app dir to '.', so saves,
+     * config, mods and the derived o2r all land in IDBFS directly — one
+     * syncfs flush (pagehide/visibilitychange/post-write) keeps all of it
+     * without enumerating per-file paths. */
+    FS.chdir(PERSIST);
   } catch (e) {
     console.warn('IDBFS unavailable (private mode?), saves stay in-memory', e);
   }
 
   const fsExists = p => { try { FS.stat(p); return true; } catch (e) { return false; } };
 
-  if (!fsExists(O2R) && fsExists(PERSIST + '/' + O2R)) {
-    setStatus('Restoring assets from browser storage…');
-    FS.writeFile(O2R, FS.readFile(PERSIST + '/' + O2R));
-  }
-
   if (!fsExists(O2R)) {
     try {
       setStatus('Fetching ' + O2R + '…');
       const r = await fetch(O2R);
-      if (r.ok) FS.writeFile(O2R, new Uint8Array(await r.arrayBuffer()));
+      if (r.ok) { FS.writeFile(O2R, new Uint8Array(await r.arrayBuffer())); flush(); }
     } catch (e) { /* fall through to the picker */ }
   }
 
   if (!fsExists(O2R)) {
     setStatus('No extracted assets found.\n' +
-              'Extract BattleShip.o2r on desktop (first-run wizard) once,\n' +
-              'then pick it here — it is cached in this browser afterwards.');
+              'Pick or drop BattleShip.o2r (extracted on desktop) or the\n' +
+              'ROM (.z64/.n64/.v64) — extraction runs right here and the\n' +
+              'result is cached in this browser afterwards.');
     romButton.classList.remove('hidden');
+    privacyEl.classList.remove('hidden');
+    let done = false;
     await new Promise(res => {
-      romButton.onclick = () => picker.click();
-      picker.onchange = () => {
-        const f = picker.files[0];
-        if (!f) return;
-        setStatus('Loading ' + f.name + '…');
-        const rd = new FileReader();
-        rd.onload = () => {
-          const bytes = new Uint8Array(rd.result);
+      async function onPick(f) {
+        if (!f || done) return;
+        try {
+          const head = await f.slice(0, 64).arrayBuffer();
+          const info = describeRom(f, head);
+          if (info) {
+            romInfoEl.textContent = info.text;
+            romInfoEl.classList.remove('hidden');
+          }
+          const bytes = /\.(z64|n64|v64)$/i.test(f.name)
+            ? await extractRomInBrowser(f)
+            : (setStatus('Loading ' + f.name + '…'),
+               new Uint8Array(await f.arrayBuffer()));
           FS.writeFile(O2R, bytes);
-          try {
-            FS.writeFile(PERSIST + '/' + O2R, bytes);
-            FS.syncfs(false, () => {});
-          } catch (e) { /* persist is best-effort */ }
+          flush();               /* don't wait for pagehide — a crash now
+                                  * must not lose a finished extraction */
+          done = true;
           res();
-        };
-        rd.readAsArrayBuffer(f);
-      };
+        } catch (e) {
+          console.error('asset staging failed:', e);
+          setStatus('Failed' + (e && e.code ? ' [' + e.code + ']' : '') + ': ' +
+                    (e && e.message || e) +
+                    '\nPick a valid .o2r or a Smash 64 ROM.');
+        }
+      }
+      romButton.onclick = () => picker.click();
+      /* reset .value so re-picking the same file after a failure
+       * still fires onchange */
+      picker.onchange = () => { const f = picker.files[0]; picker.value = ''; onPick(f); };
+      document.addEventListener('dragover', e => { if (!done) e.preventDefault(); });
+      document.addEventListener('drop', e => {
+        if (done) return;
+        e.preventDefault();
+        onPick(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
+      });
     });
     romButton.classList.add('hidden');
+    privacyEl.classList.add('hidden');
+    romInfoEl.classList.add('hidden');
   }
 
-  window.addEventListener('pagehide', () => {
-    try { FS.syncfs(false, () => {}); } catch (e) {}
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
   });
 
   /* Companion runtime files (shaders, controller DB) — fetched
-   * opportunistically; a miss just skips that file. */
+   * opportunistically; a miss just skips that file. Landing in cwd they
+   * persist for offline sessions too. */
   for (const name of OPTIONAL_FILES) {
     if (fsExists(name)) continue;
     try {
       const r = await fetch(name);
-      if (r.ok) FS.writeFile(name, new Uint8Array(await r.arrayBuffer()));
+      if (r.ok) { FS.writeFile(name, new Uint8Array(await r.arrayBuffer())); }
     } catch (e) { /* optional */ }
+  }
+
+  /* Audio unlock: starting from inside a real user gesture leaves the
+   * AudioContext running — an auto-start would boot muted on most
+   * browsers. ?autostart=1 keeps CI rigs hands-free. */
+  if (new URLSearchParams(location.search).get('autostart') !== '1') {
+    setStatus('Ready.');
+    startButton.classList.remove('hidden');
+    await new Promise(res => { startButton.onclick = res; });
+    startButton.classList.add('hidden');
   }
 
   setStatus('Starting…');
@@ -143,7 +665,7 @@ async function stageFsAndStart(Module) {
     setStatus('');
   } catch (e) {
     /* A synchronous abort before the first unwind lands here. */
-    setStatus('Crashed: ' + e);
+    fail('CALLMAIN_CRASH', 'Crashed while starting: ' + (e && e.message || e));
     console.error('callMain threw:', e && e.stack ? e.stack : e);
   }
 }
@@ -152,10 +674,249 @@ async function stageFsAndStart(Module) {
  * and runtime methods without re-running the module factory. */
 window.BattleShip = Module;
 
-BattleShipModule(Module).then(stageFsAndStart).catch(e => {
-  setStatus('Failed to load wasm: ' + e);
-  console.error('wasm boot failure:', e && e.stack ? e.stack : e);
-});
+/* ── Touch overlay ─────────────────────────────────────────────────────
+ * Each control synthesizes DOM KeyboardEvents — SDL2-Emscripten feeds
+ * them to LUS's keyboard device, so the overlay plays exactly like the
+ * default PC keyboard layout (and user key-remaps apply automatically):
+ *   A=X  B=C  Z=Z  R=R  L=E  Start=Space  C buttons=Arrows  stick=WASD
+ * The hamburger sets a flag in __ssb64_touch that web_touch_overlay.cpp
+ * drains on the SDL_main thread (menu toggle), and __ssb64_menu_open is
+ * published back by the same poll to hide the overlay while ImGui is up.
+ */
+(function () {
+  var touchui = document.getElementById('touchui');
+  var S = window.__ssb64_touch = { menu: 0, keys: {} };
+
+  /* ?touch=1 forces the overlay on (testing on desktop); ?touch=0 off.
+   * Default: show on devices that can produce touch input. */
+  var q = new URLSearchParams(location.search).get('touch');
+  var wanted = q === '1' ? true
+             : q === '0' ? false
+             : (navigator.maxTouchPoints > 0) ||
+               (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  document.body.classList.toggle('touch-mode', wanted);
+  if (!wanted) return;
+
+  /* SDL2-Emscripten listens on document and maps event.code → scancode.
+   * Synthetic untrusted events reach it exactly like real typing. */
+  function key(code, down) {
+    if (down) S.keys[code] = 1; else delete S.keys[code];
+    document.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup',
+      { code: code, key: '', bubbles: true, cancelable: true }));
+  }
+
+  /* The game samples the N64 pad state once per pumped frame — a key
+   * pressed and released between two pumps is never observed. Fingers
+   * tap fast (Playwright taps land in a single pump), so every press is
+   * held for a floor of ~50 ms before the keyup is dispatched — long
+   * enough for the poll to see it, short enough to feel instant. */
+  var pressT = {}, upTimer = {};
+  function keyDown(code) {
+    if (pressT[code] !== undefined) {
+      if (upTimer[code]) { clearTimeout(upTimer[code]); upTimer[code] = undefined; }
+      return;
+    }
+    pressT[code] = performance.now();
+    key(code, true);
+  }
+  function keyUp(code) {
+    var t0 = pressT[code];
+    if (t0 === undefined) return;
+    var wait = 50 - (performance.now() - t0);
+    var up = function () { upTimer[code] = undefined; pressT[code] = undefined; key(code, false); };
+    if (wait <= 0) up();
+    else upTimer[code] = setTimeout(up, wait);
+  }
+
+  function bindHold(el, onDown, onUp) {
+    var held = 0;
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      if (held++ === 0) { el.classList.add('down'); onDown(); }
+    });
+    function release(e) {
+      if (held > 0 && --held === 0) { el.classList.remove('down'); onUp(); }
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  }
+
+  function bindKey(id, code) {
+    bindHold(document.getElementById(id),
+             function () { keyDown(code); },
+             function () { keyUp(code); });
+  }
+
+  bindKey('tA',      'KeyX');        /* N64 A     */
+  bindKey('tB',      'KeyC');        /* N64 B     */
+  bindKey('tZ',      'KeyZ');        /* N64 Z     */
+  bindKey('tR',      'KeyR');        /* N64 R     */
+  bindKey('tL',      'KeyE');        /* N64 L     */
+  bindKey('tStart',  'Space');       /* N64 Start */
+  bindKey('tCup',    'ArrowUp');     /* C-up      */
+  bindKey('tCdown',  'ArrowDown');   /* C-down    */
+  bindKey('tCleft',  'ArrowLeft');   /* C-left    */
+  bindKey('tCright', 'ArrowRight');  /* C-right   */
+
+  /* Menu hamburger — edge flag consumed by the wasm poll, which toggles
+   * the ImGui menu on the main thread (same contract as the Android
+   * hamburger). */
+  bindHold(document.getElementById('tMenu'),
+           function () {},
+           function () { S.menu = 1; });
+
+  /* ── Analog stick ────────────────────────────────────────────────────
+   * Left ~45% of the screen is the capture zone; the anchor is wherever
+   * the finger lands (floating stick). The stick emits the WASD stick
+   * keys in an 8-way quantized pattern — the same full-tilt digital
+   * stick a keyboard player has. */
+  var zone = document.getElementById('stickzone');
+  var base = document.getElementById('stickbase');
+  var nub  = document.getElementById('sticknub');
+  var STICK = { left: 'KeyA', right: 'KeyD', up: 'KeyW', down: 'KeyS' };
+  var stickId = -1, ax = 0, ay = 0, R = 70;
+  var held = {};      // stick keys currently down
+  function setHeld(code, down) {
+    if (!!held[code] === down) return;
+    held[code] = down;
+    if (down) keyDown(code); else keyUp(code);
+  }
+  function stickReleaseAll() {
+    for (var c in held) if (held[c]) { held[c] = false; keyUp(c); }
+  }
+  zone.addEventListener('pointerdown', function (e) {
+    if (stickId >= 0) return;
+    e.preventDefault();
+    stickId = e.pointerId;
+    ax = e.clientX; ay = e.clientY;
+    try { zone.setPointerCapture(stickId); } catch (_) {}
+    base.style.display = nub.style.display = 'block';
+    base.style.left = ax + 'px'; base.style.top = ay + 'px';
+    nub.style.left = ax + 'px'; nub.style.top = ay + 'px';
+  });
+  zone.addEventListener('pointermove', function (e) {
+    if (e.pointerId !== stickId) return;
+    var dx = (e.clientX - ax) / R, dy = (e.clientY - ay) / R;
+    var m = Math.hypot(dx, dy);
+    if (m < 0.35) { dx = dy = 0; }          // dead zone
+    else if (m > 1) { dx /= m; dy /= m; }
+    /* 8-way quantization: |component| > ~0.41 counts as engaged, giving
+     * ~67.5° diagonals around the axes. */
+    var TH = 0.41;
+    setHeld(STICK.left,  dx < -TH);
+    setHeld(STICK.right, dx >  TH);
+    setHeld(STICK.up,    dy < -TH);
+    setHeld(STICK.down,  dy >  TH);
+    nub.style.left = (ax + dx * R) + 'px';
+    nub.style.top  = (ay + dy * R) + 'px';
+  });
+  function stickEnd(e) {
+    if (e.pointerId !== stickId) return;
+    stickId = -1;
+    stickReleaseAll();
+    base.style.display = nub.style.display = 'none';
+  }
+  zone.addEventListener('pointerup', stickEnd);
+  zone.addEventListener('pointercancel', stickEnd);
+  zone.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  /* ── Visibility ──────────────────────────────────────────────────────
+   * Show while: (a) no physical gamepad is connected (a paired pad
+   * replaces the overlay AND would double as a second LUS controller),
+   * and (b) the ImGui menu is closed — menu taps must fall through to
+   * the canvas. menu_open is published by the wasm poll each frame. */
+  function gamepadConnected() {
+    try {
+      var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (var i = 0; i < pads.length; i++) {
+        if (pads[i] && pads[i].connected) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+  function refresh() {
+    var show = !gamepadConnected() && !window.__ssb64_menu_open;
+    touchui.classList.toggle('on', show);
+  }
+  window.addEventListener('gamepadconnected', refresh);
+  window.addEventListener('gamepaddisconnected', refresh);
+  setInterval(refresh, 250);
+  refresh();
+
+  /* ── Virtual keyboard ────────────────────────────────────────────────
+   * SDL-Emscripten has no StartTextInput, so ImGui text fields would be
+   * untypeable on mobile. The wasm side publishes __ssb64_wants_keyboard
+   * when an InputText is active; focusing this proxy opens the OS
+   * keyboard and its real keystrokes flow into SDL like physical typing
+   * (keydown/keypress → SDL key + textinput events). */
+  var kbproxy = document.getElementById('kbproxy');
+  var kbOn = false;
+  setInterval(function () {
+    var want = !!window.__ssb64_wants_keyboard;
+    if (want === kbOn) return;
+    kbOn = want;
+    kbproxy.classList.toggle('on', want);
+    if (want) { kbproxy.value = ''; kbproxy.focus(); }
+    else { kbproxy.blur(); }
+  }, 120);
+})();
+
+/* ── Build-variant selection (docs §4): two official builds — the
+ * threaded one needs SharedArrayBuffer + cross-origin isolation; the
+ * single-thread build (BattleShipST.html) is the capability fallback.
+ * Both pages share this shell, so we detect which one we are by URL.
+ * ?st=1 forces the single-thread build (manual recovery switch);
+ * ?st=0 forces the threaded one. */
+var isSTBuild = /BattleShipST\.html(\?|#|$)/.test(location.href);
+var stParam = (new URLSearchParams(location.search)).get('st');
+var threadingOK = typeof SharedArrayBuffer !== 'undefined'
+               && typeof crossOriginIsolated !== 'undefined'
+               && crossOriginIsolated;
+if (!isSTBuild && (stParam === '1' || (stParam !== '0' && !threadingOK))) {
+  var stURL = location.href.replace(/BattleShip\.html/, 'BattleShipST.html');
+  if (stURL !== location.href) {
+    setStatus('Threading unavailable — switching to the '
+            + 'single-thread build…');
+    location.replace(stURL);
+    throw new Error('redirecting to single-thread build'); /* stop script */
+  }
+}
+if (isSTBuild && stParam === '0' && threadingOK) {
+  location.replace(location.href.replace(/BattleShipST\.html/, 'BattleShip.html'));
+  throw new Error('redirecting to threaded build');
+}
+
+/* Capability gate — fail with an actionable code instead of hanging.
+ * crossOriginIsolated matters because this is a threaded build: without
+ * COOP/COEP headers SharedArrayBuffer is gated and the module stalls
+ * forever on 'loading-workers'. Detected up front per docs §18/§19. */
+var capErrs = [];
+if (typeof WebAssembly !== 'object') capErrs.push('WASM_UNSUPPORTED');
+if (!isSTBuild
+    && (typeof crossOriginIsolated === 'undefined' || !crossOriginIsolated))
+  capErrs.push('CROSS_ORIGIN_ISOLATION_MISSING');
+try {
+  if (!document.createElement('canvas').getContext('webgl2'))
+    capErrs.push('WEBGL2_UNSUPPORTED');
+} catch (e) { capErrs.push('WEBGL2_UNSUPPORTED'); }
+if (typeof indexedDB === 'undefined') capErrs.push('IDB_UNAVAILABLE');
+
+if (capErrs.length) {
+  fail('ENV_UNSUPPORTED',
+    'This browser/environment is missing what BattleShip needs:\n\n' +
+    capErrs.join('\n') +
+    (capErrs.indexOf('CROSS_ORIGIN_ISOLATION_MISSING') >= 0
+      ? '\n\nServe with COOP/COEP headers (platforms/web/serve.py) — plain http.server will not work.'
+      : '\n\nTry a recent Chrome, Edge, or Firefox desktop browser.'));
+  setStatus('Environment not supported');
+} else {
+  BattleShipModule(Module).then(stageFsAndStart).catch(e => {
+    fail('WASM_LOAD_FAILED', 'Failed to load wasm: ' + (e && e.message || e));
+    console.error('wasm boot failure:', e && e.stack ? e.stack : e);
+  });
+}
 </script>
 </body>
 </html>

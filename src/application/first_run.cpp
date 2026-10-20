@@ -733,9 +733,18 @@ static void DrawFirstRunModal(WizardUiCtx& c) {
                 c.statusMsg.clear();
                 std::string target = c.target;
                 std::string selectedRom = c.romPath;
+#ifdef SSB64_WEB_SINGLE_THREAD
+                /* No worker threads exist — run the extraction inline the
+                 * first time the future is polled. The UI loop already
+                 * tolerates deferred completion. */
+                c.extractFuture = std::async(std::launch::deferred, [target, selectedRom]() {
+                    return ExtractAssetsIfNeeded(target, true, selectedRom);
+                });
+#else
                 c.extractFuture = std::async(std::launch::async, [target, selectedRom]() {
                     return ExtractAssetsIfNeeded(target, true, selectedRom);
                 });
+#endif
                 c.extractRunning = true;
             }
         }
