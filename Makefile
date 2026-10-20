@@ -13,31 +13,26 @@ include make/dependencies.mk  # setup/install/submodules/venv/lobby deps
 include make/generation.mk    # codegen/assets/synth-verify
 include make/build.mk         # configure/build/run/cleanup/prune
 include make/test.mk          # pytest/ctest/e2e/fuzz/coverage/mods-test
+include make/netplay.mk       # netplay/lobby/websocket test flows
 include make/quality.mk       # lint/module-deps/env/docs/cvar/golden + docs-serve
 include make/security.mk      # semgrep/dependency-audit/sbom/release-binary-check
+include make/abi.mk           # port_* ABI version/exports/compat gates
+include make/decomp.mk        # facade over components/decomp Makefile
+include make/reproducibility.mk # clean-worktree / generated-source gates
 include make/packaging.mk     # package/package-<os>
 include make/release.mk       # release-check/release-dry-run
+include make/workflows.mk     # dev/pre-commit/pre-push/verify-all composites
+include make/makefile.mk      # self-validation of the facade
+include make/help.mk          # categorized help (help/help-all/help-*)
 include make/platforms/android.mk
 include make/platforms/uwp.mk
 # -include make/platforms/$(HOST_PLATFORM).mk   # per-host overrides when added
 
 # ------------------------------------------------------------------------------
-# Help
+# Help (target catalog itself lives in make/help.mk → tools/developer/make_help.py)
 # ------------------------------------------------------------------------------
-help: ## Show common commands
-	@printf "$(BLUE)%s$(RESET) development commands\n\n" "$(PROJECT_NAME)"
-	@printf "  make setup        doctor + submodules + lobby deps + configure\n"
-	@printf "  make build        compile the selected preset\n"
-	@printf "  make test         quick pytest suite\n"
-	@printf "  make check        local quality gate\n"
-	@printf "  make package      package for host platform\n\n"
-	@printf "Config: PRESET=$(PRESET) REGION=$(REGION) JOBS=auto\n"
-	@printf "        BUILD_DIR=$(BUILD_DIR)\n\n"
-	@printf "Targets:\n"
-	@grep -hE '^[a-zA-Z0-9_.-]+:.*?## ' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-26s %s\n", $$1, $$2}' | sort
 
-help-advanced: ## Show advanced variables and examples
+help-advanced: ## [Help] Show advanced variables and examples
 	@printf "$(BLUE)Advanced examples$(RESET)\n\n"
 	@printf "  make PRESET=windows-release build\n"
 	@printf "  make ENABLE_COVERAGE=1 build test-suite TEST_SUITE=pull-request\n"
@@ -50,7 +45,7 @@ help-advanced: ## Show advanced variables and examples
 	@printf "  SSB64_ENABLE_COVERAGE DISABLE_SCRIPTING NON_PORTABLE\n"
 	@printf "  (anything else: CMAKE_ARGS='-DFOO=bar')\n"
 
-info: ## Print the active configuration
+info: ## [Diagnostics] Print the active configuration
 	@printf "Project:            %s\n" "$(PROJECT_NAME)"
 	@printf "Host platform:      %s\n" "$(HOST_PLATFORM)"
 	@printf "Preset:             %s\n" "$(PRESET)"
@@ -67,5 +62,5 @@ info: ## Print the active configuration
 # ------------------------------------------------------------------------------
 # Debugging
 # ------------------------------------------------------------------------------
-print-%: ## Print a Make variable: make print-PRESET
+print-%: ## [Diagnostics] Print a Make variable: make print-PRESET
 	@printf '%s = %s\n' '$*' '$($*)'

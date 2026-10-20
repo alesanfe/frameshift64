@@ -1,3 +1,4 @@
 # Per-file line-count caps for files already over the 1000-line limit.
 # Regenerate with: python tools/analysis/lint/check_file_size.py --update
-
+src/application/gameloop.cpp 1025
+src/networking/netplay/transport/udp_transport.cpp 1011

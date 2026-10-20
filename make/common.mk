@@ -21,7 +21,9 @@
 .DEFAULT_GOAL := help
 .DELETE_ON_ERROR:
 .SUFFIXES:
+.SECONDARY:
 .ONESHELL:
+MAKEFLAGS += --no-builtin-rules
 # GNU make invokes $(SHELL) $(.SHELLFLAGS) literally — "/usr/bin/env bash"
 # is a path-with-spaces it cannot exec (Error 127 on Linux CI). Plain "bash"
 # resolves through PATH on every runner and on Git Bash for Windows.
@@ -44,7 +46,10 @@ OUT_DIR            ?= out
 LOG_DIR            ?= $(OUT_DIR)/logs
 REPORT_DIR         ?= $(OUT_DIR)/reports
 TEST_OUTPUT_DIR    ?= $(OUT_DIR)/test-results
+ARTIFACT_DIR       ?= $(OUT_DIR)/artifacts
+PACKAGE_DIR        ?= $(OUT_DIR)/packages
 DIST_DIR           ?= dist
+PROJECT_ROOT       := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 
 CMAKE              ?= cmake
 CTEST              ?= ctest
@@ -259,7 +264,26 @@ endef
         docs docs-serve \
         clean clean-build clean-logs clean-reports clean-tests clean-dependencies \
         clean-generated distclean reset \
-        print-% guard-region guard-preset guard-configured guard-rom guard-exe
+        print-% guard-region guard-preset guard-configured guard-rom guard-exe \
+        guard-decomp guard-allow-update guard-shard \
+        help-all help-json help-build help-test help-netplay help-quality \
+        help-security help-package help-release help-workflow \
+        dev dev-clean dev-run pre-commit pre-push ci-local all default \
+        doctor-full verify-all \
+        test-netplay test-lobby test-lobby-contract test-lobby-chaos \
+        test-lobby-fuzz test-workerd \
+        test-websocket test-websocket-leaks test-websocket-tls \
+        test-websocket-loopback test-netplay-mutation test-netplay-soak \
+        netplay-server netplay-matrix \
+        abi-check abi-version abi-exports abi-baseline abi-compat abi-report \
+        abi-consumer-c abi-consumer-cpp \
+        decomp-init decomp-extract decomp-validate decomp-report \
+        decomp-format decomp-clean decomp-status \
+        worktree-check source-repro-check \
+        makefile-check makefile-lint makefile-docs-check \
+        makefile-targets-check makefile-dry-run \
+        architecture-check complexity-check complexity-report \
+        file-size-check encoding-check baseline-check quality-report
 
 # ------------------------------------------------------------------------------
 # Guards
@@ -301,7 +325,7 @@ REQUIRED_DIRS  := src include components/decomp components/libultraship \
 	assets assets/game config/controllers services platforms tests docs \
 	config generated specs roms
 
-layout-check: ## Verify required files/dirs exist
+layout-check:  ## [Quality] Verify required files/dirs exist
 	@$(call heading,Validating repository layout)
 	@status=0; \
 	for path in $(REQUIRED_FILES); do \
@@ -317,7 +341,7 @@ layout-check: ## Verify required files/dirs exist
 	if [[ $$status -eq 0 ]]; then $(call success,Layout OK); fi; \
 	exit $$status
 
-doctor: ## Validate the local development environment
+doctor:  ## [Diagnostics] Validate the local development environment
 	@$(call heading,Checking development environment)
 	@[[ -f tools/versions.env ]] && . tools/versions.env; \
 	status=0; \

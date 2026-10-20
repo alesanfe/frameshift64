@@ -149,7 +149,7 @@ if (-not $TorchExe)              { Fail "torch.exe not found in $BuildDir" }
 
 # Gated test hooks (mutants, fuzzers, desync injection, replay rig) must not
 # reach shipped binaries — the env-var names must be absent from the exe.
-& $PythonExe (Join-Path $Root "toolsnalysis\lint\check_release_binary.py") $GameExe
+& $PythonExe (Join-Path $Root "tools\analysis\lint\check_release_binary.py") $GameExe
 if ($LASTEXITCODE -ne 0) { Fail "release binary contains gated test-hook strings" }
 
 # ── 3b. Symbol archive (TD-015) ──

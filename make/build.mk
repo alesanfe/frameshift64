@@ -1,36 +1,36 @@
 # ------------------------------------------------------------------------------
 # Configure / build / run
 # ------------------------------------------------------------------------------
-generate-sources: generate-yamls ## Regenerate committed codegen inputs (recipes)
+generate-sources: generate-yamls  ## [Build] Regenerate committed codegen inputs (recipes)
 
-configure: guard-region guard-preset generate-sources ## cmake --preset <PRESET>
+configure: guard-region guard-preset generate-sources  ## [Build] cmake --preset <PRESET>
 	@$(call heading,Configuring $(PRESET))
 	@mkdir -p "$(OUT_DIR)" "$(LOG_DIR)" "$(REPORT_DIR)"
 	@$(CMAKE) --preset "$(PRESET)" $(CMAKE_FEATURE_ARGS) $(CMAKE_ARGS)
 	@$(call success,Configured $(PRESET))
 
-reconfigure: configure
-configure-clean: clean-build configure
+reconfigure: configure ## [Build] Re-run CMake configure keeping the build dir
+configure-clean: clean-build configure ## [Build] Wipe and re-configure the build dir
 
-build: guard-configured ## Build the main application (needs configure first)
+build: guard-configured  ## [Build] Build the main application (needs configure first)
 	@$(call heading,Building $(APP_TARGET) @ $(PRESET))
 	@$(CMAKE) --build --preset "$(PRESET)" --target "$(APP_TARGET)" \
 	  $(BUILD_PARALLEL) $(BUILD_VERBOSE) $(BUILD_ARGS)
 	@$(call success,Build completed)
 
-build-all: guard-configured ## Build every target
+build-all: guard-configured  ## [Build] Build every target
 	@$(CMAKE) --build --preset "$(PRESET)" \
 	  $(BUILD_PARALLEL) $(BUILD_VERBOSE) $(BUILD_ARGS)
 
-dev-build: configure codegen build ## configure + codegen + build (comfort path)
+dev-build: configure codegen build  ## [Build] configure + codegen + build (comfort path)
 
-rebuild: clean-build configure codegen build
+rebuild: clean-build configure codegen build ## [Build] Clean and rebuild the selected preset
 
 # Sanitizer presets — dev-only instrumented builds (never ship these)
-asan: ## Configure+build+test with AddressSanitizer (<host>-asan preset)
+asan:  ## [Sanitizer] Configure+build+test with AddressSanitizer (<host>-asan preset)
 	@$(MAKE) --no-print-directory PRESET="$(HOST_PLATFORM)-asan" configure build test-suite
 
-ubsan: ## Configure+build+test with UBSan (<host>-ubsan preset; Clang/GCC only)
+ubsan:  ## [Sanitizer] Configure+build+test with UBSan (<host>-ubsan preset; Clang/GCC only)
 ifeq ($(HOST_PLATFORM),windows)
 	@$(call failure,UBSan is not supported on MSVC — use 'make asan' or a clang toolchain)
 	@exit 1
@@ -38,9 +38,9 @@ else
 	@$(MAKE) --no-print-directory PRESET="$(HOST_PLATFORM)-ubsan" configure build test-suite
 endif
 
-sanitizers: asan ubsan ## ASan + UBSan passes
+sanitizers: asan ubsan  ## [Sanitizer] ASan + UBSan passes
 
-run: build guard-rom guard-exe ## Build and launch the game
+run: build guard-rom guard-exe  ## [Workflow] Build and launch the game
 	@$(call heading,Running $(EXECUTABLE_NAME))
 	@exe_dir="$(dir $(EXE_DIR))"; \
 	printf "Executable: %s\n" "$$exe_dir$(EXECUTABLE_NAME)$(EXE_SUFFIX)"; \
@@ -49,20 +49,20 @@ run: build guard-rom guard-exe ## Build and launch the game
 # ------------------------------------------------------------------------------
 # Cleanup
 # ------------------------------------------------------------------------------
-clean: clean-logs clean-reports clean-tests ## Remove generated local outputs
+clean: clean-logs clean-reports clean-tests  ## [Clean] Remove generated local outputs
 	@$(call success,Local outputs removed)
 
-clean-build: ## rm -rf the selected preset build dir
+clean-build:  ## [Clean] rm -rf the selected preset build dir
 	@rm -rf -- "$(BUILD_DIR)"
 
-clean-logs:
+clean-logs: ## [Clean] Remove generated logs
 	@rm -rf -- "$(LOG_DIR)"
-clean-reports:
+clean-reports: ## [Clean] Remove generated reports
 	@rm -rf -- "$(REPORT_DIR)"
-clean-tests:
+clean-tests: ## [Clean] Remove temporary test artifacts
 	@rm -rf -- "$(TEST_OUTPUT_DIR)" "$(OUT_DIR)/coverage"
 
-distclean: ## rm -rf out/ + lobby node_modules + dist/
+distclean:  ## [Clean] rm -rf out/ + lobby node_modules + dist/
 	@rm -rf -- "$(OUT_DIR)" "$(DIST_DIR)"
 	@rm -rf -- "$(LOBBY_DIR)/node_modules"
 
@@ -81,25 +81,25 @@ define safe_rmrf
 	fi
 endef
 
-clean-generated: ## Remove regenerable outputs (out/ dist/)
+clean-generated:  ## [Clean] Remove regenerable outputs (out/ dist/)
 	$(call safe_rmrf,$(OUT_DIR))
 	$(call safe_rmrf,$(DIST_DIR))
 	@$(call success,Generated outputs removed)
 
-clean-dependencies: ## Remove installed deps (.venv, node_modules)
+clean-dependencies:  ## [Clean] Remove installed deps (.venv, node_modules)
 	$(call safe_rmrf,$(VENV_DIR))
 	$(call safe_rmrf,.venv-lint)
 	$(call safe_rmrf,$(LOBBY_DIR)/node_modules)
 	@$(call success,Installed dependencies removed)
 
-regenerate: clean-generated install generate-sources configure codegen ## Rebuild all derived state
+regenerate: clean-generated install generate-sources configure codegen  ## [Build] Rebuild all derived state
 
-generated-check: codegen-check ## Alias — regen must not change the tree
+generated-check: codegen-check  ## [Build] Alias — regen must not change the tree
 
-prune: clean-generated clean-dependencies ## Remove outputs AND installed deps
+prune: clean-generated clean-dependencies  ## [Clean] Remove outputs AND installed deps
 	@$(call success,Generated state removed)
 
-reset: distclean ## Reset submodules to recorded commits
+reset: distclean  ## [Clean] Reset submodules to recorded commits
 	@$(GIT) submodule foreach --recursive 'git reset --hard && git clean -fdx'
 	@$(GIT) submodule update --init --recursive
 

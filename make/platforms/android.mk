@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # Android
 # ------------------------------------------------------------------------------
-android: guard-region ## Gradle assembleDebug (platforms/android)
+android: guard-region  ## [Platform] Gradle assembleDebug (platforms/android)
 	@$(call heading,Android build ($(REGION)))
 	@cd "$(ANDROID_DIR)" && \
 	  if [[ -x ./gradlew ]]; then \
@@ -12,10 +12,10 @@ android: guard-region ## Gradle assembleDebug (platforms/android)
 	    $(call failure,Gradle wrapper not found); exit 1; \
 	  fi
 
-android-install: android ## gradlew installDebug
+android-install: android  ## [Platform] gradlew installDebug
 	@cd "$(ANDROID_DIR)" && ./gradlew installDebug
 
-android-test: ## gradlew testDebugUnitTest (+ connected tests if adb device)
+android-test:  ## [Platform] gradlew testDebugUnitTest (+ connected tests if adb device)
 	@cd "$(ANDROID_DIR)" && ./gradlew testDebugUnitTest && \
 	  if command -v adb >/dev/null 2>&1 && adb get-state >/dev/null 2>&1; then \
 	    ./gradlew connectedDebugAndroidTest; \

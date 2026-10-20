@@ -10,7 +10,7 @@ UWP_PACKAGE_VERSION  ?= 1.0.0.0
 UWP_SIGNING_PFX      ?=
 UWP_SIGNING_PASSWORD ?=
 
-uwp: ## platforms/uwp/ci/build-uwp.ps1 -> signed MSIX in $(DIST_DIR)
+uwp:  ## [Platform] platforms/uwp/ci/build-uwp.ps1 -> signed MSIX in $(DIST_DIR)
 	@$(call heading,UWP build)
 	@mkdir -p "$(DIST_DIR)"
 	@args="-Source \"$(CURDIR)\" -Output \"$(CURDIR)/$(DIST_DIR)\" \
