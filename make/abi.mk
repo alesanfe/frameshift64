@@ -67,5 +67,5 @@ abi-consumer-cpp: guard-configured ## [ABI] Compile a C++ consumer of the public
 guard-allow-update:
 	@test "$(ALLOW_UPDATE)" = "1" || { \
 	  $(call failure,this operation modifies a committed baseline); \
-	  printf "  run intentionally: ALLOW_UPDATE=1 make %s\n" \
-	    "$(@F)" >&2; exit 2; }
+	  printf "  run intentionally, e.g. %s\n" \
+	    "ALLOW_UPDATE=1 make abi-baseline" >&2; exit 2; }

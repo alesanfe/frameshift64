@@ -117,7 +117,13 @@ build → ctest, then asserts the build dirtied no tracked files).
 branch=main, no duplicate `vX.Y.Z` tag) → `release-build` (release-preset
 packages + checksums + SBOM + notes into `out/artifacts/`) →
 `release-verify` (`verify-fast` + `abi-check` + `package-verify`).
-Publishing is intentionally not wired to a bare `make` target.
+
+Publication is a two-step, double-guarded operation:
+`CONFIRM_RELEASE=1 make release-tag VERSION=X.Y.Z` creates the annotated
+tag, then `CONFIRM_RELEASE=1 make release-publish VERSION=X.Y.Z
+REMOTE=<name>` pushes it — pushing `v*` fires `.github/workflows/release.yml`,
+which builds every platform and creates the GitHub Release. No remote is
+ever guessed: `REMOTE` must be passed explicitly.
 
 ## Help
 

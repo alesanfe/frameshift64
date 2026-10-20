@@ -297,6 +297,7 @@ endef
         package-current package-all package-checksums package-sbom \
         package-verify package-clean package-smoke-test \
         release release-prepare release-build release-verify release-notes \
+        release-tag release-publish guard-confirm-release \
         status versions environment graph-deps graph-targets logs-tail report
 
 # ------------------------------------------------------------------------------
