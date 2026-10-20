@@ -296,6 +296,29 @@ add_test(NAME menu_structure_test
 set_tests_properties(menu_structure_test PROPERTIES
     LABELS "unit;presentation;usability;deterministic" TIMEOUT 30)
 
+# AsyncOperation — header-only UI async lifecycle (presentation/framework/).
+# Pins the transition table + generation-ticket stale-answer rejection.
+smash_add_test(NAME async_operation_test TYPE unit TIMEOUT 15
+    SOURCES unit/presentation/async_operation_test.cpp
+    LIBRARIES smash_test_support
+    LABELS presentation deterministic)
+target_include_directories(async_operation_test PRIVATE ${CMAKE_SOURCE_DIR}/src/presentation)
+
+# OnlineStatusViewModel — compiles the real VM TU against stub
+# implementations of the exact port_* ABI it reads, so Capture()'s
+# snapshot path (mode resolution, peer filtering, label mapping, command
+# dispatch) is exercised without a session or ImGui.
+smash_add_test(NAME online_status_vm_test TYPE unit TIMEOUT 15
+    SOURCES
+        unit/presentation/online_status_vm_test.cpp
+        ${CMAKE_SOURCE_DIR}/src/presentation/OnlineStatusViewModel.cpp
+    LIBRARIES smash_test_support
+    LABELS presentation netplay deterministic)
+target_include_directories(online_status_vm_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/presentation
+    ${CMAKE_SOURCE_DIR}/src/networking/netplay/session
+    ${CMAKE_SOURCE_DIR}/src/shared)
+
 # ── unit/relocation ────────────────────────────────────────────────────
 # Golden structural invariants of the committed synthetic-reloc spec table
 # (generated/src/<ver>/ssb64_reloc_rebuild.<ver>.cpp): file_id ordering,

@@ -2,38 +2,10 @@
 
 #include "UIWidgets.hpp"
 
-#include "netlobby.h"
-
 #include <imgui.h>
 #include "PortI18n.h"
 
-extern "C" int syNetRollbackIsDesynced(void);
-
 namespace ssb64 {
-
-namespace {
-bool InMatchDesynced() {
-    return port_netlobby_state() == PORT_NETLOBBY_IN_MATCH && syNetRollbackIsDesynced() != 0;
-}
-
-bool AfterMatch() {
-    return port_netlobby_after_match() != 0 && port_netlobby_state() == PORT_NETLOBBY_CONNECTED;
-}
-
-const char* const kFighterNames[] = { "Mario",  "Fox",     "Donkey Kong", "Samus", "Link",    "Yoshi",
-                                      "Kirby",  "Captain Falcon",        "Pikachu", "Jigglypuff", "Ness" };
-
-const char* PeerStateLabel(int i) {
-    if (!port_netlobby_peer_connected_at(i)) {
-        return "connecting...";
-    }
-    const int fk = port_netlobby_peer_fkind_at(i);
-    if (fk >= 0 && fk < static_cast<int>(IM_ARRAYSIZE(kFighterNames))) {
-        return kFighterNames[fk];
-    }
-    return "choosing...";
-}
-} // namespace
 
 OnlineStatusWindow::OnlineStatusWindow()
     : Ship::GuiWindow("gOnlineStatus.Visible", false, "Online", ImVec2(-1, -1),
@@ -49,7 +21,8 @@ void OnlineStatusWindow::UpdateElement() {
 }
 
 void OnlineStatusWindow::Draw() {
-    const bool wanted = InMatchDesynced() || AfterMatch();
+    mView = mViewModel.Capture();
+    const bool wanted = mView.mode != OnlineStatusMode::Hidden;
     if (wanted != IsVisible()) {
         if (wanted) {
             Show();
@@ -67,55 +40,48 @@ void OnlineStatusWindow::Draw() {
 }
 
 void OnlineStatusWindow::DrawElement() {
-    if (InMatchDesynced()) {
+    if (mView.mode == OnlineStatusMode::Desynced) {
         ImGui::TextColored(UIWidgets::SemanticColors::Error, "%s", TR("Out of sync with the other players."));
         ImGui::TextWrapped("%s", TR("Your games no longer match - what you see may differ from what they see. "
                            "The result of this match may be inaccurate."));
         ImGui::Spacing();
         if (ImGui::Button(TR("Return to room"), ImVec2(140, 0))) {
-            port_netlobby_on_match_end();
+            mViewModel.ReturnToRoom();
         }
         ImGui::SameLine();
         if (ImGui::Button(TR("Leave"), ImVec2(100, 0))) {
-            port_netlobby_cancel();
+            mViewModel.Leave();
         }
         return;
     }
 
-    ImGui::TextWrapped("%s", TR(port_netlobby_status()));
+    ImGui::TextWrapped("%s", TR(mView.status.c_str()));
     ImGui::TextDisabled("%s", TR("Match complete - everyone is back in their own menus."));
     ImGui::Spacing();
 
     // Per-player state, mirroring the lobby list so "who is still picking"
     // is visible without opening the menu.
-    const int peers = port_netlobby_peer_count();
-    const int mySlot = port_netlobby_my_slot();
-    for (int i = 0; i < peers; i++) {
-        const int slot = port_netlobby_peer_slot(i);
-        if (slot < 0 || slot == mySlot) {
-            continue;
-        }
-        ImGui::BulletText(TR("Player %d: %s"), slot + 1, PeerStateLabel(i));
+    for (const OnlinePeerView& peer : mView.peers) {
+        ImGui::BulletText(TR("Player %d: %s"), peer.slot + 1, peer.label.c_str());
     }
 
-    const int ping = port_netlobby_ping_ms();
-    if (ping >= 0) {
-        ImGui::Text(TR("Ping: %d ms%s"), ping, port_netlobby_is_relay() ? " (relayed)" : "");
+    if (mView.pingMs >= 0) {
+        ImGui::Text(TR("Ping: %d ms%s"), mView.pingMs, mView.isRelay ? " (relayed)" : "");
     }
     ImGui::Spacing();
-    if (port_netlobby_is_host()) {
-        ImGui::BeginDisabled(port_netlobby_peer_fkind() < 0);
+    if (mView.isHost) {
+        ImGui::BeginDisabled(!mView.rematchEnabled);
         if (ImGui::Button(TR("Rematch"), ImVec2(140, 0))) {
-            port_netlobby_start_match();
+            mViewModel.Rematch();
         }
         ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && port_netlobby_peer_fkind() < 0) {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !mView.rematchEnabled) {
             ImGui::SetTooltip("%s", TR("Waiting for the other players to pick a fighter."));
         }
         ImGui::SameLine();
     }
     if (ImGui::Button(TR("Leave"), ImVec2(100, 0))) {
-        port_netlobby_cancel();
+        mViewModel.Leave();
     }
 }
 

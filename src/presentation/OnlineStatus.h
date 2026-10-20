@@ -2,12 +2,16 @@
 
 #include <ship/window/gui/GuiWindow.h>
 
+#include "OnlineStatusViewModel.h"
+
 namespace ssb64 {
 
 /* Online play overlay, drawn even with the Esc menu closed:
  *   - in a match: a warning if the two games went out of sync;
  *   - after a match: where the players are (each back in their own menus),
- *     connection info, and Start rematch (host) / Leave. */
+ *     connection info, and Start rematch (host) / Leave.
+ * Presentation only — session state and commands live in
+ * OnlineStatusViewModel. */
 class OnlineStatusWindow : public Ship::GuiWindow {
   public:
     OnlineStatusWindow();
@@ -17,6 +21,10 @@ class OnlineStatusWindow : public Ship::GuiWindow {
     void InitElement() override;
     void DrawElement() override;
     void UpdateElement() override;
+
+  private:
+    OnlineStatusViewModel mViewModel;
+    OnlineStatusViewState mView;
 };
 
 } // namespace ssb64
