@@ -12,7 +12,10 @@ EMSDK_DIR := out/emsdk
 .PHONY: platform-info build-host package-host test-host \
         debug build-release relwithdebinfo minsizerel \
         emscripten emscripten-st emscripten-test emscripten-serve \
-        switch switch-check package-switch \
+        guard-web-build \
+        test-web test-web-picker test-web-privacy test-web-matrix \
+        test-web-gamepad test-web-kb test-web-lobby test-web-lobby-public \
+        switch switch-check switch-sdk-install package-switch \
         tsan test-asan test-ubsan test-tsan sanitizer-matrix test-sanitizers
 
 platform-info: ## [Platform] Show detected host platform and tooling
@@ -100,17 +103,78 @@ emscripten-serve: emscripten ## [Platform] Serve the web build on :8931 (PORT= B
 	  "$(OUT_DIR)/build/$(or $(BUILD),web-wasm)" $(or $(PORT),8931)
 
 # ------------------------------------------------------------------------------
+# Web browser tests (playwright). The .py drivers self-serve; the .js ones
+# need serve.py running on :8931 — the recipes spin it up and kill it.
+# playwright must resolve for node (NODE_PATH=<dir>/node_modules if it is
+# not global) and for python (the .venv).
+# ------------------------------------------------------------------------------
+WEB_BUILD_DIR := $(OUT_DIR)/build/web-wasm
+WEB_PORT      ?= 8931
+WEB_DIR       := platforms/web
+
+guard-web-build:
+	@if [[ ! -f "$(WEB_BUILD_DIR)/BattleShip.html" ]]; then \
+	  $(call failure,web build missing — run: make emscripten); exit 1; fi
+
+# serve a build dir, run a node playwright script against it, tear down.
+# Usage: $(call web-served-test,<script>,<build-dir>)
+define web-served-test
+	@rv=0; \
+	$(PROJECT_PYTHON) $(WEB_DIR)/serve.py "$(2)" "$(WEB_PORT)" >/dev/null 2>&1 & \
+	srv=$$!; sleep 2; \
+	$(NODE) "$(WEB_DIR)/$(1)" || rv=$$?; \
+	kill $$srv 2>/dev/null; wait $$srv 2>/dev/null; exit $$rv
+endef
+
+test-web: test-web-picker test-web-privacy test-web-matrix \
+          test-web-gamepad test-web-kb ## [Platform] All ROM-free web E2Es (needs playwright)
+
+test-web-picker: guard-web-build ## [Platform] ROM-picker pipeline E2E (fake ROM, no extraction)
+	@$(PROJECT_PYTHON) $(WEB_DIR)/pw_rom_picker.py "$(WEB_BUILD_DIR)"
+
+test-web-privacy: guard-web-build ## [Platform] ROM-privacy E2E (no bytes leave the page)
+	@$(PROJECT_PYTHON) $(WEB_DIR)/pw_rom_privacy.py "$(WEB_BUILD_DIR)"
+
+test-web-matrix: guard-web-build ## [Platform] Browser-matrix boot smoke (chromium/firefox/webkit)
+	@$(PROJECT_PYTHON) $(WEB_DIR)/pw_browser_matrix.py "$(WEB_BUILD_DIR)"
+
+test-web-gamepad: guard-web-build ## [Platform] Simulated-gamepad E2E (consumed pad state)
+	$(call web-served-test,pw_gamepad_sim.js,$(WEB_BUILD_DIR))
+
+test-web-kb: guard-web-build ## [Platform] Soft-keyboard viewport E2E
+	$(call web-served-test,pw_kb_viewport.js,$(WEB_BUILD_DIR))
+
+# The lobby smokes need a running lobby too — test-web-lobby composes
+# serve + node-lobby + the two-tab ws:// flow.
+test-web-lobby: guard-web-build ## [Platform] Two-tab lobby smoke over local lobby (:8799)
+	@rv=0; \
+	( cd "$(LOBBY_DIR)" && $(NODE) src/infrastructure/local/node-lobby.mjs \
+	    >/dev/null 2>&1 ) & lobby=$$!; \
+	$(PROJECT_PYTHON) $(WEB_DIR)/serve.py "$(WEB_BUILD_DIR)" "$(WEB_PORT)" \
+	    >/dev/null 2>&1 & srv=$$!; sleep 3; \
+	$(NODE) "$(WEB_DIR)/pw_lobby_smoke.js" || rv=$$?; \
+	kill $$srv $$lobby 2>/dev/null; wait 2>/dev/null; exit $$rv
+
+test-web-lobby-public: guard-web-build ## [Platform] Public-lobby match smoke
+	$(call web-served-test,pw_lobby_public_smoke.js,$(WEB_BUILD_DIR))
+
+# ------------------------------------------------------------------------------
 # Nintendo Switch — gated (SW-08). Always fails informatively today.
 # ------------------------------------------------------------------------------
 switch-check: ## [Platform] Check the Switch SDK gate (devkitPro + preset)
 	@$(PROJECT_PYTHON) tools/platform/check_switch_sdk.py
 
-switch: switch-check ## [Platform] Build the Switch port (gated SW-08)
-	@$(CMAKE) --preset switch
-	@$(CMAKE) --build --preset switch $(BUILD_PARALLEL)
+switch-sdk-install: ## [Platform] Install the devkitPro Switch toolchain (scripts/development)
+	@bash scripts/development/install-devkitpro-pacman
+
+# build-switch.sh owns the real flow (devkitPro toolchain file, asset
+# extraction flags, BundleSwitch packaging) — no 'switch' preset exists.
+switch: switch-check ## [Platform] Build the Switch port (gated SW-08; ARGS=--debug)
+	@bash scripts/build/build-switch.sh $(ARGS)
 
 package-switch: switch ## [Package] Package the Switch build (gated SW-08)
-	@$(CMAKE) --build --preset switch --target package-switch
+	@$(CMAKE) --build "$(OUT_DIR)/build/switch" --target BundleSwitch \
+	  $(BUILD_PARALLEL)
 
 # ------------------------------------------------------------------------------
 # Sanitizers — real <host>-asan / <host>-ubsan presets; tsan needs Linux

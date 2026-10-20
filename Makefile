@@ -24,6 +24,7 @@ include make/packaging.mk     # package/package-<os>/package-verify
 include make/release.mk       # release/release-dry-run/release-notes
 include make/workflows.mk     # dev/pre-commit/pre-push/verify-all composites
 include make/diagnostics.mk   # status/versions/environment/graph/report
+include make/developer.mk     # mod-package/i18n-extract/save-editor/shots-*
 include make/makefile.mk      # self-validation of the facade
 include make/help.mk          # categorized help (help/help-all/help-*)
 include make/platforms/android.mk

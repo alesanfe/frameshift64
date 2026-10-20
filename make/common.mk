@@ -290,8 +290,14 @@ endef
         debug build-release relwithdebinfo minsizerel \
         build-target list-targets build-clean compile-commands \
         emscripten emscripten-st emscripten-test emscripten-serve \
-        switch switch-check package-switch \
+        guard-web-build \
+        test-web test-web-picker test-web-privacy test-web-matrix \
+        test-web-gamepad test-web-kb test-web-lobby test-web-lobby-public \
+        switch switch-check switch-sdk-install package-switch \
         tsan test-asan test-ubsan test-tsan sanitizer-matrix test-sanitizers \
+        worktree-new worktree-list worktree-prune \
+        mod-package i18n-extract save-editor \
+        shots-menu shots-lang shots-netplay \
         asset-repro-check package-repro-check clean-room-check \
         reproducibility-check reproduce \
         package-current package-all package-checksums package-sbom \

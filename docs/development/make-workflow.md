@@ -70,7 +70,8 @@ install → generate-sources → configure → codegen → build → test → pa
 | `make/abi.mk` | `abi-check`/`abi-exports`/`abi-compat`/`abi-baseline` (`port_*` surface vs `config/abi/`) |
 | `make/decomp.mk` | facade over `components/decomp` (`decomp-init`/`extract`/`validate`/…) |
 | `make/reproducibility.mk` | `worktree-check`, `source-repro-check`, `asset-repro-check`, `package-repro-check`, `clean-room-check`, `reproducibility-check`/`reproduce` |
-| `make/platforms.mk` | host/config builds (`debug`, `build-release`, `relwithdebinfo`, `minsizerel`), `emscripten[-st|-test|-serve]`, `switch*` (SW-08 gated), sanitizers (`test-asan`, `test-ubsan`, `tsan`/`test-tsan`, `sanitizer-matrix`/`test-sanitizers`) |
+| `make/platforms.mk` | host/config builds (`debug`, `build-release`, `relwithdebinfo`, `minsizerel`), `emscripten[-st|-test|-serve]`, `test-web*` browser E2Es, `switch*` (SW-08 gated), sanitizers (`test-asan`, `test-ubsan`, `tsan`/`test-tsan`, `sanitizer-matrix`/`test-sanitizers`) |
+| `make/developer.mk` | `mod-package`, `i18n-extract`, `save-editor`, `shots-{menu,lang,netplay}` |
 | `make/packaging.mk` | `package*`/`artifacts`/`artifact-manifest`/`package-verify`/`package-smoke-test` |
 | `make/release.mk` | `release`/`release-prepare`/`release-build`/`release-verify`/`release-notes`, `release-check`/`release-dry-run` |
 | `make/workflows.mk` | composites: `dev`, `pre-commit`, `pre-push`, `ci-local`, `verify-all` |
@@ -96,7 +97,8 @@ make ci-local     # = verify — what CI runs
 |--------|---------|
 | `emscripten` / `emscripten-st` | `web-wasm` / `web-wasm-st` presets; gated on `out/emsdk` |
 | `emscripten-serve` | `platforms/web/serve.py` (COOP/COEP + CSP headers; `PORT=8931`, `BUILD=web-wasm-st`) |
-| `switch` / `switch-check` / `package-switch` | gated SW-08 — fails informatively until the SDK exists |
+| `test-web*` | playwright E2Es (`picker`, `privacy`, `matrix`, `gamepad`, `kb`, `lobby`, `lobby-public`) — the .js rigs get a `serve.py` spun up/killed automatically |
+| `switch` / `switch-check` / `package-switch` | gated SW-08 — delegates to `scripts/build/build-switch.sh` once the SDK exists |
 | `test-asan` / `test-ubsan` | `<host>-asan` / `<host>-ubsan` presets (ubsan: not on MSVC) |
 | `tsan` / `test-tsan` | gated — no `linux-tsan` preset yet; delegates to WSL on Windows once registered |
 
@@ -124,6 +126,16 @@ tag, then `CONFIRM_RELEASE=1 make release-publish VERSION=X.Y.Z
 REMOTE=<name>` pushes it — pushing `v*` fires `.github/workflows/release.yml`,
 which builds every platform and creates the GitHub Release. No remote is
 ever guessed: `REMOTE` must be passed explicitly.
+
+## Portability contract
+
+Recipes assume only: `bash` (the `SHELL`), POSIX coreutils, `git`,
+`cmake`/`ctest`, `python`, `node`/`npm` (lobby + web tests only) and the
+platform toolchain the target builds. No GNU-only flags (`xargs -r` is
+wrapped POSIXly), no `pgrep`/`mktemp`/`readlink -f`, no PowerShell outside
+`package-windows`/`uwp` (those are Windows targets by design). Anything
+OS-dependent lives behind `$(HOST_PLATFORM)` dispatch or an informative
+gate (`guard-emsdk`, `guard-tsan-preset`, `check_switch_sdk`).
 
 ## Help
 

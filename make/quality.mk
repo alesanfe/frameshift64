@@ -28,12 +28,15 @@ lint:  ## [Quality] tools/analysis/lint/run_project_lint.py (configures its own 
 lint-skip-configure:  ## [Quality] Lint without the cmake-configure phase
 	@$(PYTHON) "$(LINT_SCRIPT)" --skip-configure $(LINT_ARGS)
 
+# NOTE: `xargs -0 sh -c '[ $# -eq 0 ] && exit 0; exec …' _'` instead of
+# `xargs -r` — `-r/--no-run-if-empty` is a GNU extension absent from BSD
+# xargs (macOS). The wrapper is POSIX and no-ops on empty input on both.
 format:  ## [Quality] clang-format src/ (excludes submodules)
 	@$(call heading,Formatting)
 	@if command -v clang-format >/dev/null 2>&1; then \
 	  git ls-files 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' \
 	    ':(exclude)src/game/engine/decomp/*' -z \
-	    | xargs -0 -r clang-format -i; \
+	    | xargs -0 sh -c '[ $$# -eq 0 ] && exit 0; exec clang-format -i "$$@"' _; \
 	else \
 	  $(call warning,clang-format not found); \
 	fi
@@ -43,7 +46,8 @@ format-check:  ## [Quality] Verify formatting (clang-format --dry-run)
 	@if command -v clang-format >/dev/null 2>&1; then \
 	  git ls-files 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' \
 	    ':(exclude)src/game/engine/decomp/*' -z \
-	    | xargs -0 -r clang-format --dry-run --Werror; \
+	    | xargs -0 sh -c '[ $$# -eq 0 ] && exit 0; \
+	      exec clang-format --dry-run --Werror "$$@"' _; \
 	else \
 	  $(call warning,clang-format not found — skipped); \
 	fi

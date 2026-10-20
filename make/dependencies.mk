@@ -38,6 +38,26 @@ submodules-check:  ## [Setup] Verify submodule state is clean
 	  $(call failure,Submodule state not clean); exit 1; fi
 	@$(call success,Submodule state clean)
 
+# ------------------------------------------------------------------------------
+# Worktree helpers — parallel sessions each get an isolated checkout under
+# .claude/worktrees/ (see AGENTS.md worktree workflow). new-worktree.sh
+# clones submodules from the local object stores (unpushed pins survive).
+# ------------------------------------------------------------------------------
+worktree-new:  ## [Setup] Create an isolated worktree (SLUG=name [BASE=branch] [BUILD=1] [CONFIG=release])
+	@test -n "$(SLUG)" || { \
+	  $(call failure,use: make worktree-new SLUG=<name>); exit 2; }
+	@bash scripts/development/new-worktree.sh "$(SLUG)" \
+	  $(if $(BASE),--base "$(BASE)",) \
+	  $(if $(filter 1 true yes,$(BUILD)),--build,) \
+	  $(if $(filter release,$(CONFIG)),--release,)
+
+worktree-list:  ## [Setup] List git worktrees (main + agent checkouts)
+	@$(GIT) worktree list
+
+worktree-prune:  ## [Setup] Prune stale worktree metadata (does not delete files)
+	@$(GIT) worktree prune -v
+	@$(GIT) worktree list
+
 submodules-update:  ## [Setup] Update submodules to remote tracking branches
 	@$(GIT) submodule update --init --recursive --remote
 	@$(call success,Submodules updated)
