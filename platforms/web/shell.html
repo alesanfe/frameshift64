@@ -105,6 +105,23 @@
              border: 1px solid #3a4a5c; border-width: 1px 0 0;
              display: none; outline: none; }
   #kbproxy.on { display: block; }
+  /* ── Netplay join / install / offline — storage-panel extras ──────── */
+  #storagePanel input[type=text] { width: 100%; box-sizing: border-box;
+           margin-top: 8px; padding: 6px 8px; font-size: 12px;
+           background: #0d131b; color: #d7dde8;
+           border: 1px solid #3a4a5c; border-radius: 4px; }
+  #storagePanel .sep { border-top: 1px solid #232c3a; margin: 10px 0 2px; }
+  #storagePanel button:disabled { opacity: .45; cursor: default; }
+  /* Rotate hint: only ever appears in portrait + touch-mode (see the
+   * media query); tap to dismiss for the session. */
+  #rotateHint { position: fixed; left: 50%; top: 8px; z-index: 45;
+           transform: translateX(-50%); background: #1d2733;
+           border: 1px solid #4a7ec2; border-radius: 6px;
+           padding: 6px 12px; font-size: 12px; color: #9fb4c8;
+           display: none; cursor: pointer; white-space: nowrap; }
+  @media (orientation: portrait) {
+    body.touch-mode #rotateHint { display: block; }
+  }
 </style>
 </head>
 <body>
@@ -139,8 +156,19 @@
   <input id="stImportFile" type="file" accept=".json,.bssave" style="display:none">
   <button id="stClearBtn" class="danger">Clear game assets (keep saves)</button>
   <button id="stDiagBtn">Copy diagnostics</button>
+  <button id="stSendDiagBtn">Send diagnostics to support</button>
+  <button id="installBtn" class="hidden">Install app</button>
+  <div class="row"><span>Offline</span><span class="val" id="offlinePill">checking…</span></div>
+  <div class="sep"></div>
+  <div class="row"><span>Room</span><span class="val" id="roomState">—</span></div>
+  <input id="roomCode" type="text" placeholder="Room code" maxlength="24"
+         autocomplete="off" autocapitalize="characters" spellcheck="false"
+         aria-label="Netplay room code">
+  <button id="roomJoinBtn">Join room (reloads)</button>
+  <button id="roomCopyBtn" disabled>Copy invite link</button>
 </div>
 <div id="swupdate"><span>Update ready</span><button id="swupdateBtn">Restart to apply</button></div>
+<div id="rotateHint">Rotate your device for a better layout</div>
 <!-- Touch controls — button sizes scale with vmin so the layout holds
      from small phones to tablets. Layout mirrors the Android
      TouchOverlay plus a C-button cluster; each control synthesizes the
@@ -416,6 +444,124 @@ stImportFile.onchange = () => {
   });
 })();
 
+/* ── Shell chrome: netplay join, install prompt, diagnostics upload ──
+ * Lobby params reach the wasm as URL→env (port_web_stubs.cpp), read at
+ * boot — so joining a room means reloading with the params set. The
+ * other params (touch, st, SAFE_MODE) ride along so the reload keeps
+ * the user's setup; the Start button still gates audio unlock. */
+(function () {
+  var roomCodeEl = document.getElementById('roomCode');
+  var roomJoinBtn = document.getElementById('roomJoinBtn');
+  var roomCopyBtn = document.getElementById('roomCopyBtn');
+  var roomState = document.getElementById('roomState');
+  function lobbyServer() {
+    return new URLSearchParams(location.search).get('lobby_host')
+        || 'wss://smash-netplay.jumpcircuit.workers.dev';
+  }
+  roomJoinBtn.onclick = () => {
+    var code = roomCodeEl.value.trim().toUpperCase();
+    if (!code) { roomCodeEl.focus(); return; }
+    var p = new URLSearchParams(location.search);
+    p.set('lobby_join', lobbyServer());
+    p.set('lobby_code', code);
+    location.search = '?' + p.toString();
+  };
+  roomCodeEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') roomJoinBtn.click();
+  });
+  /* Invite link: the wasm publishes the live room code to
+   * __ssb64_lobby_code (netlobby_start.cpp) — a param URL drops another
+   * browser straight into the same room. */
+  function refreshRoomState() {
+    var code = window.__ssb64_lobby_code || '';
+    roomCopyBtn.disabled = !code;
+    roomState.textContent = code ? 'in room ' + code : '—';
+  }
+  roomCopyBtn.onclick = () => {
+    var code = window.__ssb64_lobby_code;
+    if (!code) return;
+    var p = new URLSearchParams();
+    p.set('lobby_join', lobbyServer());
+    p.set('lobby_code', code);
+    var url = location.origin + location.pathname + '?' + p.toString();
+    navigator.clipboard.writeText(url).then(() => {
+      roomCopyBtn.textContent = 'Copied';
+      setTimeout(() => { roomCopyBtn.textContent = 'Copy invite link'; }, 1500);
+    }, () => {});
+  };
+  setInterval(refreshRoomState, 1000); refreshRoomState();
+
+  /* Diagnostics upload — opt-in, same contract the lobby validates at
+   * POST /crash ({kind:'crash', info, log_tail}, <=8 KiB per field).
+   * info carries the diag() bundle; log_tail the shell's own captured
+   * console output (wasm aborts printErr through it). */
+  var logTail = [];
+  ['warn', 'error'].forEach(function (lvl) {
+    var orig = console[lvl];
+    console[lvl] = function () {
+      try {
+        logTail.push(lvl + ': ' +
+          Array.prototype.map.call(arguments, String).join(' '));
+        if (logTail.length > 60) logTail.shift();
+      } catch (e) {}
+      return orig.apply(console, arguments);
+    };
+  });
+  document.getElementById('stSendDiagBtn').onclick = async function () {
+    var btn = this;
+    btn.disabled = true;
+    try {
+      var host = lobbyServer().replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
+      var d = await diag();
+      var r = await fetch(host + '/crash', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'crash',
+          info: JSON.stringify(d).slice(0, 8000),
+          log_tail: logTail.join('\n').slice(-8000) }),
+      });
+      btn.textContent = r.ok ? 'Sent — thank you' : 'Send failed (' + r.status + ')';
+    } catch (e) {
+      btn.textContent = 'Send failed';
+    }
+    setTimeout(() => {
+      btn.textContent = 'Send diagnostics to support';
+      btn.disabled = false;
+    }, 2500);
+  };
+
+  /* PWA install: the manifest is already linked — keep the browser's
+   * deferred prompt behind a button instead of its own missable UI. */
+  var installPrompt = null;
+  var installBtn = document.getElementById('installBtn');
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installPrompt = e;
+    installBtn.classList.remove('hidden');
+  });
+  installBtn.onclick = () => {
+    if (installPrompt) installPrompt.prompt();
+    installPrompt = null;
+    installBtn.classList.add('hidden');
+  };
+
+  /* "Offline ready" = an active service worker controlling this page —
+   * the first visit always reports online-only, later loads flip. */
+  var offlinePill = document.getElementById('offlinePill');
+  function refreshOffline() {
+    offlinePill.textContent =
+      (navigator.serviceWorker && navigator.serviceWorker.controller)
+        ? 'ready' : 'online only';
+  }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('controllerchange', refreshOffline);
+  }
+  refreshOffline();
+
+  document.getElementById('rotateHint').onclick = function () {
+    this.style.display = 'none';
+  };
+})();
+
 /* ── ROM header sniffing (docs §3 visible verification): pure client-
  * side peek at the first 64 bytes — region/name shown before extract. */
 var romInfoEl = document.getElementById('romInfo');
@@ -580,7 +726,17 @@ async function stageFsAndStart(Module) {
   }
 
   if (!fsExists(O2R)) {
-    setStatus('No extracted assets found.\n' +
+    /* A leftover flag means the tab died mid-extraction — tell the user
+     * why their earlier ROM pick didn't stick instead of repeating the
+     * generic first-run text. */
+    let interrupted = false;
+    try {
+      interrupted = !!localStorage.getItem('ssb64_extracting');
+      localStorage.removeItem('ssb64_extracting');
+    } catch (e) {}
+    setStatus((interrupted
+               ? 'The previous extraction did not finish (the tab was closed or reloaded).\n'
+               : 'No extracted assets found.\n') +
               'Pick or drop BattleShip.o2r (extracted on desktop) or the\n' +
               'ROM (.z64/.n64/.v64) — extraction runs right here and the\n' +
               'result is cached in this browser afterwards.');
@@ -597,10 +753,26 @@ async function stageFsAndStart(Module) {
             romInfoEl.textContent = info.text;
             romInfoEl.classList.remove('hidden');
           }
-          const bytes = /\.(z64|n64|v64)$/i.test(f.name)
+          /* Headroom check before a multi-MB extraction: under ~64 MB
+           * of free quota the IDBFS write of the .o2r is likely to
+           * fail — say so up front instead of mid-extract. */
+          try {
+            const est = await navigator.storage.estimate();
+            if (est.quota && est.usage != null &&
+                est.quota - est.usage < 64 * 1048576) {
+              romInfoEl.textContent +=
+                '\nlow browser storage — extraction may fail; free space or clear game assets first';
+            }
+          } catch (e) {}
+          /* Flag the in-flight job so a dead tab mid-extract is
+           * distinguishable from a first visit on the next load. */
+          const isRom = /\.(z64|n64|v64)$/i.test(f.name);
+          if (isRom) { try { localStorage.setItem('ssb64_extracting', '1'); } catch (e) {} }
+          const bytes = isRom
             ? await extractRomInBrowser(f)
             : (setStatus('Loading ' + f.name + '…'),
                new Uint8Array(await f.arrayBuffer()));
+          try { localStorage.removeItem('ssb64_extracting'); } catch (e) {}
           FS.writeFile(O2R, bytes);
           flush();               /* don't wait for pagehide — a crash now
                                   * must not lose a finished extraction */
@@ -734,6 +906,9 @@ window.BattleShip = Module;
       e.preventDefault();
       try { el.setPointerCapture(e.pointerId); } catch (_) {}
       if (held++ === 0) { el.classList.add('down'); onDown(); }
+      /* Short haptic tick per press — the same physical feedback a
+       * real button gives. Ignored where the API is absent/denied. */
+      if (navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} }
     });
     function release(e) {
       if (held > 0 && --held === 0) { el.classList.remove('down'); onUp(); }
