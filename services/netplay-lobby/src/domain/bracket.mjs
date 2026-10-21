@@ -1,3 +1,4 @@
+// @ts-check
 // bracket.mjs — single-elimination tournament domain, shared by the
 // Worker DO and the local node-lobby adapter. Pure domain: persistence
 // is injected by the adapter (same pattern as leaderboard.mjs).
@@ -28,6 +29,13 @@ export function mintBracketId() {
 /* Settle every live bracket waiting on this verified match_id. `brackets`
  * is any iterable of Bracket instances; returns the ones that changed so
  * the adapter can persist/write-back just those. */
+/**
+ * @param {Iterable<Bracket>} brackets
+ * @param {string} matchId
+ * @param {string} winner
+ * @param {string} loser
+ * @returns {Bracket[]}
+ */
 export function settleLiveBrackets(brackets, matchId, winner, loser) {
   const changed = [];
   for (const b of brackets) {
@@ -39,18 +47,36 @@ export function settleLiveBrackets(brackets, matchId, winner, loser) {
   return changed;
 }
 
+/** @param {unknown} s @returns {string} */
 export function sanitizeBracketName(s) {
   return typeof s === "string"
     ? s.trim().replace(/[^\p{L}\p{N} _.\-]/gu, "").slice(0, BR_NAME_MAX)
     : "";
 }
 
+/** @param {number} n */
 const pow2 = (n) => 2 ** Math.ceil(Math.log2(Math.max(n, BR_MIN_PLAYERS)));
 
+/** @typedef {import("../contracts/bracket.js").BracketState} BracketState */
+/** @typedef {import("../contracts/bracket.js").BracketPlayer} BracketPlayer */
+/** @typedef {import("../contracts/bracket.js").BracketPairing} BracketPairing */
+/** @typedef {import("../contracts/bracket.js").BracketStatus} BracketStatus */
+
 export class Bracket {
+  /** @type {string} */ id = "";
+  /** @type {string} */ name = "";
+  /** @type {string} */ owner = "";
+  /** @type {number} */ size = 0;
+  /** @type {BracketStatus} */ status = "open";
+  /** @type {BracketPlayer[]} */ players = [];
+  /** @type {BracketPairing[][]} */ rounds = [];
+  /** @type {string | null} */ winner = null;
+  /** @type {string} */ created = "";
+
   /* state = { id, name, owner, players: [{name,seed}], size, status,
    *           rounds: [[{a,b,matchId,winner}]], cursor, created, winner } */
-  constructor(state) {
+  /** @param {Partial<BracketState>} [state] */
+  constructor(state = {}) {
     Object.assign(this, state);
     this.players = this.players || [];
     this.rounds = this.rounds || [];
@@ -58,6 +84,13 @@ export class Bracket {
     this.winner = this.winner || null;
   }
 
+  /**
+   * @param {string} id
+   * @param {string} name
+   * @param {string} ownerName
+   * @param {number} size
+   * @returns {Bracket}
+   */
   static create(id, name, ownerName, size) {
     const n = pow2(Math.min(BR_MAX_PLAYERS,
                             Math.max(BR_MIN_PLAYERS, size | 0 || 8)));
@@ -70,6 +103,10 @@ export class Bracket {
 
   /* Join requires the name already claimed on the leaderboard — the
    * caller (adapter) verifies the key/name binding before calling. */
+  /**
+   * @param {string} name
+   * @returns {import("../contracts/bracket.js").BracketJoinResult}
+   */
   join(name) {
     if (this.status !== "open") return { kind: "reject", reason: "closed" };
     if (this.players.some((p) => p.name === name)) {
@@ -84,6 +121,10 @@ export class Bracket {
 
   /* Owner-only; pads with byes, seeds by leaderboard rating (highest
    * seed = highest rating), pairs classic 1-vs-N style. */
+  /**
+   * @param {unknown} seedOrder
+   * @returns {import("../contracts/bracket.js").BracketStartResult}
+   */
   start(seedOrder) {
     if (this.status !== "open") return { kind: "reject", reason: "not-open" };
     if (this.players.length < BR_MIN_PLAYERS) {
@@ -92,17 +133,19 @@ export class Bracket {
     // seedOrder: caller-supplied rating sort (names, best first). Any
     // joined player missing from it lands at the bottom in join order.
     // A non-array hint degrades to join order rather than throwing.
-    const order = Array.isArray(seedOrder) ? seedOrder : [];
+    const order = /** @type {string[]} */ (Array.isArray(seedOrder) ? seedOrder : []);
+    /** @type {(string | null)[]} */
     const ranked = [...order.filter((n) =>
                        this.players.some((p) => p.name === n)),
                     ...this.players.map((p) => p.name)
                       .filter((n) => !order.includes(n))];
     while (ranked.length < this.size) ranked.push(null);   // byes
+    /** @type {BracketPairing[]} */
     const r1 = [];
     for (let i = 0; i < this.size / 2; i++) {
-      r1.push({ a: ranked[i], b: ranked[this.size - 1 - i],
+      r1.push({ a: ranked[i] ?? null, b: ranked[this.size - 1 - i] ?? null,
                 matchId: null, winner: ranked[i] && !ranked[this.size - 1 - i]
-                                   ? ranked[i] : null });
+                                   ? ranked[i] ?? null : null });
     }
     this.rounds = [r1];
     this.status = "live";
@@ -120,6 +163,12 @@ export class Bracket {
    * verified match must be this pairing's players — without the loser
    * check, any verified win by `a` over an outsider would settle a-b.
    * Called by the adapter after lb.reportResult() returns kind:"verified". */
+  /**
+   * @param {string} matchId
+   * @param {string} winnerName
+   * @param {string} loserName
+   * @returns {import("../contracts/bracket.js").BracketSettleResult}
+   */
   settle(matchId, winnerName, loserName) {
     if (this.status !== "live") return { kind: "reject", reason: "not-live" };
     for (const round of this.rounds) {
@@ -139,6 +188,12 @@ export class Bracket {
 
   /* Explicit pairing→match binding (either player may bind before the
    * result lands; settle() then accepts that match_id for the pairing). */
+  /**
+   * @param {string} aName
+   * @param {string} bName
+   * @param {string} matchId
+   * @returns {import("../contracts/bracket.js").BracketBindResult}
+   */
   bindMatch(aName, bName, matchId) {
     if (this.status !== "live") return { kind: "reject", reason: "not-live" };
     for (const round of this.rounds) {
@@ -154,8 +209,13 @@ export class Bracket {
     return { kind: "reject", reason: "no-such-pairing" };
   }
 
+  /** @returns {import("../contracts/bracket.js").BracketSettleResult} */
   #advance() {
     const cur = this.rounds[this.rounds.length - 1];
+    /* Corrupted state guard — settle() gates on status==="live" so a live
+     * bracket always has rounds; without the check an empty array would
+     * TypeError instead of rejecting cleanly. */
+    if (!cur) return { kind: "reject", reason: "not-live" };
     /* Double-bye pairings (size > joined players leaves null-vs-null
      * slots) can never settle — they count as already-advanced and their
      * null propagates as a bye into the next round. */
@@ -165,14 +225,15 @@ export class Bracket {
     const winners = cur.map((m) => m.winner);
     if (winners.length === 1) {
       this.status = "done";
-      this.winner = winners[0];
+      this.winner = winners[0] ?? null;
       return { kind: "done", winner: this.winner };
     }
+    /** @type {BracketPairing[]} */
     const next = [];
     for (let i = 0; i < winners.length; i += 2) {
-      next.push({ a: winners[i], b: winners[i + 1],
+      next.push({ a: winners[i] ?? null, b: winners[i + 1] ?? null,
                   matchId: null, winner: winners[i + 1] == null
-                                         ? winners[i] : null });
+                                         ? winners[i] ?? null : null });
     }
     this.rounds.push(next);
     if (next.every((m) => m.winner != null)) return this.#advance();
@@ -180,6 +241,7 @@ export class Bracket {
   }
 
   /* Public view — everything a bracket page needs. */
+  /** @returns {import("../contracts/bracket.js").BracketView} */
   view() {
     return {
       id: this.id, name: this.name, owner: this.owner, size: this.size,
@@ -189,11 +251,13 @@ export class Bracket {
     };
   }
 
+  /** @returns {BracketState} */
   toJSON() {
     const { id, name, owner, size, status, winner, created, players,
             rounds } = this;
     return { id, name, owner, size, status, winner, created, players,
              rounds };
   }
+  /** @param {Partial<BracketState>} [o] @returns {Bracket} */
   static fromJSON(o) { return new Bracket(o || {}); }
 }

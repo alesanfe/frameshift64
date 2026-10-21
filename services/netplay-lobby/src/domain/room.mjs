@@ -1,3 +1,4 @@
+// @ts-check
 // LobbyRoom — the room domain, shared by both adapters.
 //
 // Transport-free: every socket is a duck-typed { send(data), close(code,
@@ -28,19 +29,35 @@ import {
   SOCKET_IDLE_MS, SPEC_MAGIC, newUpkey,
 } from "./protocol.mjs";
 
+/** @typedef {import("../contracts/room.js").SocketLike} SocketLike */
+/** @typedef {import("../contracts/room.js").SocketInfo} SocketInfo */
+/** @typedef {import("../contracts/room.js").AdmitParams} AdmitParams */
+/** @typedef {import("../contracts/room.js").AdmitResult} AdmitResult */
+/** @typedef {import("../contracts/room.js").PeerEndpoint} PeerEndpoint */
+
 export class LobbyRoom {
+  /** Fired on every inbound message — the DO re-arms its alarm; Node no-ops. */
+  /** @type {(() => void) | undefined} */ onSocketActivity;
+  /** Fired at the end of onClose — Node deletes empty rooms; the DO no-ops. */
+  /** @type {(() => void) | undefined} */ maybeDestroy;
+
+  /** @param {string} code */
   constructor(code) {
     this.code = code;
-    this.sockets = new Map();  // ws -> { kind, version, slot, endpoint, relay, upkey, owner, rate, endpoints, lastSeen }
+    /** @type {Map<SocketLike, SocketInfo>} */
+    this.sockets = new Map();
     this.version = 0;          // 0 = empty room, else 1|2 fixed by the host
     this.relayV1 = false;      // v1: whole session relayed
+    /** @type {number[]} */
     this.recentJoins = [];     // timestamps, bounded join/uplink rate
   }
 
   /* ---- socket bookkeeping ---- */
 
+  /** @param {SocketLike} ws @returns {SocketInfo | undefined} */
   info(ws) { return this.sockets.get(ws); }
 
+  /** @param {string} role @returns {SocketLike | null} */
   socketV1(role) {
     for (const [ws, i] of this.sockets) {
       if (i.kind !== "up" && i.version === 1 && i.kind === role) return ws;
@@ -48,6 +65,7 @@ export class LobbyRoom {
     return null;
   }
 
+  /** @param {number} slot @returns {SocketLike | null} */
   socketForSlot(slot) {
     for (const [ws, i] of this.sockets) {
       if (i.kind !== "up" && i.version === 2 && i.slot === slot) return ws;
@@ -69,12 +87,14 @@ export class LobbyRoom {
     return -1;
   }
 
+  /** @param {SocketLike} ws @param {Record<string, unknown>} obj */
   sendJson(ws, obj) {
     try { ws.send(JSON.stringify(obj)); } catch { /* socket already gone */ }
   }
 
   /* Register a socket — adapter still owns event wiring (ws.on vs
    * addEventListener). Returns the info object for convenience. */
+  /** @param {SocketLike} ws @param {SocketInfo} info @returns {SocketInfo} */
   attach(ws, info) {
     info.rate = { win: 0, text: 0, bin: 0 };
     info.endpoints = 0;
@@ -100,9 +120,10 @@ export class LobbyRoom {
   refundJoin() { this.recentJoins.pop(); }
 
   /* Per-socket token window; over the limit the socket is dropped. */
+  /** @param {SocketInfo} info @param {boolean} binary */
   allowMessage(info, binary) {
     const now = Date.now();
-    const r = info.rate;
+    const r = info.rate ?? (info.rate = { win: 0, text: 0, bin: 0 });
     if (now - r.win >= RATE_WINDOW_MS) {
       r.win = now;
       r.text = 0;
@@ -124,6 +145,7 @@ export class LobbyRoom {
    *       "introduceV1" | "broadcastRoster" | null; when closeAll is set,
    *       close(4002,"room-reset") every existing socket first.
    */
+  /** @param {AdmitParams} p @returns {AdmitResult} */
   admit(p) {
     if (!this.allowJoin()) return { kind: "reject", reason: "rate-limited" };
 
@@ -140,6 +162,7 @@ export class LobbyRoom {
         return { kind: "reject", reason: "no-such-room" };
       }
       // One uplink per slot: a reconnect replaces the stale socket.
+      /** @type {SocketLike[]} */
       const replaced = [];
       for (const [s, i] of this.sockets) {
         if (i.kind === "up" && i.slot === p.uplinkSlot) {
@@ -224,6 +247,7 @@ export class LobbyRoom {
 
   /* ---- v1: two players, endpoint exchange + symmetric relay ---- */
 
+  /** @param {SocketLike} ws @returns {SocketLike | null} */
   otherV1(ws) {
     const i = this.info(ws);
     if (!i) return null;
@@ -243,6 +267,7 @@ export class LobbyRoom {
 
   /* ---- v2: roster broadcast + routed relay ---- */
 
+  /** @param {SocketLike} [exclude] */
   broadcastRoster(exclude) {
     /* Spectators receive the roster with every endpoint redacted: they are
      * relay-only by definition, so player IPs are information they don't
@@ -274,6 +299,7 @@ export class LobbyRoom {
   /* ---- messages ---- */
 
   /* Text frame (already decoded to a string by the adapter). */
+  /** @param {SocketLike} ws @param {string} text */
   handleText(ws, text) {
     const info = this.info(ws);
     if (!info) return;
@@ -304,7 +330,8 @@ export class LobbyRoom {
         this.sendJson(ws, { type: "keepalive_ack" });
         break;
       case "endpoint":
-        if (++wi.endpoints > MAX_ENDPOINT_UPDATES) break;
+        wi.endpoints = (wi.endpoints ?? 0) + 1;
+        if (wi.endpoints > MAX_ENDPOINT_UPDATES) break;
         wi.endpoint = {
           public: String(msg.public || "-").slice(0, 64),
           local: String(msg.local || "-").slice(0, 64),
@@ -342,6 +369,7 @@ export class LobbyRoom {
   }
 
   /* Binary frame normalized to a Uint8Array-ish view by the adapter. */
+  /** @param {SocketLike} ws @param {Uint8Array} bytes */
   handleBinary(ws, bytes) {
     const info = this.info(ws);
     if (!info) return;
@@ -362,7 +390,7 @@ export class LobbyRoom {
       // enforced: clients only reach slot 0, the host only client slots,
       // and the hop must be a link the room marked as relayed.
       if (bytes.length < 2) return;
-      const toSlot = bytes[0];
+      const toSlot = bytes[0] ?? -1;
       // Spectators may only address the host, and only with an "SSBL "
       // lobby datagram (see SPEC_MAGIC).
       if (info.kind === "spec") {
@@ -410,7 +438,9 @@ export class LobbyRoom {
       const seen = (i.kind === "up" && i.owner)
         ? (this.info(i.owner)?.lastSeen ?? i.lastSeen)
         : i.lastSeen;
-      if (now - seen > SOCKET_IDLE_MS) {
+      /* undefined lastSeen -> NaN comparison in the original semantics:
+       * never reaped (a socket without attach() is a bug, not idle). */
+      if (typeof seen === "number" && now - seen > SOCKET_IDLE_MS) {
         try { ws.close(4004, "idle-timeout"); } catch { /* gone */ }
         /* onClose does the real bookkeeping. */
         this.onClose(ws);
@@ -418,6 +448,7 @@ export class LobbyRoom {
     }
   }
 
+  /** @param {SocketLike} ws */
   onClose(ws) {
     const info = this.info(ws);
     if (!info) return;

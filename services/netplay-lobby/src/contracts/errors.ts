@@ -22,7 +22,10 @@ export type RejectReason =
   | "bad-result" | "bad-token" | "already-settled" | "mirror-disabled"
   // room admission
   | "rate-limited" | "no-such-room" | "room-full" | "room-in-use"
-  | "version-mismatch" | "no-host";
+  | "version-mismatch" | "no-host"
+  // bracket lifecycle
+  | "closed" | "already-joined" | "full" | "not-open" | "too-few"
+  | "not-live" | "no-open-pairing" | "no-such-pairing";
 
 export interface Reject {
   kind: "reject";
